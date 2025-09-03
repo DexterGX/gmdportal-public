@@ -13,7 +13,9 @@ export default async function DashboardPage() {
   return (
     <main className="p-6 max-w-5xl mx-auto">
       <header className="flex items-center justify-between mb-8">
-        <h1 className="text-2xl font-semibold">Dashboard</h1>
+        <a href="/dashboard" className="text-2xl font-semibold">
+          Dashboard
+        </a>
         <a
           href="/api/auth/signout?callbackUrl=/"
           className="rounded-lg bg-neutral-800 px-4 py-2 text-sm"
@@ -23,17 +25,35 @@ export default async function DashboardPage() {
       </header>
 
       <section className="grid sm:grid-cols-2 lg:grid-cols-3 gap-4">
-        <Card title="Estimates" href="/estimates" desc="Create and manage estimates." />
-        <Card title="Price Tables" href="/prices" desc="Update cabinet/countertop pricing." />
+        <Card
+          title="Estimates"
+          href="/estimates"
+          desc="Create and manage estimates."
+        />
+        <Card
+          title="Price Tables"
+          href="/prices"
+          desc="Update cabinet/countertop pricing."
+        />
         <Card title="Orders" href="/orders" desc="Track orders and installs." />
       </section>
 
-      <p className="mt-8 text-neutral-400 text-sm">Signed in as {user?.email}</p>
+      <p className="mt-8 text-neutral-400 text-sm">
+        Signed in as {user?.email}
+      </p>
     </main>
   );
 }
 
-function Card({ title, desc, href }: { title: string; desc: string; href: string }) {
+function Card({
+  title,
+  desc,
+  href,
+}: {
+  title: string;
+  desc: string;
+  href: string;
+}) {
   return (
     <a
       href={href}
