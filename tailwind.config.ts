@@ -1,12 +1,18 @@
 import type { Config } from "tailwindcss";
 
 const config: Config = {
-  content: [
-    "./app/**/*.{js,ts,jsx,tsx}",
-    "./components/**/*.{js,ts,jsx,tsx}",
-  ],
+  darkMode: "class", // 👈 required for theme toggle
+  content: ["./app/**/*.{ts,tsx}", "./components/**/*.{ts,tsx}"],
   theme: {
-    extend: {},
+    extend: {
+      colors: {
+        brand: "#3B82F6",     // light blue accent
+        brandLight: "#93C5FD",// lighter accent (optional)
+      },
+      ringColor: ({ theme }) => ({
+        DEFAULT: theme("colors.brand"),
+      }),
+    },
   },
   plugins: [],
 };
