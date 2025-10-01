@@ -48,7 +48,7 @@ export default function RegisterForm() {
           placeholder="Full Name"
           value={name}
           onChange={(e) => setName(e.target.value)}
-          className="w-full rounded-lg border px-3 py-2 bg-white dark:bg-neutral-800"
+          className="w-full rounded-lg border border-neutral-300 dark:border-neutral-700 px-3 py-2 bg-white dark:bg-neutral-800 text-neutral-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-blue-500"
           required
         />
 
@@ -57,7 +57,7 @@ export default function RegisterForm() {
           placeholder="Username"
           value={username}
           onChange={(e) => setUsername(e.target.value)}
-          className="w-full rounded-lg border px-3 py-2 bg-white dark:bg-neutral-800"
+          className="w-full rounded-lg border border-neutral-300 dark:border-neutral-700 px-3 py-2 bg-white dark:bg-neutral-800 text-neutral-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-blue-500"
           required
         />
 
@@ -66,7 +66,7 @@ export default function RegisterForm() {
           placeholder="Email"
           value={email}
           onChange={(e) => setEmail(e.target.value)}
-          className="w-full rounded-lg border px-3 py-2 bg-white dark:bg-neutral-800"
+          className="w-full rounded-lg border border-neutral-300 dark:border-neutral-700 px-3 py-2 bg-white dark:bg-neutral-800 text-neutral-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-blue-500"
           required
         />
 
@@ -75,7 +75,7 @@ export default function RegisterForm() {
           placeholder="Password"
           value={password}
           onChange={(e) => setPassword(e.target.value)}
-          className="w-full rounded-lg border px-3 py-2 bg-white dark:bg-neutral-800"
+          className="w-full rounded-lg border border-neutral-300 dark:border-neutral-700 px-3 py-2 bg-white dark:bg-neutral-800 text-neutral-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-blue-500"
           required
         />
 
@@ -90,11 +90,8 @@ export default function RegisterForm() {
         </button>
       </form>
 
-      <div className="mt-4 flex justify-center text-sm">
-        <Link
-          href="/login"
-          className="w-full rounded-lg bg-gray-300 text-gray-700 py-2 font-medium text-center hover:bg-gray-400"
-        >
+      <div className="mt-4 text-center text-sm">
+        <Link href="/login" className="text-blue-600 hover:underline">
           Return to Login
         </Link>
       </div>

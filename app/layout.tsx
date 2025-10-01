@@ -1,9 +1,20 @@
+// app/layout.tsx
 import "./globals.css";
 
-export default function RootLayout({ children }: { children: React.ReactNode }) {
+export const metadata = {
+  title: "Dashboard",
+  description: "GM Design Portal",
+};
+
+export default function RootLayout({
+  children,
+}: {
+  children: React.ReactNode;
+}) {
   return (
     <html lang="en">
-      <body className="min-h-screen">{children}</body>
+      {/* Use min-h-screen and ensure full width so flex children can size responsively */}
+      <body className="min-h-screen flex w-full">{children}</body>
     </html>
   );
 }
