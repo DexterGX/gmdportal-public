@@ -18,43 +18,68 @@ import {
   UserCircleIcon,
 } from "../icons/index";
 
+// Helper to render an icon which may be:
+// - a string URL
+// - an imported asset object with a `.src` property
+// - a React component (function)
+function renderIcon(icon: any, name: string) {
+  if (!icon) return null;
+  // Imported asset (next static) often comes as { src, height, width, blurDataURL }
+  if (typeof icon === "object" && icon.src) {
+    return <img src={icon.src} alt={name} className="w-5 h-5" />;
+  }
+  if (typeof icon === "string") {
+    return <img src={icon} alt={name} className="w-5 h-5" />;
+  }
+  if (typeof icon === "function" || React.isValidElement(icon)) {
+    // If it's a component, render it.
+    const IconComp = icon as any;
+    try {
+      return <IconComp />;
+    } catch (e) {
+      return null;
+    }
+  }
+  return null;
+}
+
 type NavItem = {
   name: string;
-  icon: React.ReactNode;
+  icon: any;
   path?: string;
   subItems?: { name: string; path: string; pro?: boolean; new?: boolean }[];
 };
 
 const navItems: NavItem[] = [
   {
-    icon: <GridIcon />,
+    icon: GridIcon,
     name: "Dashboard",
     subItems: [{ name: "Ecommerce", path: "/", pro: false }],
   },
   {
-    icon: <CalenderIcon />,
+    icon: CalenderIcon,
     name: "Calendar",
     path: "/calendar",
   },
   {
-    icon: <UserCircleIcon />,
+    icon: UserCircleIcon,
     name: "User Profile",
     path: "/profile",
   },
 
   {
     name: "Forms",
-    icon: <ListIcon />,
+    icon: ListIcon,
     subItems: [{ name: "Form Elements", path: "/form-elements", pro: false }],
   },
   {
     name: "Tables",
-    icon: <TableIcon />,
+    icon: TableIcon,
     subItems: [{ name: "Basic Tables", path: "/basic-tables", pro: false }],
   },
   {
     name: "Pages",
-    icon: <PageIcon />,
+    icon: PageIcon,
     subItems: [
       { name: "Blank Page", path: "/blank", pro: false },
       { name: "404 Error", path: "/error-404", pro: false },
@@ -64,7 +89,7 @@ const navItems: NavItem[] = [
 
 const othersItems: NavItem[] = [
   {
-    icon: <PieChartIcon />,
+    icon: PieChartIcon,
     name: "Charts",
     subItems: [
       { name: "Line Chart", path: "/line-chart", pro: false },
@@ -72,7 +97,7 @@ const othersItems: NavItem[] = [
     ],
   },
   {
-    icon: <BoxCubeIcon />,
+    icon: BoxCubeIcon,
     name: "UI Elements",
     subItems: [
       { name: "Alerts", path: "/alerts", pro: false },
@@ -84,7 +109,7 @@ const othersItems: NavItem[] = [
     ],
   },
   {
-    icon: <PlugInIcon />,
+    icon: PlugInIcon,
     name: "Authentication",
     subItems: [
       { name: "Sign In", path: "/signin", pro: false },
@@ -124,7 +149,7 @@ const AppSidebar: React.FC = () => {
                     : "menu-item-icon-inactive"
                 }`}
               >
-                {nav.icon}
+                {renderIcon(nav.icon, nav.name)}
               </span>
               {(isExpanded || isHovered || isMobileOpen) && (
                 <span className={`menu-item-text`}>{nav.name}</span>
@@ -145,7 +170,7 @@ const AppSidebar: React.FC = () => {
                       : "menu-item-icon-inactive"
                   }`}
                 >
-                  {nav.icon}
+                  {renderIcon(nav.icon, nav.name)}
                 </span>
                 {(isExpanded || isHovered || isMobileOpen) && (
                   <span className={`menu-item-text`}>{nav.name}</span>
@@ -279,16 +304,13 @@ const AppSidebar: React.FC = () => {
 
   return (
     <aside
-      className={`fixed mt-16 flex flex-col lg:mt-0 top-0 px-5 left-0 bg-white dark:bg-gray-900 dark:border-gray-800 text-gray-900 h-screen transition-all duration-300 ease-in-out z-50 border-r border-gray-200 
-        ${
-          isExpanded || isMobileOpen
-            ? "w-[290px]"
-            : isHovered
-            ? "w-[290px]"
-            : "w-[90px]"
-        }
-        ${isMobileOpen ? "translate-x-0" : "-translate-x-full"}
-        lg:translate-x-0`}
+      className={`flex-none flex flex-col px-5 bg-white dark:bg-gray-900 dark:border-gray-800 text-gray-900 h-screen transition-all duration-300 ease-in-out z-50 border-r border-gray-200 ${
+        isExpanded || isMobileOpen
+          ? "w-[290px]"
+          : isHovered
+          ? "w-[290px]"
+          : "w-[90px]"
+      }`}
       onMouseEnter={() => !isExpanded && setIsHovered(true)}
       onMouseLeave={() => setIsHovered(false)}
     >
@@ -336,11 +358,9 @@ const AppSidebar: React.FC = () => {
                     : "justify-start"
                 }`}
               >
-                {isExpanded || isHovered || isMobileOpen ? (
-                  "Menu"
-                ) : (
-                  <HorizontaLDots />
-                )}
+                {isExpanded || isHovered || isMobileOpen
+                  ? "Menu"
+                  : renderIcon(HorizontaLDots, "dots")}
               </h2>
               {renderMenuItems(navItems, "main")}
             </div>
@@ -353,11 +373,9 @@ const AppSidebar: React.FC = () => {
                     : "justify-start"
                 }`}
               >
-                {isExpanded || isHovered || isMobileOpen ? (
-                  "Others"
-                ) : (
-                  <HorizontaLDots />
-                )}
+                {isExpanded || isHovered || isMobileOpen
+                  ? "Others"
+                  : renderIcon(HorizontaLDots, "dots")}
               </h2>
               {renderMenuItems(othersItems, "others")}
             </div>

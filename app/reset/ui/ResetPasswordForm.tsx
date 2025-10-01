@@ -51,7 +51,7 @@ export default function ResetPasswordForm() {
           Reset your password
         </h2>
         <p className="text-sm text-neutral-500 dark:text-neutral-400 mt-2">
-          Enter your email and we'll send a reset link.
+          Enter your email and we&#39;ll send a reset link.
         </p>
       </div>
 

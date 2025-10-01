@@ -13,7 +13,8 @@ export default function RootLayout({
 }) {
   return (
     <html lang="en">
-      <body className="flex h-screen w-screen overflow-hidden">{children}</body>
+      {/* Use min-h-screen and ensure full width so flex children can size responsively */}
+      <body className="min-h-screen flex w-full">{children}</body>
     </html>
   );
 }
