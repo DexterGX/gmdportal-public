@@ -33,11 +33,10 @@ export default function LoginForm() {
 
   return (
     <div className="w-full max-w-md rounded-2xl bg-white dark:bg-neutral-900 p-8 shadow-xl ring-1 ring-neutral-200 dark:ring-neutral-800">
-      <div className="flex flex-col items-center gap-3 mb-6 text-center">
-        <img src="/logo.svg" alt="GM Design" className="h-10" />
-        <h1 className="text-xl font-semibold text-neutral-900 dark:text-white">
+      <div className="flex flex-col items-center text-center mb-6">
+        <h2 className="text-2xl md:text-3xl font-bold text-neutral-900 dark:text-white">
           GM Design Portal
-        </h1>
+        </h2>
       </div>
 
       <form onSubmit={handleSubmit} className="space-y-4">
@@ -101,11 +100,11 @@ export default function LoginForm() {
         Sign in with Google
       </button>
 
-      <div className="mt-4 flex justify-between text-sm">
+      <div className="mt-4 flex justify-center gap-6 text-sm">
         <Link href="/register" className="text-blue-600 hover:underline">
           Create account
         </Link>
-        <Link href="/forgot-password" className="text-blue-600 hover:underline">
+        <Link href="/reset" className="text-blue-600 hover:underline">
           Forgot password?
         </Link>
       </div>

@@ -20,7 +20,7 @@ const config: Config = {
         xl: "1rem",
       },
       boxShadow: {
-        card: "0 1px 3px 0 rgba(0,0,0,0.1)",
+        card: "0 1px px 0 rgba(0,0,0,0.1)",
       },
     },
   },
