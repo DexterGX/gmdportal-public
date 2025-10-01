@@ -1,9 +1,19 @@
+// app/layout.tsx
 import "./globals.css";
 
-export default function RootLayout({ children }: { children: React.ReactNode }) {
+export const metadata = {
+  title: "Dashboard",
+  description: "GM Design Portal",
+};
+
+export default function RootLayout({
+  children,
+}: {
+  children: React.ReactNode;
+}) {
   return (
     <html lang="en">
-      <body className="min-h-screen">{children}</body>
+      <body className="flex h-screen w-screen overflow-hidden">{children}</body>
     </html>
   );
 }
