@@ -35,7 +35,8 @@ function renderIcon(icon: any, name: string) {
     // If it's a component, render it.
     const IconComp = icon as any;
     try {
-      return <IconComp />;
+      // Pass sizing classes to the SVG React component when possible
+      return <IconComp className="w-5 h-5" />;
     } catch (e) {
       return null;
     }
@@ -132,7 +133,7 @@ const AppSidebar: React.FC = () => {
           {nav.subItems ? (
             <button
               onClick={() => handleSubmenuToggle(index, menuType)}
-              className={`menu-item group  ${
+              className={`menu-item group block w-full text-left ${
                 openSubmenu?.type === menuType && openSubmenu?.index === index
                   ? "menu-item-active"
                   : "menu-item-inactive"
@@ -143,38 +144,54 @@ const AppSidebar: React.FC = () => {
               }`}
             >
               <span
-                className={` ${
+                className={`flex items-center transition-colors duration-150 w-full text-left ${
                   openSubmenu?.type === menuType && openSubmenu?.index === index
-                    ? "menu-item-icon-active"
-                    : "menu-item-icon-inactive"
+                    ? "bg-blue-50 text-blue-600 dark:bg-blue-900/40"
+                    : "bg-gray-100 text-gray-600 dark:bg-gray-800"
+                } ${
+                  !isExpanded && !isHovered
+                    ? "justify-center px-0 py-0 rounded-lg w-9 h-9"
+                    : "px-3 py-2 rounded-lg"
                 }`}
               >
-                {renderIcon(nav.icon, nav.name)}
+                <span
+                  className={`inline-flex items-center justify-center w-5 h-5`}
+                >
+                  {renderIcon(nav.icon, nav.name)}
+                </span>
+                {(isExpanded || isHovered || isMobileOpen) && (
+                  <span className={`menu-item-text ml-3`}>{nav.name}</span>
+                )}
               </span>
-              {(isExpanded || isHovered || isMobileOpen) && (
-                <span className={`menu-item-text`}>{nav.name}</span>
-              )}
             </button>
           ) : (
             nav.path && (
               <Link
                 href={nav.path}
-                className={`menu-item group ${
+                className={`menu-item group block w-full text-left ${
                   isActive(nav.path) ? "menu-item-active" : "menu-item-inactive"
                 }`}
               >
                 <span
-                  className={`${
+                  className={`flex items-center transition-colors duration-150 w-full text-left ${
                     isActive(nav.path)
-                      ? "menu-item-icon-active"
-                      : "menu-item-icon-inactive"
+                      ? "bg-blue-50 text-blue-600 dark:bg-blue-900/40"
+                      : "bg-gray-100 text-gray-600 dark:bg-gray-800"
+                  } ${
+                    !isExpanded && !isHovered
+                      ? "justify-center px-0 py-0 rounded-lg w-9 h-9"
+                      : "px-3 py-2 rounded-lg"
                   }`}
                 >
-                  {renderIcon(nav.icon, nav.name)}
+                  <span
+                    className={`inline-flex items-center justify-center w-5 h-5`}
+                  >
+                    {renderIcon(nav.icon, nav.name)}
+                  </span>
+                  {(isExpanded || isHovered || isMobileOpen) && (
+                    <span className={`menu-item-text ml-3`}>{nav.name}</span>
+                  )}
                 </span>
-                {(isExpanded || isHovered || isMobileOpen) && (
-                  <span className={`menu-item-text`}>{nav.name}</span>
-                )}
               </Link>
             )
           )}
@@ -324,26 +341,21 @@ const AppSidebar: React.FC = () => {
             <>
               <Image
                 className="dark:hidden"
-                src="/images/logo/logo.svg"
+                src="/logo.svg"
                 alt="Logo"
                 width={150}
                 height={40}
               />
               <Image
                 className="hidden dark:block"
-                src="/images/logo/logo-dark.svg"
+                src="/logo.svg"
                 alt="Logo"
                 width={150}
                 height={40}
               />
             </>
           ) : (
-            <Image
-              src="/images/logo/logo-icon.svg"
-              alt="Logo"
-              width={32}
-              height={32}
-            />
+            <Image src="/logo.svg" alt="Logo" width={32} height={32} />
           )}
         </Link>
       </div>
