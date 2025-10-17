@@ -7,7 +7,6 @@ import { useSidebar } from "../context/SidebarContext";
 import {
   BoxCubeIcon,
   CalenderIcon,
-  ChevronDownIcon,
   GridIcon,
   HorizontaLDots,
   ListIcon,
@@ -120,7 +119,14 @@ const othersItems: NavItem[] = [
 ];
 
 const AppSidebar: React.FC = () => {
-  const { isExpanded, isMobileOpen, isHovered, setIsHovered } = useSidebar();
+  const {
+    isExpanded,
+    isMobileOpen,
+    isMobile,
+    isHovered,
+    setIsHovered,
+    toggleMobileSidebar,
+  } = useSidebar();
   const pathname = usePathname();
 
   const renderMenuItems = (
@@ -319,82 +325,98 @@ const AppSidebar: React.FC = () => {
     });
   };
 
-  return (
-    <aside
-      className={`flex-none flex flex-col px-5 bg-white dark:bg-gray-900 dark:border-gray-800 text-gray-900 h-screen transition-all duration-300 ease-in-out z-50 border-r border-gray-200 ${
-        isExpanded || isMobileOpen
-          ? "w-[290px]"
-          : isHovered
-          ? "w-[290px]"
-          : "w-[90px]"
-      }`}
-      onMouseEnter={() => !isExpanded && setIsHovered(true)}
-      onMouseLeave={() => setIsHovered(false)}
-    >
-      <div
-        className={`py-8 flex  ${
-          !isExpanded && !isHovered ? "lg:justify-center" : "justify-start"
-        }`}
-      >
-        <Link href="/">
-          {isExpanded || isHovered || isMobileOpen ? (
-            <>
-              <Image
-                className="dark:hidden"
-                src="/logo.svg"
-                alt="Logo"
-                width={150}
-                height={40}
-              />
-              <Image
-                className="hidden dark:block"
-                src="/logo.svg"
-                alt="Logo"
-                width={150}
-                height={40}
-              />
-            </>
-          ) : (
-            <Image src="/logo.svg" alt="Logo" width={32} height={32} />
-          )}
-        </Link>
-      </div>
-      <div className="flex flex-col overflow-y-auto duration-300 ease-linear no-scrollbar">
-        <nav className="mb-6">
-          <div className="flex flex-col gap-4">
-            <div>
-              <h2
-                className={`mb-4 text-xs uppercase flex leading-[20px] text-gray-400 ${
-                  !isExpanded && !isHovered
-                    ? "lg:justify-center"
-                    : "justify-start"
-                }`}
-              >
-                {isExpanded || isHovered || isMobileOpen
-                  ? "Menu"
-                  : renderIcon(HorizontaLDots, "dots")}
-              </h2>
-              {renderMenuItems(navItems, "main")}
-            </div>
+  // For mobile we animate with translateX so the sidebar slides in/out
+  const mobileTransformClass = isMobile
+    ? isMobileOpen
+      ? "translate-x-0"
+      : "-translate-x-full"
+    : "";
 
-            <div className="">
-              <h2
-                className={`mb-4 text-xs uppercase flex leading-[20px] text-gray-400 ${
-                  !isExpanded && !isHovered
-                    ? "lg:justify-center"
-                    : "justify-start"
-                }`}
-              >
-                {isExpanded || isHovered || isMobileOpen
-                  ? "Others"
-                  : renderIcon(HorizontaLDots, "dots")}
-              </h2>
-              {renderMenuItems(othersItems, "others")}
+  return (
+    <>
+      {isMobileOpen && (
+        <div
+          className="fixed inset-0 bg-black/40 z-40"
+          onClick={() => toggleMobileSidebar()}
+          aria-hidden
+        />
+      )}
+
+      <aside
+        className={`flex-none flex flex-col px-5 bg-white dark:bg-gray-900 dark:border-gray-800 text-gray-900 h-screen transition-all duration-300 ease-in-out z-50 border-r border-gray-200 transform ${mobileTransformClass} ${
+          // On mobile we position it fixed to overlay the content so translateX works
+          isMobile
+            ? "fixed left-0 top-0 bottom-0 w-[290px]"
+            : isExpanded || isMobileOpen
+            ? "w-[290px]"
+            : isHovered
+            ? "w-[290px]"
+            : "w-[90px]"
+        }`}
+        onMouseEnter={() => !isExpanded && setIsHovered(true)}
+        onMouseLeave={() => setIsHovered(false)}
+      >
+        <div className={`py-8 flex justify-center items-center`}>
+          <Link href="/">
+            {isExpanded || isHovered || isMobileOpen ? (
+              <>
+                <Image
+                  className="dark:hidden"
+                  src="/logo.svg"
+                  alt="Logo"
+                  width={150}
+                  height={40}
+                />
+                <Image
+                  className="hidden dark:block"
+                  src="/logo.svg"
+                  alt="Logo"
+                  width={150}
+                  height={40}
+                />
+              </>
+            ) : (
+              <Image src="/logo.svg" alt="Logo" width={32} height={32} />
+            )}
+          </Link>
+        </div>
+        <div className="flex flex-col overflow-y-auto duration-300 ease-linear no-scrollbar">
+          <nav className="mb-6">
+            <div className="flex flex-col gap-4">
+              <div>
+                <h2
+                  className={`mb-4 text-xs uppercase flex leading-[20px] text-gray-400 ${
+                    !isExpanded && !isHovered
+                      ? "lg:justify-center"
+                      : "justify-start"
+                  }`}
+                >
+                  {isExpanded || isHovered || isMobileOpen
+                    ? "Menu"
+                    : renderIcon(HorizontaLDots, "dots")}
+                </h2>
+                {renderMenuItems(navItems, "main")}
+              </div>
+
+              <div className="">
+                <h2
+                  className={`mb-4 text-xs uppercase flex leading-[20px] text-gray-400 ${
+                    !isExpanded && !isHovered
+                      ? "lg:justify-center"
+                      : "justify-start"
+                  }`}
+                >
+                  {isExpanded || isHovered || isMobileOpen
+                    ? "Others"
+                    : renderIcon(HorizontaLDots, "dots")}
+                </h2>
+                {renderMenuItems(othersItems, "others")}
+              </div>
             </div>
-          </div>
-        </nav>
-      </div>
-    </aside>
+          </nav>
+        </div>
+      </aside>
+    </>
   );
 };
 

@@ -9,13 +9,16 @@ import {
   Settings,
   User,
   HelpCircle,
+  Menu,
 } from "lucide-react";
 import Image from "next/image";
 import { signOut } from "next-auth/react";
+import { useSidebar } from "../context/SidebarContext";
 
 export default function Navbar({ user }: { user: any }) {
   const [darkMode, setDarkMode] = useState(false);
   const [menuOpen, setMenuOpen] = useState(false);
+  const { toggleSidebar, toggleMobileSidebar, isMobile } = useSidebar();
 
   const toggleDarkMode = () => {
     setDarkMode(!darkMode);
@@ -34,19 +37,29 @@ export default function Navbar({ user }: { user: any }) {
   };
 
   return (
-    <header className="h-16 bg-white dark:bg-gray-800 border-b border-gray-200 dark:border-gray-700 flex items-center justify-between px-6">
-      {/* Search */}
-      <div className="flex items-center gap-3">
+    <header className="h-16 bg-white dark:bg-gray-800 border-b border-gray-200 dark:border-gray-700 grid grid-cols-[auto_1fr_auto] items-center px-6">
+      {/* Search + Hamburger */}
+      <div className="flex items-center gap-3 min-w-0">
+        <button
+          onClick={() => {
+            if (isMobile) toggleMobileSidebar();
+            else toggleSidebar();
+          }}
+          aria-label="Toggle sidebar"
+          className="p-2 rounded-md hover:bg-gray-100 dark:hover:bg-gray-800 transition"
+        >
+          <Menu className="w-5 h-5 text-gray-600 dark:text-gray-300" />
+        </button>
         <Search className="w-5 h-5 text-gray-400 dark:text-gray-500" />
         <input
           type="text"
           placeholder="Search..."
-          className="outline-none bg-gray-50 dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-md px-3 py-1 text-sm text-gray-800 dark:text-gray-200"
+          className="outline-none bg-gray-50 dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-md px-3 py-1 text-sm text-gray-800 dark:text-gray-200 w-full max-w-xs"
         />
       </div>
 
       {/* Right side */}
-      <div className="flex items-center gap-5 relative">
+      <div className="flex items-center gap-5 relative justify-end">
         {/* Dark mode toggle */}
         <button
           onClick={toggleDarkMode}
@@ -66,7 +79,7 @@ export default function Navbar({ user }: { user: any }) {
         <div className="relative">
           <button
             onClick={() => setMenuOpen(!menuOpen)}
-            className="flex items-center gap-2 focus:outline-none"
+            className="flex items-center gap-2 flex-nowrap focus:outline-none"
           >
             {user?.image ? (
               <Image
@@ -81,7 +94,7 @@ export default function Navbar({ user }: { user: any }) {
                 {getInitials(user?.name || user?.email || "U")}
               </div>
             )}
-            <span className="font-medium text-gray-700 dark:text-gray-200">
+            <span className="ml-1 font-medium text-gray-700 dark:text-gray-200 hidden md:inline-block max-w-[8rem] truncate">
               {user?.name || "User"}
             </span>
           </button>
