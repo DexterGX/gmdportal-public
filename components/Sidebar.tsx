@@ -12,9 +12,11 @@ import {
   ListIcon,
   PageIcon,
   PieChartIcon,
+  DollarLineIcon,
+  CopyIcon,
   PlugInIcon,
   TableIcon,
-  UserCircleIcon,
+  ShootingStarIcon,
 } from "../icons/index";
 
 // Helper to render an icon which may be:
@@ -54,17 +56,17 @@ const navItems: NavItem[] = [
   {
     icon: GridIcon,
     name: "Dashboard",
-    subItems: [{ name: "Ecommerce", path: "/", pro: false }],
+    path: "/dashboard",
   },
   {
-    icon: CalenderIcon,
-    name: "Calendar",
-    path: "/calendar",
-  },
-  {
-    icon: UserCircleIcon,
-    name: "User Profile",
+    icon: ShootingStarIcon,
+    name: "Users Profiles",
     path: "/profile",
+  },
+  {
+    icon: CopyIcon,
+    name: "Slabs Price List",
+    path: "/slabsPriceList",
   },
 
   {
