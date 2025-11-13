@@ -1,6 +1,6 @@
 import { redirect } from "next/navigation";
 import { getServerSession } from "next-auth";
-import authOptions from "../lib/auth";
+import authOptions from "@/lib/auth";
 
 export default async function HomePage() {
   // Server-side: if the user has a session, send them to the dashboard;

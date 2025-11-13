@@ -1,5 +1,8 @@
-// This is your Prisma schema file copied into src/prisma for the new layout.
-// Keep this in sync with the root prisma/schema.prisma if you change it.
+// This is your Prisma schema file,
+// learn more about it in the docs: https://pris.ly/d/prisma-schema
+
+// Looking for ways to speed up your queries, or scale easily with your serverless or edge functions?
+// Try Prisma Accelerate: https://pris.ly/cli/accelerate-init
 
 generator client {
   provider = "prisma-client-js"

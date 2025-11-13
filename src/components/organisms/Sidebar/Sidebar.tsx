@@ -17,7 +17,7 @@ import {
   PlugInIcon,
   TableIcon,
   ShootingStarIcon,
-} from "../../../../icons/index";
+} from "@/icons/index";
 
 function renderIcon(icon: any, name: string) {
   if (!icon) return null;
