@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { prisma } from "../../../../lib/prisma";
+import { prisma } from "@/lib/prisma";
 import crypto from "crypto";
 import nodemailer from "nodemailer";
 import { google } from "googleapis";
@@ -62,7 +62,7 @@ async function sendResetEmail(to: string, resetUrl: string) {
     subject: "GM Design Portal — Password reset",
     replyTo: GMAIL_USER, // replies will go to the actual mailbox that owns the OAuth token
     envelope: {
-      from: 'info@gmdesignusa.com',
+      from: "info@gmdesignusa.com",
       to,
     },
     html: `
@@ -72,7 +72,11 @@ async function sendResetEmail(to: string, resetUrl: string) {
     `,
   };
 
-  console.log("Sending reset email with From: info@gmdesignusa.com (reply-to:", GMAIL_USER, ")");
+  console.log(
+    "Sending reset email with From: info@gmdesignusa.com (reply-to:",
+    GMAIL_USER,
+    ")"
+  );
   const info = await transporter.sendMail(mailOptions);
   console.log("Reset email sent:", info?.messageId || info);
 }
