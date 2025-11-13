@@ -13,7 +13,7 @@ import {
 } from "lucide-react";
 import Image from "next/image";
 import { signOut } from "next-auth/react";
-import { useSidebar } from "../../../context/SidebarContext";
+import { useSidebar } from "@/context/SidebarContext";
 
 export default function Navbar({ user }: { user: any }) {
   const [darkMode, setDarkMode] = useState(false);

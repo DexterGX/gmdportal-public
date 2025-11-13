@@ -1,5 +1,6 @@
 // src/app/layout.tsx
 import "@/styles/globals.css";
+import React from "react";
 
 export const metadata = {
   title: "Dashboard",
@@ -13,8 +14,7 @@ export default function RootLayout({
 }) {
   return (
     <html lang="en">
-      {/* Use min-h-screen and ensure full width so flex children can size responsively */}
-      <body className="min-h-screen flex w-full">{children}</body>
+      <body className="min-h-screen w-full">{children}</body>
     </html>
   );
 }

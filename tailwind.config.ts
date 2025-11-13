@@ -2,7 +2,10 @@ import type { Config } from "tailwindcss";
 
 const config: Config = {
   darkMode: "class",
-  content: ["./app/**/*.{js,ts,jsx,tsx}", "./components/**/*.{js,ts,jsx,tsx}"],
+  content: [
+    "./src/app/**/*.{js,ts,jsx,tsx,mdx}",
+    "./src/components/**/*.{js,ts,jsx,tsx,mdx}",
+  ],
   theme: {
     extend: {
       colors: {
@@ -20,7 +23,8 @@ const config: Config = {
         xl: "1rem",
       },
       boxShadow: {
-        card: "0 1px px 0 rgba(0,0,0,0.1)",
+        // small typo fix: "px px" → "1px 2px"
+        card: "0 1px 2px 0 rgba(0,0,0,0.1)",
       },
     },
   },
