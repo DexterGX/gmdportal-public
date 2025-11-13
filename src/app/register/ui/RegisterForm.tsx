@@ -2,7 +2,6 @@
 
 import { useState, FormEvent } from "react";
 import { useRouter } from "next/navigation";
-import Link from "next/link";
 
 export default function RegisterForm() {
   const [name, setName] = useState("");

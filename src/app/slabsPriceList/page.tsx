@@ -1,9 +1,9 @@
 import { getServerSession } from "next-auth";
-import authOptions from "../../lib/auth";
+import authOptions from "@/lib/auth";
 import { redirect } from "next/navigation";
-import AppSidebar from "../../../components/Sidebar";
-import NavbarClient from "../../../components/NavbarClient";
-import { SidebarProvider } from "../../context/SidebarContext";
+import AppSidebar from "@/components/organisms/Sidebar/Sidebar";
+import NavbarClient from "@/components/organisms/Navbar/NavbarClient";
+import { SidebarProvider } from "@/context/SidebarContext";
 
 export default async function DashboardLayout({
   children,

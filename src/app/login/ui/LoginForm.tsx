@@ -2,7 +2,6 @@
 
 import { useState, FormEvent } from "react";
 import { signIn } from "next-auth/react";
-import Link from "next/link";
 
 export default function LoginForm() {
   const [identifier, setIdentifier] = useState("");
@@ -69,7 +68,9 @@ export default function LoginForm() {
         </button>
       </form>
 
-      <div className="my-4 text-center text-neutral-500 dark:text-neutral-400 text-sm">or</div>
+      <div className="my-4 text-center text-neutral-500 dark:text-neutral-400 text-sm">
+        or
+      </div>
 
       <button
         onClick={() => signIn("google", { callbackUrl: "/dashboard" })}
@@ -77,10 +78,22 @@ export default function LoginForm() {
       >
         <svg width="20" height="20" viewBox="0 0 20 20" fill="none">
           <g>
-            <path d="M19.6 10.23c0-.68-.06-1.36-.18-2H10v3.77h5.42a4.63 4.63 0 0 1-2 3.04v2.52h3.22c1.89-1.74 2.96-4.3 2.96-7.33z" fill="#4285F4" />
-            <path d="M10 20c2.7 0 4.97-.9 6.63-2.44l-3.22-2.52c-.89.6-2.03.96-3.41.96-2.62 0-4.84-1.77-5.63-4.15H1.05v2.6A10 10 0 0 0 10 20z" fill="#34A853" />
-            <path d="M4.37 11.85A5.99 5.99 0 0 1 4 10c0-.64.11-1.26.18-1.85V5.55H1.05A10 10 0 0 0 0 10c0 1.64.39 3.19 1.05 4.45l3.32-2.6z" fill="#FBBC05" />
-            <path d="M10 4.04c1.47 0 2.78.51 3.81 1.5l2.86-2.86C14.97 1.13 12.7 0 10 0A10 10 0 0 0 1.05 5.55l3.32 2.6C5.16 5.81 7.38 4.04 10 4.04z" fill="#EA4335" />
+            <path
+              d="M19.6 10.23c0-.68-.06-1.36-.18-2H10v3.77h5.42a4.63 4.63 0 0 1-2 3.04v2.52h3.22c1.89-1.74 2.96-4.3 2.96-7.33z"
+              fill="#4285F4"
+            />
+            <path
+              d="M10 20c2.7 0 4.97-.9 6.63-2.44l-3.22-2.52c-.89.6-2.03.96-3.41.96-2.62 0-4.84-1.77-5.63-4.15H1.05v2.6A10 10 0 0 0 10 20z"
+              fill="#34A853"
+            />
+            <path
+              d="M4.37 11.85A5.99 5.99 0 0 1 4 10c0-.64.11-1.26.18-1.85V5.55H1.05A10 10 0 0 0 0 10c0 1.64.39 3.19 1.05 4.45l3.32-2.6z"
+              fill="#FBBC05"
+            />
+            <path
+              d="M10 4.04c1.47 0 2.78.51 3.81 1.5l2.86-2.86C14.97 1.13 12.7 0 10 0A10 10 0 0 0 1.05 5.55l3.32 2.6C5.16 5.81 7.38 4.04 10 4.04z"
+              fill="#EA4335"
+            />
           </g>
         </svg>
         Sign in with Google

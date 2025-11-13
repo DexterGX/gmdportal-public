@@ -58,7 +58,8 @@ export default function ResetConfirmForm({ token }: { token: string }) {
       if (!res.ok) {
         setError(data?.message || "Failed to reset password");
       } else {
-        const successMsg = data?.message || "Password updated. You can now sign in.";
+        const successMsg =
+          data?.message || "Password updated. You can now sign in.";
         setMessage(successMsg);
 
         // Show a 5 second countdown in the UI, but actually redirect after 3 seconds
@@ -90,8 +91,12 @@ export default function ResetConfirmForm({ token }: { token: string }) {
   return (
     <div className="w-full max-w-md rounded-2xl bg-white dark:bg-neutral-900 p-8 shadow-xl ring-1 ring-neutral-200 dark:ring-neutral-800">
       <div className="flex flex-col items-center text-center mb-6">
-        <h2 className="text-2xl md:text-3xl font-bold text-neutral-900 dark:text-white">Set a new password</h2>
-        <p className="text-sm text-neutral-500 dark:text-neutral-400 mt-2">Enter your new password below.</p>
+        <h2 className="text-2xl md:text-3xl font-bold text-neutral-900 dark:text-white">
+          Set a new password
+        </h2>
+        <p className="text-sm text-neutral-500 dark:text-neutral-400 mt-2">
+          Enter your new password below.
+        </p>
       </div>
 
       <form onSubmit={handleSubmit} className="space-y-4">
@@ -116,16 +121,25 @@ export default function ResetConfirmForm({ token }: { token: string }) {
         {error && <p className="text-sm text-red-600">{error}</p>}
         {message && <p className="text-sm text-green-600">{message}</p>}
         {countdown !== null && (
-          <p className="text-sm text-neutral-600 mt-2">You will be redirected in {countdown} second{countdown === 1 ? "" : "s"}.</p>
+          <p className="text-sm text-neutral-600 mt-2">
+            You will be redirected in {countdown} second
+            {countdown === 1 ? "" : "s"}.
+          </p>
         )}
 
-        <button type="submit" disabled={loading} className="w-full rounded-lg bg-blue-600 text-white py-2 font-medium hover:bg-blue-700 disabled:opacity-50">
+        <button
+          type="submit"
+          disabled={loading}
+          className="w-full rounded-lg bg-blue-600 text-white py-2 font-medium hover:bg-blue-700 disabled:opacity-50"
+        >
           {loading ? "Saving..." : "Save new password"}
         </button>
       </form>
 
       <div className="mt-4 text-center text-sm">
-        <a href="/login" className="text-blue-600 hover:underline">Back to sign in</a>
+        <a href="/login" className="text-blue-600 hover:underline">
+          Back to sign in
+        </a>
       </div>
     </div>
   );
