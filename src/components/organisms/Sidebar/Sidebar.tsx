@@ -62,6 +62,11 @@ const navItems: NavItem[] = [
     path: "/slabsPriceList",
   },
   {
+    icon: CopyIcon,
+    name: "Store Stock",
+    path: "/store-stock",
+  },
+  {
     name: "Forms",
     icon: ListIcon,
     subItems: [{ name: "Form Elements", path: "/form-elements", pro: false }],

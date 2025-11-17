@@ -67,3 +67,30 @@ model VerificationToken {
 
   @@unique([identifier, token])
 }
+
+model StockItem {
+  id           String             @id @default(uuid())
+  name         String
+  category     String
+  unit         String
+  quantity     Int                @default(0)
+  minQuantity  Int                @default(0)
+  providor     String?
+  notes        String?
+  updatedById  String?
+  updatedAt    DateTime           @updatedAt
+  transactions StockTransaction[]
+}
+
+model StockTransaction {
+  id          String    @id @default(uuid())
+  itemId      String
+  userId      String?
+  change      Int
+  reason      String?
+  oldQuantity Int
+  newQuantity Int
+  createdAt   DateTime  @default(now())
+
+  item StockItem @relation(fields: [itemId], references: [id])
+}
