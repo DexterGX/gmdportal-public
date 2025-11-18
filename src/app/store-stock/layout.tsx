@@ -19,11 +19,13 @@ export default async function StoreStockLayout({
 
   return (
     <SidebarProvider>
-      <div className="min-h-screen flex bg-gray-100 dark:bg-neutral-900 w-full">
+      <div className="min-h-screen flex bg-gray-50 dark:bg-gray-900 w-full">
         <AppSidebar />
         <div className="flex-1 flex flex-col min-w-0">
           <NavbarClient user={user} />
-          <main className="p-6 overflow-auto min-w-0">{children}</main>
+          <main className="p-6 overflow-auto min-w-0 bg-gray-50 dark:bg-gray-900">
+            {children}
+          </main>
         </div>
       </div>
     </SidebarProvider>
