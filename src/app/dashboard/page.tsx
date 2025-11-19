@@ -1,8 +1,11 @@
-"use client";
-import { programs } from "@/lib/programsConfig";
 import Link from "next/link";
+import { Lock } from "lucide-react";
+import { programs, userHasAccessToProgram } from "@/lib/programsConfig";
+import { getCurrentUserRole } from "@/lib/authHelpers";
 
-export default function DashboardPage() {
+export default async function DashboardPage() {
+  const role = await getCurrentUserRole();
+
   // show all programs EXCEPT the "main" program itself
   const visiblePrograms = programs.filter((p) => p.id !== "main");
 
@@ -14,26 +17,63 @@ export default function DashboardPage() {
       <p className="text-sm text-gray-500 dark:text-gray-400">
         Choose a program to open.
       </p>
+
       <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
-        {visiblePrograms.map((program) => (
-          <Link
-            key={program.id}
-            href={program.basePath}
-            className="rounded-xl border border-gray-200 dark:border-gray-800 bg-white dark:bg-gray-900 p-4 hover:shadow-md transition shadow-sm flex flex-col justify-between"
-          >
-            <div>
-              <h2 className="text-lg font-medium mb-1 text-gray-800 dark:text-gray-200">
-                {program.name}
-              </h2>
-              <p className="text-xs text-gray-500 dark:text-gray-400">
-                {program.description}
-              </p>
+        {visiblePrograms.map((program) => {
+          const hasAccess = userHasAccessToProgram(program, role);
+          const cardClasses = hasAccess
+            ? "bg-white dark:bg-gray-900"
+            : "bg-gray-100 dark:bg-gray-800 opacity-80";
+
+          const card = (
+            <div
+              className={
+                "relative rounded-xl border border-gray-200 dark:border-gray-800 p-4 shadow-sm hover:shadow-md transition flex flex-col justify-between " +
+                cardClasses
+              }
+            >
+              {/* Lock overlay if user has no access */}
+              {!hasAccess && (
+                <div className="absolute inset-0 flex flex-col items-center justify-center bg-white/70 dark:bg-gray-900/70 rounded-xl pointer-events-none">
+                  <Lock className="w-8 h-8 mb-1 text-gray-700 dark:text-gray-200" />
+                  <span className="text-xs font-medium text-gray-700 dark:text-gray-200">
+                    No access
+                  </span>
+                </div>
+              )}
+
+              <div className={hasAccess ? "opacity-100" : "opacity-40"}>
+                <h2 className="text-lg font-medium mb-1 text-gray-800 dark:text-gray-200">
+                  {program.name}
+                </h2>
+                {program.description && (
+                  <p className="text-xs text-gray-500 dark:text-gray-400">
+                    {program.description}
+                  </p>
+                )}
+              </div>
+
+              <span
+                className={
+                  "mt-3 text-xs font-medium " +
+                  (hasAccess
+                    ? "text-blue-600 dark:text-blue-400"
+                    : "text-gray-400 dark:text-gray-500")
+                }
+              >
+                Open program →
+              </span>
             </div>
-            <span className="mt-3 text-xs text-blue-600 dark:text-blue-400 font-medium">
-              Open program →
-            </span>
-          </Link>
-        ))}
+          );
+
+          return hasAccess ? (
+            <Link key={program.id} href={program.basePath}>
+              {card}
+            </Link>
+          ) : (
+            <div key={program.id}>{card}</div>
+          );
+        })}
       </div>
     </div>
   );

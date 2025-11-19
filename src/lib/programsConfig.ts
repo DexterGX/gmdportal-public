@@ -10,6 +10,10 @@ import {
   BoxCubeIcon,
   PlugInIcon,
 } from "@/icons";
+import type { Role } from "@prisma/client"; // Prisma enum
+
+// App-facing roles (lowercase, string union)
+export type AppRole = "admin" | "inventory" | "sales" | "viewer" | "unassigned";
 
 export type ProgramId = "main" | "storeStock" | "slabs" | "users";
 
@@ -20,6 +24,7 @@ export interface ProgramConfig {
   basePath: string; // root path that identifies this program
   navItems: NavItem[]; // what should appear under "Menu" for this program
   othersItems: NavItem[]; // what should appear under "Others" for this program
+  allowedRoles?: AppRole[]; // if undefined => open to everyone
 }
 
 export const programs: ProgramConfig[] = [
@@ -47,6 +52,7 @@ export const programs: ProgramConfig[] = [
     name: "Store Stock",
     basePath: "/store-stock",
     description: "Manage LEDs, propane, tape, transformers and other items.",
+    allowedRoles: ["admin", "inventory"],
     navItems: [
       { icon: GridIcon, name: "Overview", path: "/store-stock" },
       { icon: ListIcon, name: "Movements", path: "/store-stock/movements" },
@@ -60,6 +66,7 @@ export const programs: ProgramConfig[] = [
     name: "Slabs Price List",
     basePath: "/slabsPriceList",
     description: "View and update slab pricing.",
+    allowedRoles: ["admin", "sales"],
     navItems: [
       { icon: GridIcon, name: "Price List", path: "/slabsPriceList" },
       {
@@ -75,6 +82,7 @@ export const programs: ProgramConfig[] = [
     name: "Users & Profiles",
     basePath: "/profile",
     description: "Manage internal users and permissions.",
+    allowedRoles: ["admin"],
     navItems: [
       { icon: ShootingStarIcon, name: "User Profiles", path: "/profile" },
     ],
@@ -98,4 +106,13 @@ export function getProgramForPath(pathname: string): ProgramConfig {
 
   // Default to main program
   return programs.find((p) => p.id === "main") || programs[0];
+}
+
+// Helper to check access for a given AppRole
+export function userHasAccessToProgram(
+  program: ProgramConfig,
+  role: AppRole
+): boolean {
+  if (!program.allowedRoles || program.allowedRoles.length === 0) return true;
+  return program.allowedRoles.includes(role);
 }
