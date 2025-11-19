@@ -4,6 +4,8 @@ import { redirect } from "next/navigation";
 import AppSidebar from "@/components/organisms/Sidebar/Sidebar";
 import NavbarClient from "@/components/organisms/Navbar/NavbarClient";
 import { SidebarProvider } from "@/context/SidebarContext";
+import { getCurrentUserRole } from "@/lib/authHelpers";
+import { programs, userHasAccessToProgram } from "@/lib/programsConfig";
 
 export default async function StoreStockLayout({
   children,
@@ -13,6 +15,15 @@ export default async function StoreStockLayout({
   const session = await getServerSession(authOptions);
   if (!session) {
     redirect("/api/auth/signin?callbackUrl=/store-stock");
+  }
+
+  // Check role-based access
+  const role = await getCurrentUserRole();
+  const program = programs.find((p) => p.id === "storeStock")!;
+  const hasAccess = userHasAccessToProgram(program, role);
+
+  if (!hasAccess) {
+    redirect("/dashboard");
   }
 
   const user = session?.user ?? null;
