@@ -5,8 +5,7 @@ import { redirect } from "next/navigation";
 import AppSidebar from "@/components/organisms/Sidebar/Sidebar";
 import NavbarClient from "@/components/organisms/Navbar/NavbarClient";
 import { SidebarProvider } from "@/context/SidebarContext";
-import { getCurrentUserRole } from "@/lib/authHelpers";
-import { programs, userHasAccessToProgram } from "@/lib/programsConfig";
+import { getCurrentUserWithRole } from "@/lib/authHelpers";
 
 export default async function ProfileLayout({
   children,
@@ -18,15 +17,18 @@ export default async function ProfileLayout({
     redirect("/api/auth/signin?callbackUrl=/profile");
   }
 
-  // Check role-based access (admin only)
-  const role = await getCurrentUserRole();
-  const program = programs.find((p) => p.id === "users")!;
-  const hasAccess = userHasAccessToProgram(program, role);
+  // Check if user is inactive or unassigned
+  const { appRole, isActive } = await getCurrentUserWithRole();
 
-  if (!hasAccess) {
-    redirect("/dashboard");
+  if (!isActive) {
+    redirect("/auth/status?reason=inactive");
   }
 
+  if (appRole === "unassigned") {
+    redirect("/auth/status?reason=unassigned");
+  }
+
+  // All logged-in active users can view profiles
   const user = session?.user ?? null;
 
   return (

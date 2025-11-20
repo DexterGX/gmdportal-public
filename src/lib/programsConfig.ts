@@ -82,9 +82,9 @@ export const programs: ProgramConfig[] = [
     name: "Users & Profiles",
     basePath: "/profile",
     description: "Manage internal users and permissions.",
-    allowedRoles: ["admin"],
+    // No allowedRoles restriction - all logged-in users can view profiles
     navItems: [
-      { icon: ShootingStarIcon, name: "User Profiles", path: "/profile" },
+      { icon: ShootingStarIcon, name: "Users Profiles", path: "/profile" },
     ],
     othersItems: [],
   },
@@ -113,6 +113,17 @@ export function userHasAccessToProgram(
   program: ProgramConfig,
   role: AppRole
 ): boolean {
+  if (!program.allowedRoles || program.allowedRoles.length === 0) return true;
+  return program.allowedRoles.includes(role);
+}
+
+// Helper to check access considering both role and active status
+export function userCanAccessProgram(
+  program: ProgramConfig,
+  role: AppRole,
+  isActive: boolean
+): boolean {
+  if (!isActive) return false;
   if (!program.allowedRoles || program.allowedRoles.length === 0) return true;
   return program.allowedRoles.includes(role);
 }
