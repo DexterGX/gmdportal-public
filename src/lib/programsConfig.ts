@@ -13,7 +13,32 @@ import {
 import type { Role } from "@prisma/client"; // Prisma enum
 
 // App-facing roles (lowercase, string union)
-export type AppRole = "admin" | "inventory" | "sales" | "viewer" | "unassigned";
+export type AppRole =
+  | "admin"
+  | "sales"
+  | "office"
+  | "finance"
+  | "specialist"
+  | "unassigned";
+
+// Map Prisma Role enum (ADMIN, SALES, ...) → AppRole string
+export function mapDbRoleToAppRole(dbRole: Role | null | undefined): AppRole {
+  switch (dbRole) {
+    case "ADMIN":
+      return "admin";
+    case "SALES":
+      return "sales";
+    case "OFFICE":
+      return "office";
+    case "FINANCE":
+      return "finance";
+    case "SPECIALIST":
+      return "specialist";
+    case "UNASSIGNED":
+    default:
+      return "unassigned";
+  }
+}
 
 export type ProgramId = "main" | "storeStock" | "slabs" | "users";
 
@@ -52,7 +77,7 @@ export const programs: ProgramConfig[] = [
     name: "Store Stock",
     basePath: "/store-stock",
     description: "Manage LEDs, propane, tape, transformers and other items.",
-    allowedRoles: ["admin", "inventory"],
+    allowedRoles: ["admin", "specialist"],
     navItems: [
       { icon: GridIcon, name: "Overview", path: "/store-stock" },
       { icon: ListIcon, name: "Movements", path: "/store-stock/movements" },
@@ -66,7 +91,7 @@ export const programs: ProgramConfig[] = [
     name: "Slabs Price List",
     basePath: "/slabsPriceList",
     description: "View and update slab pricing.",
-    allowedRoles: ["admin", "sales"],
+    allowedRoles: ["admin", "sales", "office", "finance"],
     navItems: [
       { icon: GridIcon, name: "Price List", path: "/slabsPriceList" },
       {
@@ -81,10 +106,10 @@ export const programs: ProgramConfig[] = [
     id: "users",
     name: "Users & Profiles",
     basePath: "/profile",
-    description: "Manage internal users and permissions.",
-    allowedRoles: ["admin"],
+    description: "View all users; admins can manage roles and access.",
+    allowedRoles: ["admin", "sales", "office", "finance", "specialist"],
     navItems: [
-      { icon: ShootingStarIcon, name: "User Profiles", path: "/profile" },
+      { icon: ShootingStarIcon, name: "Users Profiles", path: "/profile" },
     ],
     othersItems: [],
   },
@@ -113,6 +138,17 @@ export function userHasAccessToProgram(
   program: ProgramConfig,
   role: AppRole
 ): boolean {
+  if (!program.allowedRoles || program.allowedRoles.length === 0) return true;
+  return program.allowedRoles.includes(role);
+}
+
+// Helper to check access considering both role and active status
+export function userCanAccessProgram(
+  program: ProgramConfig,
+  role: AppRole,
+  isActive: boolean
+): boolean {
+  if (!isActive) return false;
   if (!program.allowedRoles || program.allowedRoles.length === 0) return true;
   return program.allowedRoles.includes(role);
 }

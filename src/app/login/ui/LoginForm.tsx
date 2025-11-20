@@ -3,7 +3,7 @@
 import { useState, FormEvent } from "react";
 import { signIn } from "next-auth/react";
 
-export default function LoginForm() {
+export default function LoginForm({ reason }: { reason?: string }) {
   const [identifier, setIdentifier] = useState("");
   const [password, setPassword] = useState("");
   const [loading, setLoading] = useState(false);
@@ -37,6 +37,31 @@ export default function LoginForm() {
           GM Design Portal
         </h2>
       </div>
+
+      {/* Status alerts based on reason */}
+      {reason === "inactive" && (
+        <div className="mb-4 p-3 rounded-lg bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800">
+          <p className="text-sm text-red-800 dark:text-red-200 font-medium">
+            Account Deactivated
+          </p>
+          <p className="text-xs text-red-700 dark:text-red-300 mt-1">
+            Your account is currently deactivated. Please contact an
+            administrator.
+          </p>
+        </div>
+      )}
+
+      {reason === "unassigned" && (
+        <div className="mb-4 p-3 rounded-lg bg-amber-50 dark:bg-amber-900/20 border border-amber-200 dark:border-amber-800">
+          <p className="text-sm text-amber-800 dark:text-amber-200 font-medium">
+            Account Pending Approval
+          </p>
+          <p className="text-xs text-amber-700 dark:text-amber-300 mt-1">
+            Your account has not been assigned a role yet. Please contact an
+            administrator.
+          </p>
+        </div>
+      )}
 
       <form onSubmit={handleSubmit} className="space-y-4">
         <input

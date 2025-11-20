@@ -1,10 +1,10 @@
 import Link from "next/link";
 import { Lock } from "lucide-react";
-import { programs, userHasAccessToProgram } from "@/lib/programsConfig";
-import { getCurrentUserRole } from "@/lib/authHelpers";
+import { programs, userCanAccessProgram } from "@/lib/programsConfig";
+import { getCurrentUserWithRole } from "@/lib/authHelpers";
 
 export default async function DashboardPage() {
-  const role = await getCurrentUserRole();
+  const { appRole, isActive } = await getCurrentUserWithRole();
 
   // show all programs EXCEPT the "main" program itself
   const visiblePrograms = programs.filter((p) => p.id !== "main");
@@ -20,7 +20,7 @@ export default async function DashboardPage() {
 
       <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
         {visiblePrograms.map((program) => {
-          const hasAccess = userHasAccessToProgram(program, role);
+          const hasAccess = userCanAccessProgram(program, appRole, isActive);
           const cardClasses = hasAccess
             ? "bg-white dark:bg-gray-900"
             : "bg-gray-100 dark:bg-gray-800 opacity-80";

@@ -4,6 +4,7 @@ import { redirect } from "next/navigation";
 import AppSidebar from "@/components/organisms/Sidebar/Sidebar";
 import NavbarClient from "@/components/organisms/Navbar/NavbarClient";
 import { SidebarProvider } from "@/context/SidebarContext";
+import { getCurrentUserWithRole } from "@/lib/authHelpers";
 
 export default async function DashboardLayout({
   children,
@@ -13,6 +14,17 @@ export default async function DashboardLayout({
   const session = await getServerSession(authOptions);
   if (!session) {
     redirect("/api/auth/signin?callbackUrl=/dashboard");
+  }
+
+  // Check if user is inactive or unassigned
+  const { appRole, isActive } = await getCurrentUserWithRole();
+
+  if (!isActive) {
+    redirect("/auth/status?reason=inactive");
+  }
+
+  if (appRole === "unassigned") {
+    redirect("/auth/status?reason=unassigned");
   }
 
   const user = session?.user ?? null;

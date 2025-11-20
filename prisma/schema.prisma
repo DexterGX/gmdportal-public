@@ -15,9 +15,10 @@ datasource db {
 
 enum Role {
   ADMIN
-  INVENTORY
   SALES
-  VIEWER
+  OFFICE
+  FINANCE
+  SPECIALIST
   UNASSIGNED
 }
 
@@ -38,6 +39,7 @@ model User {
 
   // Role-based access
   role              Role      @default(UNASSIGNED)
+  active            Boolean   @default(true)
 
   accounts          Account[]
   sessions          Session[]

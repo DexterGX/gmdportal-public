@@ -4,8 +4,8 @@ import { redirect } from "next/navigation";
 import AppSidebar from "@/components/organisms/Sidebar/Sidebar";
 import NavbarClient from "@/components/organisms/Navbar/NavbarClient";
 import { SidebarProvider } from "@/context/SidebarContext";
-import { getCurrentUserRole } from "@/lib/authHelpers";
-import { programs, userHasAccessToProgram } from "@/lib/programsConfig";
+import { getCurrentUserWithRole } from "@/lib/authHelpers";
+import { programs, userCanAccessProgram } from "@/lib/programsConfig";
 
 export default async function StoreStockLayout({
   children,
@@ -17,10 +17,20 @@ export default async function StoreStockLayout({
     redirect("/api/auth/signin?callbackUrl=/store-stock");
   }
 
+  // Check if user is inactive or unassigned
+  const { appRole, isActive } = await getCurrentUserWithRole();
+
+  if (!isActive) {
+    redirect("/auth/status?reason=inactive");
+  }
+
+  if (appRole === "unassigned") {
+    redirect("/auth/status?reason=unassigned");
+  }
+
   // Check role-based access
-  const role = await getCurrentUserRole();
   const program = programs.find((p) => p.id === "storeStock")!;
-  const hasAccess = userHasAccessToProgram(program, role);
+  const hasAccess = userCanAccessProgram(program, appRole, isActive);
 
   if (!hasAccess) {
     redirect("/dashboard");
