@@ -7,7 +7,7 @@ type UserDto = {
   name: string | null;
   email: string | null;
   image: string | null;
-  role: "ADMIN" | "INVENTORY" | "SALES" | "VIEWER" | "UNASSIGNED";
+  role: "ADMIN" | "SALES" | "OFFICE" | "FINANCE" | "SPECIALIST" | "UNASSIGNED";
   active: boolean;
 };
 
@@ -45,12 +45,14 @@ export default function UsersManagementClient({
     switch (role) {
       case "ADMIN":
         return "Admin";
-      case "INVENTORY":
-        return "Inventory";
       case "SALES":
         return "Sales";
-      case "VIEWER":
-        return "Viewer";
+      case "OFFICE":
+        return "Office";
+      case "FINANCE":
+        return "Finance";
+      case "SPECIALIST":
+        return "Specialist";
       case "UNASSIGNED":
       default:
         return "Unassigned";
@@ -107,9 +109,10 @@ export default function UsersManagementClient({
                     className="border border-gray-300 dark:border-gray-700 rounded-md px-2 py-1 text-xs bg-white dark:bg-gray-900 text-gray-800 dark:text-gray-200"
                   >
                     <option value="ADMIN">Admin</option>
-                    <option value="INVENTORY">Inventory</option>
                     <option value="SALES">Sales</option>
-                    <option value="VIEWER">Viewer</option>
+                    <option value="OFFICE">Office</option>
+                    <option value="FINANCE">Finance</option>
+                    <option value="SPECIALIST">Specialist</option>
                     <option value="UNASSIGNED">Unassigned</option>
                   </select>
                 ) : (

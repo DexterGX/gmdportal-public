@@ -13,7 +13,13 @@ export async function POST(req: Request) {
   const body = await req.json();
   const { userId, role, active } = body as {
     userId: string;
-    role?: "ADMIN" | "INVENTORY" | "SALES" | "VIEWER" | "UNASSIGNED";
+    role?:
+      | "ADMIN"
+      | "SALES"
+      | "OFFICE"
+      | "FINANCE"
+      | "SPECIALIST"
+      | "UNASSIGNED";
     active?: boolean;
   };
 

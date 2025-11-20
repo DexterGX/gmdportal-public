@@ -2,23 +2,7 @@ import { getServerSession } from "next-auth";
 import { authOptions } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import type { AppRole } from "./programsConfig";
-
-// Map Prisma Role enum ("ADMIN", "INVENTORY", etc.) to AppRole
-function mapDbRoleToAppRole(dbRole: string | null | undefined): AppRole {
-  switch (dbRole) {
-    case "ADMIN":
-      return "admin";
-    case "INVENTORY":
-      return "inventory";
-    case "SALES":
-      return "sales";
-    case "VIEWER":
-      return "viewer";
-    case "UNASSIGNED":
-    default:
-      return "unassigned";
-  }
-}
+import { mapDbRoleToAppRole } from "./programsConfig";
 
 export async function getCurrentUserRole(): Promise<AppRole> {
   const { appRole, isActive } = await getCurrentUserWithRole();
