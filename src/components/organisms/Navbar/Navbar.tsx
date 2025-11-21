@@ -86,18 +86,24 @@ export default function Navbar({ user }: { user: any }) {
             className="outline-none bg-gray-50 dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-md px-3 py-1 text-sm text-gray-800 dark:text-gray-200 w-full"
           />
           {searchFocused && filteredPrograms.length > 0 && (
-            <div className="absolute top-full left-0 z-50 mt-1 w-full bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-md shadow-lg text-sm">
+            <div
+              className="absolute top-full left-0 z-50 mt-1 w-full bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-md shadow-lg text-sm"
+              onMouseDown={(e) => {
+                // Prevent the input's onBlur from firing when interacting with dropdown
+                e.preventDefault();
+              }}
+            >
               {filteredPrograms.map((program) => (
-                <button
+                <a
                   key={program.id}
-                  type="button"
-                  onMouseDown={(e) => {
+                  href={program.basePath}
+                  onClick={(e) => {
                     e.preventDefault();
                     router.push(program.basePath);
                     setSearchTerm("");
                     setSearchFocused(false);
                   }}
-                  className="w-full text-left px-3 py-2 hover:bg-gray-50 dark:hover:bg-gray-700 transition"
+                  className="block px-3 py-2 hover:bg-gray-50 dark:hover:bg-gray-700 transition"
                 >
                   <div className="font-medium text-gray-800 dark:text-gray-100">
                     {program.name}
@@ -107,7 +113,7 @@ export default function Navbar({ user }: { user: any }) {
                       {program.description}
                     </div>
                   )}
-                </button>
+                </a>
               ))}
             </div>
           )}
