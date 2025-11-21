@@ -1,35 +1,27 @@
-import { getServerSession } from "next-auth";
-import authOptions from "@/lib/auth";
-import { redirect } from "next/navigation";
-import AppSidebar from "@/components/organisms/Sidebar/Sidebar";
-import NavbarClient from "@/components/organisms/Navbar/NavbarClient";
-import { SidebarProvider } from "@/context/SidebarContext";
+"use client";
 
-export default async function DashboardLayout({
-  children,
-}: {
-  children: React.ReactNode;
-}) {
-  // (debug logging removed)
-  const session = await getServerSession(authOptions);
-  if (!session) {
-    // redirect to next-auth sign in (keeps callback to dashboard)
-    redirect("/api/auth/signin?callbackUrl=/dashboard");
-  }
+import { usePathname } from "next/navigation";
+import SlabsOverview from "./ui/SlabsOverview";
+import PromotionalSlabs from "./ui/PromotionalSlabs";
+import SlabAvailability from "./ui/SlabAvailability";
 
-  const user = session?.user ?? null;
+export default function SlabsPriceListPage() {
+  const pathname = usePathname();
 
-  // Render full dashboard layout with Sidebar and Navbar
+  // Determine active section based on pathname
+  const getActiveSection = () => {
+    if (pathname === "/slabsPriceList/promotional") return "promotional";
+    if (pathname === "/slabsPriceList/availability") return "availability";
+    return "overview";
+  };
+
+  const activeSection = getActiveSection();
+
   return (
-    <SidebarProvider>
-      <div className="min-h-screen flex bg-gray-100 dark:bg-neutral-900 w-full">
-        <AppSidebar />
-        {/* Ensure the main flex column can shrink: min-w-0 allows children (like responsive charts) to measure correctly */}
-        <div className="flex-1 flex flex-col min-w-0">
-          <NavbarClient user={user} />
-          <main className="p-6 overflow-auto min-w-0">{children}</main>
-        </div>
-      </div>
-    </SidebarProvider>
+    <div className="min-h-full">
+      {activeSection === "overview" && <SlabsOverview />}
+      {activeSection === "promotional" && <PromotionalSlabs />}
+      {activeSection === "availability" && <SlabAvailability />}
+    </div>
   );
 }

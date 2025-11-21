@@ -10,6 +10,7 @@ import {
   BoxCubeIcon,
   PlugInIcon,
 } from "@/icons";
+import { TicketPercent } from "lucide-react";
 import type { Role } from "@prisma/client"; // Prisma enum
 
 // App-facing roles (lowercase, string union)
@@ -93,11 +94,16 @@ export const programs: ProgramConfig[] = [
     description: "View and update slab pricing.",
     allowedRoles: ["admin", "sales", "office", "finance"],
     navItems: [
-      { icon: GridIcon, name: "Price List", path: "/slabsPriceList" },
+      { icon: GridIcon, name: "Overview", path: "/slabsPriceList" },
       {
-        icon: CopyIcon,
-        name: "Import / Export",
-        path: "/slabsPriceList/import-export",
+        icon: TicketPercent,
+        name: "Promotional Slabs",
+        path: "/slabsPriceList/promotional",
+      },
+      {
+        icon: ListIcon,
+        name: "Availability",
+        path: "/slabsPriceList/availability",
       },
     ],
     othersItems: [],
