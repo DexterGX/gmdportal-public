@@ -4,9 +4,6 @@ import { Suspense, useState } from "react";
 import { useSearchParams } from "next/navigation";
 import { signOut } from "next-auth/react";
 
-// Force dynamic rendering since we use searchParams
-export const dynamic = "force-dynamic";
-
 function AuthStatusContent() {
   const searchParams = useSearchParams();
   const reason = searchParams.get("reason") || "inactive"; // default
