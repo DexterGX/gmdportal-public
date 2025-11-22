@@ -1,10 +1,10 @@
 "use client";
 
-import { useState } from "react";
+import { Suspense, useState } from "react";
 import { useSearchParams } from "next/navigation";
 import { signOut } from "next-auth/react";
 
-export default function AuthStatusPage() {
+function AuthStatusContent() {
   const searchParams = useSearchParams();
   const reason = searchParams.get("reason") || "inactive"; // default
   const [isLoggingOut, setIsLoggingOut] = useState(false);
@@ -53,5 +53,17 @@ export default function AuthStatusPage() {
         </button>
       </div>
     </div>
+  );
+}
+
+export default function AuthStatusPage() {
+  return (
+    <Suspense fallback={
+      <div className="min-h-screen flex items-center justify-center bg-gray-50 dark:bg-gray-900">
+        <div className="text-gray-600 dark:text-gray-300">Loading...</div>
+      </div>
+    }>
+      <AuthStatusContent />
+    </Suspense>
   );
 }
