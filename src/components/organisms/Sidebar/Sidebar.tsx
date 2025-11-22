@@ -11,10 +11,10 @@ import { HorizontaLDots } from "@/icons/index";
 function renderIcon(icon: any, name: string) {
   if (!icon) return null;
   if (typeof icon === "object" && icon.src) {
-    return <img src={icon.src} alt={name} className="w-5 h-5" />;
+    return <Image src={icon.src} alt={name} width={20} height={20} />;
   }
   if (typeof icon === "string") {
-    return <img src={icon} alt={name} className="w-5 h-5" />;
+    return <Image src={icon} alt={name} width={20} height={20} />;
   }
   if (typeof icon === "function" || React.isValidElement(icon)) {
     const IconComp = icon as any;

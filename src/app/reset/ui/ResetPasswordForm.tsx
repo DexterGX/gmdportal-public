@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, FormEvent } from "react";
+import Image from "next/image";
 
 export default function ResetPasswordForm() {
   const [email, setEmail] = useState("");
@@ -46,7 +47,14 @@ export default function ResetPasswordForm() {
   return (
     <div className="w-full max-w-md rounded-2xl bg-white dark:bg-neutral-900 p-8 shadow-xl ring-1 ring-neutral-200 dark:ring-neutral-800">
       <div className="flex flex-col items-center text-center mb-6">
-        <img src="/logo.svg" alt="GM Design" className="h-12 mb-2" />
+        <Image
+          src="/logo.svg"
+          alt="GM Design"
+          width={48}
+          height={48}
+          className="mb-2"
+          priority
+        />
         <h2 className="text-2xl md:text-3xl font-bold text-neutral-900 dark:text-white">
           Reset your password
         </h2>

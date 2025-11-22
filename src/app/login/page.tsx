@@ -1,3 +1,4 @@
+import Image from "next/image";
 import LoginForm from "./ui/LoginForm";
 
 export default function Page({
@@ -14,10 +15,13 @@ export default function Page({
 
         <div className="hidden md:flex min-h-screen items-center justify-center px-6 md:px-12">
           <div className="flex flex-col items-center justify-center p-8">
-            <img
+            <Image
               src="/logo.svg"
               alt="GM Design"
-              className="h-90 md:h-90 mb-2"
+              width={360}
+              height={360}
+              className="mb-2"
+              priority
             />
           </div>
         </div>
