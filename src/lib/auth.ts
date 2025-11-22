@@ -3,7 +3,7 @@ import { prisma } from "@/lib/prisma";
 import type { NextAuthOptions } from "next-auth";
 import GoogleProvider from "next-auth/providers/google";
 import CredentialsProvider from "next-auth/providers/credentials";
-import bcrypt from "bcrypt";
+import bcrypt from "bcryptjs";
 
 const THIRTY_DAYS = 30 * 24 * 60 * 60;
 
