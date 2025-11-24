@@ -7,6 +7,7 @@ import { useSidebar } from "@/context/SidebarContext";
 import { NavItem } from "@/lib/navigationTypes";
 import { getProgramForPath } from "@/lib/programsConfig";
 import { HorizontaLDots } from "@/icons/index";
+import type { AppRole } from "@/lib/programsConfig";
 
 function renderIcon(icon: any, name: string) {
   if (!icon) return null;
@@ -27,7 +28,7 @@ function renderIcon(icon: any, name: string) {
   return null;
 }
 
-const AppSidebar: React.FC = () => {
+const AppSidebar: React.FC<{ userRole?: AppRole }> = ({ userRole }) => {
   const {
     isExpanded,
     isMobileOpen,
@@ -40,7 +41,15 @@ const AppSidebar: React.FC = () => {
 
   // Get the current program based on pathname
   const program = getProgramForPath(pathname);
-  const navItems = program.navItems;
+
+  // Filter nav items based on user role - hide adminOnly items for non-admins
+  const navItems = program.navItems.filter(
+    (item) => !item.adminOnly || userRole === "admin"
+  );
+
+  // Split items into regular and admin-only for grouping
+  const regularItems = navItems.filter((item) => !item.adminOnly);
+  const adminItems = navItems.filter((item) => item.adminOnly);
 
   const renderMenuItems = (
     navItems: NavItem[],
@@ -299,8 +308,24 @@ const AppSidebar: React.FC = () => {
                     ? "Menu"
                     : renderIcon(HorizontaLDots, "dots")}
                 </h2>
-                {renderMenuItems(navItems, "main")}
+                {renderMenuItems(regularItems, "main")}
               </div>
+              {adminItems.length > 0 && (
+                <div className="mt-2">
+                  <h2
+                    className={`mb-4 text-xs uppercase flex leading-[20px] text-gray-400 ${
+                      !isExpanded && !isHovered
+                        ? "lg:justify-center"
+                        : "justify-start"
+                    }`}
+                  >
+                    {isExpanded || isHovered || isMobileOpen
+                      ? "Admin"
+                      : renderIcon(HorizontaLDots, "dots")}
+                  </h2>
+                  {renderMenuItems(adminItems, "main")}
+                </div>
+              )}
             </div>
           </nav>
         </div>

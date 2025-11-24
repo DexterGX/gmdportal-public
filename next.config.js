@@ -12,6 +12,21 @@ const nextConfig = {
       },
     ],
   },
+  webpack: (config, { isServer }) => {
+    // Fix for Prisma Client with Next.js - handle node: protocol imports
+    if (isServer) {
+      config.externals.push("@prisma/client");
+    }
+
+    // Handle node:async_hooks and other node: imports
+    config.resolve.fallback = {
+      ...config.resolve.fallback,
+      "node:async_hooks": false,
+      async_hooks: false,
+    };
+
+    return config;
+  },
 };
 
 module.exports = nextConfig;

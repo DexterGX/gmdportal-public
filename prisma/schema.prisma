@@ -107,3 +107,95 @@ model StockTransaction {
 
   item StockItem @relation(fields: [itemId], references: [id])
 }
+
+// ======================================================================
+// SLAB MANAGEMENT MODELS
+// ======================================================================
+
+enum SlabThickness {
+  EIGHT_MM
+  TWELVE_MM
+  TWO_CM
+  THREE_CM
+}
+
+enum SlabStatus {
+  AVAILABLE
+  UNAVAILABLE
+  DISCONTINUED
+}
+
+enum SlabFinish {
+  CONCRETE
+  HONED
+  LEATHER
+  MATTE
+  NATURAL
+  OTHER
+  POLISHED
+  ROUGH
+  STONE
+  ULTRA_ROUGH
+  SATIN
+  SATIN_HONED
+  PATINATO
+  LEVIGATO_PEARL
+  GLAM
+  GINZA
+  HOLOS
+  TWILL
+  JUTA
+  DENIM
+  DAMIER
+  LAVA
+}
+
+model SlabBrandConfig {
+  id             String   @id @default(cuid())
+  brandNumber    Int?     @unique // Numeric brand ID
+  name           String          // "Caesarstone", "Silestone", etc.
+  gmdBrandId     String?         // optional internal code
+
+  profitFactor   Decimal @db.Decimal(10, 4) // e.g. 1.3500
+  taxRate        Decimal @db.Decimal(5, 4)  // e.g. 0.0700 (7%)
+  deliveryFee    Decimal @db.Decimal(10, 2) // flat fee per slab
+  discount       Decimal @db.Decimal(10, 4) // optional discount factor
+
+  lastUpdate     DateTime? @db.Timestamptz
+
+  contactName    String?
+  contactNumber  String?  // office phone
+  contactCell    String?  // cell / WhatsApp
+  contactEmail   String?
+
+  slabs          Slab[]
+
+  createdAt      DateTime @default(now()) @db.Timestamptz
+  updatedAt      DateTime @updatedAt @db.Timestamptz
+}
+
+model Slab {
+  id             String   @id @default(cuid())
+  slabNumber     Int?     @unique // Numeric slab ID
+  gmdId          String?        // optional internal GM Design ID
+
+  brand          SlabBrandConfig @relation(fields: [brandId], references: [id])
+  brandId        String
+
+  series         String?
+  providerCode   String         // code from provider price list
+  color          String
+  finish         SlabFinish
+
+  widthIn        Decimal  @db.Decimal(6, 2) // Width in inches
+  heightIn       Decimal  @db.Decimal(6, 2) // Height in inches
+  thickness      SlabThickness
+
+  status         SlabStatus @default(AVAILABLE)
+
+  providerPrice  Decimal @db.Decimal(10, 2) // raw price from provider
+  finalPrice     Decimal @db.Decimal(10, 2) // computed sale price
+
+  createdAt      DateTime @default(now()) @db.Timestamptz
+  updatedAt      DateTime @updatedAt @db.Timestamptz
+}

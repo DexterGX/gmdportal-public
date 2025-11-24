@@ -10,7 +10,7 @@ import {
   BoxCubeIcon,
   PlugInIcon,
 } from "@/icons";
-import { TicketPercent } from "lucide-react";
+import { TicketPercent, Settings2, Table2 } from "lucide-react";
 import type { Role } from "@prisma/client"; // Prisma enum
 
 // App-facing roles (lowercase, string union)
@@ -104,6 +104,18 @@ export const programs: ProgramConfig[] = [
         icon: ListIcon,
         name: "Availability",
         path: "/slabsPriceList/availability",
+      },
+      {
+        icon: Settings2,
+        name: "Brand Settings",
+        path: "/slabsPriceList/admin/brands",
+        adminOnly: true,
+      },
+      {
+        icon: Table2,
+        name: "Slab Data",
+        path: "/slabsPriceList/admin/slabs",
+        adminOnly: true,
       },
     ],
     othersItems: [],
