@@ -1,16 +1,17 @@
 import Image from "next/image";
 import LoginForm from "./ui/LoginForm";
 
-export default function Page({
+export default async function Page({
   searchParams,
 }: {
-  searchParams: { reason?: string };
+  searchParams: Promise<{ reason?: string }>;
 }) {
+  const { reason } = await searchParams;
   return (
     <main className="min-h-screen w-full p-4">
       <div className="w-full grid grid-cols-1 md:grid-cols-2">
         <div className="min-h-screen flex items-center justify-center px-6 md:px-12 md:border-r md:border-neutral-200 dark:md:border-neutral-800">
-          <LoginForm reason={searchParams.reason} />
+          <LoginForm reason={reason} />
         </div>
 
         <div className="hidden md:flex min-h-screen items-center justify-center px-6 md:px-12">

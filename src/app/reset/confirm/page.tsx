@@ -1,14 +1,14 @@
 import ResetConfirmForm from "./ResetConfirmForm";
 
-export default function Page({
+export default async function Page({
   searchParams,
 }: {
-  searchParams?: { token?: string };
+  searchParams: Promise<{ token?: string }>;
 }) {
-  const token = searchParams?.token || "";
+  const { token } = await searchParams;
   return (
     <main className="min-h-screen w-full grid place-items-center p-4">
-      <ResetConfirmForm token={token} />
+      <ResetConfirmForm token={token || ""} />
     </main>
   );
 }
