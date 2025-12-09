@@ -117,6 +117,12 @@ export const programs: ProgramConfig[] = [
         path: "/slabsPriceList/admin/slabs",
         adminOnly: true,
       },
+      {
+        icon: PageIcon,
+        name: "Import / Export",
+        path: "/slabsPriceList/admin/import",
+        adminOnly: true,
+      },
     ],
     othersItems: [],
   },

@@ -1,7 +1,7 @@
 "use client";
 
 import { usePathname } from "next/navigation";
-import SlabsOverview from "./ui/SlabsOverview";
+import SlabsOverviewDynamic from "./ui/SlabsOverviewDynamic";
 import PromotionalSlabs from "./ui/PromotionalSlabs";
 import SlabAvailability from "./ui/SlabAvailability";
 
@@ -19,7 +19,7 @@ export default function SlabsPriceListPage() {
 
   return (
     <div className="min-h-full">
-      {activeSection === "overview" && <SlabsOverview />}
+      {activeSection === "overview" && <SlabsOverviewDynamic />}
       {activeSection === "promotional" && <PromotionalSlabs />}
       {activeSection === "availability" && <SlabAvailability />}
     </div>

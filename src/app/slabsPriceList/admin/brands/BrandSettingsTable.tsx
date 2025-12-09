@@ -8,6 +8,7 @@ type BrandSettingsRow = {
   id: string;
   brandNumber: number | null;
   brandName: string;
+  logoUrl: string | null;
   factor: number;
   tax: number;
   freight: number;
@@ -36,6 +37,7 @@ export default function BrandSettingsTable({
   const [hasChanges, setHasChanges] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
   const [searchQuery, setSearchQuery] = useState("");
+  const [uploadingLogoFor, setUploadingLogoFor] = useState<string | null>(null);
 
   // Unsaved changes protection
   useEffect(() => {
@@ -69,6 +71,7 @@ export default function BrandSettingsTable({
       id: `new-${Date.now()}`,
       brandNumber: null, // Let server assign ID to avoid duplicates
       brandName: "",
+      logoUrl: null,
       factor: 1.0,
       tax: 1.07, // Tax factor style (not percentage)
       freight: 0,
@@ -83,6 +86,42 @@ export default function BrandSettingsTable({
     };
     setRows((prev) => [...prev, newRow]);
     setHasChanges(true);
+  };
+
+  const handleLogoChange = async (
+    brandId: string,
+    e: React.ChangeEvent<HTMLInputElement>
+  ) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    
+    setUploadingLogoFor(brandId);
+    try {
+      const formData = new FormData();
+      formData.append("brandId", brandId);
+      formData.append("file", file);
+
+      const res = await fetch("/api/slabs/admin/brand-logo-upload", {
+        method: "POST",
+        body: formData,
+      });
+
+      if (!res.ok) {
+        throw new Error("Failed to upload logo");
+      }
+
+      const data = (await res.json()) as { logoUrl: string };
+
+      // Update local brand state with new logoUrl
+      setRows((prev) =>
+        prev.map((b) => (b.id === brandId ? { ...b, logoUrl: data.logoUrl } : b))
+      );
+    } catch (error) {
+      console.error("Logo upload error:", error);
+      alert("Failed to upload logo");
+    } finally {
+      setUploadingLogoFor(null);
+    }
   };
 
   const handleDelete = (id: string) => {
@@ -237,6 +276,7 @@ export default function BrandSettingsTable({
               <tr>
                 <th className="px-4 py-3 text-left font-medium">Brand ID</th>
                 <th className="px-4 py-3 text-left font-medium">Brand</th>
+                <th className="px-4 py-3 text-left font-medium">Logo</th>
                 <th className="px-4 py-3 text-left font-medium">Factor</th>
                 <th className="px-4 py-3 text-left font-medium">Tax Factor</th>
                 <th className="px-4 py-3 text-left font-medium">Freight</th>
@@ -289,6 +329,27 @@ export default function BrandSettingsTable({
                         {row.brandName}
                       </span>
                     )}
+                  </td>
+                  <td className="px-4 py-3">
+                    <div className="flex items-center gap-2">
+                      {row.logoUrl && (
+                        <img
+                          src={row.logoUrl}
+                          alt={`${row.brandName} logo`}
+                          className="h-10 w-10 rounded object-cover"
+                        />
+                      )}
+                      <label className="cursor-pointer text-sm text-blue-600 dark:text-blue-400 hover:underline">
+                        {uploadingLogoFor === row.id ? "Uploading..." : "Upload"}
+                        <input
+                          type="file"
+                          accept="image/*"
+                          className="hidden"
+                          onChange={(e) => handleLogoChange(row.id, e)}
+                          disabled={uploadingLogoFor === row.id}
+                        />
+                      </label>
+                    </div>
                   </td>
                   <td className="px-4 py-3">
                     {isEditing ? (

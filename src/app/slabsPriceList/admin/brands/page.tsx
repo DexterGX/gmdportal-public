@@ -30,6 +30,7 @@ export default async function BrandSettingsPage() {
     id: brand.id,
     brandNumber: brand.brandNumber,
     brandName: brand.name,
+    logoUrl: brand.logoUrl,
     factor: parseFloat(brand.profitFactor.toString()),
     tax: 1 + parseFloat(brand.taxRate.toString()), // Convert to factor (0.07 → 1.07)
     freight: parseFloat(brand.deliveryFee.toString()),

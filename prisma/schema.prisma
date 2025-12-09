@@ -168,6 +168,7 @@ model SlabBrandConfig {
   contactNumber  String?  // office phone
   contactCell    String?  // cell / WhatsApp
   contactEmail   String?
+  logoUrl        String?  // public URL for brand logo
 
   slabs          Slab[]
 
