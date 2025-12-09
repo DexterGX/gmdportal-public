@@ -127,6 +127,7 @@ enum SlabStatus {
 
 enum SlabFinish {
   CONCRETE
+  DUAL
   HONED
   LEATHER
   MATTE

@@ -1,7 +1,7 @@
 "use client";
 
 import React, { useState, useEffect } from "react";
-import { Save, X, Edit, Plus, Search } from "lucide-react";
+import { Save, X, Edit, Plus, Search, Trash2 } from "lucide-react";
 
 // Type matching the new schema structure
 type BrandSettingsRow = {
@@ -19,6 +19,7 @@ type BrandSettingsRow = {
   lastUpdated: string | null;
   _dirty?: boolean;
   _isNew?: boolean;
+  _deleted?: boolean;
 };
 
 interface BrandSettingsTableProps {
@@ -66,10 +67,10 @@ export default function BrandSettingsTable({
   const handleAddNew = () => {
     const newRow: BrandSettingsRow = {
       id: `new-${Date.now()}`,
-      brandNumber: null,
+      brandNumber: null, // Let server assign ID to avoid duplicates
       brandName: "",
       factor: 1.0,
-      tax: 0.07,
+      tax: 1.07, // Tax factor style (not percentage)
       freight: 0,
       discount: 0,
       contactName: null,
@@ -82,6 +83,32 @@ export default function BrandSettingsTable({
     };
     setRows((prev) => [...prev, newRow]);
     setHasChanges(true);
+  };
+
+  const handleDelete = (id: string) => {
+    if (!confirm("Are you sure you want to delete this brand?")) return;
+
+    setRows((prev) =>
+      prev.map((row) =>
+        row.id === id ? { ...row, _deleted: true, _dirty: true } : row
+      )
+    );
+    setHasChanges(true);
+  };
+
+  const handleKeyDown = (
+    e: React.KeyboardEvent<HTMLInputElement>,
+    rowId: string,
+    isLastCell: boolean
+  ) => {
+    if (e.key === "Enter" && isLastCell) {
+      e.preventDefault();
+      const rowIndex = rows.findIndex((r) => r.id === rowId);
+      const isLastRow = rowIndex === rows.length - 1;
+      if (isLastRow) {
+        handleAddNew();
+      }
+    }
   };
 
   const handleCancel = () => {
@@ -98,7 +125,9 @@ export default function BrandSettingsTable({
   };
 
   const handleSave = async () => {
-    const changedRows = rows.filter((row) => row._dirty || row._isNew);
+    const changedRows = rows.filter(
+      (row) => row._dirty || row._isNew || row._deleted
+    );
     if (changedRows.length === 0) return;
 
     setIsSaving(true);
@@ -116,11 +145,12 @@ export default function BrandSettingsTable({
 
       const { brands: updatedBrands } = await response.json();
 
-      setRows(updatedBrands);
-      setOriginalRows(updatedBrands);
       setHasChanges(false);
       setIsEditing(false);
       alert("Changes saved successfully!");
+
+      // Reload page to fetch fresh data from server
+      window.location.reload();
     } catch (error: any) {
       alert(`Error saving changes: ${error.message}`);
     } finally {
@@ -128,9 +158,11 @@ export default function BrandSettingsTable({
     }
   };
 
-  // Filter rows by search query
-  const filteredRows = rows.filter((row) =>
-    row.brandName.toLowerCase().includes(searchQuery.toLowerCase())
+  // Filter rows by search query and exclude deleted rows
+  const filteredRows = rows.filter(
+    (row) =>
+      !row._deleted &&
+      row.brandName.toLowerCase().includes(searchQuery.toLowerCase())
   );
 
   return (
@@ -206,7 +238,7 @@ export default function BrandSettingsTable({
                 <th className="px-4 py-3 text-left font-medium">Brand ID</th>
                 <th className="px-4 py-3 text-left font-medium">Brand</th>
                 <th className="px-4 py-3 text-left font-medium">Factor</th>
-                <th className="px-4 py-3 text-left font-medium">Tax</th>
+                <th className="px-4 py-3 text-left font-medium">Tax Factor</th>
                 <th className="px-4 py-3 text-left font-medium">Freight</th>
                 <th className="px-4 py-3 text-left font-medium">Discount</th>
                 <th className="px-4 py-3 text-left font-medium">
@@ -222,6 +254,9 @@ export default function BrandSettingsTable({
                 <th className="px-4 py-3 text-left font-medium">
                   Last Updated
                 </th>
+                {isEditing && (
+                  <th className="px-4 py-3 text-left font-medium w-16"></th>
+                )}
               </tr>
             </thead>
             <tbody className="divide-y divide-gray-200 dark:divide-gray-700">
@@ -235,24 +270,9 @@ export default function BrandSettingsTable({
                   } hover:bg-gray-50 dark:hover:bg-gray-700/50`}
                 >
                   <td className="px-4 py-3">
-                    {isEditing ? (
-                      <input
-                        type="number"
-                        value={row.brandNumber ?? ""}
-                        onChange={(e) =>
-                          handleFieldChange(
-                            row.id,
-                            "brandNumber",
-                            e.target.value ? parseInt(e.target.value) : null
-                          )
-                        }
-                        className="w-20 px-2 py-1 border border-gray-300 dark:border-gray-600 rounded bg-white dark:bg-gray-800 text-gray-900 dark:text-white focus:ring-2 focus:ring-blue-500"
-                      />
-                    ) : (
-                      <span className="text-gray-900 dark:text-white">
-                        {row.brandNumber ?? "—"}
-                      </span>
-                    )}
+                    <span className="text-gray-900 dark:text-white">
+                      {row.brandNumber ?? "—"}
+                    </span>
                   </td>
                   <td className="px-4 py-3">
                     {isEditing ? (
@@ -296,19 +316,20 @@ export default function BrandSettingsTable({
                       <input
                         type="number"
                         step="0.0001"
+                        placeholder="1.07"
                         value={row.tax}
                         onChange={(e) =>
                           handleFieldChange(
                             row.id,
                             "tax",
-                            parseFloat(e.target.value) || 0
+                            parseFloat(e.target.value) || 1
                           )
                         }
                         className="w-24 px-2 py-1 border border-gray-300 dark:border-gray-600 rounded bg-white dark:bg-gray-800 text-gray-900 dark:text-white focus:ring-2 focus:ring-blue-500"
                       />
                     ) : (
                       <span className="text-gray-900 dark:text-white">
-                        {(row.tax * 100).toFixed(2)}%
+                        {row.tax.toFixed(4)}
                       </span>
                     )}
                   </td>
@@ -426,6 +447,7 @@ export default function BrandSettingsTable({
                             e.target.value || null
                           )
                         }
+                        onKeyDown={(e) => handleKeyDown(e, row.id, true)}
                         className="w-full px-2 py-1 border border-gray-300 dark:border-gray-600 rounded bg-white dark:bg-gray-800 text-gray-900 dark:text-white focus:ring-2 focus:ring-blue-500"
                       />
                     ) : (
@@ -439,13 +461,24 @@ export default function BrandSettingsTable({
                       ? new Date(row.lastUpdated).toLocaleDateString()
                       : "—"}
                   </td>
+                  {isEditing && (
+                    <td className="px-4 py-3">
+                      <button
+                        onClick={() => handleDelete(row.id)}
+                        className="text-gray-400 hover:text-red-600 dark:hover:text-red-400 transition-colors"
+                        title="Delete brand"
+                      >
+                        <Trash2 className="w-4 h-4" />
+                      </button>
+                    </td>
+                  )}
                 </tr>
               ))}
 
               {/* Add New Row */}
               {isEditing && (
                 <tr className="bg-blue-50 dark:bg-blue-900/10 border-t-2 border-blue-200 dark:border-blue-800">
-                  <td colSpan={11} className="px-4 py-3">
+                  <td colSpan={12} className="px-4 py-3">
                     <button
                       onClick={handleAddNew}
                       className="flex items-center gap-2 text-blue-600 dark:text-blue-400 hover:text-blue-700 dark:hover:text-blue-300 font-medium"

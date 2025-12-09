@@ -10,7 +10,11 @@ import {
   ChevronUp,
   ChevronDown,
   Filter,
+  Trash2,
 } from "lucide-react";
+import MultiSelectDropdown, {
+  MultiSelectOption,
+} from "../../ui/MultiSelectDropdown";
 
 type ThicknessOption = "8mm" | "12mm" | "2cm" | "3cm";
 type SlabStatusOption = "AVAILABLE" | "UNAVAILABLE" | "DISCONTINUED";
@@ -32,6 +36,7 @@ type AdminSlabRow = {
   status: SlabStatusOption;
   _dirty?: boolean;
   _isNew?: boolean;
+  _deleted?: boolean;
 };
 
 type SlabBrand = {
@@ -66,14 +71,14 @@ export default function SlabsAdminTable({
   const [hasChanges, setHasChanges] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
 
-  // Search and filters
+  // Search and filters - changed to multi-select arrays
   const [searchQuery, setSearchQuery] = useState("");
-  const [filterBrand, setFilterBrand] = useState<string>("");
-  const [filterSeries, setFilterSeries] = useState<string>("");
-  const [filterFinish, setFilterFinish] = useState<string>("");
-  const [filterHxW, setFilterHxW] = useState<string>("");
-  const [filterThickness, setFilterThickness] = useState<string>("");
-  const [filterStatus, setFilterStatus] = useState<string>("");
+  const [filterBrands, setFilterBrands] = useState<string[]>([]);
+  const [filterSeries, setFilterSeries] = useState<string[]>([]);
+  const [filterFinishes, setFilterFinishes] = useState<string[]>([]);
+  const [filterHxWs, setFilterHxWs] = useState<string[]>([]);
+  const [filterThicknesses, setFilterThicknesses] = useState<string[]>([]);
+  const [filterStatuses, setFilterStatuses] = useState<string[]>([]);
 
   // Sorting
   const [sortColumn, setSortColumn] = useState<SortColumn>("color");
@@ -122,7 +127,7 @@ export default function SlabsAdminTable({
   const handleAddNew = () => {
     const newRow: AdminSlabRow = {
       id: `new-${Date.now()}`,
-      slabNumber: null,
+      slabNumber: null, // Let server assign ID to avoid duplicates
       brand: brands[0]?.name || "",
       brandId: brands[0]?.id || "",
       series: null,
@@ -142,6 +147,32 @@ export default function SlabsAdminTable({
     setHasChanges(true);
   };
 
+  const handleDelete = (id: string) => {
+    if (!confirm("Are you sure you want to delete this slab?")) return;
+
+    setRows((prev) =>
+      prev.map((row) =>
+        row.id === id ? { ...row, _deleted: true, _dirty: true } : row
+      )
+    );
+    setHasChanges(true);
+  };
+
+  const handleKeyDown = (
+    e: React.KeyboardEvent<HTMLInputElement | HTMLSelectElement>,
+    rowId: string,
+    isLastCell: boolean
+  ) => {
+    if (e.key === "Enter" && isLastCell) {
+      e.preventDefault();
+      const rowIndex = rows.findIndex((r) => r.id === rowId);
+      const isLastRow = rowIndex === rows.length - 1;
+      if (isLastRow) {
+        handleAddNew();
+      }
+    }
+  };
+
   const handleCancel = () => {
     if (hasChanges && !confirm("Discard all unsaved changes?")) {
       return;
@@ -156,7 +187,9 @@ export default function SlabsAdminTable({
   };
 
   const handleSave = async () => {
-    const changedRows = rows.filter((row) => row._dirty || row._isNew);
+    const changedRows = rows.filter(
+      (row) => row._dirty || row._isNew || row._deleted
+    );
     if (changedRows.length === 0) return;
 
     setIsSaving(true);
@@ -174,11 +207,12 @@ export default function SlabsAdminTable({
 
       const { slabs: updatedSlabs } = await response.json();
 
-      setRows(updatedSlabs);
-      setOriginalRows(updatedSlabs);
       setHasChanges(false);
       setIsEditing(false);
       alert("Changes saved successfully!");
+
+      // Reload page to fetch fresh data from server
+      window.location.reload();
     } catch (error: any) {
       alert(`Error saving changes: ${error.message}`);
     } finally {
@@ -203,17 +237,17 @@ export default function SlabsAdminTable({
 
   const clearFilters = () => {
     setSearchQuery("");
-    setFilterBrand("");
-    setFilterSeries("");
-    setFilterFinish("");
-    setFilterHxW("");
-    setFilterThickness("");
-    setFilterStatus("");
+    setFilterBrands([]);
+    setFilterSeries([]);
+    setFilterFinishes([]);
+    setFilterHxWs([]);
+    setFilterThicknesses([]);
+    setFilterStatuses([]);
   };
 
   // Apply filters and sorting
   const filteredAndSortedRows = useMemo(() => {
-    let filtered = rows;
+    let filtered = rows.filter((row) => !row._deleted); // Exclude deleted rows
 
     // Search by color
     if (searchQuery) {
@@ -222,26 +256,30 @@ export default function SlabsAdminTable({
       );
     }
 
-    // Apply filters
-    if (filterBrand) {
-      filtered = filtered.filter((row) => row.brand === filterBrand);
+    // Apply multi-select filters
+    if (filterBrands.length > 0) {
+      filtered = filtered.filter((row) => filterBrands.includes(row.brand));
     }
-    if (filterSeries) {
-      filtered = filtered.filter((row) => row.series === filterSeries);
-    }
-    if (filterFinish) {
-      filtered = filtered.filter((row) => row.finish === filterFinish);
-    }
-    if (filterHxW) {
+    if (filterSeries.length > 0) {
       filtered = filtered.filter(
-        (row) => `${row.heightIn} x ${row.widthIn} in` === filterHxW
+        (row) => row.series && filterSeries.includes(row.series)
       );
     }
-    if (filterThickness) {
-      filtered = filtered.filter((row) => row.thickness === filterThickness);
+    if (filterFinishes.length > 0) {
+      filtered = filtered.filter((row) => filterFinishes.includes(row.finish));
     }
-    if (filterStatus) {
-      filtered = filtered.filter((row) => row.status === filterStatus);
+    if (filterHxWs.length > 0) {
+      filtered = filtered.filter((row) =>
+        filterHxWs.includes(`${row.heightIn} x ${row.widthIn} in`)
+      );
+    }
+    if (filterThicknesses.length > 0) {
+      filtered = filtered.filter((row) =>
+        filterThicknesses.includes(row.thickness)
+      );
+    }
+    if (filterStatuses.length > 0) {
+      filtered = filtered.filter((row) => filterStatuses.includes(row.status));
     }
 
     // Sort
@@ -272,12 +310,12 @@ export default function SlabsAdminTable({
   }, [
     rows,
     searchQuery,
-    filterBrand,
+    filterBrands,
     filterSeries,
-    filterFinish,
-    filterHxW,
-    filterThickness,
-    filterStatus,
+    filterFinishes,
+    filterHxWs,
+    filterThicknesses,
+    filterStatuses,
     sortColumn,
     sortDirection,
   ]);
@@ -349,93 +387,60 @@ export default function SlabsAdminTable({
         </div>
 
         {/* Filters */}
-        <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-3">
-          <select
-            value={filterBrand}
-            onChange={(e) => setFilterBrand(e.target.value)}
-            className="px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-800 text-gray-900 dark:text-white text-sm focus:ring-2 focus:ring-blue-500"
-          >
-            <option value="">All Brands</option>
-            {brands.map((brand) => (
-              <option key={brand.id} value={brand.name}>
-                {brand.name}
-              </option>
-            ))}
-          </select>
+        <div className="flex flex-wrap gap-3">
+          <MultiSelectDropdown
+            label="Brand"
+            options={brands.map((b) => ({ value: b.name, label: b.name }))}
+            selectedValues={filterBrands}
+            onChange={setFilterBrands}
+          />
 
-          <select
-            value={filterSeries}
-            onChange={(e) => setFilterSeries(e.target.value)}
-            className="px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-800 text-gray-900 dark:text-white text-sm focus:ring-2 focus:ring-blue-500"
-          >
-            <option value="">All Series</option>
-            {uniqueSeries.map((series) => (
-              <option key={series} value={series}>
-                {series}
-              </option>
-            ))}
-          </select>
+          <MultiSelectDropdown
+            label="Series"
+            options={uniqueSeries.map((s) => ({ value: s, label: s }))}
+            selectedValues={filterSeries}
+            onChange={setFilterSeries}
+          />
 
-          <select
-            value={filterFinish}
-            onChange={(e) => setFilterFinish(e.target.value)}
-            className="px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-800 text-gray-900 dark:text-white text-sm focus:ring-2 focus:ring-blue-500"
-          >
-            <option value="">All Finishes</option>
-            {finishes.map((finish) => (
-              <option key={finish} value={finish}>
-                {finish.replace("_", " ")}
-              </option>
-            ))}
-          </select>
+          <MultiSelectDropdown
+            label="Finish"
+            options={finishes.map((f) => ({
+              value: f,
+              label: f.replace("_", " "),
+            }))}
+            selectedValues={filterFinishes}
+            onChange={setFilterFinishes}
+          />
 
-          <select
-            value={filterHxW}
-            onChange={(e) => setFilterHxW(e.target.value)}
-            className="px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-800 text-gray-900 dark:text-white text-sm focus:ring-2 focus:ring-blue-500"
-          >
-            <option value="">All Sizes</option>
-            {uniqueHxW.map((hxw) => (
-              <option key={hxw} value={hxw}>
-                {hxw}
-              </option>
-            ))}
-          </select>
+          <MultiSelectDropdown
+            label="Size"
+            options={uniqueHxW.map((h) => ({ value: h, label: h }))}
+            selectedValues={filterHxWs}
+            onChange={setFilterHxWs}
+          />
 
-          <select
-            value={filterThickness}
-            onChange={(e) => setFilterThickness(e.target.value)}
-            className="px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-800 text-gray-900 dark:text-white text-sm focus:ring-2 focus:ring-blue-500"
-          >
-            <option value="">All Thicknesses</option>
-            {THICKNESS_OPTIONS.map((thickness) => (
-              <option key={thickness} value={thickness}>
-                {thickness}
-              </option>
-            ))}
-          </select>
+          <MultiSelectDropdown
+            label="Thickness"
+            options={THICKNESS_OPTIONS.map((t) => ({ value: t, label: t }))}
+            selectedValues={filterThicknesses}
+            onChange={setFilterThicknesses}
+          />
 
-          <select
-            value={filterStatus}
-            onChange={(e) => setFilterStatus(e.target.value)}
-            className="px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-800 text-gray-900 dark:text-white text-sm focus:ring-2 focus:ring-blue-500"
-          >
-            <option value="">All Statuses</option>
-            {STATUS_OPTIONS.map((status) => (
-              <option key={status} value={status}>
-                {status}
-              </option>
-            ))}
-          </select>
+          <MultiSelectDropdown
+            label="Status"
+            options={STATUS_OPTIONS.map((s) => ({ value: s, label: s }))}
+            selectedValues={filterStatuses}
+            onChange={setFilterStatuses}
+          />
         </div>
 
         {(searchQuery ||
-          filterBrand ||
-          filterSeries ||
-          filterFinish ||
-          filterHxW ||
-          filterThickness ||
-          filterStatus) && (
+          filterBrands.length > 0 ||
+          filterSeries.length > 0 ||
+          filterFinishes.length > 0 ||
+          filterHxWs.length > 0 ||
+          filterThicknesses.length > 0 ||
+          filterStatuses.length > 0) && (
           <button
             onClick={clearFilters}
             className="mt-3 text-sm text-blue-600 dark:text-blue-400 hover:text-blue-700 dark:hover:text-blue-300 font-medium"
@@ -525,6 +530,9 @@ export default function SlabsAdminTable({
                 >
                   Status <SortIcon column="status" />
                 </th>
+                {isEditing && (
+                  <th className="px-3 py-3 text-left font-medium w-16"></th>
+                )}
               </tr>
             </thead>
             <tbody className="divide-y divide-gray-200 dark:divide-gray-700">
@@ -538,24 +546,9 @@ export default function SlabsAdminTable({
                   } hover:bg-gray-50 dark:hover:bg-gray-700/50`}
                 >
                   <td className="px-3 py-3">
-                    {isEditing ? (
-                      <input
-                        type="number"
-                        value={row.slabNumber ?? ""}
-                        onChange={(e) =>
-                          handleFieldChange(
-                            row.id,
-                            "slabNumber",
-                            e.target.value ? parseInt(e.target.value) : null
-                          )
-                        }
-                        className="w-20 px-2 py-1 border border-gray-300 dark:border-gray-600 rounded bg-white dark:bg-gray-800 text-gray-900 dark:text-white focus:ring-2 focus:ring-blue-500"
-                      />
-                    ) : (
-                      <span className="text-gray-900 dark:text-white">
-                        {row.slabNumber ?? "—"}
-                      </span>
-                    )}
+                    <span className="text-gray-900 dark:text-white">
+                      {row.slabNumber ?? "—"}
+                    </span>
                   </td>
                   <td className="px-3 py-3">
                     {isEditing ? (
@@ -770,6 +763,7 @@ export default function SlabsAdminTable({
                             e.target.value as SlabStatusOption
                           )
                         }
+                        onKeyDown={(e) => handleKeyDown(e, row.id, true)}
                         className="w-full px-2 py-1 border border-gray-300 dark:border-gray-600 rounded bg-white dark:bg-gray-800 text-gray-900 dark:text-white focus:ring-2 focus:ring-blue-500"
                       >
                         {STATUS_OPTIONS.map((status) => (
@@ -792,13 +786,24 @@ export default function SlabsAdminTable({
                       </span>
                     )}
                   </td>
+                  {isEditing && (
+                    <td className="px-3 py-3">
+                      <button
+                        onClick={() => handleDelete(row.id)}
+                        className="text-gray-400 hover:text-red-600 dark:hover:text-red-400 transition-colors"
+                        title="Delete slab"
+                      >
+                        <Trash2 className="w-4 h-4" />
+                      </button>
+                    </td>
+                  )}
                 </tr>
               ))}
 
               {/* Add New Row */}
               {isEditing && (
                 <tr className="bg-blue-50 dark:bg-blue-900/10 border-t-2 border-blue-200 dark:border-blue-800">
-                  <td colSpan={11} className="px-3 py-3">
+                  <td colSpan={12} className="px-3 py-3">
                     <button
                       onClick={handleAddNew}
                       className="flex items-center gap-2 text-blue-600 dark:text-blue-400 hover:text-blue-700 dark:hover:text-blue-300 font-medium"

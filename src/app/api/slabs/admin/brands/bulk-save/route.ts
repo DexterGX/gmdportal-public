@@ -35,16 +35,36 @@ export async function POST(req: NextRequest) {
     const savedBrands = [];
 
     for (const brand of brands) {
+      // Handle deletions
+      if (brand._deleted) {
+        if (!brand._isNew && brand.id && !brand.id.startsWith("new-")) {
+          await prisma.slabBrandConfig.delete({
+            where: { id: brand.id },
+          });
+        }
+        continue; // Skip adding to savedBrands
+      }
+
       let savedBrand;
 
       if (brand._isNew || !brand.id || brand.id.startsWith("new-")) {
-        // Create new brand
+        // Auto-assign brandNumber if null
+        let brandNumber = brand.brandNumber;
+        if (!brandNumber) {
+          const maxBrand = await prisma.slabBrandConfig.findFirst({
+            orderBy: { brandNumber: "desc" },
+            select: { brandNumber: true },
+          });
+          brandNumber = (maxBrand?.brandNumber ?? 0) + 1;
+        }
+
+        // Create new brand - convert tax factor to rate (1.07 → 0.07)
         savedBrand = await prisma.slabBrandConfig.create({
           data: {
-            brandNumber: brand.brandNumber,
+            brandNumber: brandNumber,
             name: brand.brandName,
             profitFactor: new Decimal(brand.factor),
-            taxRate: new Decimal(brand.tax),
+            taxRate: new Decimal(brand.tax - 1), // Convert factor to rate
             deliveryFee: new Decimal(brand.freight),
             discount: new Decimal(brand.discount),
             lastUpdate: new Date(),
@@ -55,14 +75,14 @@ export async function POST(req: NextRequest) {
           },
         });
       } else {
-        // Update existing brand
+        // Update existing brand - convert tax factor to rate (1.07 → 0.07)
         savedBrand = await prisma.slabBrandConfig.update({
           where: { id: brand.id },
           data: {
             brandNumber: brand.brandNumber,
             name: brand.brandName,
             profitFactor: new Decimal(brand.factor),
-            taxRate: new Decimal(brand.tax),
+            taxRate: new Decimal(brand.tax - 1), // Convert factor to rate
             deliveryFee: new Decimal(brand.freight),
             discount: new Decimal(brand.discount),
             lastUpdate: new Date(),
@@ -74,13 +94,13 @@ export async function POST(req: NextRequest) {
         });
       }
 
-      // Transform back to UI format
+      // Transform back to UI format - convert tax rate to factor (0.07 → 1.07)
       savedBrands.push({
         id: savedBrand.id,
         brandNumber: savedBrand.brandNumber,
         brandName: savedBrand.name,
         factor: parseFloat(savedBrand.profitFactor.toString()),
-        tax: parseFloat(savedBrand.taxRate.toString()),
+        tax: 1 + parseFloat(savedBrand.taxRate.toString()), // Convert to factor
         freight: parseFloat(savedBrand.deliveryFee.toString()),
         discount: parseFloat(savedBrand.discount.toString()),
         contactName: savedBrand.contactName,

@@ -59,6 +59,16 @@ export async function POST(req: NextRequest) {
     const savedSlabs = [];
 
     for (const slab of slabs) {
+      // Handle deletions
+      if (slab._deleted) {
+        if (!slab._isNew && slab.id && !slab.id.startsWith("new-")) {
+          await prisma.slab.delete({
+            where: { id: slab.id },
+          });
+        }
+        continue; // Skip adding to savedSlabs
+      }
+
       // Fetch brand config for finalPrice calculation
       const brandConfig = await prisma.slabBrandConfig.findUnique({
         where: { id: slab.brandId },
@@ -78,10 +88,20 @@ export async function POST(req: NextRequest) {
       let savedSlab;
 
       if (slab._isNew || !slab.id || slab.id.startsWith("new-")) {
+        // Auto-assign slabNumber if null
+        let slabNumber = slab.slabNumber;
+        if (!slabNumber) {
+          const maxSlab = await prisma.slab.findFirst({
+            orderBy: { slabNumber: "desc" },
+            select: { slabNumber: true },
+          });
+          slabNumber = (maxSlab?.slabNumber ?? 0) + 1;
+        }
+
         // Create new slab
         savedSlab = await prisma.slab.create({
           data: {
-            slabNumber: slab.slabNumber,
+            slabNumber: slabNumber,
             brandId: slab.brandId,
             series: slab.series,
             providerCode: slab.code,
