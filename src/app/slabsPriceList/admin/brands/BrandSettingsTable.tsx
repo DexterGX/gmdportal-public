@@ -94,7 +94,7 @@ export default function BrandSettingsTable({
   ) => {
     const file = e.target.files?.[0];
     if (!file) return;
-    
+
     setUploadingLogoFor(brandId);
     try {
       const formData = new FormData();
@@ -114,7 +114,9 @@ export default function BrandSettingsTable({
 
       // Update local brand state with new logoUrl
       setRows((prev) =>
-        prev.map((b) => (b.id === brandId ? { ...b, logoUrl: data.logoUrl } : b))
+        prev.map((b) =>
+          b.id === brandId ? { ...b, logoUrl: data.logoUrl } : b
+        )
       );
     } catch (error) {
       console.error("Logo upload error:", error);
@@ -340,7 +342,9 @@ export default function BrandSettingsTable({
                         />
                       )}
                       <label className="cursor-pointer text-sm text-blue-600 dark:text-blue-400 hover:underline">
-                        {uploadingLogoFor === row.id ? "Uploading..." : "Upload"}
+                        {uploadingLogoFor === row.id
+                          ? "Uploading..."
+                          : "Upload"}
                         <input
                           type="file"
                           accept="image/*"

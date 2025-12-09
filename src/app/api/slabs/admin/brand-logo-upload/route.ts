@@ -27,7 +27,14 @@ export async function POST(request: Request) {
     const brandId = formData.get("brandId") as string | null;
     const file = formData.get("file");
 
-    console.log("Upload attempt - brandId:", brandId, "file type:", typeof file, "file:", file);
+    console.log(
+      "Upload attempt - brandId:",
+      brandId,
+      "file type:",
+      typeof file,
+      "file:",
+      file
+    );
 
     if (!brandId || !file) {
       return NextResponse.json(
@@ -38,7 +45,12 @@ export async function POST(request: Request) {
 
     // Ensure file is a Blob/File
     if (!(file instanceof Blob)) {
-      console.error("File is not a Blob. Type:", typeof file, "Constructor:", file?.constructor?.name);
+      console.error(
+        "File is not a Blob. Type:",
+        typeof file,
+        "Constructor:",
+        file?.constructor?.name
+      );
       return NextResponse.json(
         { error: `Invalid file format. Received: ${typeof file}` },
         { status: 400 }
@@ -50,9 +62,7 @@ export async function POST(request: Request) {
     const buffer = Buffer.from(bytes);
 
     // Generate unique filename
-    const fileName = file instanceof File && file.name 
-      ? file.name 
-      : 'logo.png';
+    const fileName = file instanceof File && file.name ? file.name : "logo.png";
     const ext = fileName.split(".").pop() ?? "png";
     const uniqueFileName = `${brandId}-${Date.now()}.${ext}`;
     const uploadDir = path.join(process.cwd(), "public", "slab-logos");
