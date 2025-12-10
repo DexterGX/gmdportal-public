@@ -29,8 +29,8 @@ export async function GET() {
       series: slab.series || undefined,
       finish: slab.finish.toLowerCase().replace(/_/g, " "),
       thickness: formatThickness(slab.thickness),
-      size: `${Math.round(slab.heightIn * 25.4)}x${Math.round(
-        slab.widthIn * 25.4
+      size: `${Math.round(slab.heightIn.toNumber() * 25.4)}x${Math.round(
+        slab.widthIn.toNumber() * 25.4
       )}mm`,
       isPromo: false, // TODO: Add promo field to schema if needed
       stockQty: 1, // TODO: Implement actual stock tracking
