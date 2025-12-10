@@ -9,9 +9,7 @@ export async function GET() {
   try {
     const slabs = await prisma.slab.findMany({
       where: {
-        status: {
-          in: ["AVAILABLE", "PROMO"],
-        },
+        status: "AVAILABLE",
       },
       include: {
         brand: {
