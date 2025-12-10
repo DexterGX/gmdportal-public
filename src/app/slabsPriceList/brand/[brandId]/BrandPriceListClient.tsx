@@ -241,12 +241,6 @@ export default function BrandPriceListClient({ brand, filterOptions }: Props) {
             <thead className="bg-gray-50 dark:bg-gray-900 border-b border-gray-200 dark:border-gray-700">
               <tr>
                 <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">
-                  Slab ID
-                </th>
-                <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">
-                  Brand
-                </th>
-                <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">
                   Series
                 </th>
                 <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">
@@ -276,7 +270,7 @@ export default function BrandPriceListClient({ brand, filterOptions }: Props) {
               {filteredSlabs.length === 0 ? (
                 <tr>
                   <td
-                    colSpan={10}
+                    colSpan={8}
                     className="px-4 py-8 text-center text-gray-500 dark:text-gray-400"
                   >
                     {searchTerm
@@ -286,19 +280,11 @@ export default function BrandPriceListClient({ brand, filterOptions }: Props) {
                 </tr>
               ) : (
                 filteredSlabs.map((slab) => {
-                  const displayId = slab.slabNumber || slab.id;
-
                   return (
                     <tr
                       key={slab.id}
                       className="hover:bg-gray-50 dark:hover:bg-gray-900/50 transition-colors"
                     >
-                      <td className="px-4 py-3 text-sm text-gray-900 dark:text-gray-100">
-                        {displayId}
-                      </td>
-                      <td className="px-4 py-3 text-sm text-gray-600 dark:text-gray-400">
-                        {brand.name}
-                      </td>
                       <td className="px-4 py-3 text-sm text-gray-600 dark:text-gray-400">
                         {slab.series || "—"}
                       </td>

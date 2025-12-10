@@ -12,10 +12,10 @@ import { Decimal } from "@prisma/client/runtime/library";
  * Computes the final sale price for a slab based on provider price and brand config.
  *
  * Formula:
- *   1. base = providerPrice * profitFactor
- *   2. withTax = base * (1 + taxRate)
- *   3. withDelivery = withTax + deliveryFee
- *   4. final = withDelivery * (1 - discount)
+ *   1. base = providerPrice * (1 - discount)
+ *   2. factor = base * profitFactor
+ *   3. withTax = factor * (1 + taxRate)
+ *   4. final = withTax + deliveryFee
  *
  * @param providerPrice - The raw price from the provider
  * @param brand - Brand configuration containing pricing factors
@@ -35,10 +35,10 @@ export function computeFinalPrice(
   const deliveryFee = brand.deliveryFee ?? new Decimal(0);
   const discount = brand.discount ?? new Decimal(0);
 
-  const base = price.mul(profitFactor);
-  const withTax = base.mul(Decimal.add(1, taxRate));
-  const withDelivery = withTax.add(deliveryFee);
-  const final = withDelivery.mul(Decimal.sub(1, discount));
+  const base = price.mul(Decimal.sub(1, discount));
+  const factor = base.mul(profitFactor);
+  const withTax = factor.mul(Decimal.add(1, taxRate));
+  const final = withTax.add(deliveryFee);
 
   return final;
 }
@@ -91,16 +91,16 @@ export function computePriceBreakdown(
   const deliveryFee = brand.deliveryFee ?? new Decimal(0);
   const discount = brand.discount ?? new Decimal(0);
 
-  const base = price.mul(profitFactor);
-  const withTax = base.mul(Decimal.add(1, taxRate));
-  const withDelivery = withTax.add(deliveryFee);
-  const final = withDelivery.mul(Decimal.sub(1, discount));
+  const base = price.mul(Decimal.sub(1, discount));
+  const factor = base.mul(profitFactor);
+  const withTax = factor.mul(Decimal.add(1, taxRate));
+  const final = withTax.add(deliveryFee);
 
   return {
     providerPrice: price,
     basePrice: base,
+    factorPrice: factor,
     priceWithTax: withTax,
-    priceWithDelivery: withDelivery,
     finalPrice: final,
     breakdown: {
       profitFactor: profitFactor.toNumber(),

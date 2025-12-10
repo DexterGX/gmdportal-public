@@ -42,7 +42,7 @@ export default function SlabsOverviewDynamic() {
             Overview
           </h1>
           <p className="text-gray-600 dark:text-gray-400 mt-1">
-            Select a slab provider to view or manage pricing.
+            Select a slab provider to view pricing.
           </p>
         </div>
         <div className="bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 p-8">
@@ -65,7 +65,7 @@ export default function SlabsOverviewDynamic() {
             Overview
           </h1>
           <p className="text-gray-600 dark:text-gray-400 mt-1">
-            Select a slab provider to view or manage pricing.
+            Select a slab provider to view pricing.
           </p>
         </div>
         <div className="bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 rounded-xl p-4">
@@ -82,7 +82,7 @@ export default function SlabsOverviewDynamic() {
           Overview
         </h1>
         <p className="text-gray-600 dark:text-gray-400 mt-1">
-          Select a slab provider to view or manage pricing.
+          Select a slab provider to view pricing.
         </p>
       </div>
 
@@ -121,9 +121,6 @@ export default function SlabsOverviewDynamic() {
                 <h3 className="text-lg font-semibold text-slate-900 dark:text-gray-100">
                   {brand.name}
                 </h3>
-                <p className="text-sm text-slate-500 dark:text-gray-400">
-                  Quartz surfaces
-                </p>
                 <button
                   type="button"
                   className="mt-2 text-sm font-medium text-sky-600 dark:text-blue-400 hover:text-sky-700 dark:hover:text-blue-300 text-left"
