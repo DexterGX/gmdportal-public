@@ -39,7 +39,7 @@ model User {
 
   // Role-based access
   role              Role      @default(UNASSIGNED)
-  active            Boolean   @default(true)
+  active            Boolean   @default(false)
 
   accounts          Account[]
   sessions          Session[]

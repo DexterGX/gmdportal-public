@@ -5,7 +5,11 @@ import UsersManagementClient from "./UsersManagementClient";
 export default async function ProfilePage() {
   const { appRole, isActive } = await getCurrentUserWithRole();
 
+  const isAdmin = appRole === "admin";
+
+  // Admins see all users, non-admins only see active users
   const users = await prisma.user.findMany({
+    where: isAdmin ? undefined : { active: true },
     orderBy: { name: "asc" },
     select: {
       id: true,
@@ -17,7 +21,6 @@ export default async function ProfilePage() {
     },
   });
 
-  const isAdmin = appRole === "admin";
   const canManage = isAdmin && isActive;
 
   return (
