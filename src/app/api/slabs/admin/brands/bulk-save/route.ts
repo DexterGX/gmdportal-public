@@ -4,6 +4,46 @@ import authOptions from "@/lib/auth";
 import { getCurrentUserWithRole } from "@/lib/authHelpers";
 import { prisma } from "@/lib/prisma";
 import { Decimal } from "@prisma/client/runtime/library";
+import { computeFinalPrice } from "@/lib/slabsPricing";
+
+/**
+ * Recalculate final prices for all slabs of a brand
+ */
+async function recalcSlabPricesForBrand(brandId: string) {
+  const brand = await prisma.slabBrandConfig.findUnique({
+    where: { id: brandId },
+    select: {
+      id: true,
+      profitFactor: true,
+      taxRate: true,
+      deliveryFee: true,
+      discount: true,
+    },
+  });
+  if (!brand) return;
+
+  const slabs = await prisma.slab.findMany({
+    where: { brandId: brand.id },
+    select: {
+      id: true,
+      providerPrice: true,
+    },
+  });
+
+  // Update all slab prices
+  const updates = slabs.map((slab) => {
+    const finalPrice = computeFinalPrice(slab.providerPrice, brand);
+
+    return prisma.slab.update({
+      where: { id: slab.id },
+      data: { finalPrice },
+    });
+  });
+
+  if (updates.length > 0) {
+    await prisma.$transaction(updates);
+  }
+}
 
 export async function POST(req: NextRequest) {
   try {
@@ -33,6 +73,7 @@ export async function POST(req: NextRequest) {
     }
 
     const savedBrands = [];
+    const updatedBrandIds: string[] = [];
 
     for (const brand of brands) {
       // Handle deletions
@@ -94,6 +135,8 @@ export async function POST(req: NextRequest) {
         });
       }
 
+      updatedBrandIds.push(savedBrand.id);
+
       // Transform back to UI format - convert tax rate to factor (0.07 → 1.07)
       savedBrands.push({
         id: savedBrand.id,
@@ -111,6 +154,11 @@ export async function POST(req: NextRequest) {
           ? savedBrand.lastUpdate.toISOString()
           : null,
       });
+    }
+
+    // Recalculate slab prices for all updated brands
+    for (const brandId of updatedBrandIds) {
+      await recalcSlabPricesForBrand(brandId);
     }
 
     return NextResponse.json({

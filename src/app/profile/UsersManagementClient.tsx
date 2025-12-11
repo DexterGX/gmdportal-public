@@ -2,6 +2,7 @@
 
 import { useState } from "react";
 import Image from "next/image";
+import { Trash2 } from "lucide-react";
 
 type UserDto = {
   id: string;
@@ -39,6 +40,36 @@ export default function UsersManagementClient({
     } catch (e) {
       console.error(e);
       // TODO: show error, maybe revert state
+    }
+  };
+
+  const handleDelete = async (userId: string, userName: string | null) => {
+    if (
+      !confirm(
+        `Are you sure you want to delete user "${
+          userName || "Unknown"
+        }"? This action cannot be undone.`
+      )
+    ) {
+      return;
+    }
+
+    try {
+      const response = await fetch("/api/users/manage", {
+        method: "DELETE",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ userId }),
+      });
+
+      if (response.ok) {
+        setLocalUsers((prev) => prev.filter((u) => u.id !== userId));
+      } else {
+        const error = await response.text();
+        alert(`Failed to delete user: ${error}`);
+      }
+    } catch (e) {
+      console.error(e);
+      alert("An error occurred while deleting the user.");
     }
   };
 
@@ -95,7 +126,7 @@ export default function UsersManagementClient({
               </div>
             </div>
 
-            {/* RIGHT: role + status controls */}
+            {/* RIGHT: role + status controls + delete */}
             <div className="flex flex-col sm:flex-row sm:items-center sm:gap-6 text-sm">
               {/* Role block */}
               <div className="flex items-center gap-2 mb-2 sm:mb-0">
@@ -151,6 +182,17 @@ export default function UsersManagementClient({
                   </span>
                 )}
               </div>
+
+              {/* Delete button */}
+              {canManage && (
+                <button
+                  onClick={() => handleDelete(user.id, user.name)}
+                  className="flex items-center justify-center p-2 text-red-600 hover:text-red-700 dark:text-red-400 dark:hover:text-red-300 hover:bg-red-50 dark:hover:bg-red-900/20 rounded-md transition-colors"
+                  title="Delete user"
+                >
+                  <Trash2 className="w-4 h-4" />
+                </button>
+              )}
             </div>
           </div>
         </div>

@@ -42,9 +42,13 @@ export default async function SlabsPriceListLayout({
   return (
     <SidebarProvider>
       <div className="min-h-screen flex bg-gray-50 dark:bg-gray-900 w-full">
-        <AppSidebar userRole={appRole} />
+        <div className="sticky top-0 h-screen">
+          <AppSidebar userRole={appRole} />
+        </div>
         <div className="flex-1 flex flex-col min-w-0">
-          <NavbarClient user={user} />
+          <div className="sticky top-0 z-30 bg-white dark:bg-gray-800">
+            <NavbarClient user={user} />
+          </div>
           <main className="p-6 overflow-auto min-w-0 bg-gray-50 dark:bg-gray-900">
             {children}
           </main>

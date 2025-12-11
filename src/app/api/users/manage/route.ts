@@ -39,3 +39,35 @@ export async function POST(req: Request) {
 
   return NextResponse.json(updated);
 }
+
+export async function DELETE(req: Request) {
+  const { user, appRole, isActive } = await getCurrentUserWithRole();
+
+  // Only active admins can delete users
+  if (!user || appRole !== "admin" || !isActive) {
+    return new NextResponse("Forbidden", { status: 403 });
+  }
+
+  const body = await req.json();
+  const { userId } = body as { userId: string };
+
+  if (!userId) {
+    return new NextResponse("Missing userId", { status: 400 });
+  }
+
+  // Prevent admins from deleting themselves
+  if (userId === user.id) {
+    return new NextResponse("Cannot delete your own account", { status: 400 });
+  }
+
+  try {
+    await prisma.user.delete({
+      where: { id: userId },
+    });
+
+    return new NextResponse("User deleted successfully", { status: 200 });
+  } catch (error) {
+    console.error("Error deleting user:", error);
+    return new NextResponse("Failed to delete user", { status: 500 });
+  }
+}

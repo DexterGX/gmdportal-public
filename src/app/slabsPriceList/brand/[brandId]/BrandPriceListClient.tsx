@@ -68,6 +68,11 @@ function formatSize(heightIn: number, widthIn: number): string {
   return `${Math.round(heightIn)} x ${Math.round(widthIn)} in`;
 }
 
+function calculateSquareFeet(heightIn: number, widthIn: number): string {
+  const sqFt = (heightIn * widthIn) / 144; // Convert square inches to square feet
+  return sqFt.toFixed(2);
+}
+
 function formatCurrency(amount: number): string {
   return new Intl.NumberFormat("en-US", {
     style: "currency",
@@ -168,16 +173,27 @@ export default function BrandPriceListClient({ brand, filterOptions }: Props) {
           <ArrowLeft className="w-4 h-4" />
           Back to Overview
         </Link>
-        <h1 className="text-2xl font-bold text-gray-900 dark:text-gray-100">
-          {brand.name}
-        </h1>
-        <p className="text-gray-600 dark:text-gray-400 mt-1">
-          View current pricing for this provider.
-        </p>
+        <div className="flex items-center gap-4">
+          {brand.logoUrl && (
+            <img
+              src={brand.logoUrl}
+              alt={`${brand.name} logo`}
+              className="h-16 w-auto object-contain"
+            />
+          )}
+          <div>
+            <h1 className="text-2xl font-bold text-gray-900 dark:text-gray-100">
+              {brand.name}
+            </h1>
+            <p className="text-gray-600 dark:text-gray-400 mt-1">
+              View current pricing for this provider.
+            </p>
+          </div>
+        </div>
       </div>
 
       {/* Search & Filters */}
-      <div className="bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 p-4 space-y-3">
+      <div className="sticky top-16 z-20 bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 p-4 space-y-3 shadow-sm">
         {/* Search */}
         <div className="relative max-w-md">
           <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
@@ -226,7 +242,7 @@ export default function BrandPriceListClient({ brand, filterOptions }: Props) {
             <button
               type="button"
               onClick={clearFilters}
-              className="text-sm text-gray-600 dark:text-gray-400 hover:text-gray-900 dark:hover:text-gray-100 hover:underline ml-auto"
+              className="ml-auto px-3 py-2 text-sm font-medium text-gray-700 dark:text-gray-300 bg-gray-100 dark:bg-gray-700 hover:bg-gray-200 dark:hover:bg-gray-600 rounded-lg transition-colors"
             >
               Clear filters
             </button>
@@ -236,11 +252,11 @@ export default function BrandPriceListClient({ brand, filterOptions }: Props) {
 
       {/* Table */}
       <div className="bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 overflow-hidden">
-        <div className="overflow-x-auto">
+        <div className="overflow-x-auto max-h-[calc(100vh-280px)]">
           <table className="w-full">
-            <thead className="bg-gray-50 dark:bg-gray-900 border-b border-gray-200 dark:border-gray-700">
+            <thead className="sticky top-0 z-10 bg-gray-50 dark:bg-gray-900 border-b border-gray-200 dark:border-gray-700">
               <tr>
-                <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">
+                <th className="px-4 py-3 text-center text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">
                   Series
                 </th>
                 <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">
@@ -252,16 +268,19 @@ export default function BrandPriceListClient({ brand, filterOptions }: Props) {
                 <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">
                   Finish
                 </th>
-                <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">
+                <th className="px-4 py-3 text-center text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">
                   H x W
                 </th>
-                <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">
+                <th className="px-4 py-3 text-center text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">
+                  SF
+                </th>
+                <th className="px-4 py-3 text-center text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">
                   Thickness
                 </th>
                 <th className="px-4 py-3 text-right text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">
                   Price
                 </th>
-                <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">
+                <th className="px-4 py-3 text-center text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">
                   Status
                 </th>
               </tr>
@@ -270,7 +289,7 @@ export default function BrandPriceListClient({ brand, filterOptions }: Props) {
               {filteredSlabs.length === 0 ? (
                 <tr>
                   <td
-                    colSpan={8}
+                    colSpan={9}
                     className="px-4 py-8 text-center text-gray-500 dark:text-gray-400"
                   >
                     {searchTerm
@@ -285,7 +304,7 @@ export default function BrandPriceListClient({ brand, filterOptions }: Props) {
                       key={slab.id}
                       className="hover:bg-gray-50 dark:hover:bg-gray-900/50 transition-colors"
                     >
-                      <td className="px-4 py-3 text-sm text-gray-600 dark:text-gray-400">
+                      <td className="px-4 py-3 text-sm text-center text-gray-600 dark:text-gray-400">
                         {slab.series || "—"}
                       </td>
                       <td className="px-4 py-3 text-sm text-gray-600 dark:text-gray-400">
@@ -297,16 +316,19 @@ export default function BrandPriceListClient({ brand, filterOptions }: Props) {
                       <td className="px-4 py-3 text-sm text-gray-600 dark:text-gray-400">
                         {formatFinish(slab.finish)}
                       </td>
-                      <td className="px-4 py-3 text-sm text-gray-600 dark:text-gray-400">
+                      <td className="px-4 py-3 text-sm text-center text-gray-600 dark:text-gray-400">
                         {formatSize(slab.heightIn, slab.widthIn)}
                       </td>
-                      <td className="px-4 py-3 text-sm text-gray-600 dark:text-gray-400">
+                      <td className="px-4 py-3 text-sm text-center text-gray-600 dark:text-gray-400">
+                        {calculateSquareFeet(slab.heightIn, slab.widthIn)}
+                      </td>
+                      <td className="px-4 py-3 text-sm text-center text-gray-600 dark:text-gray-400">
                         {formatThickness(slab.thickness)}
                       </td>
                       <td className="px-4 py-3 text-sm text-right font-medium text-gray-900 dark:text-gray-100">
                         {formatCurrency(slab.finalPrice)}
                       </td>
-                      <td className="px-4 py-3 text-sm">
+                      <td className="px-4 py-3 text-sm text-center">
                         <span
                           className={`inline-flex items-center px-2 py-1 rounded-full text-xs font-medium ${
                             slab.status === "AVAILABLE"
