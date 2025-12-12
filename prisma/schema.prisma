@@ -19,6 +19,7 @@ enum Role {
   OFFICE
   FINANCE
   SPECIALIST
+  INSTALLER
   UNASSIGNED
 }
 
@@ -43,6 +44,11 @@ model User {
 
   accounts          Account[]
   sessions          Session[]
+  
+  // Closet quote relations
+  installerQuotes   ClosetQuote[] @relation("InstallerQuotes")
+  submittedQuotes   ClosetQuote[] @relation("SubmittedQuotes")
+  approvedQuotes    ClosetQuote[] @relation("ApprovedQuotes")
 }
 
 model Account {
@@ -200,4 +206,131 @@ model Slab {
 
   createdAt      DateTime @default(now()) @db.Timestamptz
   updatedAt      DateTime @updatedAt @db.Timestamptz
+}
+
+// ======================================================================
+// CLOSET ESTIMATE PROGRAM MODELS
+// ======================================================================
+
+enum ClosetAreaType {
+  MASTER
+  GUEST
+  GARAGE
+  KITCHEN
+  WALL_UNIT
+  LAUNDRY
+  OTHER
+}
+
+enum ClosetJobStatus {
+  QUOTE      // Job created, waiting for installer quotes
+  REVIEW     // Installer quotes submitted, waiting for review
+  APPROVED   // At least one quote approved
+  CANCELLED
+}
+
+enum ClosetQuoteStatus {
+  PENDING_REVIEW
+  APPROVED
+  REJECTED
+}
+
+model ClosetJob {
+  id              String           @id @default(uuid())
+  quoteNumber     String           @unique   // e.g. DG-CQUO-250315-001
+
+  // Foreign keys to existing User model
+  customerName    String           // Store customer name directly (no separate Customer model)
+  customerPhone   String?
+  salesPersonId   String
+  installerId     String           // assigned installer (INSTALLER role)
+
+  propertyAddress String
+  area            ClosetAreaType
+
+  status          ClosetJobStatus  @default(QUOTE)
+
+  createdAt       DateTime         @default(now())
+  quoteStartedAt  DateTime         @default(now())
+
+  notesSales      String?
+
+  quotes          ClosetQuote[]
+}
+
+model ClosetQuote {
+  id              String             @id @default(uuid())
+  closetJobId     String
+  closetJob       ClosetJob          @relation(fields: [closetJobId], references: [id], onDelete: Cascade)
+
+  // Quote identifier for the job, e.g. T3-CQUO-251212-001-Q2
+  quoteCode       String             @unique
+
+  color           String
+
+  // Raw cost from installer – INTERNAL ONLY (do not show in client view)
+  installerCost   Decimal            @db.Decimal(12, 2)
+
+  // Factor used to derive final client price (optional, can be null if we only
+  // store the finalPrice)
+  gmFactor        Decimal?           @db.Decimal(8, 4)
+
+  // Final price shown to client
+  finalPrice      Decimal            @db.Decimal(12, 2)
+
+  // Installer responsible for this quote (optional for migration)
+  installerId     String?
+  installer       User?              @relation("InstallerQuotes", fields: [installerId], references: [id])
+
+  notesInstaller  String?
+  notesSales      String?
+
+  status          ClosetQuoteStatus  @default(PENDING_REVIEW)
+
+  createdAt       DateTime           @default(now())
+  submittedAt     DateTime?
+
+  // Who actually submitted (could be installer or admin) (optional for migration)
+  submittedById   String?
+  submittedBy     User?              @relation("SubmittedQuotes", fields: [submittedById], references: [id])
+
+  approvedAt      DateTime?
+  approvedById    String?
+  approvedBy      User?              @relation("ApprovedQuotes", fields: [approvedById], references: [id])
+
+  lastPrintedAt   DateTime?
+  lastPrintedById String?
+
+  files           ClosetQuoteFile[]
+}
+
+model ClosetQuoteFile {
+  id            String       @id @default(uuid())
+  closetQuoteId String
+  closetQuote   ClosetQuote  @relation(fields: [closetQuoteId], references: [id], onDelete: Cascade)
+
+  fileUrl       String
+  type          String       // e.g. "3D_RENDER", "PLAN", "PHOTO"
+  caption       String?
+
+  uploadedById  String
+  uploadedAt    DateTime     @default(now())
+}
+
+model ClosetEstimateSettings {
+  id                    String   @id @default(uuid())
+  defaultGmFactor       Decimal  @db.Decimal(8, 4) // e.g. 1.3500
+  quoteNumberFormat     String   @default("{INITIALS}-CQUO-{YYMMDD}-{SEQ3}")
+  
+  // Layout settings for print/PDF
+  printLogoUrl          String   @default("/logo.svg")
+  printCompanyName      String   @default("GM Design")
+  printCompanyLine1     String   @default("Custom Closets & Cabinetry")
+  printCompanyLine2     String   @default("Miami, FL")
+  printCompanyPhone     String   @default("(305) XXX-XXXX")
+  printHeaderTitle      String   @default("Closet Design & Installation Quote")
+  printOverviewTemplate String   @default("Custom closet system for the {AREA} at {ADDRESS}, including design, materials, and professional installation as illustrated in the 3D views below.")
+  
+  createdAt             DateTime @default(now())
+  updatedAt             DateTime @updatedAt
 }

@@ -19,6 +19,7 @@ export async function POST(req: Request) {
       | "OFFICE"
       | "FINANCE"
       | "SPECIALIST"
+      | "INSTALLER"
       | "UNASSIGNED";
     active?: boolean;
   };

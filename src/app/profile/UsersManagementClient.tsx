@@ -9,7 +9,14 @@ type UserDto = {
   name: string | null;
   email: string | null;
   image: string | null;
-  role: "ADMIN" | "SALES" | "OFFICE" | "FINANCE" | "SPECIALIST" | "UNASSIGNED";
+  role:
+    | "ADMIN"
+    | "SALES"
+    | "OFFICE"
+    | "FINANCE"
+    | "SPECIALIST"
+    | "INSTALLER"
+    | "UNASSIGNED";
   active: boolean;
 };
 
@@ -83,6 +90,8 @@ export default function UsersManagementClient({
         return "Office";
       case "FINANCE":
         return "Finance";
+      case "INSTALLER":
+        return "Installer";
       case "SPECIALIST":
         return "Specialist";
       case "UNASSIGNED":
@@ -147,6 +156,7 @@ export default function UsersManagementClient({
                     <option value="SALES">Sales</option>
                     <option value="OFFICE">Office</option>
                     <option value="FINANCE">Finance</option>
+                    <option value="INSTALLER">Installer</option>
                     <option value="SPECIALIST">Specialist</option>
                     <option value="UNASSIGNED">Unassigned</option>
                   </select>

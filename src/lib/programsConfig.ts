@@ -10,7 +10,7 @@ import {
   BoxCubeIcon,
   PlugInIcon,
 } from "@/icons";
-import { TicketPercent, Settings2, Table2 } from "lucide-react";
+import { TicketPercent, Settings2, Table2, Shirt } from "lucide-react";
 import type { Role } from "@prisma/client"; // Prisma enum
 
 // App-facing roles (lowercase, string union)
@@ -20,28 +20,38 @@ export type AppRole =
   | "office"
   | "finance"
   | "specialist"
+  | "installer"
   | "unassigned";
 
 // Map Prisma Role enum (ADMIN, SALES, ...) → AppRole string
 export function mapDbRoleToAppRole(dbRole: Role | null | undefined): AppRole {
+  if (!dbRole) return "unassigned";
+
   switch (dbRole) {
-    case "ADMIN":
+    case "ADMIN" as Role:
       return "admin";
-    case "SALES":
+    case "SALES" as Role:
       return "sales";
-    case "OFFICE":
+    case "OFFICE" as Role:
       return "office";
-    case "FINANCE":
+    case "FINANCE" as Role:
       return "finance";
-    case "SPECIALIST":
+    case "SPECIALIST" as Role:
       return "specialist";
-    case "UNASSIGNED":
+    case "INSTALLER" as Role:
+      return "installer";
+    case "UNASSIGNED" as Role:
     default:
       return "unassigned";
   }
 }
 
-export type ProgramId = "main" | "storeStock" | "slabs" | "users";
+export type ProgramId =
+  | "main"
+  | "storeStock"
+  | "slabs"
+  | "users"
+  | "closetJobs";
 
 export interface ProgramConfig {
   id: ProgramId;
@@ -71,7 +81,13 @@ export const programs: ProgramConfig[] = [
         path: "/profile",
       },
     ],
-    othersItems: [],
+    othersItems: [
+      {
+        icon: Shirt,
+        name: "Closet Jobs",
+        path: "/closet-jobs",
+      },
+    ],
   },
   {
     id: "storeStock",
@@ -134,6 +150,23 @@ export const programs: ProgramConfig[] = [
     allowedRoles: ["admin", "sales", "office", "finance", "specialist"],
     navItems: [
       { icon: ShootingStarIcon, name: "Users Profiles", path: "/profile" },
+    ],
+    othersItems: [],
+  },
+  {
+    id: "closetJobs",
+    name: "Closet Estimate Program",
+    basePath: "/closet-jobs",
+    description: "Create and manage closet design jobs and quotes.",
+    allowedRoles: ["admin", "sales", "installer"],
+    navItems: [
+      { icon: Shirt, name: "Closet Jobs", path: "/closet-jobs" },
+      {
+        icon: Settings2,
+        name: "Estimate Settings",
+        path: "/closet-jobs/admin/settings",
+        adminOnly: true,
+      },
     ],
     othersItems: [],
   },
