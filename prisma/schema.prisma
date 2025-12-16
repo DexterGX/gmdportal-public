@@ -155,6 +155,8 @@ enum SlabFinish {
   DENIM
   DAMIER
   LAVA
+  SILK
+  LUXE
 }
 
 model SlabBrandConfig {
