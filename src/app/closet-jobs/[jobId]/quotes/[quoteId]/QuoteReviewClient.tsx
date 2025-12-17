@@ -229,6 +229,11 @@ export default function QuoteReviewClient({
                     <p className="text-sm text-gray-500">Margin</p>
                     <p className="font-medium text-lg">{margin.toFixed(1)}%</p>
                   </div>
+                  {quote.gmFactor && (
+                    <p className="text-xs text-gray-500 mt-1">
+                      Factor: {parseFloat(quote.gmFactor).toFixed(2)}x
+                    </p>
+                  )}
                 </div>
               )}
 
@@ -282,11 +287,6 @@ export default function QuoteReviewClient({
                     <p className="font-bold text-2xl text-green-600">
                       ${parseFloat(finalPrice).toFixed(2)}
                     </p>
-                    {quote.gmFactor && (
-                      <p className="text-xs text-gray-500 mt-1">
-                        Factor: {parseFloat(quote.gmFactor).toFixed(2)}x
-                      </p>
-                    )}
                   </div>
                 )}
               </div>

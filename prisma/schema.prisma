@@ -158,6 +158,7 @@ enum SlabFinish {
   SILK
   LUXE
   BRUSHED
+  TEXTURED
 }
 
 model SlabBrandConfig {
