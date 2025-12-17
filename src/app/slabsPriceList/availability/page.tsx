@@ -9,7 +9,7 @@ export default function AvailabilityPage() {
           Work in Progress
         </h1>
         <p className="text-gray-600 dark:text-gray-400 max-w-md">
-          We're currently working on this page. Please check back soon!
+          We&apos;re currently working on this page. Please check back soon!
         </p>
       </div>
     </div>
