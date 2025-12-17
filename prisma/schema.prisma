@@ -157,6 +157,7 @@ enum SlabFinish {
   LAVA
   SILK
   LUXE
+  BRUSHED
 }
 
 model SlabBrandConfig {
