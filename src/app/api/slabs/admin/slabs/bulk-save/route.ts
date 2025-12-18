@@ -12,6 +12,7 @@ function mapThicknessToEnum(uiThickness: string): SlabThickness {
   const mapping: Record<string, SlabThickness> = {
     "8mm": "EIGHT_MM",
     "12mm": "TWELVE_MM",
+    "15mm": "FIFTEEN_MM",
     "2cm": "TWO_CM",
     "3cm": "THREE_CM",
   };
@@ -23,6 +24,7 @@ function mapThicknessToUI(dbThickness: SlabThickness): string {
   const mapping: Record<SlabThickness, string> = {
     EIGHT_MM: "8mm",
     TWELVE_MM: "12mm",
+    FIFTEEN_MM: "15mm",
     TWO_CM: "2cm",
     THREE_CM: "3cm",
   };
