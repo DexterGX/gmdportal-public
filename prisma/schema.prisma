@@ -121,6 +121,7 @@ model StockTransaction {
 enum SlabThickness {
   EIGHT_MM
   TWELVE_MM
+  FIFTEEN_MM
   TWO_CM
   THREE_CM
 }
