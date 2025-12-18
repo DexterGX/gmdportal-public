@@ -159,6 +159,10 @@ enum SlabFinish {
   LUXE
   BRUSHED
   TEXTURED
+  SMOOTH_MATTE
+  TEXTURED_MATTE
+  VELVET
+  TEXTURED_VELVET
 }
 
 model SlabBrandConfig {
