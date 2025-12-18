@@ -164,6 +164,7 @@ enum SlabFinish {
   VELVET
   TEXTURED_VELVET
   SATIN_RIDGE
+  SUEDE
 }
 
 model SlabBrandConfig {
