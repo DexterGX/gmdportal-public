@@ -140,7 +140,7 @@ export async function POST(request: Request) {
         if (discontinuedIds.length > 0) {
           await tx.slab.updateMany({
             where: { id: { in: discontinuedIds } },
-            data: { status: "DISCONTINUED" },
+            data: { status: "UNAVAILABLE" },
           });
           discontinuedCount = discontinuedIds.length;
         }
