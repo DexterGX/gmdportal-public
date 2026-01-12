@@ -11,6 +11,7 @@ import {
   ChevronDown,
   Filter,
   Trash2,
+  Printer,
 } from "lucide-react";
 import MultiSelectDropdown, {
   MultiSelectOption,
@@ -49,6 +50,9 @@ type SortDirection = "asc" | "desc";
 
 interface SlabsAdminTableProps {
   initialData: AdminSlabRow[];
+  initialTotal: number;
+  initialPage: number;
+  initialPageSize: number;
   brands: SlabBrand[];
   finishes: string[];
 }
@@ -62,11 +66,18 @@ const STATUS_OPTIONS: SlabStatusOption[] = [
 
 export default function SlabsAdminTable({
   initialData,
+  initialTotal,
+  initialPage,
+  initialPageSize,
   brands,
   finishes,
 }: SlabsAdminTableProps) {
   const [rows, setRows] = useState<AdminSlabRow[]>(initialData);
   const [originalRows, setOriginalRows] = useState<AdminSlabRow[]>(initialData);
+  const [total, setTotal] = useState(initialTotal);
+  const [currentPage, setCurrentPage] = useState(initialPage);
+  const [pageSize, setPageSize] = useState(initialPageSize);
+  const [isLoading, setIsLoading] = useState(false);
   const [isEditing, setIsEditing] = useState(false);
   const [hasChanges, setHasChanges] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
@@ -107,6 +118,65 @@ export default function SlabsAdminTable({
     const hxw = rows.map((r) => `${r.heightIn} x ${r.widthIn} in`);
     return [...new Set(hxw)].sort();
   }, [rows]);
+
+  // Fetch data from API with current filters/sort/pagination
+  const fetchSlabs = async () => {
+    if (isEditing) return; // Don't fetch during editing
+
+    setIsLoading(true);
+    try {
+      const params = new URLSearchParams();
+      
+      if (searchQuery) params.set("search", searchQuery);
+      if (filterBrands.length > 0) params.set("brandIds", brands.filter(b => filterBrands.includes(b.name)).map(b => b.id).join(","));
+      if (filterSeries.length > 0) params.set("series", filterSeries.join(","));
+      if (filterFinishes.length > 0) params.set("finishes", filterFinishes.join(","));
+      if (filterHxWs.length > 0) params.set("hxws", filterHxWs.join(","));
+      if (filterThicknesses.length > 0) params.set("thicknesses", filterThicknesses.join(","));
+      if (filterStatuses.length > 0) params.set("statuses", filterStatuses.join(","));
+      if (sortColumn) params.set("sortBy", sortColumn);
+      params.set("sortDir", sortDirection);
+      params.set("page", currentPage.toString());
+      params.set("pageSize", pageSize.toString());
+
+      const response = await fetch(`/api/slabs/admin?${params.toString()}`);
+      
+      if (!response.ok) {
+        throw new Error("Failed to fetch slabs");
+      }
+
+      const data = await response.json();
+      setRows(data.rows);
+      setOriginalRows(data.rows);
+      setTotal(data.total);
+    } catch (error: any) {
+      console.error("Error fetching slabs:", error);
+      alert(`Failed to load slabs: ${error.message}`);
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  // Fetch data when filters/sort/pagination change (but not during editing)
+  useEffect(() => {
+    if (!isEditing) {
+      fetchSlabs();
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [
+    searchQuery,
+    filterBrands,
+    filterSeries,
+    filterFinishes,
+    filterHxWs,
+    filterThicknesses,
+    filterStatuses,
+    sortColumn,
+    sortDirection,
+    currentPage,
+    pageSize,
+    isEditing,
+  ]);
 
   const handleFieldChange = (
     id: string,
@@ -211,8 +281,8 @@ export default function SlabsAdminTable({
       setIsEditing(false);
       alert("Changes saved successfully!");
 
-      // Reload page to fetch fresh data from server
-      window.location.reload();
+      // Refetch data from server to show updated records
+      await fetchSlabs();
     } catch (error: any) {
       alert(`Error saving changes: ${error.message}`);
     } finally {
@@ -221,6 +291,7 @@ export default function SlabsAdminTable({
   };
 
   const handleSort = (column: SortColumn) => {
+    setCurrentPage(1); // Reset to first page when sorting changes
     if (sortColumn === column) {
       if (sortDirection === "asc") {
         setSortDirection("desc");
@@ -243,20 +314,29 @@ export default function SlabsAdminTable({
     setFilterHxWs([]);
     setFilterThicknesses([]);
     setFilterStatuses([]);
+    setCurrentPage(1); // Reset to first page
   };
 
-  // Apply filters and sorting
-  const filteredAndSortedRows = useMemo(() => {
-    let filtered = rows.filter((row) => !row._deleted); // Exclude deleted rows
+  const handlePrint = () => {
+    window.print();
+  };
 
-    // Search by color
+  // When in edit mode, we filter client-side; otherwise server handles it
+  const displayRows = useMemo(() => {
+    if (!isEditing) {
+      // Server-side pagination/filtering - just show what we got
+      return rows;
+    }
+    
+    // During editing, apply client-side filters to show consistent UX
+    let filtered = rows.filter((row) => !row._deleted);
+
     if (searchQuery) {
       filtered = filtered.filter((row) =>
         row.color.toLowerCase().includes(searchQuery.toLowerCase())
       );
     }
 
-    // Apply multi-select filters
     if (filterBrands.length > 0) {
       filtered = filtered.filter((row) => filterBrands.includes(row.brand));
     }
@@ -282,7 +362,7 @@ export default function SlabsAdminTable({
       filtered = filtered.filter((row) => filterStatuses.includes(row.status));
     }
 
-    // Sort
+    // Sort client-side during editing
     if (sortColumn) {
       filtered = [...filtered].sort((a, b) => {
         const aVal = a[sortColumn];
@@ -309,6 +389,7 @@ export default function SlabsAdminTable({
     return filtered;
   }, [
     rows,
+    isEditing,
     searchQuery,
     filterBrands,
     filterSeries,
@@ -337,10 +418,64 @@ export default function SlabsAdminTable({
   };
 
   return (
-    <div className="space-y-4">
+    <div id="print-area" className="space-y-4">
+      {/* Print-Only Filter Summary */}
+      <div className="hidden print:block mb-2 p-2 border border-gray-300">
+        <h3 className="font-semibold text-lg mb-1">Active Filters</h3>
+        <div className="grid grid-cols-3 gap-1 text-sm">
+          {searchQuery && (
+            <div>
+              <strong>Search:</strong> {searchQuery}
+            </div>
+          )}
+          {filterBrands.length > 0 && (
+            <div>
+              <strong>Brands:</strong> {filterBrands.join(", ")}
+            </div>
+          )}
+          {filterSeries.length > 0 && (
+            <div>
+              <strong>Series:</strong> {filterSeries.join(", ")}
+            </div>
+          )}
+          {filterFinishes.length > 0 && (
+            <div>
+              <strong>Finishes:</strong> {filterFinishes.join(", ")}
+            </div>
+          )}
+          {filterHxWs.length > 0 && (
+            <div>
+              <strong>Sizes:</strong> {filterHxWs.join(", ")}
+            </div>
+          )}
+          {filterThicknesses.length > 0 && (
+            <div>
+              <strong>Thickness:</strong> {filterThicknesses.join(", ")}
+            </div>
+          )}
+          {filterStatuses.length > 0 && (
+            <div>
+              <strong>Status:</strong> {filterStatuses.join(", ")}
+            </div>
+          )}
+          {!searchQuery &&
+            filterBrands.length === 0 &&
+            filterSeries.length === 0 &&
+            filterFinishes.length === 0 &&
+            filterHxWs.length === 0 &&
+            filterThicknesses.length === 0 &&
+            filterStatuses.length === 0 && (
+              <div className="col-span-2 text-gray-600">No filters applied</div>
+            )}
+        </div>
+        <div className="mt-1 pt-1 border-t border-gray-300 text-xs">
+          <strong>Total:</strong> {total} | <strong>Showing:</strong> {displayRows.length}
+        </div>
+      </div>
+
       {/* Header with Search and Actions */}
-      <div className="bg-white dark:bg-gray-800 rounded-lg shadow p-4">
-        <div className="flex items-center justify-between gap-4 mb-4">
+      <div className="bg-white dark:bg-gray-800 rounded-lg shadow p-4 print:shadow-none print:bg-white">
+        <div className="flex items-center justify-between gap-4 mb-4 print:hidden">
           {/* Search Bar */}
           <div className="flex-1 max-w-md relative">
             <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 w-5 h-5 text-gray-400" />
@@ -355,10 +490,20 @@ export default function SlabsAdminTable({
 
           {/* Action Buttons */}
           <div className="flex items-center gap-2">
+            {/* Print Button - hidden on print */}
+            <button
+              onClick={handlePrint}
+              className="flex items-center gap-2 px-4 py-2 text-sm font-medium text-gray-700 dark:text-gray-300 bg-white dark:bg-gray-700 border border-gray-300 dark:border-gray-600 rounded-lg hover:bg-gray-50 dark:hover:bg-gray-600 transition-colors print:hidden"
+              title="Print current view"
+            >
+              <Printer className="w-4 h-4" />
+              Print
+            </button>
+
             {!isEditing ? (
               <button
                 onClick={handleEdit}
-                className="flex items-center gap-2 px-4 py-2 text-sm font-medium text-white bg-blue-600 rounded-lg hover:bg-blue-700 transition-colors"
+                className="flex items-center gap-2 px-4 py-2 text-sm font-medium text-white bg-blue-600 rounded-lg hover:bg-blue-700 transition-colors print:hidden"
               >
                 <Edit className="w-4 h-4" />
                 Edit
@@ -368,7 +513,7 @@ export default function SlabsAdminTable({
                 <button
                   onClick={handleCancel}
                   disabled={isSaving}
-                  className="flex items-center gap-2 px-4 py-2 text-sm font-medium text-gray-700 dark:text-gray-300 bg-white dark:bg-gray-700 border border-gray-300 dark:border-gray-600 rounded-lg hover:bg-gray-50 dark:hover:bg-gray-600 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+                  className="flex items-center gap-2 px-4 py-2 text-sm font-medium text-gray-700 dark:text-gray-300 bg-white dark:bg-gray-700 border border-gray-300 dark:border-gray-600 rounded-lg hover:bg-gray-50 dark:hover:bg-gray-600 disabled:opacity-50 disabled:cursor-not-allowed transition-colors print:hidden"
                 >
                   <X className="w-4 h-4" />
                   Cancel
@@ -376,7 +521,7 @@ export default function SlabsAdminTable({
                 <button
                   onClick={handleSave}
                   disabled={!hasChanges || isSaving}
-                  className="flex items-center gap-2 px-4 py-2 text-sm font-medium text-white bg-blue-600 rounded-lg hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+                  className="flex items-center gap-2 px-4 py-2 text-sm font-medium text-white bg-blue-600 rounded-lg hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors print:hidden"
                 >
                   <Save className="w-4 h-4" />
                   {isSaving ? "Saving..." : "Save all changes"}
@@ -387,7 +532,7 @@ export default function SlabsAdminTable({
         </div>
 
         {/* Filters */}
-        <div className="flex flex-wrap gap-3">
+        <div className="flex flex-wrap gap-3 print:hidden">
           <MultiSelectDropdown
             label="Brand"
             options={brands.map((b) => ({ value: b.name, label: b.name }))}
@@ -443,14 +588,14 @@ export default function SlabsAdminTable({
           filterStatuses.length > 0) && (
           <button
             onClick={clearFilters}
-            className="mt-3 text-sm text-blue-600 dark:text-blue-400 hover:text-blue-700 dark:hover:text-blue-300 font-medium"
+            className="mt-3 text-sm text-blue-600 dark:text-blue-400 hover:text-blue-700 dark:hover:text-blue-300 font-medium print:hidden"
           >
             Clear all filters
           </button>
         )}
 
         {/* Status Indicator */}
-        <div className="mt-3 text-sm">
+        <div className="mt-3 text-sm print:hidden">
           {hasChanges ? (
             <span className="text-amber-600 dark:text-amber-400 font-medium">
               You have unsaved changes
@@ -464,10 +609,10 @@ export default function SlabsAdminTable({
       </div>
 
       {/* Table */}
-      <div className="bg-white dark:bg-gray-800 rounded-lg shadow overflow-hidden">
+      <div className="bg-white dark:bg-gray-800 rounded-lg shadow overflow-hidden print:shadow-none print:bg-white print:border print:border-gray-300">
         <div className="overflow-x-auto">
-          <table className="w-full text-sm">
-            <thead className="bg-gray-50 dark:bg-gray-900 text-gray-700 dark:text-gray-300 border-b border-gray-200 dark:border-gray-700">
+          <table className="w-full text-sm print:text-xs">
+            <thead className="bg-gray-50 dark:bg-gray-900 text-gray-700 dark:text-gray-300 border-b border-gray-200 dark:border-gray-700 print:bg-gray-100 print:text-black print:border-gray-400">
               <tr>
                 <th
                   className="px-3 py-3 text-left font-medium cursor-pointer hover:bg-gray-100 dark:hover:bg-gray-800"
@@ -536,7 +681,7 @@ export default function SlabsAdminTable({
               </tr>
             </thead>
             <tbody className="divide-y divide-gray-200 dark:divide-gray-700">
-              {filteredAndSortedRows.map((row) => (
+              {displayRows.map((row) => (
                 <tr
                   key={row.id}
                   className={`${
@@ -774,12 +919,12 @@ export default function SlabsAdminTable({
                       </select>
                     ) : (
                       <span
-                        className={`inline-flex px-2 py-1 text-xs font-medium rounded-full ${
+                        className={`inline-flex px-2 py-1 text-xs font-medium rounded-full print-bg print:rounded-none print:border print:border-gray-400 ${
                           row.status === "AVAILABLE"
-                            ? "bg-green-100 text-green-800 dark:bg-green-900/30 dark:text-green-400"
+                            ? "bg-green-100 text-green-800 dark:bg-green-900/30 dark:text-green-400 print:bg-green-50 print:text-black"
                             : row.status === "UNAVAILABLE"
-                            ? "bg-yellow-100 text-yellow-800 dark:bg-yellow-900/30 dark:text-yellow-400"
-                            : "bg-red-100 text-red-800 dark:bg-red-900/30 dark:text-red-400"
+                            ? "bg-yellow-100 text-yellow-800 dark:bg-yellow-900/30 dark:text-yellow-400 print:bg-yellow-50 print:text-black"
+                            : "bg-red-100 text-red-800 dark:bg-red-900/30 dark:text-red-400 print:bg-red-50 print:text-black"
                         }`}
                       >
                         {row.status}
@@ -818,9 +963,66 @@ export default function SlabsAdminTable({
           </table>
         </div>
 
-        {filteredAndSortedRows.length === 0 && (
+        {isLoading ? (
+          <div className="px-6 py-12 text-center text-gray-500 dark:text-gray-400 print:hidden">
+            Loading slabs...
+          </div>
+        ) : displayRows.length === 0 ? (
           <div className="px-6 py-12 text-center text-gray-500 dark:text-gray-400">
             No slabs found matching your filters.
+          </div>
+        ) : null}
+
+        {/* Pagination and Info Footer */}
+        {!isEditing && (
+          <div className="px-6 py-4 border-t border-gray-200 dark:border-gray-700 flex items-center justify-between print:hidden">
+            {/* Showing X of Y slabs */}
+            <div className="text-sm text-gray-600 dark:text-gray-400">
+              Showing <span className="font-medium text-gray-900 dark:text-white">{displayRows.length}</span> of{" "}
+              <span className="font-medium text-gray-900 dark:text-white">{total}</span> slabs
+            </div>
+
+            {/* Pagination Controls */}
+            {total > pageSize && (
+              <div className="flex items-center gap-2">
+                <button
+                  onClick={() => setCurrentPage((p) => Math.max(1, p - 1))}
+                  disabled={currentPage === 1 || isLoading}
+                  className="px-3 py-1 text-sm font-medium text-gray-700 dark:text-gray-300 bg-white dark:bg-gray-700 border border-gray-300 dark:border-gray-600 rounded hover:bg-gray-50 dark:hover:bg-gray-600 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+                >
+                  Previous
+                </button>
+                
+                <span className="text-sm text-gray-600 dark:text-gray-400">
+                  Page <span className="font-medium text-gray-900 dark:text-white">{currentPage}</span> of{" "}
+                  <span className="font-medium text-gray-900 dark:text-white">{Math.ceil(total / pageSize)}</span>
+                </span>
+
+                <button
+                  onClick={() => setCurrentPage((p) => Math.min(Math.ceil(total / pageSize), p + 1))}
+                  disabled={currentPage >= Math.ceil(total / pageSize) || isLoading}
+                  className="px-3 py-1 text-sm font-medium text-gray-700 dark:text-gray-300 bg-white dark:bg-gray-700 border border-gray-300 dark:border-gray-600 rounded hover:bg-gray-50 dark:hover:bg-gray-600 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+                >
+                  Next
+                </button>
+
+                {/* Page Size Selector */}
+                <select
+                  value={pageSize}
+                  onChange={(e) => {
+                    setPageSize(Number(e.target.value));
+                    setCurrentPage(1);
+                  }}
+                  disabled={isLoading}
+                  className="ml-4 px-2 py-1 text-sm border border-gray-300 dark:border-gray-600 rounded bg-white dark:bg-gray-800 text-gray-900 dark:text-white focus:ring-2 focus:ring-blue-500"
+                >
+                  <option value="50">50 per page</option>
+                  <option value="100">100 per page</option>
+                  <option value="200">200 per page</option>
+                  <option value="500">500 per page</option>
+                </select>
+              </div>
+            )}
           </div>
         )}
       </div>

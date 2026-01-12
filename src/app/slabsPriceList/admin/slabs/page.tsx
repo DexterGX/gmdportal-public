@@ -34,19 +34,25 @@ export default async function SlabDataPage() {
     redirect("/slabsPriceList");
   }
 
-  // Fetch all slabs with brand information
-  const slabs = await prisma.slab.findMany({
-    include: {
-      brand: {
-        select: {
-          id: true,
-          name: true,
+  // Fetch initial page of slabs with brand information (for SSR)
+  // The client component will handle pagination and filtering via API
+  const initialPageSize = 100;
+
+  const [slabs, total] = await Promise.all([
+    prisma.slab.findMany({
+      include: {
+        brand: {
+          select: {
+            id: true,
+            name: true,
+          },
         },
       },
-    },
-    orderBy: [{ color: "asc" }],
-    take: 1000, // Limit for performance
-  });
+      orderBy: [{ color: "asc" }, { id: "asc" }],
+      take: initialPageSize,
+    }),
+    prisma.slab.count(),
+  ]);
 
   // Fetch all brands for dropdown
   const brands = await prisma.slabBrandConfig.findMany({
@@ -118,6 +124,9 @@ export default async function SlabDataPage() {
       {/* Editable Table Component */}
       <SlabsAdminTable
         initialData={transformedSlabs}
+        initialTotal={total}
+        initialPage={1}
+        initialPageSize={initialPageSize}
         brands={brands}
         finishes={finishes}
       />
