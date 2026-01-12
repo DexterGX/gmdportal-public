@@ -198,4 +198,47 @@ body,
     font-size: 6pt !important;
     padding: 1px 4px !important;
   }
+
+  /* Closet Quote Print Styles */
+  .quote-print-layout {
+    max-width: 100% !important;
+    margin: 0 !important;
+    padding: 0 !important;
+  }
+
+  .quote-print-layout img {
+    max-width: 100% !important;
+    height: auto !important;
+    page-break-inside: avoid;
+  }
+
+  .quote-print-layout .grid {
+    page-break-inside: avoid;
+  }
+
+  .quote-print-layout h1 {
+    font-size: 18pt !important;
+  }
+
+  .quote-print-layout h2 {
+    font-size: 14pt !important;
+    margin-top: 8px !important;
+    margin-bottom: 6px !important;
+  }
+
+  .quote-print-layout p {
+    font-size: 10pt !important;
+  }
+
+  .quote-print-layout .text-4xl {
+    font-size: 24pt !important;
+  }
+
+  .quote-print-layout .text-sm {
+    font-size: 9pt !important;
+  }
+
+  .quote-print-layout .text-xs {
+    font-size: 8pt !important;
+  }
 }

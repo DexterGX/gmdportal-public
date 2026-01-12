@@ -54,57 +54,42 @@ export default function PrintQuoteLayout({
       });
 
   return (
-    <div className="min-h-screen w-full bg-white text-black p-8 print:p-4">
-      <style jsx global>{`
-        @media print {
-          body {
-            print-color-adjust: exact;
-            -webkit-print-color-adjust: exact;
-          }
-          .no-print {
-            display: none !important;
-          }
-          .page-break {
-            page-break-after: always;
-          }
-        }
-      `}</style>
-
+    <div className="min-h-screen w-full bg-white text-black p-8 print:p-6 quote-print-layout">
       {/* Print Button (visible only on screen) */}
-      <div className="no-print mb-4 flex justify-end">
+      <div className="print:hidden mb-4 flex justify-end gap-2">
         <button
           onClick={() => window.print()}
-          className="px-4 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700"
+          className="px-4 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700 transition-colors"
         >
           Print Quote
         </button>
       </div>
 
-      <div className="max-w-4xl mx-auto">
+      <div className="max-w-4xl mx-auto print:max-w-full">
         {/* Header */}
-        <div className="flex justify-between items-start mb-8 pb-6 border-b-2 border-gray-300">
+        <div className="flex justify-between items-start mb-8 pb-6 border-b-2 border-gray-300 print:mb-4 print:pb-4">
           {/* Left: Company Logo and Info */}
           <div className="flex-1">
-            <div className="mb-3">
+            <div className="mb-3 print:mb-2">
               {/* Replace with actual logo path */}
-              <div className="w-32 h-16 bg-gray-200 flex items-center justify-center rounded">
+              <div className="w-32 h-16 bg-gray-200 flex items-center justify-center rounded print:w-24 print:h-12">
                 <span className="text-xs text-gray-600">GM Design Logo</span>
               </div>
             </div>
-            <div className="text-sm space-y-1">
-              <p className="font-bold text-lg">GM Design</p>
-              <p>Custom Closets & Cabinetry</p>
-              <p>Miami, FL</p>
-              <p>Phone: (305) XXX-XXXX</p>
+            <div className="text-sm space-y-1 print:space-y-0">
+              <p className="font-bold text-lg print:text-base">GM Design</p>
+              <p className="print:text-xs">Custom Closets & Cabinetry</p>
+              <p className="print:text-xs">Miami, FL</p>
+              <p className="print:text-xs">Phone: (305) XXX-XXXX</p>
             </div>
           </div>
 
           {/* Right: Quote Info */}
           <div className="text-right">
-            <h1 className="text-2xl font-bold mb-2">
+            <h1 className="text-2xl font-bold mb-2 print:text-xl print:mb-1">
               Closet Design & Installation Quote
             </h1>
-            <div className="text-sm space-y-1">
+            <div className="text-sm space-y-1 print:text-xs print:space-y-0">
               <p className="font-semibold">
                 Quote #: {job.quoteNumber} / {quote.quoteCode}
               </p>
@@ -114,39 +99,45 @@ export default function PrintQuoteLayout({
         </div>
 
         {/* Project Information */}
-        <div className="mb-8">
-          <h2 className="text-xl font-bold mb-4 border-b border-gray-300 pb-2">
+        <div className="mb-8 print:mb-4">
+          <h2 className="text-xl font-bold mb-4 border-b border-gray-300 pb-2 print:text-lg print:mb-2 print:pb-1">
             Project Information
           </h2>
-          <div className="grid grid-cols-2 gap-4">
+          <div className="grid grid-cols-2 gap-4 print:gap-2">
             {job.customerName && (
               <div>
-                <p className="text-xs text-gray-600 uppercase tracking-wide">
+                <p className="text-xs text-gray-600 uppercase tracking-wide print:text-[8pt]">
                   Client
                 </p>
-                <p className="font-semibold">{job.customerName}</p>
+                <p className="font-semibold print:text-sm">
+                  {job.customerName}
+                </p>
               </div>
             )}
             <div>
-              <p className="text-xs text-gray-600 uppercase tracking-wide">
+              <p className="text-xs text-gray-600 uppercase tracking-wide print:text-[8pt]">
                 Property Address
               </p>
-              <p className="font-semibold">{job.propertyAddress}</p>
+              <p className="font-semibold print:text-sm">
+                {job.propertyAddress}
+              </p>
             </div>
             <div>
-              <p className="text-xs text-gray-600 uppercase tracking-wide">
+              <p className="text-xs text-gray-600 uppercase tracking-wide print:text-[8pt]">
                 Area
               </p>
-              <p className="font-semibold">{job.areaLabel}</p>
+              <p className="font-semibold print:text-sm">{job.areaLabel}</p>
             </div>
             {job.salesPersonName && (
               <div>
-                <p className="text-xs text-gray-600 uppercase tracking-wide">
+                <p className="text-xs text-gray-600 uppercase tracking-wide print:text-[8pt]">
                   Salesperson
                 </p>
-                <p className="font-semibold">{job.salesPersonName}</p>
+                <p className="font-semibold print:text-sm">
+                  {job.salesPersonName}
+                </p>
                 {job.salesPersonEmail && (
-                  <p className="text-xs text-gray-600">
+                  <p className="text-xs text-gray-600 print:text-[8pt]">
                     {job.salesPersonEmail}
                   </p>
                 )}
@@ -156,11 +147,11 @@ export default function PrintQuoteLayout({
         </div>
 
         {/* Overview */}
-        <div className="mb-8">
-          <h2 className="text-xl font-bold mb-4 border-b border-gray-300 pb-2">
+        <div className="mb-8 print:mb-4">
+          <h2 className="text-xl font-bold mb-4 border-b border-gray-300 pb-2 print:text-lg print:mb-2 print:pb-1">
             Project Overview
           </h2>
-          <p className="text-gray-700 leading-relaxed">
+          <p className="text-gray-700 leading-relaxed print:text-sm print:leading-normal">
             Custom closet system for the {job.areaLabel.toLowerCase()} at{" "}
             {job.propertyAddress}, including design, materials, and professional
             installation as illustrated in the 3D views below. This{" "}
@@ -170,22 +161,44 @@ export default function PrintQuoteLayout({
           </p>
         </div>
 
+        {/* Investment */}
+        <div className="mb-8 print:mb-4">
+          <h2 className="text-xl font-bold mb-4 border-b border-gray-300 pb-2 print:text-lg print:mb-2 print:pb-1">
+            Investment
+          </h2>
+          <div className="bg-gray-50 p-6 rounded-lg print:p-4 print:rounded-none print:border print:border-gray-300 print-bg">
+            <p className="text-lg mb-2 print:text-base print:mb-1">
+              Total investment for this closet design and installation:
+            </p>
+            <p className="text-4xl font-bold text-green-600 print:text-3xl print:text-black">
+              {quote.finalPriceFormatted}
+            </p>
+            <p className="text-sm text-gray-600 mt-3 print:text-xs print:mt-2">
+              This quote is valid for 30 days from the date above. Price
+              includes design, materials, and professional installation.
+            </p>
+          </div>
+        </div>
+
         {/* 3D Views */}
         {files.length > 0 && (
-          <div className="mb-8">
-            <h2 className="text-xl font-bold mb-4 border-b border-gray-300 pb-2">
+          <div className="mb-8 print:mb-4">
+            <h2 className="text-xl font-bold mb-4 border-b border-gray-300 pb-2 print:text-lg print:mb-2 print:pb-1">
               Design Visualization
             </h2>
-            <div className="grid grid-cols-2 gap-4">
+            <div className="grid grid-cols-2 gap-4 print:gap-2">
               {files.map((file, index) => (
-                <figure key={index} className="text-center">
+                <figure
+                  key={index}
+                  className="text-center print:break-inside-avoid"
+                >
                   <img
                     src={file.fileUrl}
                     alt={file.caption || `Design view ${index + 1}`}
-                    className="w-full h-64 object-cover rounded-lg border border-gray-200"
+                    className="w-full h-64 object-cover rounded-lg border border-gray-200 print:h-[250px] print:w-full print:object-cover print:rounded-none print:border-gray-400"
                   />
                   {file.caption && (
-                    <figcaption className="text-xs text-gray-600 mt-2">
+                    <figcaption className="text-xs text-gray-600 mt-2 print:mt-1 print:text-[8pt]">
                       {file.caption}
                     </figcaption>
                   )}
@@ -195,27 +208,10 @@ export default function PrintQuoteLayout({
           </div>
         )}
 
-        {/* Investment */}
-        <div className="mb-8 mt-12 pt-6 border-t-2 border-gray-300">
-          <h2 className="text-xl font-bold mb-4">Investment</h2>
-          <div className="bg-gray-50 p-6 rounded-lg">
-            <p className="text-lg mb-2">
-              Total investment for this closet design and installation:
-            </p>
-            <p className="text-4xl font-bold text-green-600">
-              {quote.finalPriceFormatted}
-            </p>
-            <p className="text-sm text-gray-600 mt-3">
-              This quote is valid for 30 days from the date above. Price
-              includes design, materials, and professional installation.
-            </p>
-          </div>
-        </div>
-
         {/* Footer */}
-        <div className="mt-12 pt-6 border-t border-gray-300 text-center text-sm text-gray-600">
+        <div className="mt-12 pt-6 border-t border-gray-300 text-center text-sm text-gray-600 print:mt-6 print:pt-3 print:text-xs">
           <p>Thank you for considering GM Design for your closet project!</p>
-          <p className="mt-2">
+          <p className="mt-2 print:mt-1">
             For questions or to proceed with this quote, please contact your
             salesperson.
           </p>

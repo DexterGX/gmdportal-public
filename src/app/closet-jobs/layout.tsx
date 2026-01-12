@@ -41,14 +41,16 @@ export default async function ClosetJobsLayout({
   return (
     <SidebarProvider>
       <div className="min-h-screen flex bg-gray-50 dark:bg-gray-900 w-full">
-        <div className="sticky top-0 h-screen">
+        {/* Sidebar - hidden on print */}
+        <div className="sticky top-0 h-screen print:hidden">
           <AppSidebar userRole={appRole} />
         </div>
         <div className="flex-1 flex flex-col min-w-0">
-          <div className="sticky top-0 z-30 bg-white dark:bg-gray-800">
+          {/* Navbar - hidden on print */}
+          <div className="sticky top-0 z-30 bg-white dark:bg-gray-800 print:hidden">
             <NavbarClient user={user} />
           </div>
-          <main className="p-6 overflow-auto min-w-0 bg-gray-50 dark:bg-gray-900">
+          <main className="p-6 overflow-auto min-w-0 bg-gray-50 dark:bg-gray-900 print:p-0 print:overflow-visible print:bg-white">
             {children}
           </main>
         </div>
