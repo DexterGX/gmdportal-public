@@ -186,17 +186,19 @@ export default function PrintQuoteLayout({
             <h2 className="text-xl font-bold mb-4 border-b border-gray-300 pb-2 print:text-lg print:mb-2 print:pb-1">
               Design Visualization
             </h2>
-            <div className="grid grid-cols-2 gap-4 print:gap-2">
+            <div className="grid grid-cols-2 gap-4 print:gap-3">
               {files.map((file, index) => (
                 <figure
                   key={index}
                   className="text-center print:break-inside-avoid"
                 >
-                  <img
-                    src={file.fileUrl}
-                    alt={file.caption || `Design view ${index + 1}`}
-                    className="w-full h-64 object-cover rounded-lg border border-gray-200 print:h-[250px] print:w-full print:object-cover print:rounded-none print:border-gray-400"
-                  />
+                  <div className="w-full h-64 flex items-center justify-center bg-gray-50 rounded-lg border border-gray-200 print:h-[180px] print:w-full print:bg-white print:rounded-none print:border-gray-400">
+                    <img
+                      src={file.fileUrl}
+                      alt={file.caption || `Design view ${index + 1}`}
+                      className="max-w-full max-h-full object-contain print:max-w-full print:max-h-full"
+                    />
+                  </div>
                   {file.caption && (
                     <figcaption className="text-xs text-gray-600 mt-2 print:mt-1 print:text-[8pt]">
                       {file.caption}

@@ -341,11 +341,18 @@ export default function QuoteReviewClient({
               <div className="grid grid-cols-2 gap-4">
                 {quote.files.map((file) => (
                   <div key={file.id} className="space-y-2">
-                    <img
-                      src={file.fileUrl}
-                      alt={file.caption || "Render"}
-                      className="w-full h-64 object-cover rounded-lg"
-                    />
+                    <a
+                      href={file.fileUrl}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="block cursor-pointer hover:opacity-90 transition-opacity"
+                    >
+                      <img
+                        src={file.fileUrl}
+                        alt={file.caption || "Render"}
+                        className="w-full h-auto max-h-96 object-contain rounded-lg border border-gray-200"
+                      />
+                    </a>
                     {file.caption && (
                       <p className="text-sm text-gray-600">{file.caption}</p>
                     )}

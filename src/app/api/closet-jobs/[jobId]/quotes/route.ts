@@ -89,7 +89,6 @@ export async function POST(request: NextRequest, context: QuotesRouteContext) {
       color,
       installerCost,
       notesInstaller,
-      files,
       installerId: providedInstallerId,
     } = body;
 
@@ -138,7 +137,7 @@ export async function POST(request: NextRequest, context: QuotesRouteContext) {
     const finalPrice =
       parseFloat(installerCost) * parseFloat(gmFactor.toString());
 
-    // Create the quote
+    // Create the quote (files are uploaded separately via the files endpoint)
     const quote = await prisma.closetQuote.create({
       data: {
         closetJobId: jobId,
@@ -152,16 +151,6 @@ export async function POST(request: NextRequest, context: QuotesRouteContext) {
         submittedAt: new Date(),
         installerId: effectiveInstallerId,
         submittedById: user.id,
-        files: files
-          ? {
-              create: files.map((file: any) => ({
-                fileUrl: file.fileUrl,
-                type: file.type || "3D_RENDER",
-                caption: file.caption,
-                uploadedById: user.id,
-              })),
-            }
-          : undefined,
       },
       include: {
         files: true,

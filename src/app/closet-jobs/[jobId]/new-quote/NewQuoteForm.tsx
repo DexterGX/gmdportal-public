@@ -1,8 +1,9 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useRef } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
+import { X, Upload, Image as ImageIcon } from "lucide-react";
 
 interface Job {
   id: string;
@@ -19,6 +20,12 @@ interface Installer {
   email: string | null;
 }
 
+interface FilePreview {
+  file: File;
+  preview: string;
+  caption: string;
+}
+
 export default function NewQuoteForm({
   job,
   userRole,
@@ -29,31 +36,39 @@ export default function NewQuoteForm({
   installers: Installer[];
 }) {
   const router = useRouter();
+  const fileInputRef = useRef<HTMLInputElement>(null);
   const [formData, setFormData] = useState({
     color: "",
     installerCost: "",
     notesInstaller: "",
     installerId: job.installerId, // Default to job's assigned installer
   });
-  const [files, setFiles] = useState<
-    Array<{ fileUrl: string; type: string; caption: string }>
-  >([]);
+  const [selectedFiles, setSelectedFiles] = useState<FilePreview[]>([]);
   const [submitting, setSubmitting] = useState(false);
 
   const isAdmin = userRole === "admin";
 
-  const handleAddFile = () => {
-    setFiles([...files, { fileUrl: "", type: "3D_RENDER", caption: "" }]);
+  const handleFileSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const files = Array.from(e.target.files || []);
+    const newPreviews: FilePreview[] = files.map((file) => ({
+      file,
+      preview: URL.createObjectURL(file),
+      caption: file.name,
+    }));
+    setSelectedFiles([...selectedFiles, ...newPreviews]);
   };
 
   const handleRemoveFile = (index: number) => {
-    setFiles(files.filter((_, i) => i !== index));
+    const newFiles = selectedFiles.filter((_, i) => i !== index);
+    // Revoke object URL to prevent memory leaks
+    URL.revokeObjectURL(selectedFiles[index].preview);
+    setSelectedFiles(newFiles);
   };
 
-  const handleFileChange = (index: number, field: string, value: string) => {
-    const newFiles = [...files];
-    newFiles[index] = { ...newFiles[index], [field]: value };
-    setFiles(newFiles);
+  const handleCaptionChange = (index: number, caption: string) => {
+    const newFiles = [...selectedFiles];
+    newFiles[index].caption = caption;
+    setSelectedFiles(newFiles);
   };
 
   const handleSubmit = async (e: React.FormEvent) => {
@@ -61,28 +76,53 @@ export default function NewQuoteForm({
     setSubmitting(true);
 
     try {
-      // Filter out empty file URLs
-      const validFiles = files.filter((f) => f.fileUrl.trim() !== "");
-
-      const response = await fetch(`/api/closet-jobs/${job.id}/quotes`, {
+      // Step 1: Create the quote
+      const quoteResponse = await fetch(`/api/closet-jobs/${job.id}/quotes`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          ...formData,
-          files: validFiles.length > 0 ? validFiles : undefined,
-        }),
+        body: JSON.stringify(formData),
       });
 
-      if (response.ok) {
-        router.push(`/closet-jobs/${job.id}`);
-      } else {
-        const error = await response.json();
-        alert(`Error: ${error.error}`);
+      if (!quoteResponse.ok) {
+        const error = await quoteResponse.json();
+        throw new Error(error.error || "Failed to create quote");
       }
-    } catch (error) {
+
+      const { id: quoteId } = await quoteResponse.json();
+
+      // Step 2: Upload files if any selected
+      if (selectedFiles.length > 0) {
+        const formData = new FormData();
+        selectedFiles.forEach(({ file }) => {
+          formData.append("files", file);
+        });
+
+        const filesResponse = await fetch(
+          `/api/closet-jobs/${job.id}/quotes/${quoteId}/files`,
+          {
+            method: "POST",
+            body: formData,
+          }
+        );
+
+        if (!filesResponse.ok) {
+          const error = await filesResponse.json();
+          console.error("File upload error:", error);
+          // Don't fail the whole submission if files fail
+          alert(
+            `Quote created but some files failed to upload: ${error.error}`
+          );
+        }
+      }
+
+      // Cleanup object URLs
+      selectedFiles.forEach(({ preview }) => URL.revokeObjectURL(preview));
+
+      // Navigate to job detail
+      router.push(`/closet-jobs/${job.id}`);
+    } catch (error: any) {
       console.error("Error submitting quote:", error);
-      alert("Failed to submit quote");
-    } finally {
+      alert(`Failed to submit quote: ${error.message}`);
       setSubmitting(false);
     }
   };
@@ -193,71 +233,72 @@ export default function NewQuoteForm({
               </label>
               <button
                 type="button"
-                onClick={handleAddFile}
-                className="px-3 py-1 text-sm bg-gray-100 text-gray-700 rounded hover:bg-gray-200"
+                onClick={() => fileInputRef.current?.click()}
+                className="flex items-center gap-2 px-3 py-1 text-sm bg-blue-100 text-blue-700 rounded hover:bg-blue-200"
               >
-                + Add Image
+                <Upload className="w-4 h-4" />
+                Choose Files
               </button>
+              <input
+                ref={fileInputRef}
+                type="file"
+                accept="image/*"
+                multiple
+                onChange={handleFileSelect}
+                className="hidden"
+              />
             </div>
             <p className="text-xs text-gray-500 mb-3">
-              Provide URLs to 3D renders or photos that will be shown to the
-              client. These will appear on the printed quote.
+              Upload images from your device. These will be shown to the client
+              on the printed quote. Supported formats: JPG, PNG, WebP, GIF (max
+              10MB each).
             </p>
 
-            <div className="space-y-3">
-              {files.map((file, index) => (
-                <div
-                  key={index}
-                  className="border border-gray-200 rounded-lg p-3"
-                >
-                  <div className="flex justify-between items-start mb-2">
-                    <span className="text-sm font-medium text-gray-700">
-                      Image {index + 1}
-                    </span>
+            {selectedFiles.length > 0 ? (
+              <div className="grid grid-cols-2 gap-3">
+                {selectedFiles.map((filePreview, index) => (
+                  <div
+                    key={index}
+                    className="border border-gray-200 rounded-lg p-3 relative"
+                  >
                     <button
                       type="button"
                       onClick={() => handleRemoveFile(index)}
-                      className="text-red-600 hover:text-red-800 text-sm"
+                      className="absolute top-2 right-2 p-1 bg-red-600 text-white rounded-full hover:bg-red-700 z-10"
+                      title="Remove image"
                     >
-                      Remove
+                      <X className="w-4 h-4" />
                     </button>
-                  </div>
-                  <div className="space-y-2">
-                    <input
-                      type="url"
-                      placeholder="Image URL (https://...)"
-                      value={file.fileUrl}
-                      onChange={(e) =>
-                        handleFileChange(index, "fileUrl", e.target.value)
-                      }
-                      className="w-full px-3 py-2 border border-gray-300 rounded-md text-sm"
+                    <img
+                      src={filePreview.preview}
+                      alt={filePreview.caption}
+                      className="w-full h-32 object-cover rounded mb-2"
                     />
-                    <div className="grid grid-cols-2 gap-2">
-                      <select
-                        value={file.type}
-                        onChange={(e) =>
-                          handleFileChange(index, "type", e.target.value)
-                        }
-                        className="px-3 py-2 border border-gray-300 rounded-md text-sm"
-                      >
-                        <option value="3D_RENDER">3D Render</option>
-                        <option value="PLAN">Floor Plan</option>
-                        <option value="PHOTO">Photo</option>
-                      </select>
-                      <input
-                        type="text"
-                        placeholder="Caption (optional)"
-                        value={file.caption}
-                        onChange={(e) =>
-                          handleFileChange(index, "caption", e.target.value)
-                        }
-                        className="px-3 py-2 border border-gray-300 rounded-md text-sm"
-                      />
-                    </div>
+                    <input
+                      type="text"
+                      placeholder="Caption (optional)"
+                      value={filePreview.caption}
+                      onChange={(e) =>
+                        handleCaptionChange(index, e.target.value)
+                      }
+                      className="w-full px-2 py-1 border border-gray-300 rounded-md text-sm"
+                    />
                   </div>
-                </div>
-              ))}
-            </div>
+                ))}
+              </div>
+            ) : (
+              <div className="border-2 border-dashed border-gray-300 rounded-lg p-8 text-center">
+                <ImageIcon className="w-12 h-12 text-gray-400 mx-auto mb-3" />
+                <p className="text-gray-500 text-sm mb-2">No images selected</p>
+                <button
+                  type="button"
+                  onClick={() => fileInputRef.current?.click()}
+                  className="text-blue-600 hover:text-blue-800 text-sm font-medium"
+                >
+                  Click to upload images
+                </button>
+              </div>
+            )}
           </div>
 
           <div className="flex justify-end space-x-3 pt-4 border-t">

@@ -2,7 +2,13 @@
 
 import { useState, useMemo } from "react";
 import Link from "next/link";
-import { ArrowLeft, Search } from "lucide-react";
+import {
+  ArrowLeft,
+  Search,
+  ArrowUpDown,
+  ArrowUp,
+  ArrowDown,
+} from "lucide-react";
 import type { SlabBrandConfig, Slab } from "@prisma/client";
 import FilterMultiSelect from "@/components/filters/FilterMultiSelect";
 
@@ -89,9 +95,33 @@ export default function BrandPriceListClient({ brand, filterOptions }: Props) {
   const [selectedThicknesses, setSelectedThicknesses] = useState<string[]>([]);
   const [selectedStatuses, setSelectedStatuses] = useState<string[]>([]);
   const [selectedSizes, setSelectedSizes] = useState<string[]>([]);
+  const [sortField, setSortField] = useState<keyof SerializedSlab | "sf">(
+    "color"
+  );
+  const [sortDirection, setSortDirection] = useState<"asc" | "desc">("asc");
+
+  const handleSort = (field: keyof SerializedSlab | "sf") => {
+    if (sortField === field) {
+      setSortDirection(sortDirection === "asc" ? "desc" : "asc");
+    } else {
+      setSortField(field);
+      setSortDirection("asc");
+    }
+  };
+
+  const getSortIcon = (field: keyof SerializedSlab | "sf") => {
+    if (sortField !== field) {
+      return <ArrowUpDown className="w-3 h-3 ml-1 text-gray-400" />;
+    }
+    return sortDirection === "asc" ? (
+      <ArrowUp className="w-3 h-3 ml-1 text-blue-600" />
+    ) : (
+      <ArrowDown className="w-3 h-3 ml-1 text-blue-600" />
+    );
+  };
 
   const filteredSlabs = useMemo(() => {
-    return brand.slabs.filter((slab) => {
+    let filtered = brand.slabs.filter((slab) => {
       const series = slab.series ?? "";
       const finish = formatFinish(slab.finish);
       const thickness = formatThickness(slab.thickness);
@@ -137,6 +167,37 @@ export default function BrandPriceListClient({ brand, filterOptions }: Props) {
 
       return true;
     });
+
+    // Sort the filtered results
+    filtered.sort((a, b) => {
+      let comparison = 0;
+
+      if (sortField === "sf") {
+        const sfA = (a.heightIn * a.widthIn) / 144;
+        const sfB = (b.heightIn * b.widthIn) / 144;
+        comparison = sfA - sfB;
+      } else if (sortField === "series") {
+        comparison = (a.series ?? "").localeCompare(b.series ?? "");
+      } else if (sortField === "providerCode") {
+        comparison = (a.providerCode ?? "").localeCompare(b.providerCode ?? "");
+      } else if (sortField === "color") {
+        comparison = a.color.localeCompare(b.color);
+      } else if (sortField === "finish") {
+        comparison = a.finish.localeCompare(b.finish);
+      } else if (sortField === "thickness") {
+        comparison = a.thickness.localeCompare(b.thickness);
+      } else if (sortField === "finalPrice") {
+        comparison = a.finalPrice - b.finalPrice;
+      } else if (sortField === "status") {
+        comparison = a.status.localeCompare(b.status);
+      } else if (sortField === "heightIn" || sortField === "widthIn") {
+        comparison = a[sortField] - b[sortField];
+      }
+
+      return sortDirection === "asc" ? comparison : -comparison;
+    });
+
+    return filtered;
   }, [
     brand.slabs,
     searchTerm,
@@ -145,6 +206,8 @@ export default function BrandPriceListClient({ brand, filterOptions }: Props) {
     selectedThicknesses,
     selectedStatuses,
     selectedSizes,
+    sortField,
+    sortDirection,
   ]);
 
   const clearFilters = () => {
@@ -256,32 +319,85 @@ export default function BrandPriceListClient({ brand, filterOptions }: Props) {
           <table className="w-full">
             <thead className="sticky top-0 z-10 bg-gray-50 dark:bg-gray-900 border-b border-gray-200 dark:border-gray-700">
               <tr>
-                <th className="px-4 py-3 text-center text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">
-                  Series
+                <th
+                  className="px-4 py-3 text-center text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider cursor-pointer hover:bg-gray-100 dark:hover:bg-gray-800 transition-colors"
+                  onClick={() => handleSort("series")}
+                >
+                  <div className="flex items-center justify-center">
+                    Series
+                    {getSortIcon("series")}
+                  </div>
                 </th>
-                <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">
-                  Code
+                <th
+                  className="px-4 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider cursor-pointer hover:bg-gray-100 dark:hover:bg-gray-800 transition-colors"
+                  onClick={() => handleSort("providerCode")}
+                >
+                  <div className="flex items-center">
+                    Code
+                    {getSortIcon("providerCode")}
+                  </div>
                 </th>
-                <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">
-                  Color
+                <th
+                  className="px-4 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider cursor-pointer hover:bg-gray-100 dark:hover:bg-gray-800 transition-colors"
+                  onClick={() => handleSort("color")}
+                >
+                  <div className="flex items-center">
+                    Color
+                    {getSortIcon("color")}
+                  </div>
                 </th>
-                <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">
-                  Finish
+                <th
+                  className="px-4 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider cursor-pointer hover:bg-gray-100 dark:hover:bg-gray-800 transition-colors"
+                  onClick={() => handleSort("finish")}
+                >
+                  <div className="flex items-center">
+                    Finish
+                    {getSortIcon("finish")}
+                  </div>
                 </th>
-                <th className="px-4 py-3 text-center text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">
-                  H x W
+                <th
+                  className="px-4 py-3 text-center text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider cursor-pointer hover:bg-gray-100 dark:hover:bg-gray-800 transition-colors"
+                  onClick={() => handleSort("heightIn")}
+                >
+                  <div className="flex items-center justify-center">
+                    H x W{getSortIcon("heightIn")}
+                  </div>
                 </th>
-                <th className="px-4 py-3 text-center text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">
-                  SF
+                <th
+                  className="px-4 py-3 text-center text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider cursor-pointer hover:bg-gray-100 dark:hover:bg-gray-800 transition-colors"
+                  onClick={() => handleSort("sf")}
+                >
+                  <div className="flex items-center justify-center">
+                    SF
+                    {getSortIcon("sf")}
+                  </div>
                 </th>
-                <th className="px-4 py-3 text-center text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">
-                  Thickness
+                <th
+                  className="px-4 py-3 text-center text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider cursor-pointer hover:bg-gray-100 dark:hover:bg-gray-800 transition-colors"
+                  onClick={() => handleSort("thickness")}
+                >
+                  <div className="flex items-center justify-center">
+                    Thickness
+                    {getSortIcon("thickness")}
+                  </div>
                 </th>
-                <th className="px-4 py-3 text-right text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">
-                  Price
+                <th
+                  className="px-4 py-3 text-right text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider cursor-pointer hover:bg-gray-100 dark:hover:bg-gray-800 transition-colors"
+                  onClick={() => handleSort("finalPrice")}
+                >
+                  <div className="flex items-center justify-end">
+                    Price
+                    {getSortIcon("finalPrice")}
+                  </div>
                 </th>
-                <th className="px-4 py-3 text-center text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">
-                  Status
+                <th
+                  className="px-4 py-3 text-center text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider cursor-pointer hover:bg-gray-100 dark:hover:bg-gray-800 transition-colors"
+                  onClick={() => handleSort("status")}
+                >
+                  <div className="flex items-center justify-center">
+                    Status
+                    {getSortIcon("status")}
+                  </div>
                 </th>
               </tr>
             </thead>

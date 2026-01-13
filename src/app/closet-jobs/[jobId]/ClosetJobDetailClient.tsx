@@ -279,12 +279,19 @@ export default function ClosetJobDetailClient({
                     </p>
                     <div className="grid grid-cols-4 gap-2">
                       {quote.files.slice(0, 4).map((file) => (
-                        <img
+                        <a
                           key={file.id}
-                          src={file.fileUrl}
-                          alt={file.caption || "3D render"}
-                          className="w-full h-24 object-cover rounded"
-                        />
+                          href={file.fileUrl}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          className="block cursor-pointer hover:opacity-90 transition-opacity"
+                        >
+                          <img
+                            src={file.fileUrl}
+                            alt={file.caption || "3D render"}
+                            className="w-full h-24 object-cover rounded"
+                          />
+                        </a>
                       ))}
                     </div>
                   </div>
