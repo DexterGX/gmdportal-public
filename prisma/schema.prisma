@@ -1,9 +1,3 @@
-// This is your Prisma schema file,
-// learn more about it in the docs: https://pris.ly/d/prisma-schema
-
-// Looking for ways to speed up your queries, or scale easily with your serverless or edge functions?
-// Try Prisma Accelerate: https://pris.ly/cli/accelerate-init
-
 generator client {
   provider = "prisma-client-js"
 }
@@ -13,59 +7,39 @@ datasource db {
   url      = env("DATABASE_URL")
 }
 
-enum Role {
-  ADMIN
-  SALES
-  OFFICE
-  FINANCE
-  SPECIALIST
-  INSTALLER
-  UNASSIGNED
-}
-
 model User {
-  id                String    @id @default(cuid())
-  name              String?
-  email             String?   @unique
-  emailVerified     DateTime?
-  image             String?
-
-  // For credentials login
-  username          String?   @unique
-  passwordHash      String?
-
-  // For password reset
-  resetToken        String?   @unique
-  resetTokenExpiry  DateTime?
-
-  // Role-based access
-  role              Role      @default(UNASSIGNED)
-  active            Boolean   @default(false)
-
-  accounts          Account[]
-  sessions          Session[]
-  
-  // Closet quote relations
-  installerQuotes   ClosetQuote[] @relation("InstallerQuotes")
-  submittedQuotes   ClosetQuote[] @relation("SubmittedQuotes")
-  approvedQuotes    ClosetQuote[] @relation("ApprovedQuotes")
+  id               String        @id @default(cuid())
+  name             String?
+  email            String?       @unique
+  emailVerified    DateTime?
+  image            String?
+  username         String?       @unique
+  passwordHash     String?
+  resetToken       String?       @unique
+  resetTokenExpiry DateTime?
+  role             Role          @default(UNASSIGNED)
+  active           Boolean       @default(false)
+  accounts         Account[]
+  approvedQuotes   ClosetQuote[] @relation("ApprovedQuotes")
+  installerQuotes  ClosetQuote[] @relation("InstallerQuotes")
+  submittedQuotes  ClosetQuote[] @relation("SubmittedQuotes")
+  sessions         Session[]
 }
 
 model Account {
-  id                String   @id @default(cuid())
+  id                String  @id @default(cuid())
   userId            String
   type              String
   provider          String
   providerAccountId String
-  refresh_token     String?  @db.Text
-  access_token      String?  @db.Text
+  refresh_token     String?
+  access_token      String?
   expires_at        Int?
   token_type        String?
   scope             String?
-  id_token          String?  @db.Text
+  id_token          String?
   session_state     String?
-
-  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+  user              User    @relation(fields: [userId], references: [id], onDelete: Cascade)
 
   @@unique([provider, providerAccountId])
 }
@@ -75,8 +49,7 @@ model Session {
   sessionToken String   @unique
   userId       String
   expires      DateTime
-
-  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+  user         User     @relation(fields: [userId], references: [id], onDelete: Cascade)
 }
 
 model VerificationToken {
@@ -94,10 +67,10 @@ model StockItem {
   unit         String
   quantity     Int                @default(0)
   minQuantity  Int                @default(0)
-  providor     String?
   notes        String?
   updatedById  String?
   updatedAt    DateTime           @updatedAt
+  providor     String?
   transactions StockTransaction[]
 }
 
@@ -110,26 +83,141 @@ model StockTransaction {
   oldQuantity Int
   newQuantity Int
   createdAt   DateTime  @default(now())
-
-  item StockItem @relation(fields: [itemId], references: [id])
+  item        StockItem @relation(fields: [itemId], references: [id])
 }
 
-// ======================================================================
-// SLAB MANAGEMENT MODELS
-// ======================================================================
+model SlabBrandConfig {
+  id            String    @id @default(cuid())
+  name          String
+  gmdBrandId    String?
+  profitFactor  Decimal   @db.Decimal(10, 4)
+  taxRate       Decimal   @db.Decimal(5, 4)
+  deliveryFee   Decimal   @db.Decimal(10, 2)
+  discount      Decimal   @db.Decimal(10, 4)
+  lastUpdate    DateTime? @db.Timestamptz(6)
+  contactName   String?
+  contactNumber String?
+  contactCell   String?
+  contactEmail  String?
+  createdAt     DateTime  @default(now()) @db.Timestamptz(6)
+  updatedAt     DateTime  @updatedAt @db.Timestamptz(6)
+  brandNumber   Int?      @unique
+  logoUrl       String?
+  slabs         Slab[]
+}
+
+model Slab {
+  id            String          @id @default(cuid())
+  gmdId         String?
+  brandId       String
+  series        String?
+  providerCode  String
+  color         String
+  finish        SlabFinish
+  status        SlabStatus      @default(AVAILABLE)
+  providerPrice Decimal         @db.Decimal(10, 2)
+  finalPrice    Decimal         @db.Decimal(10, 2)
+  createdAt     DateTime        @default(now()) @db.Timestamptz(6)
+  updatedAt     DateTime        @updatedAt @db.Timestamptz(6)
+  heightIn      Decimal         @db.Decimal(6, 2)
+  slabNumber    Int?            @unique
+  thickness     SlabThickness
+  widthIn       Decimal         @db.Decimal(6, 2)
+  brand         SlabBrandConfig @relation(fields: [brandId], references: [id])
+}
+
+model ClosetJob {
+  id              String          @id @default(uuid())
+  quoteNumber     String          @unique
+  customerId      String?
+  customer        Customer?       @relation(fields: [customerId], references: [id])
+  customerName    String
+  customerPhone   String?
+  salesPersonId   String
+  installerId     String
+  propertyAddress String
+  area            ClosetAreaType
+  status          ClosetJobStatus @default(QUOTE)
+  createdAt       DateTime        @default(now())
+  quoteStartedAt  DateTime        @default(now())
+  notesSales      String?
+  quotes          ClosetQuote[]
+}
+
+model ClosetQuote {
+  id              String            @id @default(uuid())
+  closetJobId     String
+  quoteCode       String            @unique
+  color           String
+  installerCost   Decimal           @db.Decimal(12, 2)
+  gmFactor        Decimal?          @db.Decimal(8, 4)
+  finalPrice      Decimal           @db.Decimal(12, 2)
+  notesInstaller  String?
+  notesSales      String?
+  status          ClosetQuoteStatus @default(PENDING_REVIEW)
+  createdAt       DateTime          @default(now())
+  submittedAt     DateTime?
+  approvedAt      DateTime?
+  approvedById    String?
+  lastPrintedAt   DateTime?
+  lastPrintedById String?
+  installerId     String?
+  submittedById   String?
+  approvedBy      User?             @relation("ApprovedQuotes", fields: [approvedById], references: [id])
+  closetJob       ClosetJob         @relation(fields: [closetJobId], references: [id], onDelete: Cascade)
+  installer       User?             @relation("InstallerQuotes", fields: [installerId], references: [id])
+  submittedBy     User?             @relation("SubmittedQuotes", fields: [submittedById], references: [id])
+  files           ClosetQuoteFile[]
+}
+
+model ClosetQuoteFile {
+  id            String      @id @default(uuid())
+  closetQuoteId String
+  fileUrl       String
+  type          String
+  caption       String?
+  uploadedById  String
+  uploadedAt    DateTime    @default(now())
+  closetQuote   ClosetQuote @relation(fields: [closetQuoteId], references: [id], onDelete: Cascade)
+}
+
+model ClosetEstimateSettings {
+  id                    String   @id @default(uuid())
+  defaultGmFactor       Decimal  @db.Decimal(8, 4)
+  quoteNumberFormat     String   @default("{INITIALS}-CQUO-{YYMMDD}-{SEQ3}")
+  createdAt             DateTime @default(now())
+  updatedAt             DateTime @updatedAt
+  printCompanyLine1     String   @default("Custom Closets & Cabinetry")
+  printCompanyLine2     String   @default("Miami, FL")
+  printCompanyName      String   @default("GM Design")
+  printCompanyPhone     String   @default("(305) XXX-XXXX")
+  printHeaderTitle      String   @default("Closet Design & Installation Quote")
+  printLogoUrl          String   @default("/logo.svg")
+  printOverviewTemplate String   @default("Custom closet system for the {AREA} at {ADDRESS}, including design, materials, and professional installation as illustrated in the 3D views below.")
+}
+
+enum Role {
+  ADMIN
+  SALES
+  OFFICE
+  FINANCE
+  SPECIALIST
+  UNASSIGNED
+  INSTALLER
+}
 
 enum SlabThickness {
   EIGHT_MM
   TWELVE_MM
-  FIFTEEN_MM
   TWO_CM
   THREE_CM
+  FIFTEEN_MM
 }
 
 enum SlabStatus {
   AVAILABLE
-  UNAVAILABLE
   DISCONTINUED
+  UNAVAILABLE
 }
 
 enum SlabFinish {
@@ -174,61 +262,6 @@ enum SlabFinish {
   ULTRASOFT
 }
 
-model SlabBrandConfig {
-  id             String   @id @default(cuid())
-  brandNumber    Int?     @unique // Numeric brand ID
-  name           String          // "Caesarstone", "Silestone", etc.
-  gmdBrandId     String?         // optional internal code
-
-  profitFactor   Decimal @db.Decimal(10, 4) // e.g. 1.3500
-  taxRate        Decimal @db.Decimal(5, 4)  // e.g. 0.0700 (7%)
-  deliveryFee    Decimal @db.Decimal(10, 2) // flat fee per slab
-  discount       Decimal @db.Decimal(10, 4) // optional discount factor
-
-  lastUpdate     DateTime? @db.Timestamptz
-
-  contactName    String?
-  contactNumber  String?  // office phone
-  contactCell    String?  // cell / WhatsApp
-  contactEmail   String?
-  logoUrl        String?  // public URL for brand logo
-
-  slabs          Slab[]
-
-  createdAt      DateTime @default(now()) @db.Timestamptz
-  updatedAt      DateTime @updatedAt @db.Timestamptz
-}
-
-model Slab {
-  id             String   @id @default(cuid())
-  slabNumber     Int?     @unique // Numeric slab ID
-  gmdId          String?        // optional internal GM Design ID
-
-  brand          SlabBrandConfig @relation(fields: [brandId], references: [id])
-  brandId        String
-
-  series         String?
-  providerCode   String         // code from provider price list
-  color          String
-  finish         SlabFinish
-
-  widthIn        Decimal  @db.Decimal(6, 2) // Width in inches
-  heightIn       Decimal  @db.Decimal(6, 2) // Height in inches
-  thickness      SlabThickness
-
-  status         SlabStatus @default(AVAILABLE)
-
-  providerPrice  Decimal @db.Decimal(10, 2) // raw price from provider
-  finalPrice     Decimal @db.Decimal(10, 2) // computed sale price
-
-  createdAt      DateTime @default(now()) @db.Timestamptz
-  updatedAt      DateTime @updatedAt @db.Timestamptz
-}
-
-// ======================================================================
-// CLOSET ESTIMATE PROGRAM MODELS
-// ======================================================================
-
 enum ClosetAreaType {
   MASTER
   GUEST
@@ -240,9 +273,9 @@ enum ClosetAreaType {
 }
 
 enum ClosetJobStatus {
-  QUOTE      // Job created, waiting for installer quotes
-  REVIEW     // Installer quotes submitted, waiting for review
-  APPROVED   // At least one quote approved
+  QUOTE
+  REVIEW
+  APPROVED
   CANCELLED
 }
 
@@ -252,102 +285,57 @@ enum ClosetQuoteStatus {
   REJECTED
 }
 
-model ClosetJob {
-  id              String           @id @default(uuid())
-  quoteNumber     String           @unique   // e.g. DG-CQUO-250315-001
+// Customer Management - QuickBooks Integration
+model Customer {
+  id                 String      @id @default(uuid())
+  quickbooksId       String?     @unique
+  displayName        String
+  companyName        String?
+  givenName          String?
+  familyName         String?
+  email              String?
+  phone              String?
+  mobile             String?
+  billAddr           Json?
+  shipAddr           Json?
+  balance            Decimal?    @db.Decimal(12, 2)
+  lastSyncedAt       DateTime?
+  quickbooksData     Json?
+  notes              String?
+  active             Boolean     @default(true)
+  createdAt          DateTime    @default(now())
+  updatedAt          DateTime    @updatedAt
+  closetJobs         ClosetJob[]
 
-  // Foreign keys to existing User model
-  customerName    String           // Store customer name directly (no separate Customer model)
-  customerPhone   String?
-  salesPersonId   String
-  installerId     String           // assigned installer (INSTALLER role)
-
-  propertyAddress String
-  area            ClosetAreaType
-
-  status          ClosetJobStatus  @default(QUOTE)
-
-  createdAt       DateTime         @default(now())
-  quoteStartedAt  DateTime         @default(now())
-
-  notesSales      String?
-
-  quotes          ClosetQuote[]
+  @@index([quickbooksId])
+  @@index([displayName])
+  @@index([email])
 }
 
-model ClosetQuote {
-  id              String             @id @default(uuid())
-  closetJobId     String
-  closetJob       ClosetJob          @relation(fields: [closetJobId], references: [id], onDelete: Cascade)
-
-  // Quote identifier for the job, e.g. T3-CQUO-251212-001-Q2
-  quoteCode       String             @unique
-
-  color           String
-
-  // Raw cost from installer – INTERNAL ONLY (do not show in client view)
-  installerCost   Decimal            @db.Decimal(12, 2)
-
-  // Factor used to derive final client price (optional, can be null if we only
-  // store the finalPrice)
-  gmFactor        Decimal?           @db.Decimal(8, 4)
-
-  // Final price shown to client
-  finalPrice      Decimal            @db.Decimal(12, 2)
-
-  // Installer responsible for this quote (optional for migration)
-  installerId     String?
-  installer       User?              @relation("InstallerQuotes", fields: [installerId], references: [id])
-
-  notesInstaller  String?
-  notesSales      String?
-
-  status          ClosetQuoteStatus  @default(PENDING_REVIEW)
-
-  createdAt       DateTime           @default(now())
-  submittedAt     DateTime?
-
-  // Who actually submitted (could be installer or admin) (optional for migration)
-  submittedById   String?
-  submittedBy     User?              @relation("SubmittedQuotes", fields: [submittedById], references: [id])
-
-  approvedAt      DateTime?
-  approvedById    String?
-  approvedBy      User?              @relation("ApprovedQuotes", fields: [approvedById], references: [id])
-
-  lastPrintedAt   DateTime?
-  lastPrintedById String?
-
-  files           ClosetQuoteFile[]
+model QuickBooksTokens {
+  id            String   @id @default(cuid())
+  accessToken   String
+  refreshToken  String
+  expiresAt     DateTime
+  realmId       String
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
 }
 
-model ClosetQuoteFile {
-  id            String       @id @default(uuid())
-  closetQuoteId String
-  closetQuote   ClosetQuote  @relation(fields: [closetQuoteId], references: [id], onDelete: Cascade)
-
-  fileUrl       String
-  type          String       // e.g. "3D_RENDER", "PLAN", "PHOTO"
-  caption       String?
-
-  uploadedById  String
-  uploadedAt    DateTime     @default(now())
-}
-
-model ClosetEstimateSettings {
-  id                    String   @id @default(uuid())
-  defaultGmFactor       Decimal  @db.Decimal(8, 4) // e.g. 1.3500
-  quoteNumberFormat     String   @default("{INITIALS}-CQUO-{YYMMDD}-{SEQ3}")
-  
-  // Layout settings for print/PDF
-  printLogoUrl          String   @default("/logo.svg")
-  printCompanyName      String   @default("GM Design")
-  printCompanyLine1     String   @default("Custom Closets & Cabinetry")
-  printCompanyLine2     String   @default("Miami, FL")
-  printCompanyPhone     String   @default("(305) XXX-XXXX")
-  printHeaderTitle      String   @default("Closet Design & Installation Quote")
-  printOverviewTemplate String   @default("Custom closet system for the {AREA} at {ADDRESS}, including design, materials, and professional installation as illustrated in the 3D views below.")
-  
-  createdAt             DateTime @default(now())
-  updatedAt             DateTime @updatedAt
+model SyncJob {
+  id            String   @id @default(cuid())
+  type          String   @default("customer_sync")
+  status        String   @default("running") // running, completed, cancelled, failed
+  startedAt     DateTime @default(now())
+  completedAt   DateTime?
+  cancelledAt   DateTime?
+  totalRecords  Int?
+  processedRecords Int   @default(0)
+  createdRecords   Int   @default(0)
+  updatedRecords   Int   @default(0)
+  errorCount       Int   @default(0)
+  errorMessage     String?
+  cancelRequested  Boolean @default(false)
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
 }

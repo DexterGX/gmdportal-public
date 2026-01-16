@@ -10,7 +10,7 @@ import {
   BoxCubeIcon,
   PlugInIcon,
 } from "@/icons";
-import { TicketPercent, Settings2, Table2, Shirt } from "lucide-react";
+import { TicketPercent, Settings2, Table2, Shirt, Users } from "lucide-react";
 import type { Role } from "@prisma/client"; // Prisma enum
 
 // App-facing roles (lowercase, string union)
@@ -51,7 +51,8 @@ export type ProgramId =
   | "storeStock"
   | "slabs"
   | "users"
-  | "closetJobs";
+  | "closetJobs"
+  | "customers";
 
 export interface ProgramConfig {
   id: ProgramId;
@@ -165,6 +166,23 @@ export const programs: ProgramConfig[] = [
         icon: Settings2,
         name: "Estimate Settings",
         path: "/closet-jobs/admin/settings",
+        adminOnly: true,
+      },
+    ],
+    othersItems: [],
+  },
+  {
+    id: "customers",
+    name: "Customer Directory",
+    basePath: "/customers",
+    description: "Manage customer information synced from QuickBooks.",
+    allowedRoles: ["admin", "sales", "office"],
+    navItems: [
+      { icon: Users, name: "All Customers", path: "/customers" },
+      {
+        icon: PlugInIcon,
+        name: "QuickBooks Sync",
+        path: "/customers/sync",
         adminOnly: true,
       },
     ],
