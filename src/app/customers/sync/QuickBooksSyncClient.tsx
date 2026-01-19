@@ -46,6 +46,8 @@ export default function QuickBooksSyncClient() {
       total: number;
       created: number;
       updated: number;
+      jobsCreated?: number;
+      jobsUpdated?: number;
       errors: number;
     };
   } | null>(null);
@@ -494,13 +496,13 @@ export default function QuickBooksSyncClient() {
                 {result.message}
               </h3>
               {result.stats && (
-                <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mt-4">
+                <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-4 mt-4">
                   <div className="bg-white dark:bg-gray-800 rounded-lg p-3 border border-green-200 dark:border-green-700">
                     <div className="text-2xl font-bold text-gray-900 dark:text-gray-100">
                       {result.stats.total}
                     </div>
                     <div className="text-xs text-gray-600 dark:text-gray-400 mt-1">
-                      Total Customers
+                      Total Records
                     </div>
                   </div>
                   <div className="bg-white dark:bg-gray-800 rounded-lg p-3 border border-green-200 dark:border-green-700">
@@ -508,7 +510,7 @@ export default function QuickBooksSyncClient() {
                       {result.stats.created}
                     </div>
                     <div className="text-xs text-gray-600 dark:text-gray-400 mt-1">
-                      Created
+                      Customers Created
                     </div>
                   </div>
                   <div className="bg-white dark:bg-gray-800 rounded-lg p-3 border border-green-200 dark:border-green-700">
@@ -516,9 +518,29 @@ export default function QuickBooksSyncClient() {
                       {result.stats.updated}
                     </div>
                     <div className="text-xs text-gray-600 dark:text-gray-400 mt-1">
-                      Updated
+                      Customers Updated
                     </div>
                   </div>
+                  {(result.stats.jobsCreated !== undefined || result.stats.jobsUpdated !== undefined) && (
+                    <>
+                      <div className="bg-white dark:bg-gray-800 rounded-lg p-3 border border-purple-200 dark:border-purple-700">
+                        <div className="text-2xl font-bold text-purple-600 dark:text-purple-400">
+                          {result.stats.jobsCreated || 0}
+                        </div>
+                        <div className="text-xs text-gray-600 dark:text-gray-400 mt-1">
+                          Jobs Created
+                        </div>
+                      </div>
+                      <div className="bg-white dark:bg-gray-800 rounded-lg p-3 border border-purple-200 dark:border-purple-700">
+                        <div className="text-2xl font-bold text-purple-600 dark:text-purple-400">
+                          {result.stats.jobsUpdated || 0}
+                        </div>
+                        <div className="text-xs text-gray-600 dark:text-gray-400 mt-1">
+                          Jobs Updated
+                        </div>
+                      </div>
+                    </>
+                  )}
                   <div className="bg-white dark:bg-gray-800 rounded-lg p-3 border border-green-200 dark:border-green-700">
                     <div className="text-2xl font-bold text-red-600 dark:text-red-400">
                       {result.stats.errors}

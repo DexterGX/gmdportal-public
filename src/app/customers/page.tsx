@@ -1,6 +1,7 @@
 import { getCurrentUserWithRole } from "@/lib/authHelpers";
 import { prisma } from "@/lib/prisma";
 import CustomersClient from "./CustomersClient";
+import { redirect } from "next/navigation";
 
 const ITEMS_PER_PAGE = 100;
 
@@ -10,23 +11,28 @@ export default async function CustomersPage({
   searchParams: Promise<{
     page?: string;
     search?: string;
-    inactive?: string;
     initial?: string;
+    type?: string;
   }>;
 }) {
   const { appRole } = await getCurrentUserWithRole();
 
+  // Restrict access to admins only
+  if (appRole !== "admin") {
+    redirect("/dashboard");
+  }
+
   const params = await searchParams;
   const currentPage = parseInt(params.page || "1");
   const searchTerm = params.search || "";
-  const showInactiveOnly = params.inactive === "true";
   const selectedInitial = params.initial || "";
+  const selectedType = params.type || ""; // CLIENT, CONTRACTOR, PROSPECT
 
   // Build where clause
   const where: any = {};
 
-  if (showInactiveOnly) {
-    where.active = false;
+  if (selectedType) {
+    where.type = selectedType;
   }
 
   if (searchTerm) {
@@ -76,6 +82,17 @@ export default async function CustomersPage({
           status: true,
         },
       },
+      jobs: {
+        select: {
+          id: true,
+          jobName: true,
+          status: true,
+          value: true,
+        },
+        orderBy: {
+          createdAt: 'desc',
+        },
+      },
     },
   });
 
@@ -102,6 +119,10 @@ export default async function CustomersPage({
   const serializedCustomers = customers.map((customer) => ({
     ...customer,
     balance: customer.balance?.toNumber() || null,
+    jobs: customer.jobs.map((job) => ({
+      ...job,
+      value: job.value?.toNumber() || null,
+    })),
   }));
 
   // Compute last name initials from all customers for filter
@@ -139,8 +160,8 @@ export default async function CustomersPage({
       totalCustomers={totalCustomers}
       lastNameInitials={lastNameInitials}
       initialSearchTerm={searchTerm}
-      initialInactiveOnly={showInactiveOnly}
       initialSelectedInitial={selectedInitial}
+      initialSelectedType={selectedType}
     />
   );
 }

@@ -176,7 +176,7 @@ export const programs: ProgramConfig[] = [
     name: "Customer Directory",
     basePath: "/customers",
     description: "Manage customer information synced from QuickBooks.",
-    allowedRoles: ["admin", "sales", "office"],
+    allowedRoles: ["admin"],
     navItems: [
       { icon: Users, name: "All Customers", path: "/customers" },
       {

@@ -24,6 +24,12 @@ type CustomerWithJobs = Omit<Customer, "balance"> & {
     quoteNumber: string;
     status: string;
   }>;
+  jobs: Array<{
+    id: string;
+    jobName: string;
+    status: string;
+    value: number | null;
+  }>;
 };
 
 interface Props {
@@ -34,8 +40,8 @@ interface Props {
   totalCustomers: number;
   lastNameInitials: string[];
   initialSearchTerm: string;
-  initialInactiveOnly: boolean;
   initialSelectedInitial: string;
+  initialSelectedType: string;
 }
 
 export default function CustomersClient({
@@ -46,16 +52,16 @@ export default function CustomersClient({
   totalCustomers,
   lastNameInitials,
   initialSearchTerm,
-  initialInactiveOnly,
   initialSelectedInitial,
+  initialSelectedType,
 }: Props) {
   const router = useRouter();
   const searchParams = useSearchParams();
   const [searchTerm, setSearchTerm] = useState(initialSearchTerm);
-  const [showInactiveOnly, setShowInactiveOnly] = useState(initialInactiveOnly);
   const [selectedInitial, setSelectedInitial] = useState(
     initialSelectedInitial
   );
+  const [selectedType, setSelectedType] = useState(initialSelectedType);
   const [isInitialLoad, setIsInitialLoad] = useState(true);
 
   // Update URL when filters change
@@ -69,15 +75,15 @@ export default function CustomersClient({
     const timer = setTimeout(() => {
       const params = new URLSearchParams();
       if (searchTerm) params.set("search", searchTerm);
-      if (showInactiveOnly) params.set("inactive", "true");
       if (selectedInitial) params.set("initial", selectedInitial);
+      if (selectedType) params.set("type", selectedType);
       params.set("page", "1"); // Reset to page 1 on filter change
 
       router.push(`/customers?${params.toString()}`);
     }, 500); // Debounce search
 
     return () => clearTimeout(timer);
-  }, [searchTerm, showInactiveOnly, selectedInitial]);
+  }, [searchTerm, selectedInitial, selectedType]);
 
   const handlePageChange = (newPage: number) => {
     const params = new URLSearchParams(searchParams.toString());
@@ -87,10 +93,10 @@ export default function CustomersClient({
 
   const clearFilters = () => {
     setSelectedInitial("");
-    setShowInactiveOnly(false);
+    setSelectedType("");
   };
 
-  const hasActiveFilters = selectedInitial !== "" || showInactiveOnly;
+  const hasActiveFilters = selectedInitial !== "" || selectedType !== "";
 
   // Convert single initial to array for FilterMultiSelect
   const selectedInitials = selectedInitial ? [selectedInitial] : [];
@@ -101,6 +107,23 @@ export default function CustomersClient({
       selected.length > 0 ? selected[selected.length - 1] : ""
     );
   };
+
+  const handleTypeChange = (selected: string[]) => {
+    // Only allow single selection
+    setSelectedType(selected.length > 0 ? selected[selected.length - 1] : "");
+  };
+
+  // Type options for filter
+  const typeOptions = ["Clients", "Contractors", "Prospects"];
+  const selectedTypes = selectedType
+    ? [
+        selectedType === "CLIENT"
+          ? "Clients"
+          : selectedType === "CONTRACTOR"
+          ? "Contractors"
+          : "Prospects",
+      ]
+    : [];
 
   // Calculate which page numbers to show
   const getPageNumbers = () => {
@@ -168,13 +191,22 @@ export default function CustomersClient({
           </p>
         </div>
         {userRole === "admin" && (
-          <Link
-            href="/customers/sync"
-            className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors flex items-center gap-2"
-          >
-            <RefreshCw className="w-4 h-4" />
-            Sync from QuickBooks
-          </Link>
+          <div className="flex gap-2">
+            <Link
+              href="/customers/pipedrive-sync"
+              className="px-4 py-2 bg-purple-600 text-white rounded-lg hover:bg-purple-700 transition-colors flex items-center gap-2"
+            >
+              <RefreshCw className="w-4 h-4" />
+              Sync from Pipedrive
+            </Link>
+            <Link
+              href="/customers/sync"
+              className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors flex items-center gap-2"
+            >
+              <RefreshCw className="w-4 h-4" />
+              Sync from QuickBooks
+            </Link>
+          </div>
         )}
       </div>
 
@@ -201,15 +233,24 @@ export default function CustomersClient({
             onChange={handleInitialChange}
           />
 
-          <label className="inline-flex items-center gap-2 px-3 py-1.5 rounded-lg border text-sm transition-colors cursor-pointer bg-white dark:bg-gray-800 border-gray-300 dark:border-gray-600 text-gray-700 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-700">
-            <input
-              type="checkbox"
-              checked={showInactiveOnly}
-              onChange={(e) => setShowInactiveOnly(e.target.checked)}
-              className="rounded border-gray-300 dark:border-gray-600"
-            />
-            <span>Inactive only</span>
-          </label>
+          <FilterMultiSelect
+            label="Type"
+            options={typeOptions}
+            selected={selectedTypes}
+            onChange={(selected) => {
+              const value =
+                selected.length > 0 ? selected[selected.length - 1] : "";
+              const typeValue =
+                value === "Clients"
+                  ? "CLIENT"
+                  : value === "Contractors"
+                  ? "CONTRACTOR"
+                  : value === "Prospects"
+                  ? "PROSPECT"
+                  : "";
+              setSelectedType(typeValue);
+            }}
+          />
 
           {hasActiveFilters && (
             <button
@@ -238,17 +279,8 @@ export default function CustomersClient({
                 <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">
                   Address
                 </th>
-                <th className="px-4 py-3 text-right text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">
-                  Balance
-                </th>
                 <th className="px-4 py-3 text-center text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">
                   Jobs
-                </th>
-                <th className="px-4 py-3 text-center text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">
-                  Last Synced
-                </th>
-                <th className="px-4 py-3 text-center text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">
-                  Status
                 </th>
               </tr>
             </thead>
@@ -256,7 +288,7 @@ export default function CustomersClient({
               {customers.length === 0 ? (
                 <tr>
                   <td
-                    colSpan={7}
+                    colSpan={4}
                     className="px-4 py-12 text-center text-gray-500 dark:text-gray-400"
                   >
                     {searchTerm || hasActiveFilters
@@ -279,8 +311,25 @@ export default function CustomersClient({
                           href={`/customers/${customer.id}`}
                           className="block hover:text-blue-600 dark:hover:text-blue-400"
                         >
-                          <div className="font-medium text-gray-900 dark:text-gray-100">
-                            {customer.displayName}
+                          <div className="flex items-center gap-2">
+                            <span className="font-medium text-gray-900 dark:text-gray-100">
+                              {customer.displayName}
+                            </span>
+                            <span
+                              className={`inline-flex items-center px-1.5 py-0.5 rounded text-xs font-medium ${
+                                customer.type === "CONTRACTOR"
+                                  ? "bg-purple-100 dark:bg-purple-900/30 text-purple-700 dark:text-purple-300"
+                                  : customer.type === "PROSPECT"
+                                  ? "bg-yellow-100 dark:bg-yellow-900/30 text-yellow-700 dark:text-yellow-300"
+                                  : "bg-blue-100 dark:bg-blue-900/30 text-blue-700 dark:text-blue-300"
+                              }`}
+                            >
+                              {customer.type === "CONTRACTOR"
+                                ? "C"
+                                : customer.type === "PROSPECT"
+                                ? "P"
+                                : ""}
+                            </span>
                           </div>
                           {customer.companyName && (
                             <div className="text-sm text-gray-500 dark:text-gray-400 flex items-center gap-1 mt-1">
@@ -324,41 +373,34 @@ export default function CustomersClient({
                           </div>
                         )}
                       </td>
-                      <td className="px-4 py-3 text-sm text-right font-medium text-gray-900 dark:text-gray-100">
-                        {customer.balance !== null
-                          ? new Intl.NumberFormat("en-US", {
-                              style: "currency",
-                              currency: "USD",
-                            }).format(customer.balance)
-                          : "—"}
-                      </td>
                       <td className="px-4 py-3 text-sm text-center">
-                        {customer.closetJobs.length > 0 ? (
-                          <Link
-                            href={`/customers/${customer.id}`}
-                            className="text-blue-600 dark:text-blue-400 hover:underline"
-                          >
-                            {customer.closetJobs.length}
-                          </Link>
+                        {customer.jobs.length > 0 ||
+                        customer.closetJobs.length > 0 ? (
+                          <div className="flex flex-col gap-1 items-center">
+                            {customer.jobs.length > 0 && (
+                              <Link
+                                href={`/customers/${customer.id}#jobs`}
+                                className="text-blue-600 dark:text-blue-400 hover:underline text-xs"
+                              >
+                                {customer.jobs.length} QB{" "}
+                                {customer.jobs.length === 1 ? "Job" : "Jobs"}
+                              </Link>
+                            )}
+                            {customer.closetJobs.length > 0 && (
+                              <Link
+                                href={`/customers/${customer.id}#closet-jobs`}
+                                className="text-purple-600 dark:text-purple-400 hover:underline text-xs"
+                              >
+                                {customer.closetJobs.length} Closet{" "}
+                                {customer.closetJobs.length === 1
+                                  ? "Job"
+                                  : "Jobs"}
+                              </Link>
+                            )}
+                          </div>
                         ) : (
-                          <span className="text-gray-400">0</span>
+                          <span className="text-gray-400">—</span>
                         )}
-                      </td>
-                      <td className="px-4 py-3 text-sm text-center text-gray-600 dark:text-gray-400">
-                        {customer.lastSyncedAt
-                          ? new Date(customer.lastSyncedAt).toLocaleDateString()
-                          : "Never"}
-                      </td>
-                      <td className="px-4 py-3 text-sm text-center">
-                        <span
-                          className={`inline-flex items-center px-2 py-1 rounded-full text-xs font-medium ${
-                            customer.active
-                              ? "bg-green-100 dark:bg-green-900/30 text-green-800 dark:text-green-300"
-                              : "bg-gray-100 dark:bg-gray-700 text-gray-800 dark:text-gray-300"
-                          }`}
-                        >
-                          {customer.active ? "Active" : "Inactive"}
-                        </span>
                       </td>
                     </tr>
                   );

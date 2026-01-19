@@ -6,6 +6,7 @@ import { prisma } from "@/lib/prisma";
 import {
   fetchAllQuickBooksCustomers,
   mapQuickBooksCustomerToDb,
+  extractJobName,
 } from "@/lib/quickbooks";
 
 /**
@@ -79,12 +80,20 @@ export async function POST(request: NextRequest) {
         let created = 0;
         let updated = 0;
         let errors = 0;
+        let jobsCreated = 0;
+        let jobsUpdated = 0;
+
+        // Separate parent customers from job sub-accounts
+        const parentCustomers = qbCustomers.filter((c) => !c.Job && !c.ParentRef);
+        const jobSubAccounts = qbCustomers.filter((c) => c.Job || c.ParentRef);
+
+        console.log(`[Sync] Found ${parentCustomers.length} parent customers and ${jobSubAccounts.length} job sub-accounts`);
 
         // Get all existing QuickBooks IDs from database in one query
         const existingCustomers = await prisma.customer.findMany({
           where: {
             quickbooksId: {
-              in: qbCustomers.map((c) => c.Id).filter(Boolean),
+              in: parentCustomers.map((c) => c.Id).filter(Boolean),
             },
           },
           select: {
@@ -100,11 +109,11 @@ export async function POST(request: NextRequest) {
           existingCustomers.map((c) => [c.quickbooksId, c.id])
         );
 
-        // Separate into new vs existing
+        // Separate into new vs existing (PARENT CUSTOMERS ONLY)
         const newCustomers = [];
         const updateCustomers = [];
 
-        for (const qbCustomer of qbCustomers) {
+        for (const qbCustomer of parentCustomers) {
           try {
             const customerData = mapQuickBooksCustomerToDb(qbCustomer);
 
@@ -249,6 +258,90 @@ export async function POST(request: NextRequest) {
           }
         }
 
+        // Now process job sub-accounts
+        await sendProgress({
+          stage: "jobs",
+          message: `Processing ${jobSubAccounts.length} job sub-accounts...`,
+          processed: created + updated,
+          total: qbCustomers.length,
+          jobId: syncJob.id,
+        });
+
+        // Get all customers again to have complete ID mapping including newly created
+        const allCustomers = await prisma.customer.findMany({
+          where: {
+            quickbooksId: { not: null },
+          },
+          select: {
+            id: true,
+            quickbooksId: true,
+          },
+        });
+        const customerIdMap = new Map(allCustomers.map((c) => [c.quickbooksId, c.id]));
+
+        // Get existing jobs
+        const existingJobs = await prisma.job.findMany({
+          where: {
+            quickbooksJobId: {
+              in: jobSubAccounts.map((j) => j.Id).filter(Boolean),
+            },
+          },
+          select: {
+            id: true,
+            quickbooksJobId: true,
+          },
+        });
+        const existingJobIds = new Set(existingJobs.map((j) => j.quickbooksJobId));
+
+        // Process job sub-accounts
+        for (const jobAccount of jobSubAccounts) {
+          try {
+            if (!jobAccount.ParentRef?.value) {
+              console.warn(`Job ${jobAccount.Id} has no parent reference, skipping`);
+              continue;
+            }
+
+            const parentCustomerId = customerIdMap.get(jobAccount.ParentRef.value);
+            if (!parentCustomerId) {
+              console.warn(`Parent customer ${jobAccount.ParentRef.value} not found for job ${jobAccount.Id}`);
+              errors++;
+              continue;
+            }
+
+            const parentName = jobAccount.ParentRef.name || '';
+            const jobName = extractJobName(jobAccount.DisplayName, parentName);
+
+            const jobData = {
+              customerId: parentCustomerId,
+              jobName,
+              quickbooksJobId: jobAccount.Id,
+              status: jobAccount.Active ? 'ONGOING' as const : 'COMPLETE' as const,
+              value: jobAccount.Balance || 0,
+              lastSyncedAt: new Date(),
+            };
+
+            if (existingJobIds.has(jobAccount.Id)) {
+              // Update existing job
+              await prisma.job.updateMany({
+                where: { quickbooksJobId: jobAccount.Id },
+                data: jobData,
+              });
+              jobsUpdated++;
+            } else {
+              // Create new job
+              await prisma.job.create({
+                data: jobData,
+              });
+              jobsCreated++;
+            }
+          } catch (error) {
+            console.error(`Failed to process job ${jobAccount.Id}:`, error);
+            errors++;
+          }
+        }
+
+        console.log(`[Sync] Jobs: ${jobsCreated} created, ${jobsUpdated} updated`);
+
         // Update sync job as completed
         await prisma.syncJob.update({
           where: { id: syncJob.id },
@@ -271,6 +364,8 @@ export async function POST(request: NextRequest) {
             total: qbCustomers.length,
             created,
             updated,
+            jobsCreated,
+            jobsUpdated,
             errors,
           },
         });

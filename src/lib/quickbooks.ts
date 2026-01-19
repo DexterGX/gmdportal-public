@@ -40,6 +40,12 @@ export interface QuickBooksCustomer {
   CompanyName?: string;
   GivenName?: string;
   FamilyName?: string;
+  Job?: boolean; // true if this is a sub-customer/job
+  ParentRef?: {
+    value: string; // ID of parent customer
+    name?: string;
+  };
+  Notes?: string; // Customer notes/memo
   PrimaryEmailAddr?: {
     Address: string;
   };
@@ -338,12 +344,8 @@ export async function fetchAllQuickBooksCustomers(): Promise<
 export async function fetchQuickBooksCustomer(
   customerId: string
 ): Promise<QuickBooksCustomer> {
-  const accessToken = process.env.QUICKBOOKS_ACCESS_TOKEN;
-  const realmId = process.env.QUICKBOOKS_REALM_ID;
-
-  if (!accessToken || !realmId) {
-    throw new Error("QuickBooks not configured");
-  }
+  // Get valid tokens (auto-refreshes if needed)
+  const { accessToken, realmId } = await getValidTokens();
 
   const url = `${getApiBase()}/${realmId}/customer/${customerId}?minorversion=65`;
 
@@ -364,11 +366,48 @@ export async function fetchQuickBooksCustomer(
 }
 
 /**
+ * Sync a specific customer from QuickBooks to local database
+ * Used by webhooks to sync individual customer changes
+ */
+export async function syncCustomerFromQuickBooks(
+  quickbooksId: string
+): Promise<void> {
+  // Fetch the customer from QuickBooks
+  const qbCustomer = await fetchQuickBooksCustomer(quickbooksId);
+  const customerData = mapQuickBooksCustomerToDb(qbCustomer);
+
+  // Check if customer already exists
+  const existing = await prisma.customer.findUnique({
+    where: { quickbooksId },
+  });
+
+  if (existing) {
+    // Update existing customer
+    await prisma.customer.update({
+      where: { quickbooksId },
+      data: customerData,
+    });
+  } else {
+    // Create new customer
+    await prisma.customer.create({
+      data: customerData,
+    });
+  }
+}
+
+/**
  * Convert QuickBooks customer to our database format
  */
 export function mapQuickBooksCustomerToDb(qbCustomer: QuickBooksCustomer) {
+  // Detect if this is a contractor based on notes/display name
+  const isContractor = 
+    (qbCustomer.Notes?.toLowerCase().includes('contractor') || false) ||
+    (qbCustomer.DisplayName?.toLowerCase().includes('contractor') || false);
+
   return {
     quickbooksId: qbCustomer.Id,
+    type: isContractor ? ("CONTRACTOR" as const) : ("CLIENT" as const),
+    syncedToQB: true,
     displayName: qbCustomer.DisplayName,
     companyName: qbCustomer.CompanyName || null,
     givenName: qbCustomer.GivenName || null,
@@ -380,7 +419,19 @@ export function mapQuickBooksCustomerToDb(qbCustomer: QuickBooksCustomer) {
     shipAddr: qbCustomer.ShipAddr ? qbCustomer.ShipAddr : undefined,
     balance: qbCustomer.Balance || 0,
     active: qbCustomer.Active !== false,
+    notes: qbCustomer.Notes || null,
     quickbooksData: qbCustomer as any,
     lastSyncedAt: new Date(),
   };
+}
+
+/**
+ * Extract job name from full display name
+ * Example: "Gama, Diego - Countertops" → "Countertops"
+ */
+export function extractJobName(displayName: string, parentName: string): string {
+  // Remove parent name and separator
+  const jobPart = displayName.replace(parentName, '').trim();
+  // Remove leading dash/colon and trim
+  return jobPart.replace(/^[-:]\s*/, '').trim() || 'Main Project';
 }
