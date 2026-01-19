@@ -80,16 +80,16 @@ export async function POST(request: NextRequest) {
     const payload: any = await request.json();
 
     console.log(
-      `[Pipedrive Webhook] Received webhook for ${payload.meta?.entity} - ${payload.meta?.action}`
+      `[Pipedrive Webhook] Received webhook for ${payload.meta?.object} - ${payload.meta?.action}`
     );
 
     const { data, previous, meta } = payload;
 
     // Only process deal events
-    if (!meta || meta.entity !== "deal") {
+    if (!meta || meta.object !== "deal") {
       console.log(
         `[Pipedrive Webhook] Skipping non-deal event: ${
-          meta?.entity || "unknown"
+          meta?.object || "unknown"
         }`
       );
       return NextResponse.json({ success: true, message: "Not a deal event" });
