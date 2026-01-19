@@ -161,7 +161,7 @@ export default function PipedriveSyncClient() {
             </p>
             <ul className="text-sm text-blue-800 mt-2 list-disc list-inside">
               <li><code className="bg-blue-100 px-1 rounded">PIPEDRIVE_API_TOKEN</code> - Get from Settings → Personal Preferences → API</li>
-              <li><code className="bg-blue-100 px-1 rounded">PIPEDRIVE_COMPANY_DOMAIN</code> - Your subdomain (e.g., "yourcompany" for yourcompany.pipedrive.com)</li>
+              <li><code className="bg-blue-100 px-1 rounded">PIPEDRIVE_COMPANY_DOMAIN</code> - Your subdomain (e.g., &quot;yourcompany&quot; for yourcompany.pipedrive.com)</li>
             </ul>
           </div>
         </div>
@@ -320,7 +320,7 @@ export default function PipedriveSyncClient() {
         <ol className="list-decimal list-inside space-y-2 text-sm text-gray-700">
           <li>Connects to your Pipedrive account using your API token</li>
           <li>Fetches all deals (open, won, and lost)</li>
-          <li>Creates new Customer records with type PROSPECT for deals that don't exist</li>
+          <li>Creates new Customer records with type PROSPECT for deals that don&apos;t exist</li>
           <li>Updates existing prospect records with latest Pipedrive data</li>
           <li>Stores full deal information in the pipedriveData JSON field</li>
           <li>Links contact and organization information to the customer record</li>

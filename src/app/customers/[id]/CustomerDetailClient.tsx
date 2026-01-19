@@ -338,7 +338,7 @@ export default function CustomerDetailClient({ customer, userRole }: Props) {
               No Jobs Yet
             </h3>
             <p className="text-gray-600 dark:text-gray-400">
-              This customer doesn't have any QuickBooks or Closet jobs
+              This customer doesn&apos;t have any QuickBooks or Closet jobs
               associated.
             </p>
           </div>
