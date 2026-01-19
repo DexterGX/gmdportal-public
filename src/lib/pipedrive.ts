@@ -56,7 +56,7 @@ async function pipedriveRequest<T>(
 ): Promise<T> {
   const { apiToken } = getConfig();
   const baseUrl = getApiBase();
-  
+
   // Add api_token to query params
   const url = new URL(`${baseUrl}${endpoint}`);
   url.searchParams.set("api_token", apiToken);
@@ -71,13 +71,11 @@ async function pipedriveRequest<T>(
 
   if (!response.ok) {
     const error = await response.text();
-    throw new Error(
-      `Pipedrive API error (${response.status}): ${error}`
-    );
+    throw new Error(`Pipedrive API error (${response.status}): ${error}`);
   }
 
   const data = await response.json();
-  
+
   if (!data.success) {
     throw new Error(`Pipedrive API error: ${data.error || "Unknown error"}`);
   }
@@ -95,10 +93,13 @@ export interface PipedrivePerson {
   last_name?: string;
   email?: Array<{ value: string; primary: boolean }>;
   phone?: Array<{ value: string; primary: boolean }>;
-  org_id?: {
-    name: string;
-    value: number;
-  } | number | null;
+  org_id?:
+    | {
+        name: string;
+        value: number;
+      }
+    | number
+    | null;
   owner_id?: {
     id: number;
     name: string;
@@ -121,16 +122,22 @@ export interface PipedriveDeal {
   status: string; // "open", "won", "lost", "deleted"
   stage_id: number;
   stage_order_nr?: number;
-  person_id?: {
-    name: string;
-    email?: Array<{ value: string; primary: boolean }>;
-    phone?: Array<{ value: string; primary: boolean }>;
-    value: number;
-  } | number | null;
-  org_id?: {
-    name: string;
-    value: number;
-  } | number | null;
+  person_id?:
+    | {
+        name: string;
+        email?: Array<{ value: string; primary: boolean }>;
+        phone?: Array<{ value: string; primary: boolean }>;
+        value: number;
+      }
+    | number
+    | null;
+  org_id?:
+    | {
+        name: string;
+        value: number;
+      }
+    | number
+    | null;
   add_time: string;
   update_time: string;
   close_time?: string | null;
@@ -175,9 +182,9 @@ export async function fetchAllDeals(
       status,
     });
 
-    const response = await pipedriveRequest<PipedriveListResponse<PipedriveDeal>>(
-      `/deals?${params.toString()}`
-    );
+    const response = await pipedriveRequest<
+      PipedriveListResponse<PipedriveDeal>
+    >(`/deals?${params.toString()}`);
 
     if (response.data && response.data.length > 0) {
       allDeals.push(...response.data);
@@ -211,9 +218,9 @@ export async function fetchAllPersons(): Promise<PipedrivePerson[]> {
       limit: limit.toString(),
     });
 
-    const response = await pipedriveRequest<PipedriveListResponse<PipedrivePerson>>(
-      `/persons?${params.toString()}`
-    );
+    const response = await pipedriveRequest<
+      PipedriveListResponse<PipedrivePerson>
+    >(`/persons?${params.toString()}`);
 
     if (response.data && response.data.length > 0) {
       allPersons.push(...response.data);
@@ -235,11 +242,14 @@ export async function fetchAllPersons(): Promise<PipedrivePerson[]> {
 /**
  * Fetch a specific person by ID
  */
-export async function fetchPerson(personId: number): Promise<PipedrivePerson | null> {
+export async function fetchPerson(
+  personId: number
+): Promise<PipedrivePerson | null> {
   try {
-    const response = await pipedriveRequest<{ success: boolean; data: PipedrivePerson }>(
-      `/persons/${personId}`
-    );
+    const response = await pipedriveRequest<{
+      success: boolean;
+      data: PipedrivePerson;
+    }>(`/persons/${personId}`);
     return response.data;
   } catch (error) {
     console.error(`Failed to fetch person ${personId}:`, error);
@@ -250,7 +260,9 @@ export async function fetchPerson(personId: number): Promise<PipedrivePerson | n
 /**
  * Helper to extract primary email from Pipedrive email array
  */
-function getPrimaryEmail(emails?: Array<{ value: string; primary: boolean }>): string | undefined {
+function getPrimaryEmail(
+  emails?: Array<{ value: string; primary: boolean }>
+): string | undefined {
   if (!emails || emails.length === 0) return undefined;
   const primary = emails.find((e) => e.primary);
   return primary?.value || emails[0]?.value;
@@ -259,7 +271,9 @@ function getPrimaryEmail(emails?: Array<{ value: string; primary: boolean }>): s
 /**
  * Helper to extract primary phone from Pipedrive phone array
  */
-function getPrimaryPhone(phones?: Array<{ value: string; primary: boolean }>): string | undefined {
+function getPrimaryPhone(
+  phones?: Array<{ value: string; primary: boolean }>
+): string | undefined {
   if (!phones || phones.length === 0) return undefined;
   const primary = phones.find((p) => p.primary);
   return primary?.value || phones[0]?.value;
@@ -268,7 +282,10 @@ function getPrimaryPhone(phones?: Array<{ value: string; primary: boolean }>): s
 /**
  * Helper to get organization name from various Pipedrive structures
  */
-function getOrgName(org_id?: { name: string; value: number } | number | null, org_name?: string): string | undefined {
+function getOrgName(
+  org_id?: { name: string; value: number } | number | null,
+  org_name?: string
+): string | undefined {
   if (org_name) return org_name;
   if (org_id && typeof org_id === "object" && "name" in org_id) {
     return org_id.name;
@@ -280,19 +297,28 @@ function getOrgName(org_id?: { name: string; value: number } | number | null, or
  * Map Pipedrive Deal to Customer database record
  */
 export function mapPipedriveDealToCustomer(deal: PipedriveDeal) {
-  const personId = typeof deal.person_id === "object" && deal.person_id ? deal.person_id.value : deal.person_id;
-  const orgId = typeof deal.org_id === "object" && deal.org_id ? deal.org_id.value : deal.org_id;
-  
+  const personId =
+    typeof deal.person_id === "object" && deal.person_id
+      ? deal.person_id.value
+      : deal.person_id;
+  const orgId =
+    typeof deal.org_id === "object" && deal.org_id
+      ? deal.org_id.value
+      : deal.org_id;
+
   // Try to get email and phone from person_id if it's an object with details
-  const email = typeof deal.person_id === "object" && deal.person_id
-    ? getPrimaryEmail(deal.person_id.email)
-    : undefined;
-  const phone = typeof deal.person_id === "object" && deal.person_id
-    ? getPrimaryPhone(deal.person_id.phone)
-    : undefined;
+  const email =
+    typeof deal.person_id === "object" && deal.person_id
+      ? getPrimaryEmail(deal.person_id.email)
+      : undefined;
+  const phone =
+    typeof deal.person_id === "object" && deal.person_id
+      ? getPrimaryPhone(deal.person_id.phone)
+      : undefined;
 
   const companyName = getOrgName(deal.org_id, deal.org_name);
-  const displayName = deal.person_name || deal.title || companyName || `Deal #${deal.id}`;
+  const displayName =
+    deal.person_name || deal.title || companyName || `Deal #${deal.id}`;
 
   return {
     pipedriveId: deal.id.toString(),
@@ -346,10 +372,10 @@ export async function syncDealsToDatabase(
 
   for (let i = 0; i < deals.length; i++) {
     const deal = deals[i];
-    
+
     try {
       const customerData = mapPipedriveDealToCustomer(deal);
-      
+
       const existing = await prisma.customer.findUnique({
         where: { pipedriveId: customerData.pipedriveId },
       });
@@ -359,7 +385,9 @@ export async function syncDealsToDatabase(
           where: { pipedriveId: customerData.pipedriveId },
           data: {
             ...customerData,
-            pipedriveData: JSON.parse(JSON.stringify(customerData.pipedriveData)),
+            pipedriveData: JSON.parse(
+              JSON.stringify(customerData.pipedriveData)
+            ),
             updatedAt: new Date(),
           },
         });
@@ -368,7 +396,9 @@ export async function syncDealsToDatabase(
         await prisma.customer.create({
           data: {
             ...customerData,
-            pipedriveData: JSON.parse(JSON.stringify(customerData.pipedriveData)),
+            pipedriveData: JSON.parse(
+              JSON.stringify(customerData.pipedriveData)
+            ),
           },
         });
         created++;

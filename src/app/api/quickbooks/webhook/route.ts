@@ -5,15 +5,15 @@ import { syncCustomerFromQuickBooks } from "@/lib/quickbooks";
 
 /**
  * QuickBooks Webhook Handler
- * 
+ *
  * Receives notifications when Customer entities change in QuickBooks.
  * Automatically syncs the changed customer to the local database.
- * 
+ *
  * Setup:
  * 1. In QuickBooks Developer Dashboard, create a webhook subscription for Customer entity
  * 2. Set webhook URL to: https://yourdomain.com/api/quickbooks/webhook
  * 3. Add QUICKBOOKS_WEBHOOK_TOKEN to .env.local
- * 
+ *
  * Docs: https://developer.intuit.com/app/developer/qbo/docs/develop/webhooks
  */
 
@@ -52,7 +52,7 @@ function verifyWebhookSignature(
 export async function POST(request: NextRequest) {
   try {
     const webhookToken = process.env.QUICKBOOKS_WEBHOOK_TOKEN;
-    
+
     if (!webhookToken) {
       console.error("QUICKBOOKS_WEBHOOK_TOKEN not configured");
       return NextResponse.json(
@@ -67,19 +67,13 @@ export async function POST(request: NextRequest) {
 
     if (!signature) {
       console.error("Missing webhook signature");
-      return NextResponse.json(
-        { error: "Missing signature" },
-        { status: 401 }
-      );
+      return NextResponse.json({ error: "Missing signature" }, { status: 401 });
     }
 
     // Verify signature
     if (!verifyWebhookSignature(rawBody, signature, webhookToken)) {
       console.error("Invalid webhook signature");
-      return NextResponse.json(
-        { error: "Invalid signature" },
-        { status: 401 }
-      );
+      return NextResponse.json({ error: "Invalid signature" }, { status: 401 });
     }
 
     // Parse payload

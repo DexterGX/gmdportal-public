@@ -4,10 +4,10 @@ import { mapPipedriveDealToCustomer, PipedriveDeal } from "@/lib/pipedrive";
 
 /**
  * Pipedrive Webhook Handler
- * 
+ *
  * Receives notifications when deals change in Pipedrive.
  * Automatically syncs the changed deal to the local database as a PROSPECT.
- * 
+ *
  * Setup:
  * 1. In Pipedrive Settings > Webhooks, create a new webhook
  * 2. Set URL to: https://yourdomain.com/api/pipedrive/webhook
@@ -16,7 +16,7 @@ import { mapPipedriveDealToCustomer, PipedriveDeal } from "@/lib/pipedrive";
  *    - updated.deal
  *    - deleted.deal
  * 4. Optional: Add PIPEDRIVE_WEBHOOK_SECRET to .env.local for security
- * 
+ *
  * Docs: https://pipedrive.readme.io/docs/webhooks-overview
  */
 
@@ -74,35 +74,47 @@ export async function POST(request: NextRequest) {
     // Optional signature verification
     if (webhookSecret && !verifyPipedriveWebhook(request, webhookSecret)) {
       console.error("Invalid Pipedrive webhook signature");
-      return NextResponse.json(
-        { error: "Invalid signature" },
-        { status: 401 }
-      );
+      return NextResponse.json({ error: "Invalid signature" }, { status: 401 });
     }
 
     const payload: any = await request.json();
-    
-    console.log(`[Pipedrive Webhook] Received webhook for ${payload.meta?.entity} - ${payload.meta?.action}`);
+
+    console.log(
+      `[Pipedrive Webhook] Received webhook for ${payload.meta?.entity} - ${payload.meta?.action}`
+    );
 
     const { data, previous, meta } = payload;
 
     // Only process deal events
     if (!meta || meta.entity !== "deal") {
-      console.log(`[Pipedrive Webhook] Skipping non-deal event: ${meta?.entity || 'unknown'}`);
+      console.log(
+        `[Pipedrive Webhook] Skipping non-deal event: ${
+          meta?.entity || "unknown"
+        }`
+      );
       return NextResponse.json({ success: true, message: "Not a deal event" });
     }
 
-    console.log(`[Pipedrive Webhook] Processing ${meta.action} - Deal ${data.id}: ${data.title}`);
-
     try {
       if (meta.action === "deleted") {
+        console.log(
+          `[Pipedrive Webhook] Processing delete for Deal ID ${meta.id}`
+        );
         // Mark customer as inactive
         await prisma.customer.updateMany({
           where: { pipedriveId: meta.id.toString() },
           data: { active: false },
         });
         console.log(`[Pipedrive Webhook] Marked deal ${meta.id} as inactive`);
-      } else if (meta.action === "added" || meta.action === "updated" || meta.action === "change") {
+      } else if (
+        meta.action === "added" ||
+        meta.action === "updated" ||
+        meta.action === "change"
+      ) {
+        console.log(
+          `[Pipedrive Webhook] Processing ${meta.action} - Deal ${data.id}: ${data.title}`
+        );
+        
         // Map Pipedrive webhook data to PipedriveDeal format
         const dealData: PipedriveDeal = {
           id: data.id,
@@ -122,12 +134,14 @@ export async function POST(request: NextRequest) {
         };
 
         // Sync the deal
-        console.log(`[Pipedrive Webhook] Mapping deal data for ${dealData.title}`);
+        console.log(
+          `[Pipedrive Webhook] Mapping deal data for ${dealData.title}`
+        );
         const customerData = mapPipedriveDealToCustomer(dealData);
         console.log(`[Pipedrive Webhook] Customer data:`, {
           pipedriveId: customerData.pipedriveId,
           displayName: customerData.displayName,
-          type: customerData.type
+          type: customerData.type,
         });
 
         // Check if customer already exists
@@ -137,12 +151,16 @@ export async function POST(request: NextRequest) {
 
         if (existing) {
           // Update existing customer
-          console.log(`[Pipedrive Webhook] Updating existing customer ${existing.id}`);
+          console.log(
+            `[Pipedrive Webhook] Updating existing customer ${existing.id}`
+          );
           await prisma.customer.update({
             where: { pipedriveId: customerData.pipedriveId },
             data: {
               ...customerData,
-              pipedriveData: JSON.parse(JSON.stringify(customerData.pipedriveData)),
+              pipedriveData: JSON.parse(
+                JSON.stringify(customerData.pipedriveData)
+              ),
               updatedAt: new Date(),
             },
           });
@@ -153,20 +171,28 @@ export async function POST(request: NextRequest) {
           const newCustomer = await prisma.customer.create({
             data: {
               ...customerData,
-              pipedriveData: JSON.parse(JSON.stringify(customerData.pipedriveData)),
+              pipedriveData: JSON.parse(
+                JSON.stringify(customerData.pipedriveData)
+              ),
             },
           });
-          console.log(`[Pipedrive Webhook] ✓ Created new customer ${newCustomer.id} from deal ${data.id}`);
+          console.log(
+            `[Pipedrive Webhook] ✓ Created new customer ${newCustomer.id} from deal ${data.id}`
+          );
         }
       }
 
       return NextResponse.json({ success: true });
     } catch (error: any) {
       console.error(
-        `[Pipedrive Webhook] ✗ Failed to process ${meta.action} for deal ${data.id}:`,
+        `[Pipedrive Webhook] ✗ Failed to process ${meta.action} for deal ${meta.id}:`,
         error
       );
-      console.error(`[Pipedrive Webhook] Error details:`, error.message, error.stack);
+      console.error(
+        `[Pipedrive Webhook] Error details:`,
+        error.message,
+        error.stack
+      );
       // Return 200 to prevent Pipedrive from retrying
       return NextResponse.json(
         { success: false, error: error.message || "Processing failed" },

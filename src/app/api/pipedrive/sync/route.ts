@@ -38,8 +38,7 @@ export async function POST(request: NextRequest) {
     if (!connectionOk) {
       return NextResponse.json(
         {
-          error:
-            "Failed to connect to Pipedrive. Check your API credentials.",
+          error: "Failed to connect to Pipedrive. Check your API credentials.",
         },
         { status: 500 }
       );
@@ -189,7 +188,7 @@ export async function POST(request: NextRequest) {
           if (newCustomers.length > 0) {
             try {
               const result = await prisma.customer.createMany({
-                data: newCustomers.map(c => ({
+                data: newCustomers.map((c) => ({
                   ...c,
                   pipedriveData: JSON.parse(JSON.stringify(c.pipedriveData)),
                 })),
@@ -211,7 +210,9 @@ export async function POST(request: NextRequest) {
                     where: { id: op.id },
                     data: {
                       ...op.data,
-                      pipedriveData: JSON.parse(JSON.stringify(op.data.pipedriveData)),
+                      pipedriveData: JSON.parse(
+                        JSON.stringify(op.data.pipedriveData)
+                      ),
                       updatedAt: new Date(),
                     },
                   })
@@ -250,7 +251,11 @@ export async function POST(request: NextRequest) {
           });
 
           console.log(
-            `[Pipedrive Sync] Batch ${batchIndex + 1}/${batches.length}: ${batch.length} deals in ${batchTime}ms (Created: ${newCustomers.length}, Updated: ${updateOperations.length})`
+            `[Pipedrive Sync] Batch ${batchIndex + 1}/${batches.length}: ${
+              batch.length
+            } deals in ${batchTime}ms (Created: ${
+              newCustomers.length
+            }, Updated: ${updateOperations.length})`
           );
         }
 
@@ -342,7 +347,10 @@ export async function GET(request: NextRequest) {
         data: { cancelRequested: true },
       });
 
-      return NextResponse.json({ success: true, message: "Cancellation requested" });
+      return NextResponse.json({
+        success: true,
+        message: "Cancellation requested",
+      });
     }
 
     // Get latest sync job

@@ -49,8 +49,7 @@ const statusColors = {
 const closetJobStatusColors = {
   QUOTE:
     "bg-yellow-100 dark:bg-yellow-900/30 text-yellow-800 dark:text-yellow-300",
-  REVIEW:
-    "bg-blue-100 dark:bg-blue-900/30 text-blue-800 dark:text-blue-300",
+  REVIEW: "bg-blue-100 dark:bg-blue-900/30 text-blue-800 dark:text-blue-300",
   APPROVED:
     "bg-green-100 dark:bg-green-900/30 text-green-800 dark:text-green-300",
   CANCELLED: "bg-red-100 dark:bg-red-900/30 text-red-800 dark:text-red-300",
@@ -244,11 +243,13 @@ export default function CustomerDetailClient({ customer, userRole }: Props) {
                         )}
                         <div className="flex items-center gap-1">
                           <Calendar className="w-4 h-4" />
-                          Created: {new Date(job.createdAt).toLocaleDateString()}
+                          Created:{" "}
+                          {new Date(job.createdAt).toLocaleDateString()}
                         </div>
                         <div className="flex items-center gap-1 text-xs">
                           <Calendar className="w-3 h-3" />
-                          Updated: {new Date(job.updatedAt).toLocaleDateString()}
+                          Updated:{" "}
+                          {new Date(job.updatedAt).toLocaleDateString()}
                         </div>
                       </div>
                       {job.quickbooksJobId && (

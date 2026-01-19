@@ -90,7 +90,7 @@ export default async function CustomersPage({
           value: true,
         },
         orderBy: {
-          createdAt: 'desc',
+          createdAt: "desc",
         },
       },
     },

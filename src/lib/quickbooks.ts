@@ -400,9 +400,11 @@ export async function syncCustomerFromQuickBooks(
  */
 export function mapQuickBooksCustomerToDb(qbCustomer: QuickBooksCustomer) {
   // Detect if this is a contractor based on notes/display name
-  const isContractor = 
-    (qbCustomer.Notes?.toLowerCase().includes('contractor') || false) ||
-    (qbCustomer.DisplayName?.toLowerCase().includes('contractor') || false);
+  const isContractor =
+    qbCustomer.Notes?.toLowerCase().includes("contractor") ||
+    false ||
+    qbCustomer.DisplayName?.toLowerCase().includes("contractor") ||
+    false;
 
   return {
     quickbooksId: qbCustomer.Id,
@@ -429,9 +431,12 @@ export function mapQuickBooksCustomerToDb(qbCustomer: QuickBooksCustomer) {
  * Extract job name from full display name
  * Example: "Gama, Diego - Countertops" → "Countertops"
  */
-export function extractJobName(displayName: string, parentName: string): string {
+export function extractJobName(
+  displayName: string,
+  parentName: string
+): string {
   // Remove parent name and separator
-  const jobPart = displayName.replace(parentName, '').trim();
+  const jobPart = displayName.replace(parentName, "").trim();
   // Remove leading dash/colon and trim
-  return jobPart.replace(/^[-:]\s*/, '').trim() || 'Main Project';
+  return jobPart.replace(/^[-:]\s*/, "").trim() || "Main Project";
 }

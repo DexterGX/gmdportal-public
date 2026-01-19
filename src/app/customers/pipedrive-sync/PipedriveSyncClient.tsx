@@ -142,9 +142,7 @@ export default function PipedriveSyncClient() {
           <ArrowLeft className="h-4 w-4 mr-2" />
           Back to Customers
         </Link>
-        <h1 className="text-3xl font-bold text-gray-900">
-          Pipedrive Sync
-        </h1>
+        <h1 className="text-3xl font-bold text-gray-900">Pipedrive Sync</h1>
         <p className="text-gray-600 mt-2">
           Sync deals from Pipedrive to create prospect records in the database
         </p>
@@ -155,13 +153,27 @@ export default function PipedriveSyncClient() {
         <div className="flex items-start">
           <AlertCircle className="h-5 w-5 text-blue-600 mt-0.5 mr-3" />
           <div>
-            <h3 className="font-semibold text-blue-900">Configuration Required</h3>
+            <h3 className="font-semibold text-blue-900">
+              Configuration Required
+            </h3>
             <p className="text-sm text-blue-800 mt-1">
-              Make sure you have set the following environment variables in <code className="bg-blue-100 px-1 rounded">.env.local</code>:
+              Make sure you have set the following environment variables in{" "}
+              <code className="bg-blue-100 px-1 rounded">.env.local</code>:
             </p>
             <ul className="text-sm text-blue-800 mt-2 list-disc list-inside">
-              <li><code className="bg-blue-100 px-1 rounded">PIPEDRIVE_API_TOKEN</code> - Get from Settings → Personal Preferences → API</li>
-              <li><code className="bg-blue-100 px-1 rounded">PIPEDRIVE_COMPANY_DOMAIN</code> - Your subdomain (e.g., &quot;yourcompany&quot; for yourcompany.pipedrive.com)</li>
+              <li>
+                <code className="bg-blue-100 px-1 rounded">
+                  PIPEDRIVE_API_TOKEN
+                </code>{" "}
+                - Get from Settings → Personal Preferences → API
+              </li>
+              <li>
+                <code className="bg-blue-100 px-1 rounded">
+                  PIPEDRIVE_COMPANY_DOMAIN
+                </code>{" "}
+                - Your subdomain (e.g., &quot;yourcompany&quot; for
+                yourcompany.pipedrive.com)
+              </li>
             </ul>
           </div>
         </div>
@@ -183,7 +195,9 @@ export default function PipedriveSyncClient() {
                 : "bg-blue-600 text-white hover:bg-blue-700"
             }`}
           >
-            <RefreshCw className={`h-5 w-5 mr-2 ${syncing ? "animate-spin" : ""}`} />
+            <RefreshCw
+              className={`h-5 w-5 mr-2 ${syncing ? "animate-spin" : ""}`}
+            />
             {syncing ? "Syncing..." : "Start Sync from Pipedrive"}
           </button>
 
@@ -201,16 +215,15 @@ export default function PipedriveSyncClient() {
       {/* Progress Display */}
       {syncProgress && (
         <div className="bg-white border border-gray-200 rounded-lg p-6 mb-6">
-          <h2 className="text-xl font-semibold text-gray-900 mb-4">
-            Progress
-          </h2>
+          <h2 className="text-xl font-semibold text-gray-900 mb-4">Progress</h2>
 
           <div className="space-y-3">
             <div className="flex items-center justify-between text-sm">
               <span className="text-gray-600">{syncProgress.message}</span>
               {syncProgress.total && syncProgress.processed !== undefined && (
                 <span className="font-medium text-gray-900">
-                  {syncProgress.processed} / {syncProgress.total} ({getProgressPercentage()}%)
+                  {syncProgress.processed} / {syncProgress.total} (
+                  {getProgressPercentage()}%)
                 </span>
               )}
             </div>
@@ -320,16 +333,22 @@ export default function PipedriveSyncClient() {
         <ol className="list-decimal list-inside space-y-2 text-sm text-gray-700">
           <li>Connects to your Pipedrive account using your API token</li>
           <li>Fetches all deals (open, won, and lost)</li>
-          <li>Creates new Customer records with type PROSPECT for deals that don&apos;t exist</li>
+          <li>
+            Creates new Customer records with type PROSPECT for deals that
+            don&apos;t exist
+          </li>
           <li>Updates existing prospect records with latest Pipedrive data</li>
           <li>Stores full deal information in the pipedriveData JSON field</li>
-          <li>Links contact and organization information to the customer record</li>
+          <li>
+            Links contact and organization information to the customer record
+          </li>
         </ol>
 
         <div className="mt-4 p-3 bg-yellow-50 border border-yellow-200 rounded">
           <p className="text-sm text-yellow-800">
-            <strong>Note:</strong> This sync creates PROSPECTS only. When deals move to certain stages or are won,
-            they can be promoted to CLIENT status manually or through automation.
+            <strong>Note:</strong> This sync creates PROSPECTS only. When deals
+            move to certain stages or are won, they can be promoted to CLIENT
+            status manually or through automation.
           </p>
         </div>
       </div>
