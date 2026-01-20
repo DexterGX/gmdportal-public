@@ -304,6 +304,7 @@ model Customer {
   mobile             String?
   billAddr           Json?
   shipAddr           Json?
+  salesPerson        String?
   balance            Decimal?     @db.Decimal(12, 2)
   lastSyncedAt       DateTime?
   quickbooksData     Json?
@@ -327,7 +328,7 @@ model Job {
   customerId        String
   jobName           String
   quickbooksJobId   String?   @unique
-  pipedriveId       String?
+  pipedriveId       String?   @unique
   companyCamId      String?
   status            JobStatus @default(ONGOING)
   value             Decimal?  @db.Decimal(12, 2)

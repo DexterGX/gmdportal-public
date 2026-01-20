@@ -39,9 +39,13 @@ interface Props {
   totalPages: number;
   totalCustomers: number;
   lastNameInitials: string[];
+  salesPersons: string[];
   initialSearchTerm: string;
   initialSelectedInitial: string;
   initialSelectedType: string;
+  initialSelectedStatus: string;
+  initialSelectedSalesPerson: string;
+  initialSelectedSource: string;
 }
 
 export default function CustomersClient({
@@ -51,17 +55,26 @@ export default function CustomersClient({
   totalPages,
   totalCustomers,
   lastNameInitials,
+  salesPersons,
   initialSearchTerm,
   initialSelectedInitial,
   initialSelectedType,
+  initialSelectedStatus,
+  initialSelectedSalesPerson,
+  initialSelectedSource,
 }: Props) {
   const router = useRouter();
   const searchParams = useSearchParams();
   const [searchTerm, setSearchTerm] = useState(initialSearchTerm);
   const [selectedInitial, setSelectedInitial] = useState(
-    initialSelectedInitial
+    initialSelectedInitial,
   );
   const [selectedType, setSelectedType] = useState(initialSelectedType);
+  const [selectedStatus, setSelectedStatus] = useState(initialSelectedStatus);
+  const [selectedSalesPerson, setSelectedSalesPerson] = useState(
+    initialSelectedSalesPerson,
+  );
+  const [selectedSource, setSelectedSource] = useState(initialSelectedSource);
   const [isInitialLoad, setIsInitialLoad] = useState(true);
 
   // Update URL when filters change
@@ -77,13 +90,23 @@ export default function CustomersClient({
       if (searchTerm) params.set("search", searchTerm);
       if (selectedInitial) params.set("initial", selectedInitial);
       if (selectedType) params.set("type", selectedType);
+      if (selectedStatus) params.set("status", selectedStatus);
+      if (selectedSalesPerson) params.set("salesPerson", selectedSalesPerson);
+      if (selectedSource) params.set("source", selectedSource);
       params.set("page", "1"); // Reset to page 1 on filter change
 
       router.push(`/customers?${params.toString()}`);
     }, 500); // Debounce search
 
     return () => clearTimeout(timer);
-  }, [searchTerm, selectedInitial, selectedType]);
+  }, [
+    searchTerm,
+    selectedInitial,
+    selectedType,
+    selectedStatus,
+    selectedSalesPerson,
+    selectedSource,
+  ]);
 
   const handlePageChange = (newPage: number) => {
     const params = new URLSearchParams(searchParams.toString());
@@ -94,9 +117,17 @@ export default function CustomersClient({
   const clearFilters = () => {
     setSelectedInitial("");
     setSelectedType("");
+    setSelectedStatus("");
+    setSelectedSalesPerson("");
+    setSelectedSource("");
   };
 
-  const hasActiveFilters = selectedInitial !== "" || selectedType !== "";
+  const hasActiveFilters =
+    selectedInitial !== "" ||
+    selectedType !== "" ||
+    selectedStatus !== "" ||
+    selectedSalesPerson !== "" ||
+    selectedSource !== "";
 
   // Convert single initial to array for FilterMultiSelect
   const selectedInitials = selectedInitial ? [selectedInitial] : [];
@@ -104,7 +135,7 @@ export default function CustomersClient({
   const handleInitialChange = (selected: string[]) => {
     // Only allow single selection
     setSelectedInitial(
-      selected.length > 0 ? selected[selected.length - 1] : ""
+      selected.length > 0 ? selected[selected.length - 1] : "",
     );
   };
 
@@ -120,8 +151,8 @@ export default function CustomersClient({
         selectedType === "CLIENT"
           ? "Clients"
           : selectedType === "CONTRACTOR"
-          ? "Contractors"
-          : "Prospects",
+            ? "Contractors"
+            : "Prospects",
       ]
     : [];
 
@@ -244,11 +275,64 @@ export default function CustomersClient({
                 value === "Clients"
                   ? "CLIENT"
                   : value === "Contractors"
-                  ? "CONTRACTOR"
-                  : value === "Prospects"
-                  ? "PROSPECT"
-                  : "";
+                    ? "CONTRACTOR"
+                    : value === "Prospects"
+                      ? "PROSPECT"
+                      : "";
               setSelectedType(typeValue);
+            }}
+          />
+
+          <FilterMultiSelect
+            label="Status"
+            options={["Active", "Inactive"]}
+            selected={
+              selectedStatus
+                ? [selectedStatus === "active" ? "Active" : "Inactive"]
+                : []
+            }
+            onChange={(selected) => {
+              const value =
+                selected.length > 0 ? selected[selected.length - 1] : "";
+              setSelectedStatus(
+                value === "Active"
+                  ? "active"
+                  : value === "Inactive"
+                    ? "inactive"
+                    : "",
+              );
+            }}
+          />
+
+          <FilterMultiSelect
+            label="Sales Person"
+            options={salesPersons}
+            selected={selectedSalesPerson ? [selectedSalesPerson] : []}
+            onChange={(selected) => {
+              setSelectedSalesPerson(
+                selected.length > 0 ? selected[selected.length - 1] : "",
+              );
+            }}
+          />
+
+          <FilterMultiSelect
+            label="Source"
+            options={["Pipedrive", "QuickBooks"]}
+            selected={
+              selectedSource
+                ? [selectedSource === "pipedrive" ? "Pipedrive" : "QuickBooks"]
+                : []
+            }
+            onChange={(selected) => {
+              const value =
+                selected.length > 0 ? selected[selected.length - 1] : "";
+              setSelectedSource(
+                value === "Pipedrive"
+                  ? "pipedrive"
+                  : value === "QuickBooks"
+                    ? "quickbooks"
+                    : "",
+              );
             }}
           />
 
@@ -299,7 +383,7 @@ export default function CustomersClient({
               ) : (
                 customers.map((customer) => {
                   const address = formatAddress(
-                    customer.billAddr || customer.shipAddr
+                    customer.billAddr || customer.shipAddr,
                   );
                   return (
                     <tr
@@ -315,21 +399,33 @@ export default function CustomersClient({
                             <span className="font-medium text-gray-900 dark:text-gray-100">
                               {customer.displayName}
                             </span>
-                            <span
-                              className={`inline-flex items-center px-1.5 py-0.5 rounded text-xs font-medium ${
-                                customer.type === "CONTRACTOR"
-                                  ? "bg-purple-100 dark:bg-purple-900/30 text-purple-700 dark:text-purple-300"
+                            <div className="flex items-center gap-1">
+                              <span
+                                className={`inline-flex items-center px-1.5 py-0.5 rounded text-xs font-medium ${
+                                  customer.type === "CONTRACTOR"
+                                    ? "bg-purple-100 dark:bg-purple-900/30 text-purple-700 dark:text-purple-300"
+                                    : customer.type === "PROSPECT"
+                                      ? "bg-yellow-100 dark:bg-yellow-900/30 text-yellow-700 dark:text-yellow-300"
+                                      : "bg-blue-100 dark:bg-blue-900/30 text-blue-700 dark:text-blue-300"
+                                }`}
+                              >
+                                {customer.type === "CONTRACTOR"
+                                  ? "C"
                                   : customer.type === "PROSPECT"
-                                  ? "bg-yellow-100 dark:bg-yellow-900/30 text-yellow-700 dark:text-yellow-300"
-                                  : "bg-blue-100 dark:bg-blue-900/30 text-blue-700 dark:text-blue-300"
-                              }`}
-                            >
-                              {customer.type === "CONTRACTOR"
-                                ? "C"
-                                : customer.type === "PROSPECT"
-                                ? "P"
-                                : ""}
-                            </span>
+                                    ? "P"
+                                    : ""}
+                              </span>
+                              {customer.pipedriveId && (
+                                <span className="inline-flex items-center px-1.5 py-0.5 rounded text-xs font-medium bg-purple-100 dark:bg-purple-900/30 text-purple-700 dark:text-purple-300">
+                                  PD
+                                </span>
+                              )}
+                              {customer.quickbooksId && (
+                                <span className="inline-flex items-center px-1.5 py-0.5 rounded text-xs font-medium bg-blue-100 dark:bg-blue-900/30 text-blue-700 dark:text-blue-300">
+                                  QB
+                                </span>
+                              )}
+                            </div>
                           </div>
                           {customer.companyName && (
                             <div className="text-sm text-gray-500 dark:text-gray-400 flex items-center gap-1 mt-1">
@@ -449,7 +545,7 @@ export default function CustomersClient({
                   >
                     {pageNum}
                   </button>
-                )
+                ),
               )}
 
               <button

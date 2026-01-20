@@ -176,7 +176,7 @@ export const programs: ProgramConfig[] = [
     name: "Customer Directory",
     basePath: "/customers",
     description: "Manage customer information synced from QuickBooks.",
-    allowedRoles: ["admin"],
+    allowedRoles: ["admin", "sales"],
     navItems: [
       { icon: Users, name: "All Customers", path: "/customers" },
       {
@@ -193,7 +193,7 @@ export const programs: ProgramConfig[] = [
 export function getProgramForPath(pathname: string): ProgramConfig {
   // Sort programs by basePath length (descending) to match most specific path first
   const sortedPrograms = [...programs].sort(
-    (a, b) => b.basePath.length - a.basePath.length
+    (a, b) => b.basePath.length - a.basePath.length,
   );
 
   // Find the first program whose basePath matches the pathname
@@ -211,7 +211,7 @@ export function getProgramForPath(pathname: string): ProgramConfig {
 // Helper to check access for a given AppRole
 export function userHasAccessToProgram(
   program: ProgramConfig,
-  role: AppRole
+  role: AppRole,
 ): boolean {
   if (!program.allowedRoles || program.allowedRoles.length === 0) return true;
   return program.allowedRoles.includes(role);
@@ -221,7 +221,7 @@ export function userHasAccessToProgram(
 export function userCanAccessProgram(
   program: ProgramConfig,
   role: AppRole,
-  isActive: boolean
+  isActive: boolean,
 ): boolean {
   if (!isActive) return false;
   if (!program.allowedRoles || program.allowedRoles.length === 0) return true;

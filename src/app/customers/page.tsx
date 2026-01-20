@@ -13,12 +13,15 @@ export default async function CustomersPage({
     search?: string;
     initial?: string;
     type?: string;
+    status?: string;
+    salesPerson?: string;
+    source?: string;
   }>;
 }) {
   const { appRole } = await getCurrentUserWithRole();
 
-  // Restrict access to admins only
-  if (appRole !== "admin") {
+  // Restrict access to admins and sales team
+  if (appRole !== "admin" && appRole !== "sales") {
     redirect("/dashboard");
   }
 
@@ -27,12 +30,29 @@ export default async function CustomersPage({
   const searchTerm = params.search || "";
   const selectedInitial = params.initial || "";
   const selectedType = params.type || ""; // CLIENT, CONTRACTOR, PROSPECT
+  const selectedStatus = params.status || ""; // active, inactive
+  const selectedSalesPerson = params.salesPerson || "";
+  const selectedSource = params.source || ""; // pipedrive, quickbooks
 
   // Build where clause
   const where: any = {};
 
   if (selectedType) {
     where.type = selectedType;
+  }
+
+  if (selectedStatus) {
+    where.active = selectedStatus === "active";
+  }
+
+  if (selectedSalesPerson) {
+    where.salesPerson = { contains: selectedSalesPerson, mode: "insensitive" };
+  }
+
+  if (selectedSource === "pipedrive") {
+    where.pipedriveId = { not: null };
+  } else if (selectedSource === "quickbooks") {
+    where.quickbooksId = { not: null };
   }
 
   if (searchTerm) {
@@ -127,8 +147,17 @@ export default async function CustomersPage({
 
   // Compute last name initials from all customers for filter
   const allCustomersForInitials = await prisma.customer.findMany({
-    select: { displayName: true },
+    select: { displayName: true, salesPerson: true },
   });
+
+  // Get unique sales persons
+  const salesPersons = Array.from(
+    new Set(
+      allCustomersForInitials
+        .map((c) => c.salesPerson)
+        .filter((sp): sp is string => !!sp),
+    ),
+  ).sort();
 
   const lastNameInitials = Array.from(
     new Set(
@@ -147,8 +176,8 @@ export default async function CustomersPage({
             return lastName.charAt(0).toUpperCase();
           }
         })
-        .filter((initial) => /[A-Z]/.test(initial))
-    )
+        .filter((initial) => /[A-Z]/.test(initial)),
+    ),
   ).sort();
 
   return (
@@ -159,9 +188,13 @@ export default async function CustomersPage({
       totalPages={Math.ceil(totalCustomers / ITEMS_PER_PAGE)}
       totalCustomers={totalCustomers}
       lastNameInitials={lastNameInitials}
+      salesPersons={salesPersons}
       initialSearchTerm={searchTerm}
       initialSelectedInitial={selectedInitial}
       initialSelectedType={selectedType}
+      initialSelectedStatus={selectedStatus}
+      initialSelectedSalesPerson={selectedSalesPerson}
+      initialSelectedSource={selectedSource}
     />
   );
 }

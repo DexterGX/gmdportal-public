@@ -32,7 +32,7 @@ function getConfig(): PipedriveConfig {
 
   if (!apiToken || !companyDomain) {
     throw new Error(
-      "Missing Pipedrive configuration. Set PIPEDRIVE_API_TOKEN and PIPEDRIVE_COMPANY_DOMAIN in .env.local"
+      "Missing Pipedrive configuration. Set PIPEDRIVE_API_TOKEN and PIPEDRIVE_COMPANY_DOMAIN in .env.local",
     );
   }
 
@@ -52,7 +52,7 @@ function getApiBase(): string {
  */
 async function pipedriveRequest<T>(
   endpoint: string,
-  options: RequestInit = {}
+  options: RequestInit = {},
 ): Promise<T> {
   const { apiToken } = getConfig();
   const baseUrl = getApiBase();
@@ -169,7 +169,7 @@ interface PipedriveListResponse<T> {
  * Fetch all deals from Pipedrive with pagination
  */
 export async function fetchAllDeals(
-  status: "all_not_deleted" | "open" | "won" | "lost" = "all_not_deleted"
+  status: "all_not_deleted" | "open" | "won" | "lost" = "all_not_deleted",
 ): Promise<PipedriveDeal[]> {
   const allDeals: PipedriveDeal[] = [];
   let start = 0;
@@ -243,7 +243,7 @@ export async function fetchAllPersons(): Promise<PipedrivePerson[]> {
  * Fetch a specific person by ID
  */
 export async function fetchPerson(
-  personId: number
+  personId: number,
 ): Promise<PipedrivePerson | null> {
   try {
     const response = await pipedriveRequest<{
@@ -258,10 +258,46 @@ export async function fetchPerson(
 }
 
 /**
+ * Fetch a specific organization by ID
+ */
+export async function fetchOrganization(
+  orgId: number,
+): Promise<{ id: number; name: string } | null> {
+  try {
+    const response = await pipedriveRequest<{
+      success: boolean;
+      data: { id: number; name: string; address?: string };
+    }>(`/organizations/${orgId}`);
+    return response.data;
+  } catch (error) {
+    console.error(`Failed to fetch organization ${orgId}:`, error);
+    return null;
+  }
+}
+
+/**
+ * Fetch a specific user by ID
+ */
+export async function fetchUser(
+  userId: number,
+): Promise<{ id: number; name: string; email: string } | null> {
+  try {
+    const response = await pipedriveRequest<{
+      success: boolean;
+      data: { id: number; name: string; email: string };
+    }>(`/users/${userId}`);
+    return response.data;
+  } catch (error) {
+    console.error(`Failed to fetch user ${userId}:`, error);
+    return null;
+  }
+}
+
+/**
  * Helper to extract primary email from Pipedrive email array
  */
 function getPrimaryEmail(
-  emails?: Array<{ value: string; primary: boolean }>
+  emails?: Array<{ value: string; primary: boolean }>,
 ): string | undefined {
   if (!emails || emails.length === 0) return undefined;
   const primary = emails.find((e) => e.primary);
@@ -272,7 +308,7 @@ function getPrimaryEmail(
  * Helper to extract primary phone from Pipedrive phone array
  */
 function getPrimaryPhone(
-  phones?: Array<{ value: string; primary: boolean }>
+  phones?: Array<{ value: string; primary: boolean }>,
 ): string | undefined {
   if (!phones || phones.length === 0) return undefined;
   const primary = phones.find((p) => p.primary);
@@ -284,7 +320,7 @@ function getPrimaryPhone(
  */
 function getOrgName(
   org_id?: { name: string; value: number } | number | null,
-  org_name?: string
+  org_name?: string,
 ): string | undefined {
   if (org_name) return org_name;
   if (org_id && typeof org_id === "object" && "name" in org_id) {
@@ -320,9 +356,14 @@ export function mapPipedriveDealToCustomer(deal: PipedriveDeal) {
   const displayName =
     deal.person_name || deal.title || companyName || `Deal #${deal.id}`;
 
+  // Determine customer type based on organization:
+  // - If org_id is filled (regardless of name) → CONTRACTOR
+  // - If org_id is empty → CLIENT
+  const customerType = orgId ? CustomerType.CONTRACTOR : CustomerType.CLIENT;
+
   return {
     pipedriveId: deal.id.toString(),
-    type: CustomerType.PROSPECT,
+    type: customerType,
     displayName,
     companyName,
     email,
@@ -360,7 +401,7 @@ export function mapPipedrivePersonToCustomer(person: PipedrivePerson) {
  */
 export async function syncDealsToDatabase(
   deals: PipedriveDeal[],
-  onProgress?: (current: number, total: number) => void
+  onProgress?: (current: number, total: number) => void,
 ): Promise<{
   created: number;
   updated: number;
@@ -386,7 +427,7 @@ export async function syncDealsToDatabase(
           data: {
             ...customerData,
             pipedriveData: JSON.parse(
-              JSON.stringify(customerData.pipedriveData)
+              JSON.stringify(customerData.pipedriveData),
             ),
             updatedAt: new Date(),
           },
@@ -397,7 +438,7 @@ export async function syncDealsToDatabase(
           data: {
             ...customerData,
             pipedriveData: JSON.parse(
-              JSON.stringify(customerData.pipedriveData)
+              JSON.stringify(customerData.pipedriveData),
             ),
           },
         });

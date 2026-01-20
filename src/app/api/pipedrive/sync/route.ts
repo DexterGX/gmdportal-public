@@ -7,6 +7,9 @@ import {
   fetchAllDeals,
   mapPipedriveDealToCustomer,
   testConnection,
+  fetchPerson,
+  fetchOrganization,
+  fetchUser,
 } from "@/lib/pipedrive";
 
 /**
@@ -40,7 +43,7 @@ export async function POST(request: NextRequest) {
         {
           error: "Failed to connect to Pipedrive. Check your API credentials.",
         },
-        { status: 500 }
+        { status: 500 },
       );
     }
 
@@ -93,11 +96,31 @@ export async function POST(request: NextRequest) {
         let errors = 0;
         let processed = 0;
 
+        // Group deals by person_id to avoid duplicates
+        const dealsByPerson = new Map<string, any[]>();
+
+        for (const deal of deals) {
+          const personId = deal.person_id
+            ? typeof deal.person_id === "object"
+              ? deal.person_id.value?.toString()
+              : deal.person_id.toString()
+            : `deal_${deal.id}`; // Fallback for deals without person
+
+          if (!dealsByPerson.has(personId)) {
+            dealsByPerson.set(personId, []);
+          }
+          dealsByPerson.get(personId)!.push(deal);
+        }
+
+        console.log(
+          `[Pipedrive Sync] Grouped ${deals.length} deals into ${dealsByPerson.size} unique customers`,
+        );
+
         // Get all existing Pipedrive IDs from database
         const existingCustomers = await prisma.customer.findMany({
           where: {
             pipedriveId: {
-              in: deals.map((d) => d.id.toString()).filter(Boolean),
+              in: Array.from(dealsByPerson.keys()).filter(Boolean),
             },
           },
           select: {
@@ -107,17 +130,18 @@ export async function POST(request: NextRequest) {
         });
 
         const existingPipedriveIds = new Set(
-          existingCustomers.map((c) => c.pipedriveId)
+          existingCustomers.map((c) => c.pipedriveId),
         );
         const existingMap = new Map(
-          existingCustomers.map((c) => [c.pipedriveId, c.id])
+          existingCustomers.map((c) => [c.pipedriveId, c.id]),
         );
 
         // Process in batches for better performance
-        const batchSize = 50;
+        const batchSize = 20; // Reduced batch size due to API calls
+        const personEntries = Array.from(dealsByPerson.entries());
         const batches = [];
-        for (let i = 0; i < deals.length; i += batchSize) {
-          batches.push(deals.slice(i, i + batchSize));
+        for (let i = 0; i < personEntries.length; i += batchSize) {
+          batches.push(personEntries.slice(i, i + batchSize));
         }
 
         // Check for cancellation
@@ -162,70 +186,192 @@ export async function POST(request: NextRequest) {
           const batch = batches[batchIndex];
           const batchStartTime = Date.now();
 
-          // Separate new vs existing in this batch
-          const newCustomers = [];
-          const updateOperations = [];
-
-          for (const deal of batch) {
+          for (const [personId, personDeals] of batch) {
             try {
-              const customerData = mapPipedriveDealToCustomer(deal);
+              // Use the first deal as the primary source for customer data
+              const primaryDeal = personDeals[0];
 
-              if (existingPipedriveIds.has(customerData.pipedriveId)) {
-                updateOperations.push({
-                  id: existingMap.get(customerData.pipedriveId)!,
-                  data: customerData,
-                });
-              } else {
-                newCustomers.push(customerData);
+              // Fetch enriched person, organization, and owner data
+              let personData = null;
+              let orgData = null;
+              let ownerData = null;
+
+              if (primaryDeal.person_id) {
+                const pId =
+                  typeof primaryDeal.person_id === "object"
+                    ? primaryDeal.person_id.value
+                    : primaryDeal.person_id;
+                personData = await fetchPerson(pId);
               }
+
+              if (primaryDeal.org_id) {
+                const orgId =
+                  typeof primaryDeal.org_id === "object"
+                    ? primaryDeal.org_id.value
+                    : primaryDeal.org_id;
+                orgData = await fetchOrganization(orgId);
+              }
+
+              const ownerId =
+                (primaryDeal as any).owner_id ||
+                (primaryDeal as any).creator_user_id;
+              if (ownerId) {
+                const ownerIdNum =
+                  typeof ownerId === "object"
+                    ? ownerId.value || ownerId.id
+                    : ownerId;
+                ownerData = await fetchUser(ownerIdNum);
+              }
+
+              // Enrich deal data with fetched information
+              const enrichedDeal = {
+                ...primaryDeal,
+                person_id: personData
+                  ? {
+                      value: personData.id,
+                      name: personData.name,
+                      email: personData.email,
+                      phone: personData.phone,
+                    }
+                  : primaryDeal.person_id,
+                org_id: orgData
+                  ? {
+                      value: orgData.id,
+                      name: orgData.name,
+                    }
+                  : primaryDeal.org_id,
+              };
+
+              const customerData = mapPipedriveDealToCustomer(enrichedDeal);
+
+              // Use person_id as the unique identifier instead of deal_id
+              customerData.pipedriveId = personId;
+
+              // Extract address from custom_fields if available
+              if (
+                (primaryDeal as any).custom_fields &&
+                (primaryDeal as any).custom_fields[
+                  "b91459b6b4eceb9a2cfeba8ee74e8f7c0404b0c3"
+                ]
+              ) {
+                const addrField = (primaryDeal as any).custom_fields[
+                  "b91459b6b4eceb9a2cfeba8ee74e8f7c0404b0c3"
+                ];
+                if (addrField.formatted_address) {
+                  const addressData = {
+                    Line1:
+                      addrField.route && addrField.street_number
+                        ? `${addrField.street_number} ${addrField.route}`
+                        : addrField.route || "",
+                    City: addrField.locality || "",
+                    CountrySubDivisionCode: addrField.admin_area_level_1 || "",
+                    PostalCode: addrField.postal_code || "",
+                    Country: addrField.country || "United States",
+                  };
+                  (customerData as any).billAddr = addressData;
+                  (customerData as any).shipAddr = addressData;
+                }
+              }
+
+              // Add sales person
+              if (ownerData) {
+                (customerData as any).salesPerson = ownerData.name;
+              }
+
+              // Use Pipedrive timestamps for accurate dates
+              const customerCreatedAt = primaryDeal.add_time
+                ? new Date(primaryDeal.add_time)
+                : new Date();
+              const customerUpdatedAt = primaryDeal.update_time
+                ? new Date(primaryDeal.update_time)
+                : new Date();
+
+              // Upsert customer (one per person)
+              const customer = await prisma.customer.upsert({
+                where: { pipedriveId: personId },
+                update: {
+                  ...customerData,
+                  pipedriveData: JSON.parse(
+                    JSON.stringify(customerData.pipedriveData),
+                  ),
+                  updatedAt: customerUpdatedAt,
+                },
+                create: {
+                  ...customerData,
+                  pipedriveData: JSON.parse(
+                    JSON.stringify(customerData.pipedriveData),
+                  ),
+                  createdAt: customerCreatedAt,
+                  updatedAt: customerUpdatedAt,
+                },
+              });
+
+              const isNewCustomer = !existingPipedriveIds.has(personId);
+              if (isNewCustomer) {
+                created++;
+                existingPipedriveIds.add(personId);
+              } else {
+                updated++;
+              }
+
+              // Create/update Job records for each deal
+              for (const deal of personDeals) {
+                try {
+                  // Use Pipedrive's add_time or update_time for accurate dates
+                  const dealCreatedAt = deal.add_time
+                    ? new Date(deal.add_time)
+                    : new Date();
+                  const dealUpdatedAt = deal.update_time
+                    ? new Date(deal.update_time)
+                    : new Date();
+
+                  await prisma.job.upsert({
+                    where: {
+                      pipedriveId: deal.id.toString(),
+                    },
+                    update: {
+                      jobName: deal.title,
+                      value: deal.value,
+                      status:
+                        deal.status === "won"
+                          ? "COMPLETE"
+                          : deal.status === "lost"
+                            ? "CANCELLED"
+                            : "ONGOING",
+                      updatedAt: dealUpdatedAt,
+                      lastSyncedAt: new Date(),
+                    },
+                    create: {
+                      customerId: customer.id,
+                      jobName: deal.title,
+                      pipedriveId: deal.id.toString(),
+                      value: deal.value,
+                      status:
+                        deal.status === "won"
+                          ? "COMPLETE"
+                          : deal.status === "lost"
+                            ? "CANCELLED"
+                            : "ONGOING",
+                      createdAt: dealCreatedAt,
+                      updatedAt: dealUpdatedAt,
+                      lastSyncedAt: new Date(),
+                    },
+                  });
+                } catch (jobError) {
+                  console.error(
+                    `Failed to create/update job for deal ${deal.id}:`,
+                    jobError,
+                  );
+                }
+              }
+
+              processed++;
             } catch (error) {
-              console.error(`Failed to map deal ${deal.id}:`, error);
+              console.error(`Failed to process person ${personId}:`, error);
               errors++;
             }
           }
 
-          // Batch create new customers
-          if (newCustomers.length > 0) {
-            try {
-              const result = await prisma.customer.createMany({
-                data: newCustomers.map((c) => ({
-                  ...c,
-                  pipedriveData: JSON.parse(JSON.stringify(c.pipedriveData)),
-                })),
-                skipDuplicates: true,
-              });
-              created += result.count;
-            } catch (error) {
-              console.error("Batch create error:", error);
-              errors += newCustomers.length;
-            }
-          }
-
-          // Batch update existing customers
-          if (updateOperations.length > 0) {
-            try {
-              await prisma.$transaction(
-                updateOperations.map((op) =>
-                  prisma.customer.update({
-                    where: { id: op.id },
-                    data: {
-                      ...op.data,
-                      pipedriveData: JSON.parse(
-                        JSON.stringify(op.data.pipedriveData)
-                      ),
-                      updatedAt: new Date(),
-                    },
-                  })
-                )
-              );
-              updated += updateOperations.length;
-            } catch (error) {
-              console.error("Batch update error:", error);
-              errors += updateOperations.length;
-            }
-          }
-
-          processed += batch.length;
           const batchTime = Date.now() - batchStartTime;
 
           // Update sync job progress
@@ -253,9 +399,7 @@ export async function POST(request: NextRequest) {
           console.log(
             `[Pipedrive Sync] Batch ${batchIndex + 1}/${batches.length}: ${
               batch.length
-            } deals in ${batchTime}ms (Created: ${
-              newCustomers.length
-            }, Updated: ${updateOperations.length})`
+            } people in ${batchTime}ms`,
           );
         }
 
@@ -316,7 +460,7 @@ export async function POST(request: NextRequest) {
     console.error("Pipedrive sync setup error:", error);
     return NextResponse.json(
       { error: error.message || "Failed to start sync" },
-      { status: 500 }
+      { status: 500 },
     );
   }
 }
@@ -364,7 +508,7 @@ export async function GET(request: NextRequest) {
     console.error("Pipedrive sync GET error:", error);
     return NextResponse.json(
       { error: error.message || "Failed to get sync status" },
-      { status: 500 }
+      { status: 500 },
     );
   }
 }

@@ -91,7 +91,17 @@ export default function CustomerDetailClient({ customer, userRole }: Props) {
               </p>
             </div>
           </div>
-          <div>
+          <div className="flex items-center gap-2">
+            {customer.pipedriveId && (
+              <span className="inline-flex items-center px-3 py-1 rounded-full text-xs font-medium bg-purple-100 dark:bg-purple-900/30 text-purple-800 dark:text-purple-300">
+                Pipedrive
+              </span>
+            )}
+            {customer.quickbooksId && (
+              <span className="inline-flex items-center px-3 py-1 rounded-full text-xs font-medium bg-blue-100 dark:bg-blue-900/30 text-blue-800 dark:text-blue-300">
+                QuickBooks
+              </span>
+            )}
             <span
               className={`inline-flex items-center px-3 py-1 rounded-full text-sm font-medium ${
                 customer.active
@@ -115,39 +125,77 @@ export default function CustomerDetailClient({ customer, userRole }: Props) {
               {customer.companyName && (
                 <div className="flex items-center gap-3">
                   <Building2 className="w-4 h-4 text-gray-400" />
-                  <span className="text-gray-700 dark:text-gray-300">
-                    {customer.companyName}
-                  </span>
+                  <div>
+                    <span className="text-xs text-gray-500 dark:text-gray-400 block">
+                      Organization:
+                    </span>
+                    <span className="text-gray-700 dark:text-gray-300">
+                      {customer.companyName}
+                    </span>
+                  </div>
                 </div>
               )}
               {customer.email && (
                 <div className="flex items-center gap-3">
                   <Mail className="w-4 h-4 text-gray-400" />
-                  <a
-                    href={`mailto:${customer.email}`}
-                    className="text-blue-600 dark:text-blue-400 hover:underline"
-                  >
-                    {customer.email}
-                  </a>
+                  <div>
+                    <span className="text-xs text-gray-500 dark:text-gray-400 block">
+                      Email:
+                    </span>
+                    <a
+                      href={`mailto:${customer.email}`}
+                      className="text-blue-600 dark:text-blue-400 hover:underline"
+                    >
+                      {customer.email}
+                    </a>
+                  </div>
                 </div>
               )}
               {customer.phone && (
                 <div className="flex items-center gap-3">
                   <Phone className="w-4 h-4 text-gray-400" />
-                  <a
-                    href={`tel:${customer.phone}`}
-                    className="text-blue-600 dark:text-blue-400 hover:underline"
-                  >
-                    {customer.phone}
-                  </a>
+                  <div>
+                    <span className="text-xs text-gray-500 dark:text-gray-400 block">
+                      Phone:
+                    </span>
+                    <a
+                      href={`tel:${customer.phone}`}
+                      className="text-blue-600 dark:text-blue-400 hover:underline"
+                    >
+                      {customer.phone}
+                    </a>
+                  </div>
                 </div>
               )}
               {address && (
                 <div className="flex items-start gap-3">
                   <MapPin className="w-4 h-4 text-gray-400 mt-1" />
-                  <span className="text-gray-700 dark:text-gray-300">
-                    {address}
-                  </span>
+                  <div>
+                    <span className="text-xs text-gray-500 dark:text-gray-400 block">
+                      Address:
+                    </span>
+                    <a
+                      href={`https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(address)}`}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="text-blue-600 dark:text-blue-400 hover:underline"
+                    >
+                      {address}
+                    </a>
+                  </div>
+                </div>
+              )}
+              {(customer as any).salesPerson && (
+                <div className="flex items-start gap-3">
+                  <Briefcase className="w-4 h-4 text-gray-400 mt-1" />
+                  <div>
+                    <span className="text-xs text-gray-500 dark:text-gray-400 block">
+                      Sales Person:
+                    </span>
+                    <span className="text-gray-700 dark:text-gray-300">
+                      {(customer as any).salesPerson}
+                    </span>
+                  </div>
                 </div>
               )}
             </div>
@@ -166,8 +214,8 @@ export default function CustomerDetailClient({ customer, userRole }: Props) {
                     customer.type === "CLIENT"
                       ? "bg-blue-100 dark:bg-blue-900/30 text-blue-800 dark:text-blue-300"
                       : customer.type === "CONTRACTOR"
-                      ? "bg-purple-100 dark:bg-purple-900/30 text-purple-800 dark:text-purple-300"
-                      : "bg-yellow-100 dark:bg-yellow-900/30 text-yellow-800 dark:text-yellow-300"
+                        ? "bg-purple-100 dark:bg-purple-900/30 text-purple-800 dark:text-purple-300"
+                        : "bg-yellow-100 dark:bg-yellow-900/30 text-yellow-800 dark:text-yellow-300"
                   }`}
                 >
                   {customer.type}
