@@ -74,7 +74,7 @@ export default function QuoteReviewClient({
             finalPrice: parseFloat(finalPrice),
             notesSales,
           }),
-        }
+        },
       );
 
       if (response.ok) {
@@ -95,7 +95,7 @@ export default function QuoteReviewClient({
   const handleApprove = async () => {
     if (
       !confirm(
-        "Are you sure you want to approve this quote? This will mark the job as approved."
+        "Are you sure you want to approve this quote? This will mark the job as approved.",
       )
     ) {
       return;
@@ -111,7 +111,7 @@ export default function QuoteReviewClient({
           body: JSON.stringify({
             status: "APPROVED",
           }),
-        }
+        },
       );
 
       if (response.ok) {
@@ -143,7 +143,7 @@ export default function QuoteReviewClient({
           body: JSON.stringify({
             status: "REJECTED",
           }),
-        }
+        },
       );
 
       if (response.ok) {
@@ -254,7 +254,7 @@ export default function QuoteReviewClient({
                             (
                               parseFloat(quote.installerCost) *
                               parseFloat(e.target.value)
-                            ).toFixed(2)
+                            ).toFixed(2),
                           );
                         }}
                         className="w-full px-3 py-2 border border-gray-300 rounded-md"
@@ -390,12 +390,14 @@ export default function QuoteReviewClient({
                     </>
                   ) : (
                     <>
-                      <button
-                        onClick={() => setEditing(true)}
-                        className="w-full px-4 py-2 bg-gray-100 text-gray-700 rounded-md hover:bg-gray-200"
-                      >
-                        Edit Price
-                      </button>
+                      {userRole === "admin" && (
+                        <button
+                          onClick={() => setEditing(true)}
+                          className="w-full px-4 py-2 bg-gray-100 text-gray-700 rounded-md hover:bg-gray-200"
+                        >
+                          Edit Price
+                        </button>
+                      )}
                       <button
                         onClick={handleApprove}
                         disabled={saving}

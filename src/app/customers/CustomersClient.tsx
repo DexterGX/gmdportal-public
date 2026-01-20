@@ -478,7 +478,7 @@ export default function CustomersClient({
                                 href={`/customers/${customer.id}#jobs`}
                                 className="text-blue-600 dark:text-blue-400 hover:underline text-xs"
                               >
-                                {customer.jobs.length} QB{" "}
+                                {customer.jobs.length} QBs{" "}
                                 {customer.jobs.length === 1 ? "Job" : "Jobs"}
                               </Link>
                             )}
