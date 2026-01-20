@@ -264,8 +264,8 @@ export async function POST(request: NextRequest) {
 
         // Add address if extracted from custom fields
         if (addressData) {
-          customerData.billAddr = addressData;
-          customerData.shipAddr = addressData;
+          (customerData as any).billAddr = addressData;
+          (customerData as any).shipAddr = addressData;
         }
 
         // Add sales person if available
@@ -289,8 +289,8 @@ export async function POST(request: NextRequest) {
             pipedriveData: JSON.parse(
               JSON.stringify(customerData.pipedriveData),
             ),
-            billAddr: addressData || customerData.billAddr,
-            shipAddr: addressData || customerData.shipAddr,
+            billAddr: addressData || (customerData as any).billAddr,
+            shipAddr: addressData || (customerData as any).shipAddr,
             salesPerson: ownerData?.name || (customerData as any).salesPerson,
             updatedAt: customerUpdatedAt,
           },
@@ -299,8 +299,8 @@ export async function POST(request: NextRequest) {
             pipedriveData: JSON.parse(
               JSON.stringify(customerData.pipedriveData),
             ),
-            billAddr: addressData,
-            shipAddr: addressData,
+            billAddr: addressData || undefined,
+            shipAddr: addressData || undefined,
             salesPerson: ownerData?.name,
             createdAt: customerCreatedAt,
             updatedAt: customerUpdatedAt,
