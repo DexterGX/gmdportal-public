@@ -325,6 +325,7 @@ model Customer {
 
 model Job {
   id                String    @id @default(uuid())
+  jobNumber         Int       @unique @default(autoincrement())
   customerId        String
   jobName           String
   quickbooksJobId   String?   @unique
@@ -338,11 +339,35 @@ model Job {
   lastSyncedAt      DateTime?
   customer          Customer  @relation(fields: [customerId], references: [id], onDelete: Cascade)
   closetJob         ClosetJob?
+  artifacts         JobArtifact[]
 
   @@index([customerId])
   @@index([quickbooksJobId])
   @@index([pipedriveId])
   @@index([status])
+  @@index([jobNumber])
+}
+
+model JobArtifact {
+  id              String   @id @default(uuid())
+  jobId           String
+  sourceApp       String   // "CABINET_ESTIMATES", "SLABS", "CLOSET", "FILES", etc.
+  type            String   // "LINK", "FILE", "NOTE", "SNAPSHOT"
+  title           String
+  url             String?  // Deep link to internal page or external resource
+  fileStorageKey  String?  // For FILE type: storage key/path
+  fileName        String?  // Original filename
+  mimeType        String?  // File MIME type
+  fileSize        Int?     // File size in bytes
+  metadata        Json?    // Optional structured data snapshot
+  createdByUserId String?
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+  job             Job      @relation(fields: [jobId], references: [id], onDelete: Cascade)
+
+  @@index([jobId])
+  @@index([sourceApp])
+  @@index([type])
 }
 
 enum CustomerType {

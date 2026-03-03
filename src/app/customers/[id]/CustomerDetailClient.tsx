@@ -18,6 +18,7 @@ type CustomerWithDetails = Omit<Customer, "balance"> & {
   jobs: Array<
     Omit<Job, "value"> & {
       value: number | null;
+      jobNumber: number;
     }
   >;
   closetJobs: Array<
@@ -258,7 +259,7 @@ export default function CustomerDetailClient({ customer, userRole }: Props) {
           </div>
         </div>
 
-        {/* QuickBooks Jobs Section */}
+        {/* Jobs Section */}
         {customer.jobs.length > 0 && (
           <div
             id="jobs"
@@ -266,19 +267,23 @@ export default function CustomerDetailClient({ customer, userRole }: Props) {
           >
             <h2 className="text-lg font-semibold text-gray-900 dark:text-gray-100 mb-4 flex items-center gap-2">
               <Briefcase className="w-5 h-5" />
-              QuickBooks Jobs ({customer.jobs.length})
+              Jobs ({customer.jobs.length})
             </h2>
             <div className="space-y-3">
               {customer.jobs.map((job) => (
-                <div
+                <Link
                   key={job.id}
-                  className="border border-gray-200 dark:border-gray-700 rounded-lg p-4 hover:bg-gray-50 dark:hover:bg-gray-900/50 transition-colors"
+                  href={`/jobs/${job.id}`}
+                  className="block border border-gray-200 dark:border-gray-700 rounded-lg p-4 hover:bg-gray-50 dark:hover:bg-gray-900/50 transition-colors"
                 >
                   <div className="flex items-start justify-between">
                     <div className="flex-1">
-                      <h3 className="font-medium text-gray-900 dark:text-gray-100">
+                      <h3 className="font-medium text-gray-900 dark:text-gray-100 hover:text-blue-600 dark:hover:text-blue-400">
                         {job.jobName}
                       </h3>
+                      <p className="text-xs text-gray-500 dark:text-gray-400 mt-1">
+                        Job #<span className="font-mono font-semibold">{job.jobNumber}</span>
+                      </p>
                       <div className="flex flex-wrap items-center gap-4 mt-2 text-sm text-gray-600 dark:text-gray-400">
                         {job.value !== null && (
                           <div className="flex items-center gap-1">
@@ -307,6 +312,7 @@ export default function CustomerDetailClient({ customer, userRole }: Props) {
                             target="_blank"
                             rel="noopener noreferrer"
                             className="text-xs text-blue-600 dark:text-blue-400 hover:underline"
+                            onClick={(e) => e.stopPropagation()}
                           >
                             View in QuickBooks →
                           </a>
@@ -321,7 +327,7 @@ export default function CustomerDetailClient({ customer, userRole }: Props) {
                       {job.status.replace("_", " ")}
                     </span>
                   </div>
-                </div>
+                </Link>
               ))}
             </div>
           </div>
