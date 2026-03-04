@@ -428,6 +428,7 @@ model AccessoryTracker {
   remeasureApprovedAt  DateTime?
   department           AccessoryDepartment?
   notes                String?
+  isArchived           Boolean          @default(false)
   createdByUserId      String?
   updatedByUserId      String?
   createdByUser        User?            @relation("AccessoryTrackerCreatedBy", fields: [createdByUserId], references: [id])
@@ -453,6 +454,7 @@ model AccessoryItem {
   retail              Decimal?            @db.Decimal(10, 2)
   status              AccessoryItemStatus @default(READY_TO_ORDER)
   priority            AccessoryPriority   @default(NORMAL)
+  isArchived          Boolean             @default(false)
   orderedAt           DateTime?
   etaAt               DateTime?
   deliveredAt         DateTime?

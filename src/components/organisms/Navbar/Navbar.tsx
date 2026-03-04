@@ -36,7 +36,7 @@ export default function Navbar({ user }: { user: any }) {
               p.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
               (p.description ?? "")
                 .toLowerCase()
-                .includes(searchTerm.toLowerCase())
+                .includes(searchTerm.toLowerCase()),
           );
 
   const toggleDarkMode = () => {

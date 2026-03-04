@@ -46,16 +46,10 @@ export default async function CustomersLayout({
   return (
     <SidebarProvider>
       <div className="min-h-screen flex bg-gray-50 dark:bg-gray-900 w-full">
-        {/* Sidebar - hidden on print */}
-        <div className="sticky top-0 h-screen print:hidden">
-          <AppSidebar userRole={appRole} />
-        </div>
+        <AppSidebar userRole={appRole} />
         <div className="flex-1 flex flex-col min-w-0">
-          {/* Navbar - hidden on print */}
-          <div className="sticky top-0 z-30 bg-white dark:bg-gray-800 print:hidden">
-            <NavbarClient user={user} />
-          </div>
-          <main className="p-6 overflow-auto min-w-0 bg-gray-50 dark:bg-gray-900 print:p-0 print:overflow-visible print:bg-white">
+          <NavbarClient user={user} />
+          <main className="p-6 overflow-auto min-w-0 bg-gray-50 dark:bg-gray-900">
             {children}
           </main>
         </div>

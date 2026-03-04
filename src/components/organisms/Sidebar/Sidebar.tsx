@@ -44,7 +44,7 @@ const AppSidebar: React.FC<{ userRole?: AppRole }> = ({ userRole }) => {
 
   // Filter nav items based on user role - hide adminOnly items for non-admins
   const navItems = program.navItems.filter(
-    (item) => !item.adminOnly || userRole === "admin"
+    (item) => !item.adminOnly || userRole === "admin",
   );
 
   // Split items into regular and admin-only for grouping
@@ -53,7 +53,7 @@ const AppSidebar: React.FC<{ userRole?: AppRole }> = ({ userRole }) => {
 
   const renderMenuItems = (
     navItems: NavItem[],
-    menuType: "main" | "others"
+    menuType: "main" | "others",
   ) => (
     <ul className="flex flex-col gap-4">
       {navItems.map((nav, index) => (
@@ -188,7 +188,7 @@ const AppSidebar: React.FC<{ userRole?: AppRole }> = ({ userRole }) => {
     index: number;
   } | null>(null);
   const [subMenuHeight, setSubMenuHeight] = useState<Record<string, number>>(
-    {}
+    {},
   );
   const subMenuRefs = useRef<Record<string, HTMLDivElement | null>>({});
 
@@ -261,10 +261,10 @@ const AppSidebar: React.FC<{ userRole?: AppRole }> = ({ userRole }) => {
           isMobile
             ? "fixed left-0 top-0 bottom-0 w-[290px]"
             : isExpanded || isMobileOpen
-            ? "w-[290px]"
-            : isHovered
-            ? "w-[290px]"
-            : "w-[90px]"
+              ? "w-[290px]"
+              : isHovered
+                ? "w-[290px]"
+                : "w-[90px]"
         }`}
         onMouseEnter={() => !isExpanded && setIsHovered(true)}
         onMouseLeave={() => setIsHovered(false)}

@@ -13,6 +13,7 @@ import {
   Clock,
 } from "lucide-react";
 import { getAccessoryTrackers } from "@/lib/accessories";
+import { useSidebar } from "@/context/SidebarContext";
 import type {
   AccessoryTrackerWithRelations,
   AccessoryItemWithUser,
@@ -26,10 +27,13 @@ interface Props {
 
 export default function AccessoriesClient({ userRole, userId }: Props) {
   const router = useRouter();
+  const { isMobileOpen, isMobile } = useSidebar();
   const [trackers, setTrackers] = useState<AccessoryTrackerWithRelations[]>([]);
   const [loading, setLoading] = useState(true);
   const [searchTerm, setSearchTerm] = useState("");
-  const [filterStatus, setFilterStatus] = useState<AccessoryItemStatus | "">("");
+  const [filterStatus, setFilterStatus] = useState<AccessoryItemStatus | "">(
+    "",
+  );
   const [filterDepartment, setFilterDepartment] = useState<
     AccessoryDepartment | ""
   >("");
@@ -98,8 +102,8 @@ export default function AccessoriesClient({ userRole, userId }: Props) {
         (item.etaAt &&
           item.etaAt < new Date() &&
           !["DELIVERED", "CHECKED_IN", "INSTALLED", "NOT_NEEDED"].includes(
-            item.status
-          ))
+            item.status,
+          )),
     );
   };
 
@@ -112,7 +116,13 @@ export default function AccessoriesClient({ userRole, userId }: Props) {
   }
 
   return (
-    <div className="max-w-7xl mx-auto">
+    <div
+      className={`max-w-7xl mx-auto transition-opacity ${
+        isMobile && isMobileOpen
+          ? "opacity-0 pointer-events-none"
+          : "opacity-100"
+      }`}
+    >
       {/* Header */}
       <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 mb-6">
         <div>
@@ -156,7 +166,9 @@ export default function AccessoriesClient({ userRole, userId }: Props) {
             className="px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-md bg-white dark:bg-gray-900 text-gray-900 dark:text-gray-100 focus:ring-2 focus:ring-blue-500 focus:border-transparent"
           >
             <option value="">All Statuses</option>
-            <option value="PENDING_REMEASURE_APPROVAL">Pending Remeasure</option>
+            <option value="PENDING_REMEASURE_APPROVAL">
+              Pending Remeasure
+            </option>
             <option value="READY_TO_ORDER">Ready to Order</option>
             <option value="ORDERED">Ordered</option>
             <option value="IN_TRANSIT">In Transit</option>
@@ -221,19 +233,19 @@ export default function AccessoriesClient({ userRole, userId }: Props) {
                   <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">
                     Job / Customer
                   </th>
-                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">
+                  <th className="px-6 py-3 text-center text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">
                     Milestones
                   </th>
-                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">
+                  <th className="px-6 py-3 text-center text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">
                     Department
                   </th>
-                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">
+                  <th className="px-6 py-3 text-center text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">
                     Item Status
                   </th>
-                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">
+                  <th className="px-6 py-3 text-center text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">
                     Updated
                   </th>
-                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">
+                  <th className="px-6 py-3 text-center text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">
                     Actions
                   </th>
                 </tr>
@@ -248,7 +260,7 @@ export default function AccessoriesClient({ userRole, userId }: Props) {
                       key={tracker.id}
                       className="hover:bg-gray-50 dark:hover:bg-gray-900/50 transition-colors"
                     >
-                      <td className="px-6 py-4">
+                      <td className="px-6 py-4 text-left">
                         <div className="flex items-start gap-3">
                           {hasAttention && (
                             <AlertCircle className="w-5 h-5 text-red-500 flex-shrink-0 mt-0.5" />
@@ -258,7 +270,7 @@ export default function AccessoriesClient({ userRole, userId }: Props) {
                               Job #{tracker.job.jobNumber}
                             </div>
                             <div className="text-sm text-gray-600 dark:text-gray-400">
-                              {tracker.job.jobName}
+                              Job Name: {tracker.job.jobName}
                             </div>
                             <div className="text-sm text-gray-500 dark:text-gray-500">
                               {tracker.job.customer.displayName}
@@ -266,14 +278,14 @@ export default function AccessoriesClient({ userRole, userId }: Props) {
                           </div>
                         </div>
                       </td>
-                      <td className="px-6 py-4 text-sm text-gray-900 dark:text-gray-100">
+                      <td className="px-6 py-4 text-sm text-gray-900 dark:text-gray-100 text-center">
                         <div className="space-y-1">
                           {tracker.invoiceCreatedAt && (
                             <div className="flex items-center gap-2 text-xs">
                               <Calendar className="w-3 h-3 text-gray-400" />
                               Invoice:{" "}
                               {new Date(
-                                tracker.invoiceCreatedAt
+                                tracker.invoiceCreatedAt,
                               ).toLocaleDateString()}
                             </div>
                           )}
@@ -282,13 +294,13 @@ export default function AccessoriesClient({ userRole, userId }: Props) {
                               <Calendar className="w-3 h-3 text-gray-400" />
                               Remeasure:{" "}
                               {new Date(
-                                tracker.remeasureApprovedAt
+                                tracker.remeasureApprovedAt,
                               ).toLocaleDateString()}
                             </div>
                           )}
                         </div>
                       </td>
-                      <td className="px-6 py-4 text-sm">
+                      <td className="px-6 py-4 text-sm text-center">
                         {tracker.department ? (
                           <span className="inline-flex items-center px-2 py-1 rounded-full text-xs font-medium bg-purple-100 dark:bg-purple-900/30 text-purple-800 dark:text-purple-300">
                             {tracker.department}
@@ -298,7 +310,7 @@ export default function AccessoriesClient({ userRole, userId }: Props) {
                         )}
                       </td>
                       <td className="px-6 py-4">
-                        <div className="flex flex-wrap gap-2 text-xs">
+                        <div className="flex flex-wrap gap-2 text-xs justify-center">
                           {counts.readyToOrder > 0 && (
                             <span className="inline-flex items-center px-2 py-1 rounded-full font-medium bg-blue-100 dark:bg-blue-900/30 text-blue-800 dark:text-blue-300">
                               {counts.readyToOrder} Ready
@@ -326,13 +338,13 @@ export default function AccessoriesClient({ userRole, userId }: Props) {
                           )}
                         </div>
                       </td>
-                      <td className="px-6 py-4 text-sm text-gray-500 dark:text-gray-400">
-                        <div className="flex items-center gap-1">
+                      <td className="px-6 py-4 text-sm text-gray-500 dark:text-gray-400 text-center">
+                        <div className="flex items-center gap-1 justify-center">
                           <Clock className="w-3 h-3" />
                           {new Date(tracker.updatedAt).toLocaleDateString()}
                         </div>
                       </td>
-                      <td className="px-6 py-4 text-sm">
+                      <td className="px-6 py-4 text-sm text-center">
                         <Link
                           href={`/accessories/${tracker.id}`}
                           className="text-blue-600 hover:text-blue-700 dark:text-blue-400 dark:hover:text-blue-300 font-medium"
@@ -369,7 +381,7 @@ export default function AccessoriesClient({ userRole, userId }: Props) {
                       Job #{tracker.job.jobNumber}
                     </div>
                     <div className="text-sm text-gray-600 dark:text-gray-400">
-                      {tracker.job.jobName}
+                      Job Name: {tracker.job.jobName}
                     </div>
                     <div className="text-sm text-gray-500 dark:text-gray-500">
                       {tracker.job.customer.displayName}

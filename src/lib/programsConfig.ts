@@ -207,7 +207,10 @@ export const programs: ProgramConfig[] = [
     basePath: "/accessories",
     description: "Track accessory purchases for cabinet and countertop jobs.",
     allowedRoles: ["admin", "office", "finance", "sales"],
-    navItems: [{ icon: Package, name: "Accessories", path: "/accessories" }],
+    navItems: [
+      { icon: Package, name: "Accessories", path: "/accessories" },
+      { icon: ListIcon, name: "History Log", path: "/accessories/history" },
+    ],
     othersItems: [],
   },
 ];
