@@ -24,6 +24,12 @@ model User {
   installerQuotes  ClosetQuote[] @relation("InstallerQuotes")
   submittedQuotes  ClosetQuote[] @relation("SubmittedQuotes")
   sessions         Session[]
+  accessoryTrackersCreated AccessoryTracker[] @relation("AccessoryTrackerCreatedBy")
+  accessoryTrackersUpdated AccessoryTracker[] @relation("AccessoryTrackerUpdatedBy")
+  accessoryItemsCreated    AccessoryItem[]    @relation("AccessoryItemCreatedBy")
+  accessoryItemsUpdated    AccessoryItem[]    @relation("AccessoryItemUpdatedBy")
+  accessoryItemsAssigned   AccessoryItem[]    @relation("AccessoryItemAssignedTo")
+  accessoryItemEventsChanged AccessoryItemEvent[] @relation("AccessoryItemEventChangedBy")
 }
 
 model Account {
@@ -340,6 +346,7 @@ model Job {
   customer          Customer  @relation(fields: [customerId], references: [id], onDelete: Cascade)
   closetJob         ClosetJob?
   artifacts         JobArtifact[]
+  accessoryTracker  AccessoryTracker?
 
   @@index([customerId])
   @@index([quickbooksJobId])
@@ -409,4 +416,120 @@ model SyncJob {
   cancelRequested  Boolean @default(false)
   createdAt     DateTime @default(now())
   updatedAt     DateTime @updatedAt
+}
+
+// Accessories Tracker - Track accessory purchases for cabinet/countertop jobs
+model AccessoryTracker {
+  id                   String           @id @default(cuid())
+  jobId                String           @unique
+  job                  Job              @relation(fields: [jobId], references: [id], onDelete: Cascade)
+  invoiceNumber        String?
+  invoiceCreatedAt     DateTime?
+  remeasureApprovedAt  DateTime?
+  department           AccessoryDepartment?
+  notes                String?
+  createdByUserId      String?
+  updatedByUserId      String?
+  createdByUser        User?            @relation("AccessoryTrackerCreatedBy", fields: [createdByUserId], references: [id])
+  updatedByUser        User?            @relation("AccessoryTrackerUpdatedBy", fields: [updatedByUserId], references: [id])
+  createdAt            DateTime         @default(now())
+  updatedAt            DateTime         @updatedAt
+  items                AccessoryItem[]
+
+  @@index([jobId])
+}
+
+model AccessoryItem {
+  id                  String              @id @default(cuid())
+  trackerId           String
+  tracker             AccessoryTracker    @relation(fields: [trackerId], references: [id], onDelete: Cascade)
+  category            AccessoryCategory
+  name                String
+  quantity            Int                 @default(1)
+  sku                 String?
+  vendor              String?
+  linkUrl             String?
+  cost                Decimal?            @db.Decimal(10, 2)
+  retail              Decimal?            @db.Decimal(10, 2)
+  status              AccessoryItemStatus @default(READY_TO_ORDER)
+  priority            AccessoryPriority   @default(NORMAL)
+  orderedAt           DateTime?
+  etaAt               DateTime?
+  deliveredAt         DateTime?
+  checkedInAt         DateTime?
+  installedAt         DateTime?
+  assignedToUserId    String?
+  lastStatusChangedAt DateTime?
+  createdByUserId     String?
+  updatedByUserId     String?
+  assignedToUser       User?              @relation("AccessoryItemAssignedTo", fields: [assignedToUserId], references: [id])
+  createdByUser        User?              @relation("AccessoryItemCreatedBy", fields: [createdByUserId], references: [id])
+  updatedByUser        User?              @relation("AccessoryItemUpdatedBy", fields: [updatedByUserId], references: [id])
+  createdAt           DateTime            @default(now())
+  updatedAt           DateTime            @updatedAt
+  events              AccessoryItemEvent[]
+
+  @@index([trackerId])
+  @@index([status])
+  @@index([assignedToUserId])
+}
+
+model AccessoryItemEvent {
+  id              String    @id @default(cuid())
+  itemId          String
+  item            AccessoryItem @relation(fields: [itemId], references: [id], onDelete: Cascade)
+  type            AccessoryEventType
+  fromStatus      AccessoryItemStatus?
+  toStatus        AccessoryItemStatus?
+  message         String?
+  changedByUserId String?
+  changedByUser   User?     @relation("AccessoryItemEventChangedBy", fields: [changedByUserId], references: [id])
+  createdAt       DateTime  @default(now())
+
+  @@index([itemId])
+  @@index([createdAt])
+}
+
+enum AccessoryDepartment {
+  CABINETS
+  COUNTERTOPS
+  BOTH
+}
+
+enum AccessoryCategory {
+  HANDLE
+  PULLOUT
+  TRIM
+  HARDWARE
+  SINK
+  FAUCET
+  APPLIANCE
+  LIGHTING
+  OTHER
+}
+
+enum AccessoryItemStatus {
+  PENDING_REMEASURE_APPROVAL
+  READY_TO_ORDER
+  ORDERED
+  IN_TRANSIT
+  DELIVERED
+  CHECKED_IN
+  INSTALLED
+  NOT_NEEDED
+  ISSUE
+}
+
+enum AccessoryPriority {
+  LOW
+  NORMAL
+  HIGH
+  URGENT
+}
+
+enum AccessoryEventType {
+  STATUS_CHANGE
+  NOTE
+  FIELD_EDIT
+  CREATED
 }
