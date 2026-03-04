@@ -19,16 +19,18 @@ type JobWithDetails = Omit<Job, "value"> & {
   customer: Omit<Customer, "balance"> & {
     balance: number | null;
   };
-  closetJob: (ClosetJob & {
-    quotes: Array<{
-      id: string;
-      quoteCode: string;
-      status: string;
-      installerCost: number;
-      gmFactor: number | null;
-      finalPrice: number;
-    }>;
-  }) | null;
+  closetJob:
+    | (ClosetJob & {
+        quotes: Array<{
+          id: string;
+          quoteCode: string;
+          status: string;
+          installerCost: number;
+          gmFactor: number | null;
+          finalPrice: number;
+        }>;
+      })
+    | null;
   artifacts: JobArtifact[];
 };
 
@@ -83,7 +85,9 @@ export default function JobDetailClient({ job, userRole }: Props) {
     snapshots: job.artifacts.filter((a) => a.type === "SNAPSHOT"),
   };
 
-  const jobAddress = formatAddress(job.customer.billAddr || job.customer.shipAddr);
+  const jobAddress = formatAddress(
+    job.customer.billAddr || job.customer.shipAddr,
+  );
 
   return (
     <div className="space-y-6">
@@ -101,7 +105,10 @@ export default function JobDetailClient({ job, userRole }: Props) {
               {job.jobName}
             </h1>
             <p className="text-sm text-gray-500 dark:text-gray-400 mt-1">
-              Job #<span className="font-mono font-semibold text-gray-700 dark:text-gray-300">{job.jobNumber}</span>
+              Job #
+              <span className="font-mono font-semibold text-gray-700 dark:text-gray-300">
+                {job.jobNumber}
+              </span>
             </p>
           </div>
         </div>
@@ -124,19 +131,19 @@ export default function JobDetailClient({ job, userRole }: Props) {
         </div>
       </div>
 
-        {/* Customer Link */}
-        <div className="bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 p-4">
-          <div className="flex items-center gap-2 text-sm text-gray-600 dark:text-gray-400">
-            <Briefcase className="w-4 h-4" />
-            <span>Customer:</span>
-            <Link
-              href={`/customers/${job.customer.id}`}
-              className="text-blue-600 dark:text-blue-400 hover:underline font-medium"
-            >
-              {job.customer.displayName}
-            </Link>
-          </div>
+      {/* Customer Link */}
+      <div className="bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 p-4">
+        <div className="flex items-center gap-2 text-sm text-gray-600 dark:text-gray-400">
+          <Briefcase className="w-4 h-4" />
+          <span>Customer:</span>
+          <Link
+            href={`/customers/${job.customer.id}`}
+            className="text-blue-600 dark:text-blue-400 hover:underline font-medium"
+          >
+            {job.customer.displayName}
+          </Link>
         </div>
+      </div>
 
       {/* Contact Information Grid */}
       <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
@@ -301,9 +308,9 @@ export default function JobDetailClient({ job, userRole }: Props) {
         </div>
       )}
 
-        {/* Artifacts Section */}
-        <div className="bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700">
-          <div className="p-6 border-b border-gray-200 dark:border-gray-700">
+      {/* Artifacts Section */}
+      <div className="bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700">
+        <div className="p-6 border-b border-gray-200 dark:border-gray-700">
           <h2 className="text-lg font-semibold text-gray-900 dark:text-gray-100">
             Artifacts & Links
           </h2>
@@ -331,7 +338,8 @@ export default function JobDetailClient({ job, userRole }: Props) {
                           {artifact.title}
                         </p>
                         <p className="text-xs text-gray-500 dark:text-gray-400">
-                          {artifact.sourceApp} · {formatDate(artifact.createdAt)}
+                          {artifact.sourceApp} ·{" "}
+                          {formatDate(artifact.createdAt)}
                         </p>
                       </div>
                     </div>
@@ -361,7 +369,8 @@ export default function JobDetailClient({ job, userRole }: Props) {
                           {artifact.fileName || artifact.title}
                         </p>
                         <p className="text-xs text-gray-500 dark:text-gray-400">
-                          {artifact.sourceApp} · {formatDate(artifact.createdAt)}
+                          {artifact.sourceApp} ·{" "}
+                          {formatDate(artifact.createdAt)}
                         </p>
                       </div>
                     </div>

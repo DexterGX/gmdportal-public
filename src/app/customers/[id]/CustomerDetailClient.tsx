@@ -282,7 +282,10 @@ export default function CustomerDetailClient({ customer, userRole }: Props) {
                         {job.jobName}
                       </h3>
                       <p className="text-xs text-gray-500 dark:text-gray-400 mt-1">
-                        Job #<span className="font-mono font-semibold">{job.jobNumber}</span>
+                        Job #
+                        <span className="font-mono font-semibold">
+                          {job.jobNumber}
+                        </span>
                       </p>
                       <div className="flex flex-wrap items-center gap-4 mt-2 text-sm text-gray-600 dark:text-gray-400">
                         {job.value !== null && (
