@@ -10,7 +10,14 @@ import {
   BoxCubeIcon,
   PlugInIcon,
 } from "@/icons";
-import { TicketPercent, Settings2, Table2, Shirt, Users } from "lucide-react";
+import {
+  TicketPercent,
+  Settings2,
+  Table2,
+  Shirt,
+  Users,
+  Package,
+} from "lucide-react";
 import type { Role } from "@prisma/client"; // Prisma enum
 
 // App-facing roles (lowercase, string union)
@@ -52,7 +59,8 @@ export type ProgramId =
   | "slabs"
   | "users"
   | "closetJobs"
-  | "customers";
+  | "customers"
+  | "accessories";
 
 export interface ProgramConfig {
   id: ProgramId;
@@ -87,6 +95,11 @@ export const programs: ProgramConfig[] = [
         icon: Shirt,
         name: "Closet Jobs",
         path: "/closet-jobs",
+      },
+      {
+        icon: Package,
+        name: "Accessories",
+        path: "/accessories",
       },
     ],
   },
@@ -186,6 +199,15 @@ export const programs: ProgramConfig[] = [
         adminOnly: true,
       },
     ],
+    othersItems: [],
+  },
+  {
+    id: "accessories",
+    name: "Accessories Tracker",
+    basePath: "/accessories",
+    description: "Track accessory purchases for cabinet and countertop jobs.",
+    allowedRoles: ["admin", "office", "finance", "sales"],
+    navItems: [{ icon: Package, name: "Accessories", path: "/accessories" }],
     othersItems: [],
   },
 ];
