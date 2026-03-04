@@ -17,6 +17,7 @@ export async function GET(request: NextRequest) {
     }
 
     const jobs = await prisma.closetJob.findMany({
+      where: appRole === "installer" ? { installerId: user.id } : undefined,
       orderBy: { createdAt: "desc" },
       include: {
         quotes: {
@@ -35,7 +36,7 @@ export async function GET(request: NextRequest) {
     console.error("Error fetching closet jobs:", error);
     return NextResponse.json(
       { error: "Failed to fetch closet jobs" },
-      { status: 500 }
+      { status: 500 },
     );
   }
 }
@@ -68,7 +69,7 @@ export async function POST(request: NextRequest) {
     if (!customerName || !propertyAddress || !area || !installerId) {
       return NextResponse.json(
         { error: "Missing required fields" },
-        { status: 400 }
+        { status: 400 },
       );
     }
 
@@ -117,7 +118,7 @@ export async function POST(request: NextRequest) {
     const todayStart = new Date(
       now.getFullYear(),
       now.getMonth(),
-      now.getDate()
+      now.getDate(),
     );
     const todayEnd = new Date(todayStart);
     todayEnd.setDate(todayEnd.getDate() + 1);
@@ -160,7 +161,7 @@ export async function POST(request: NextRequest) {
     console.error("Error creating closet job:", error);
     return NextResponse.json(
       { error: "Failed to create closet job" },
-      { status: 500 }
+      { status: 500 },
     );
   }
 }
