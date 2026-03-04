@@ -27,6 +27,7 @@ import {
   deleteAccessoryItem,
   addAccessoryItemNote,
   getAccessoryTracker,
+  deleteAccessoryTracker,
 } from "@/lib/accessories";
 import type {
   AccessoryItemStatus,
@@ -61,38 +62,38 @@ export default function AccessoryTrackerDetailClient({
   const [showAddItemModal, setShowAddItemModal] = useState(false);
   const [showEditItemModal, setShowEditItemModal] = useState(false);
   const [showEditTrackerModal, setShowEditTrackerModal] = useState(false);
-    const [trackerForm, setTrackerForm] = useState({
-      invoiceNumber: tracker.invoiceNumber || "",
-      invoiceCreatedAt: tracker.invoiceCreatedAt
-        ? new Date(tracker.invoiceCreatedAt).toISOString().split("T")[0]
-        : "",
-      remeasureApprovedAt: tracker.remeasureApprovedAt
-        ? new Date(tracker.remeasureApprovedAt).toISOString().split("T")[0]
-        : "",
-      department: tracker.department || "",
-      notes: tracker.notes || "",
-    });
+  const [trackerForm, setTrackerForm] = useState({
+    invoiceNumber: tracker.invoiceNumber || "",
+    invoiceCreatedAt: tracker.invoiceCreatedAt
+      ? new Date(tracker.invoiceCreatedAt).toISOString().split("T")[0]
+      : "",
+    remeasureApprovedAt: tracker.remeasureApprovedAt
+      ? new Date(tracker.remeasureApprovedAt).toISOString().split("T")[0]
+      : "",
+    department: tracker.department || "",
+    notes: tracker.notes || "",
+  });
 
-    const handleSaveTracker = async () => {
-      try {
-        await updateAccessoryTracker(tracker.id, {
-          invoiceNumber: trackerForm.invoiceNumber.trim() || null,
-          invoiceCreatedAt: trackerForm.invoiceCreatedAt
-            ? new Date(trackerForm.invoiceCreatedAt)
-            : null,
-          remeasureApprovedAt: trackerForm.remeasureApprovedAt
-            ? new Date(trackerForm.remeasureApprovedAt)
-            : null,
-          department: trackerForm.department || null,
-          notes: trackerForm.notes || null,
-          updatedByUserId: userId,
-        });
-        setShowEditTrackerModal(false);
-        refreshTracker();
-      } catch (error) {
-        console.error("Error updating tracker:", error);
-      }
-    };
+  const handleSaveTracker = async () => {
+    try {
+      await updateAccessoryTracker(tracker.id, {
+        invoiceNumber: trackerForm.invoiceNumber.trim() || null,
+        invoiceCreatedAt: trackerForm.invoiceCreatedAt
+          ? new Date(trackerForm.invoiceCreatedAt)
+          : null,
+        remeasureApprovedAt: trackerForm.remeasureApprovedAt
+          ? new Date(trackerForm.remeasureApprovedAt)
+          : null,
+        department: trackerForm.department || null,
+        notes: trackerForm.notes || null,
+        updatedByUserId: userId,
+      });
+      setShowEditTrackerModal(false);
+      refreshTracker();
+    } catch (error) {
+      console.error("Error updating tracker:", error);
+    }
+  };
   const [selectedItem, setSelectedItem] = useState<any>(null);
   const [showItemHistory, setShowItemHistory] = useState(false);
 
@@ -178,16 +179,19 @@ export default function AccessoryTrackerDetailClient({
       (item.etaAt &&
         new Date(item.etaAt) < new Date() &&
         !["DELIVERED", "CHECKED_IN", "INSTALLED", "NOT_NEEDED"].includes(
-          item.status
+          item.status,
         ))
     );
   };
 
-  const handleStatusChange = async (itemId: string, newStatus: AccessoryItemStatus) => {
+  const handleStatusChange = async (
+    itemId: string,
+    newStatus: AccessoryItemStatus,
+  ) => {
     let note: string | undefined;
     if (newStatus === "ISSUE" || newStatus === "NOT_NEEDED") {
       const response = window.prompt(
-        `Please add a note for status: ${newStatus.replace(/_/g, " ")}`
+        `Please add a note for status: ${newStatus.replace(/_/g, " ")}`,
       );
       if (response === null) return;
       note = response.trim() || undefined;
@@ -200,6 +204,27 @@ export default function AccessoryTrackerDetailClient({
       refreshTracker();
     } catch (error) {
       console.error("Error changing status:", error);
+    }
+  };
+
+  const handleDeleteTracker = async () => {
+    if (
+      !confirm(
+        "Are you sure you want to delete this tracker? This will archive all items.",
+      )
+    ) {
+      return;
+    }
+
+    try {
+      setLoading(true);
+      await deleteAccessoryTracker(tracker.id, userId);
+      router.push("/accessories");
+    } catch (error) {
+      console.error("Error deleting tracker:", error);
+      alert("Failed to delete tracker");
+    } finally {
+      setLoading(false);
     }
   };
 
@@ -228,13 +253,23 @@ export default function AccessoryTrackerDetailClient({
               <button
                 onClick={() => setShowEditTrackerModal(true)}
                 className="inline-flex items-center gap-2 px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-md text-gray-700 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors"
+                disabled={loading}
               >
                 <Edit2 className="w-4 h-4" />
                 Edit Tracker
               </button>
               <button
+                onClick={handleDeleteTracker}
+                className="inline-flex items-center gap-2 px-4 py-2 border border-red-300 dark:border-red-600 text-red-700 dark:text-red-300 rounded-md hover:bg-red-50 dark:hover:bg-red-900/20 transition-colors"
+                disabled={loading}
+              >
+                <Trash2 className="w-4 h-4" />
+                Delete Tracker
+              </button>
+              <button
                 onClick={() => setShowAddItemModal(true)}
                 className="inline-flex items-center gap-2 px-4 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700 transition-colors"
+                disabled={loading}
               >
                 <Plus className="w-5 h-5" />
                 Add Item
@@ -378,22 +413,22 @@ export default function AccessoryTrackerDetailClient({
               <table className="min-w-full divide-y divide-gray-200 dark:divide-gray-700">
                 <thead className="bg-gray-50 dark:bg-gray-900">
                   <tr>
-                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">
+                    <th className="px-6 py-3 text-center text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">
                       Item
                     </th>
-                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">
+                    <th className="px-6 py-3 text-center text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">
                       Category
                     </th>
-                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">
+                    <th className="px-6 py-3 text-center text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">
                       Qty
                     </th>
-                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">
+                    <th className="px-6 py-3 text-center text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">
                       Status
                     </th>
-                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">
+                    <th className="px-6 py-3 text-center text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">
                       ETA
                     </th>
-                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">
+                    <th className="px-6 py-3 text-center text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">
                       Actions
                     </th>
                   </tr>
@@ -403,10 +438,12 @@ export default function AccessoryTrackerDetailClient({
                     <tr
                       key={item.id}
                       className={`hover:bg-gray-50 dark:hover:bg-gray-900/50 transition-colors ${
-                        needsAttention(item) ? "bg-red-50 dark:bg-red-900/10" : ""
+                        needsAttention(item)
+                          ? "bg-red-50 dark:bg-red-900/10"
+                          : ""
                       }`}
                     >
-                      <td className="px-6 py-4">
+                      <td className="px-6 py-4 text-center">
                         <div className="flex items-start gap-2">
                           {needsAttention(item) && (
                             <AlertCircle className="w-4 h-4 text-red-500 flex-shrink-0 mt-0.5" />
@@ -434,20 +471,20 @@ export default function AccessoryTrackerDetailClient({
                           </div>
                         </div>
                       </td>
-                      <td className="px-6 py-4 text-sm text-gray-900 dark:text-gray-100">
+                      <td className="px-6 py-4 text-sm text-gray-900 dark:text-gray-100 text-center">
                         {item.category.replace(/_/g, " ")}
                       </td>
-                      <td className="px-6 py-4 text-sm text-gray-900 dark:text-gray-100">
+                      <td className="px-6 py-4 text-sm text-gray-900 dark:text-gray-100 text-center">
                         {item.quantity}
                       </td>
-                      <td className="px-6 py-4">
+                      <td className="px-6 py-4 text-center">
                         {canEdit ? (
                           <select
                             value={item.status}
                             onChange={(e) =>
                               handleStatusChange(
                                 item.id,
-                                e.target.value as AccessoryItemStatus
+                                e.target.value as AccessoryItemStatus,
                               )
                             }
                             className="px-2 py-1 text-xs border border-gray-300 dark:border-gray-600 rounded-md bg-white dark:bg-gray-900 text-gray-900 dark:text-gray-100 focus:ring-2 focus:ring-blue-500 focus:border-transparent"
@@ -455,7 +492,9 @@ export default function AccessoryTrackerDetailClient({
                             <option value="PENDING_REMEASURE_APPROVAL">
                               Pending Remeasure
                             </option>
-                            <option value="READY_TO_ORDER">Ready to Order</option>
+                            <option value="READY_TO_ORDER">
+                              Ready to Order
+                            </option>
                             <option value="ORDERED">Ordered</option>
                             <option value="IN_TRANSIT">In Transit</option>
                             <option value="DELIVERED">Delivered</option>
@@ -468,14 +507,17 @@ export default function AccessoryTrackerDetailClient({
                           getStatusBadge(item.status)
                         )}
                       </td>
-                      <td className="px-6 py-4 text-sm text-gray-900 dark:text-gray-100">
+                      <td className="px-6 py-4 text-sm text-gray-900 dark:text-gray-100 text-center">
                         {item.etaAt ? (
                           <span
                             className={
                               new Date(item.etaAt) < new Date() &&
-                              !["DELIVERED", "CHECKED_IN", "INSTALLED", "NOT_NEEDED"].includes(
-                                item.status
-                              )
+                              ![
+                                "DELIVERED",
+                                "CHECKED_IN",
+                                "INSTALLED",
+                                "NOT_NEEDED",
+                              ].includes(item.status)
                                 ? "text-red-600 dark:text-red-400 font-medium"
                                 : ""
                             }
@@ -486,8 +528,8 @@ export default function AccessoryTrackerDetailClient({
                           "—"
                         )}
                       </td>
-                      <td className="px-6 py-4 text-sm">
-                        <div className="flex items-center gap-2">
+                      <td className="px-6 py-4 text-sm text-center">
+                        <div className="flex items-center gap-2 justify-center">
                           {canEdit && (
                             <>
                               <button
@@ -498,13 +540,13 @@ export default function AccessoryTrackerDetailClient({
                                 className="text-blue-600 hover:text-blue-700 dark:text-blue-400"
                                 title="Edit"
                               >
-                                <Edit2 className="w-4 h-4" />
+                                <Edit2 className="w-5 h-5" />
                               </button>
                               <button
                                 onClick={async () => {
                                   if (
                                     confirm(
-                                      "Are you sure you want to delete this item?"
+                                      "Are you sure you want to delete this item?",
                                     )
                                   ) {
                                     await deleteAccessoryItem(item.id, userId);
@@ -514,20 +556,10 @@ export default function AccessoryTrackerDetailClient({
                                 className="text-red-600 hover:text-red-700 dark:text-red-400"
                                 title="Delete"
                               >
-                                <Trash2 className="w-4 h-4" />
+                                <Trash2 className="w-5 h-5" />
                               </button>
                             </>
                           )}
-                          <button
-                            onClick={() => {
-                              setSelectedItem(item);
-                              setShowItemHistory(true);
-                            }}
-                            className="text-gray-600 hover:text-gray-700 dark:text-gray-400"
-                            title="View History"
-                          >
-                            <MessageSquare className="w-4 h-4" />
-                          </button>
                         </div>
                       </td>
                     </tr>
@@ -567,14 +599,6 @@ export default function AccessoryTrackerDetailClient({
                       </span>
                       <span>{item.quantity}</span>
                     </div>
-                    {item.vendor && (
-                      <div className="flex justify-between">
-                        <span className="text-gray-500 dark:text-gray-400">
-                          Vendor:
-                        </span>
-                        <span>{item.vendor}</span>
-                      </div>
-                    )}
                     <div className="flex justify-between items-center">
                       <span className="text-gray-500 dark:text-gray-400">
                         Status:
@@ -585,7 +609,7 @@ export default function AccessoryTrackerDetailClient({
                           onChange={(e) =>
                             handleStatusChange(
                               item.id,
-                              e.target.value as AccessoryItemStatus
+                              e.target.value as AccessoryItemStatus,
                             )
                           }
                           className="px-2 py-1 text-xs border border-gray-300 dark:border-gray-600 rounded-md bg-white dark:bg-gray-900 text-gray-900 dark:text-gray-100 focus:ring-2 focus:ring-blue-500 focus:border-transparent"
@@ -614,9 +638,12 @@ export default function AccessoryTrackerDetailClient({
                         <span
                           className={
                             new Date(item.etaAt) < new Date() &&
-                            !["DELIVERED", "CHECKED_IN", "INSTALLED", "NOT_NEEDED"].includes(
-                              item.status
-                            )
+                            ![
+                              "DELIVERED",
+                              "CHECKED_IN",
+                              "INSTALLED",
+                              "NOT_NEEDED",
+                            ].includes(item.status)
                               ? "text-red-600 dark:text-red-400 font-medium"
                               : ""
                           }
@@ -642,7 +669,7 @@ export default function AccessoryTrackerDetailClient({
                           onClick={async () => {
                             if (
                               confirm(
-                                "Are you sure you want to delete this item?"
+                                "Are you sure you want to delete this item?",
                               )
                             ) {
                               await deleteAccessoryItem(item.id, userId);

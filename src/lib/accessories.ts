@@ -75,7 +75,7 @@ export async function getAccessoryTrackers(filters?: {
   needsAttention?: boolean;
 }): Promise<AccessoryTrackerWithRelations[]> {
   try {
-    const where: any = {};
+    const where: any = { isArchived: false };
 
     if (filters?.jobId) {
       where.jobId = filters.jobId;
@@ -131,6 +131,7 @@ export async function getAccessoryTrackers(filters?: {
           },
         },
         items: {
+          where: { isArchived: false },
           include: {
             assignedToUser: {
               select: { id: true, name: true },
@@ -172,8 +173,8 @@ export async function getAccessoryTracker(
   trackerId: string,
 ): Promise<AccessoryTrackerDetail | null> {
   try {
-    const tracker = (await prisma.accessoryTracker.findUnique({
-      where: { id: trackerId },
+    const tracker = (await prisma.accessoryTracker.findFirst({
+      where: { id: trackerId, isArchived: false },
       include: {
         job: {
           select: {
@@ -197,6 +198,7 @@ export async function getAccessoryTracker(
           },
         },
         items: {
+          where: { isArchived: false },
           include: {
             assignedToUser: {
               select: { id: true, name: true, email: true },
@@ -232,6 +234,47 @@ export async function getAccessoryTracker(
   } catch (error) {
     console.error("Error fetching accessory tracker:", error);
     throw new Error("Failed to fetch accessory tracker");
+  }
+}
+
+// Delete tracker (soft delete + log history)
+export async function deleteAccessoryTracker(
+  trackerId: string,
+  userId: string,
+) {
+  try {
+    const items = await prisma.accessoryItem.findMany({
+      where: { trackerId },
+      select: { id: true },
+    });
+
+    const createHistory = items.length
+      ? prisma.accessoryItemEvent.createMany({
+          data: items.map((item) => ({
+            itemId: item.id,
+            type: "NOTE",
+            message: "Tracker deleted",
+            changedByUserId: userId,
+          })),
+        })
+      : undefined;
+
+    await prisma.$transaction([
+      prisma.accessoryTracker.update({
+        where: { id: trackerId },
+        data: { isArchived: true, updatedByUserId: userId },
+      }),
+      prisma.accessoryItem.updateMany({
+        where: { trackerId },
+        data: { isArchived: true, updatedByUserId: userId },
+      }),
+      ...(createHistory ? [createHistory] : []),
+    ]);
+
+    return { success: true };
+  } catch (error) {
+    console.error("Error deleting accessory tracker:", error);
+    throw new Error("Failed to delete tracker");
   }
 }
 
@@ -554,20 +597,184 @@ export async function addAccessoryItemNote(
 // Delete item (soft delete could be added later)
 export async function deleteAccessoryItem(itemId: string, userId: string) {
   try {
-    // Delete events first
-    await prisma.accessoryItemEvent.deleteMany({
-      where: { itemId },
+    await prisma.accessoryItem.update({
+      where: { id: itemId },
+      data: {
+        isArchived: true,
+        updatedByUserId: userId,
+      },
     });
 
-    // Then delete item
-    await prisma.accessoryItem.delete({
-      where: { id: itemId },
+    await prisma.accessoryItemEvent.create({
+      data: {
+        itemId,
+        type: "NOTE",
+        message: "Item removed",
+        changedByUserId: userId,
+      },
     });
 
     return { success: true };
   } catch (error) {
     console.error("Error deleting accessory item:", error);
     throw new Error("Failed to delete item");
+  }
+}
+
+export type AccessoryHistoryEntry = {
+  id: string;
+  createdAt: Date;
+  type: AccessoryEventType;
+  fromStatus: AccessoryItemStatus | null;
+  toStatus: AccessoryItemStatus | null;
+  message: string | null;
+  item: {
+    id: string;
+    name: string;
+    category: AccessoryCategory;
+    tracker: {
+      id: string;
+      invoiceNumber: string | null;
+      job: {
+        id: string;
+        jobNumber: number;
+        jobName: string;
+        customer: {
+          id: string;
+          displayName: string;
+        };
+      };
+    };
+  };
+  changedByUser: { id: string; name: string | null } | null;
+};
+
+export async function getAccessoryHistory(filters?: {
+  search?: string;
+  eventType?: AccessoryEventType | "ALL";
+  jobId?: string;
+  jobNumber?: number;
+  userId?: string;
+  itemName?: string;
+}): Promise<AccessoryHistoryEntry[]> {
+  try {
+    const where: any = {};
+
+    if (filters?.eventType && filters.eventType !== "ALL") {
+      where.type = filters.eventType;
+    }
+
+    if (filters?.jobId) {
+      where.item = { tracker: { jobId: filters.jobId } };
+    }
+
+    if (filters?.jobNumber) {
+      where.item = {
+        tracker: {
+          job: { jobNumber: filters.jobNumber },
+        },
+      };
+    }
+
+    if (filters?.userId) {
+      where.changedByUserId = filters.userId;
+    }
+
+    if (filters?.itemName) {
+      where.item = {
+        ...where.item,
+        name: { contains: filters.itemName, mode: "insensitive" },
+      };
+    }
+
+    if (filters?.search) {
+      where.OR = [
+        {
+          item: {
+            name: { contains: filters.search, mode: "insensitive" },
+          },
+        },
+        {
+          message: { contains: filters.search, mode: "insensitive" },
+        },
+        {
+          changedByUser: {
+            name: { contains: filters.search, mode: "insensitive" },
+          },
+        },
+        {
+          item: {
+            tracker: {
+              job: {
+                jobName: { contains: filters.search, mode: "insensitive" },
+              },
+            },
+          },
+        },
+        {
+          item: {
+            tracker: {
+              job: {
+                customer: {
+                  displayName: {
+                    contains: filters.search,
+                    mode: "insensitive",
+                  },
+                },
+              },
+            },
+          },
+        },
+        {
+          item: {
+            tracker: {
+              job: {
+                jobNumber: {
+                  equals: Number.isFinite(Number(filters.search))
+                    ? Number(filters.search)
+                    : undefined,
+                },
+              },
+            },
+          },
+        },
+      ];
+    }
+
+    const events = (await prisma.accessoryItemEvent.findMany({
+      where,
+      include: {
+        changedByUser: { select: { id: true, name: true } },
+        item: {
+          select: {
+            id: true,
+            name: true,
+            category: true,
+            tracker: {
+              select: {
+                id: true,
+                invoiceNumber: true,
+                job: {
+                  select: {
+                    id: true,
+                    jobNumber: true,
+                    jobName: true,
+                    customer: { select: { id: true, displayName: true } },
+                  },
+                },
+              },
+            },
+          },
+        },
+      },
+      orderBy: { createdAt: "desc" },
+      take: 500,
+    })) as AccessoryHistoryEntry[];
+
+    return events;
+  } catch (error) {
+    console.error("Error fetching accessory history:", error);
+    throw new Error("Failed to fetch accessory history");
   }
 }
 
@@ -638,15 +845,19 @@ export async function getAccessoryItemEvents(itemId: string) {
 // Get summary stats for dashboard
 export async function getAccessoryTrackerStats() {
   try {
-    const totalTrackers = await prisma.accessoryTracker.count();
+    const totalTrackers = await prisma.accessoryTracker.count({
+      where: { isArchived: false },
+    });
 
     const itemsByStatus = await prisma.accessoryItem.groupBy({
       by: ["status"],
+      where: { isArchived: false },
       _count: true,
     });
 
     const needsAttention = await prisma.accessoryItem.count({
       where: {
+        isArchived: false,
         OR: [
           { status: "ISSUE" },
           {
