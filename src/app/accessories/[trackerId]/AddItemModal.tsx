@@ -304,7 +304,9 @@ export default function AddItemModal({
                   ...prev,
                   {
                     category: "OTHER",
-                    customName: "",
+                    name: "",
+                    model: "",
+                    linkUrl: "",
                     quantity: "",
                     status: "READY_TO_ORDER",
                   },
