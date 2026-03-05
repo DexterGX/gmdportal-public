@@ -9,6 +9,7 @@ import {
   Plus,
   Edit2,
   Trash2,
+  Printer,
   ExternalLink,
   AlertCircle,
   Clock,
@@ -62,6 +63,10 @@ export default function AccessoryTrackerDetailClient({
   const [showAddItemModal, setShowAddItemModal] = useState(false);
   const [showEditItemModal, setShowEditItemModal] = useState(false);
   const [showEditTrackerModal, setShowEditTrackerModal] = useState(false);
+  const [showPrintModal, setShowPrintModal] = useState(false);
+  const [printSelection, setPrintSelection] = useState<Record<string, boolean>>(
+    {},
+  );
   const [trackerForm, setTrackerForm] = useState({
     invoiceNumber: tracker.invoiceNumber || "",
     invoiceCreatedAt: tracker.invoiceCreatedAt
@@ -96,6 +101,14 @@ export default function AccessoryTrackerDetailClient({
   };
   const [selectedItem, setSelectedItem] = useState<any>(null);
   const [showItemHistory, setShowItemHistory] = useState(false);
+
+  const totalItems = tracker.items.length;
+  const deliveredItems = tracker.items.filter(
+    (item: any) => item.status === "DELIVERED",
+  ).length;
+  const completionPercent = totalItems
+    ? Math.round((deliveredItems / totalItems) * 100)
+    : 0;
 
   const canEdit = ["admin", "office", "finance"].includes(userRole);
 
@@ -228,6 +241,104 @@ export default function AccessoryTrackerDetailClient({
     }
   };
 
+  const openPrintModal = () => {
+    const initialSelection: Record<string, boolean> = {};
+    tracker.items.forEach((item: any) => {
+      initialSelection[item.id] = true;
+    });
+    setPrintSelection(initialSelection);
+    setShowPrintModal(true);
+  };
+
+  const handlePrintLabels = (selectedItemIds: string[]) => {
+    const printWindow = window.open(
+      "",
+      "accessory-labels",
+      "width=900,height=700",
+    );
+    if (!printWindow) return;
+
+    const printedAt = new Date().toLocaleString();
+
+    const logoUrl = `${window.location.origin}/logo.svg`;
+    const rows = tracker.items
+      .filter((item: any) => selectedItemIds.includes(item.id))
+      .map(
+        (item: any) => `
+          <tr>
+            <td>${item.name || ""}</td>
+            <td>${(item.category || "").replace(/_/g, " ")}</td>
+            <td style="text-align:right;">${item.quantity ?? ""}</td>
+          </tr>
+        `,
+      )
+      .join("");
+
+    printWindow.document.write(`
+      <!doctype html>
+      <html>
+        <head>
+          <title>Labels</title>
+          <style>
+            * { box-sizing: border-box; }
+            body { font-family: Arial, sans-serif; margin: 24px; color: #111827; -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+            h1 { font-size: 20px; margin: 0 0 6px; }
+            h2 { font-size: 16px; margin: 0 0 16px; font-weight: normal; color: #374151; }
+            .logo { height: 80px; display: block; margin: 0 auto 10px; }
+            .logo-divider { border: 0; border-top: 2px solid #000; margin: 0 0 12px; }
+            .meta { margin-bottom: 16px; font-size: 14px; color: #374151; }
+            .client-name { font-size: 18px; font-weight: 700; color: #111827; }
+            .meta strong { color: #111827; }
+            table { width: 100%; border-collapse: collapse; margin-top: 12px; border: 1px solid #000; }
+            th, td { border: 1px solid #000; padding: 8px; font-size: 12px; }
+            th { background: #e5e7eb; text-align: left; }
+            @media print {
+              body { margin: 0.5in; }
+            }
+          </style>
+        </head>
+        <body>
+          <img id="print-logo" src="${logoUrl}" alt="Company Logo" class="logo" />
+          <hr class="logo-divider" />
+          <h2>Job #${tracker.job.jobNumber} - ${tracker.job.jobName}</h2>
+          <div class="meta">
+            <div><strong>Client:</strong> <span class="client-name">${tracker.job.customer.displayName}</span></div>
+            <div><strong>Printed:</strong> ${printedAt}</div>
+          </div>
+          <table>
+            <thead>
+              <tr>
+                <th>Item</th>
+                <th>Category</th>
+                <th style="text-align:right;">Qty</th>
+              </tr>
+            </thead>
+            <tbody>
+              ${rows}
+            </tbody>
+          </table>
+          <script>
+            (function () {
+              var img = document.getElementById('print-logo');
+              function doPrint() {
+                window.focus();
+                window.print();
+                window.close();
+              }
+              if (!img || img.complete) {
+                doPrint();
+              } else {
+                img.onload = doPrint;
+                img.onerror = doPrint;
+              }
+            })();
+          </script>
+        </body>
+      </html>
+    `);
+    printWindow.document.close();
+  };
+
   return (
     <div className="max-w-7xl mx-auto">
       {/* Header */}
@@ -265,6 +376,14 @@ export default function AccessoryTrackerDetailClient({
               >
                 <Trash2 className="w-4 h-4" />
                 Delete Tracker
+              </button>
+              <button
+                onClick={openPrintModal}
+                className="inline-flex items-center gap-2 px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-md text-gray-700 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors"
+                disabled={loading}
+              >
+                <Printer className="w-4 h-4" />
+                Print Labels
               </button>
               <button
                 onClick={() => setShowAddItemModal(true)}
@@ -348,6 +467,23 @@ export default function AccessoryTrackerDetailClient({
                 Total Items:
               </span>
               <span className="font-medium">{tracker.items.length}</span>
+            </div>
+            <div>
+              <div className="flex justify-between mb-1">
+                <span className="text-gray-500 dark:text-gray-400">
+                  Delivered Completion:
+                </span>
+                <span className="font-medium">{completionPercent}%</span>
+              </div>
+              <div className="w-full h-2 bg-gray-200 dark:bg-gray-700 rounded-full overflow-hidden">
+                <div
+                  className="h-full bg-green-500"
+                  style={{ width: `${completionPercent}%` }}
+                />
+              </div>
+              <div className="text-xs text-gray-500 dark:text-gray-400 mt-1">
+                {deliveredItems} of {totalItems} delivered
+              </div>
             </div>
             <div className="flex justify-between">
               <span className="text-gray-500 dark:text-gray-400">
@@ -444,29 +580,18 @@ export default function AccessoryTrackerDetailClient({
                       }`}
                     >
                       <td className="px-6 py-4 text-center">
-                        <div className="flex items-start gap-2">
+                        <div className="flex flex-col items-center gap-2">
                           {needsAttention(item) && (
                             <AlertCircle className="w-4 h-4 text-red-500 flex-shrink-0 mt-0.5" />
                           )}
-                          <div>
+                          <div className="text-center">
                             <div className="font-medium text-gray-900 dark:text-gray-100">
                               {item.name}
                             </div>
                             {item.sku && (
                               <div className="text-xs text-gray-500 dark:text-gray-400">
-                                SKU: {item.sku}
+                                Model: {item.sku}
                               </div>
-                            )}
-                            {item.linkUrl && (
-                              <a
-                                href={item.linkUrl}
-                                target="_blank"
-                                rel="noopener noreferrer"
-                                className="text-xs text-blue-600 hover:text-blue-700 dark:text-blue-400 inline-flex items-center gap-1 mt-1"
-                              >
-                                <ExternalLink className="w-3 h-3" />
-                                Link
-                              </a>
                             )}
                           </div>
                         </div>
@@ -530,6 +655,18 @@ export default function AccessoryTrackerDetailClient({
                       </td>
                       <td className="px-6 py-4 text-sm text-center">
                         <div className="flex items-center gap-2 justify-center">
+                          {item.linkUrl && (
+                            <a
+                              href={item.linkUrl}
+                              target="_blank"
+                              rel="noopener noreferrer"
+                              className="text-blue-600 hover:text-blue-700 dark:text-blue-400"
+                              title="Open Link"
+                              onClick={(e) => e.stopPropagation()}
+                            >
+                              <ExternalLink className="w-5 h-5" />
+                            </a>
+                          )}
                           {canEdit && (
                             <>
                               <button
@@ -583,9 +720,14 @@ export default function AccessoryTrackerDetailClient({
                       Needs Attention
                     </div>
                   )}
-                  <div className="font-medium text-gray-900 dark:text-gray-100 mb-2">
+                  <div className="font-medium text-gray-900 dark:text-gray-100 mb-2 text-center">
                     {item.name}
                   </div>
+                  {item.sku && (
+                    <div className="text-xs text-gray-500 dark:text-gray-400 mb-2 text-center">
+                      Model: {item.sku}
+                    </div>
+                  )}
                   <div className="space-y-2 text-sm">
                     <div className="flex justify-between">
                       <span className="text-gray-500 dark:text-gray-400">
@@ -681,6 +823,17 @@ export default function AccessoryTrackerDetailClient({
                           Delete
                         </button>
                       </>
+                    )}
+                    {item.linkUrl && (
+                      <a
+                        href={item.linkUrl}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="px-3 py-2 text-sm border border-blue-300 dark:border-blue-600 rounded-md text-blue-700 dark:text-blue-300 hover:bg-blue-50 dark:hover:bg-blue-900/20"
+                        title="Open Link"
+                      >
+                        <ExternalLink className="w-4 h-4" />
+                      </a>
                     )}
                     <button
                       onClick={() => {
@@ -850,6 +1003,106 @@ export default function AccessoryTrackerDetailClient({
                   className="px-4 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700"
                 >
                   Save Changes
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {showPrintModal && (
+        <div className="fixed inset-0 z-50 overflow-y-auto">
+          <div className="flex min-h-screen items-center justify-center p-4">
+            <div
+              className="fixed inset-0 bg-black bg-opacity-50 transition-opacity"
+              onClick={() => setShowPrintModal(false)}
+            />
+            <div className="relative bg-white dark:bg-gray-800 rounded-lg shadow-xl max-w-xl w-full max-h-[90vh] overflow-y-auto">
+              <div className="flex items-center justify-between p-6 border-b border-gray-200 dark:border-gray-700">
+                <h2 className="text-xl font-semibold">Print Labels</h2>
+                <button
+                  onClick={() => setShowPrintModal(false)}
+                  className="text-gray-400 hover:text-gray-600 dark:hover:text-gray-300"
+                >
+                  <XCircle className="w-6 h-6" />
+                </button>
+              </div>
+              <div className="p-6 space-y-4">
+                <div className="flex items-center justify-between">
+                  <label className="text-sm font-medium text-gray-700 dark:text-gray-300">
+                    Select items to print
+                  </label>
+                  <button
+                    type="button"
+                    className="text-xs text-blue-600 hover:text-blue-700 dark:text-blue-400"
+                    onClick={() => {
+                      const allSelected = tracker.items.every(
+                        (item: any) => printSelection[item.id],
+                      );
+                      const next: Record<string, boolean> = {};
+                      tracker.items.forEach((item: any) => {
+                        next[item.id] = !allSelected;
+                      });
+                      setPrintSelection(next);
+                    }}
+                  >
+                    Toggle All
+                  </button>
+                </div>
+
+                <div className="border border-gray-200 dark:border-gray-700 rounded-md divide-y divide-gray-200 dark:divide-gray-700">
+                  {tracker.items.map((item: any) => (
+                    <label
+                      key={item.id}
+                      className="flex items-center gap-3 px-4 py-3 text-sm text-gray-700 dark:text-gray-200"
+                    >
+                      <input
+                        type="checkbox"
+                        checked={Boolean(printSelection[item.id])}
+                        onChange={(e) =>
+                          setPrintSelection((prev) => ({
+                            ...prev,
+                            [item.id]: e.target.checked,
+                          }))
+                        }
+                        className="w-4 h-4 text-blue-600 border-gray-300 rounded focus:ring-blue-500"
+                      />
+                      <div className="flex-1">
+                        <div className="font-medium">
+                          {item.name} ({item.quantity})
+                        </div>
+                        <div className="text-xs text-gray-500 dark:text-gray-400">
+                          {String(item.category).replace(/_/g, " ")}
+                        </div>
+                      </div>
+                    </label>
+                  ))}
+                </div>
+              </div>
+              <div className="flex justify-end gap-3 p-6 border-t border-gray-200 dark:border-gray-700">
+                <button
+                  type="button"
+                  onClick={() => setShowPrintModal(false)}
+                  className="px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-md text-gray-700 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-700"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="button"
+                  onClick={() => {
+                    const selectedIds = Object.entries(printSelection)
+                      .filter(([, value]) => value)
+                      .map(([id]) => id);
+                    if (selectedIds.length === 0) {
+                      alert("Select at least one item to print.");
+                      return;
+                    }
+                    setShowPrintModal(false);
+                    handlePrintLabels(selectedIds);
+                  }}
+                  className="px-4 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700"
+                >
+                  Print Selected
                 </button>
               </div>
             </div>

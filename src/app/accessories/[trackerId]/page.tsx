@@ -28,9 +28,26 @@ export default async function AccessoryTrackerDetailPage({ params }: Props) {
     redirect("/accessories");
   }
 
+  const safeTracker = tracker
+    ? JSON.parse(
+        JSON.stringify(tracker, (_key, value) => {
+          if (
+            value &&
+            typeof value === "object" &&
+            value.constructor &&
+            value.constructor.name === "Decimal" &&
+            typeof value.toString === "function"
+          ) {
+            return value.toString();
+          }
+          return value;
+        }),
+      )
+    : tracker;
+
   return (
     <AccessoryTrackerDetailClient
-      tracker={tracker}
+      tracker={safeTracker}
       userId={user.id}
       userRole={appRole}
     />

@@ -257,14 +257,16 @@ const AppSidebar: React.FC<{ userRole?: AppRole }> = ({ userRole }) => {
       )}
 
       <aside
-        className={`flex-none flex flex-col px-5 bg-white dark:bg-gray-900 dark:border-gray-800 text-gray-900 h-screen transition-all duration-300 ease-in-out z-50 border-r border-gray-200 transform ${mobileTransformClass} ${
+        className={`flex-none flex flex-col px-5 bg-white dark:bg-gray-900 dark:border-gray-800 text-gray-900 transition-all duration-300 ease-in-out z-50 border-r border-gray-200 transform ${mobileTransformClass} ${
           isMobile
             ? "fixed left-0 top-0 bottom-0 w-[290px]"
-            : isExpanded || isMobileOpen
-              ? "w-[290px]"
-              : isHovered
-                ? "w-[290px]"
-                : "w-[90px]"
+            : `sticky top-0 h-screen ${
+                isExpanded || isMobileOpen
+                  ? "w-[290px]"
+                  : isHovered
+                    ? "w-[290px]"
+                    : "w-[90px]"
+              }`
         }`}
         onMouseEnter={() => !isExpanded && setIsHovered(true)}
         onMouseLeave={() => setIsHovered(false)}
