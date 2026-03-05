@@ -3,10 +3,7 @@
 import { useState } from "react";
 import { X, Plus, Trash2 } from "lucide-react";
 import { addAccessoryItem } from "@/lib/accessories";
-import type {
-  AccessoryCategory,
-  AccessoryItemStatus,
-} from "@prisma/client";
+import type { AccessoryCategory, AccessoryItemStatus } from "@prisma/client";
 
 interface Props {
   trackerId: string;
@@ -27,43 +24,30 @@ export default function AddItemModal({
   const [items, setItems] = useState<
     Array<{
       category: AccessoryCategory;
-      customName: string;
+      name: string;
+      model: string;
+      linkUrl: string;
       quantity: string;
       status: AccessoryItemStatus;
     }>
   >([
     {
       category: "OTHER",
-      customName: "",
+      name: "",
+      model: "",
+      linkUrl: "",
       quantity: "",
       status: "READY_TO_ORDER",
     },
   ]);
 
-  const getCategoryLabel = (category: AccessoryCategory) => {
-    const labels: Record<AccessoryCategory, string> = {
-      HANDLE: "Handle",
-      PULLOUT: "Pullout",
-      TRIM: "Trim",
-      HARDWARE: "Hardware",
-      SINK: "Sink",
-      FAUCET: "Faucet",
-      APPLIANCE: "Appliance",
-      LIGHTING: "Lighting",
-      OTHER: "Other",
-    };
-    return labels[category] || category;
-  };
-
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setError("");
 
-    const missingOtherName = items.find(
-      (item) => item.category === "OTHER" && !item.customName.trim()
-    );
-    if (missingOtherName) {
-      setError("Please provide a name for items marked as Other.");
+    const missingName = items.find((item) => !item.name.trim());
+    if (missingName) {
+      setError("Please provide an item name for all items.");
       return;
     }
 
@@ -83,15 +67,14 @@ export default function AddItemModal({
         items.map((item) =>
           addAccessoryItem(trackerId, {
             category: item.category,
-            name:
-              item.category === "OTHER"
-                ? item.customName.trim()
-                : getCategoryLabel(item.category),
+            name: item.name.trim(),
             quantity: parseInt(item.quantity, 10),
+            sku: (item.model || "").trim() || undefined,
+            linkUrl: (item.linkUrl || "").trim() || undefined,
             status: item.status,
             createdByUserId: userId,
-          })
-        )
+          }),
+        ),
       );
 
       onSuccess();
@@ -157,7 +140,7 @@ export default function AddItemModal({
                   </div>
 
                   <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
-                    <div className="sm:col-span-2">
+                    <div>
                       <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
                         Category
                       </label>
@@ -167,14 +150,13 @@ export default function AddItemModal({
                           const value = e.target.value as AccessoryCategory;
                           setItems((prev) =>
                             prev.map((row, i) =>
-                              i === index
-                                ? { ...row, category: value }
-                                : row
-                            )
+                              i === index ? { ...row, category: value } : row,
+                            ),
                           );
                         }}
                         className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-md bg-white dark:bg-gray-900 text-gray-900 dark:text-gray-100 focus:ring-2 focus:ring-blue-500 focus:border-transparent"
                       >
+                        <option value="INSERT_ITEM">Insert item</option>
                         <option value="HANDLE">Handle</option>
                         <option value="PULLOUT">Pullout</option>
                         <option value="TRIM">Trim</option>
@@ -185,6 +167,28 @@ export default function AddItemModal({
                         <option value="LIGHTING">Lighting</option>
                         <option value="OTHER">Other</option>
                       </select>
+                    </div>
+
+                    <div>
+                      <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
+                        Item Name
+                      </label>
+                      <input
+                        type="text"
+                        value={item.name}
+                        onChange={(e) =>
+                          setItems((prev) =>
+                            prev.map((row, i) =>
+                              i === index
+                                ? { ...row, name: e.target.value }
+                                : row,
+                            ),
+                          )
+                        }
+                        placeholder="e.g., Rev-A-Shelf pullout"
+                        className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-md bg-white dark:bg-gray-900 text-gray-900 dark:text-gray-100 focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                        required
+                      />
                     </div>
 
                     <div>
@@ -203,8 +207,8 @@ export default function AddItemModal({
                                     ...row,
                                     quantity: e.target.value,
                                   }
-                                : row
-                            )
+                                : row,
+                            ),
                           )
                         }
                         className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-md bg-white dark:bg-gray-900 text-gray-900 dark:text-gray-100 focus:ring-2 focus:ring-blue-500 focus:border-transparent"
@@ -212,28 +216,49 @@ export default function AddItemModal({
                     </div>
                   </div>
 
-                  {item.category === "OTHER" && (
-                    <div className="mt-3">
+                  <div className="mt-3 grid grid-cols-1 sm:grid-cols-2 gap-4">
+                    <div>
                       <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
-                        Specify Item Name
+                        Model / SKU
                       </label>
                       <input
                         type="text"
-                        value={item.customName}
+                        value={item.model}
                         onChange={(e) =>
                           setItems((prev) =>
                             prev.map((row, i) =>
                               i === index
-                                ? { ...row, customName: e.target.value }
-                                : row
-                            )
+                                ? { ...row, model: e.target.value }
+                                : row,
+                            ),
                           )
                         }
-                        placeholder="e.g., Rev-A-Shelf 35qt trash pullout"
+                        placeholder="e.g., RV-4WCTM"
                         className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-md bg-white dark:bg-gray-900 text-gray-900 dark:text-gray-100 focus:ring-2 focus:ring-blue-500 focus:border-transparent"
                       />
                     </div>
-                  )}
+
+                    <div>
+                      <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
+                        Item Link
+                      </label>
+                      <input
+                        type="url"
+                        value={item.linkUrl}
+                        onChange={(e) =>
+                          setItems((prev) =>
+                            prev.map((row, i) =>
+                              i === index
+                                ? { ...row, linkUrl: e.target.value }
+                                : row,
+                            ),
+                          )
+                        }
+                        placeholder="https://"
+                        className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-md bg-white dark:bg-gray-900 text-gray-900 dark:text-gray-100 focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                      />
+                    </div>
+                  </div>
 
                   <div className="mt-3">
                     <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
@@ -249,8 +274,8 @@ export default function AddItemModal({
                                   ...row,
                                   status: e.target.value as AccessoryItemStatus,
                                 }
-                              : row
-                          )
+                              : row,
+                          ),
                         )
                       }
                       className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-md bg-white dark:bg-gray-900 text-gray-900 dark:text-gray-100 focus:ring-2 focus:ring-blue-500 focus:border-transparent"
@@ -306,7 +331,9 @@ export default function AddItemModal({
                 className="px-4 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700 disabled:bg-gray-400 disabled:cursor-not-allowed flex items-center gap-2"
               >
                 <Plus className="w-4 h-4" />
-                {submitting ? "Adding..." : `Add ${items.length} Item${items.length > 1 ? "s" : ""}`}
+                {submitting
+                  ? "Adding..."
+                  : `Add ${items.length} Item${items.length > 1 ? "s" : ""}`}
               </button>
             </div>
           </form>

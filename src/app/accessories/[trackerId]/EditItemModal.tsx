@@ -28,56 +28,43 @@ export default function EditItemModal({
   // Form fields for details
   const [category, setCategory] = useState<AccessoryCategory>(item.category);
   const [name, setName] = useState(item.name);
+  const [model, setModel] = useState(item.sku || "");
+  const [linkUrl, setLinkUrl] = useState(item.linkUrl || "");
   const [quantity, setQuantity] = useState(
-    item.quantity ? String(item.quantity) : ""
+    item.quantity ? String(item.quantity) : "",
   );
   const [etaAt, setEtaAt] = useState(
-    item.etaAt ? new Date(item.etaAt).toISOString().split("T")[0] : ""
+    item.etaAt ? new Date(item.etaAt).toISOString().split("T")[0] : "",
   );
-
-  const getCategoryLabel = (category: AccessoryCategory) => {
-    const labels: Record<AccessoryCategory, string> = {
-      HANDLE: "Handle",
-      PULLOUT: "Pullout",
-      TRIM: "Trim",
-      HARDWARE: "Hardware",
-      SINK: "Sink",
-      FAUCET: "Faucet",
-      APPLIANCE: "Appliance",
-      LIGHTING: "Lighting",
-      OTHER: "Other",
-    };
-    return labels[category] || category;
-  };
 
   // Form fields for status change
   const [status, setStatus] = useState<AccessoryItemStatus>(item.status);
   const [statusNote, setStatusNote] = useState("");
   const [orderedAt, setOrderedAt] = useState(
-    item.orderedAt ? new Date(item.orderedAt).toISOString().split("T")[0] : ""
+    item.orderedAt ? new Date(item.orderedAt).toISOString().split("T")[0] : "",
   );
   const [deliveredAt, setDeliveredAt] = useState(
     item.deliveredAt
       ? new Date(item.deliveredAt).toISOString().split("T")[0]
-      : ""
+      : "",
   );
   const [checkedInAt, setCheckedInAt] = useState(
     item.checkedInAt
       ? new Date(item.checkedInAt).toISOString().split("T")[0]
-      : ""
+      : "",
   );
   const [installedAt, setInstalledAt] = useState(
     item.installedAt
       ? new Date(item.installedAt).toISOString().split("T")[0]
-      : ""
+      : "",
   );
 
   const handleUpdateDetails = async (e: React.FormEvent) => {
     e.preventDefault();
     setError("");
 
-    if (category === "OTHER" && !name.trim()) {
-      setError("Item name is required for Other category");
+    if (!name.trim()) {
+      setError("Item name is required");
       return;
     }
 
@@ -92,9 +79,10 @@ export default function EditItemModal({
     try {
       await updateAccessoryItem(item.id, {
         category,
-        name:
-          category === "OTHER" ? name.trim() : getCategoryLabel(category),
+        name: name.trim(),
         quantity: qty,
+        sku: model.trim() || null,
+        linkUrl: linkUrl.trim() || null,
         etaAt: etaAt ? new Date(etaAt) : null,
         updatedByUserId: userId,
       });
@@ -197,6 +185,7 @@ export default function EditItemModal({
                     }
                     className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-md bg-white dark:bg-gray-900 text-gray-900 dark:text-gray-100 focus:ring-2 focus:ring-blue-500 focus:border-transparent"
                   >
+                    <option value="INSERT_ITEM">Insert item</option>
                     <option value="HANDLE">Handle</option>
                     <option value="PULLOUT">Pullout</option>
                     <option value="TRIM">Trim</option>
@@ -223,20 +212,44 @@ export default function EditItemModal({
                 </div>
               </div>
 
-              {category === "OTHER" && (
+              <div>
+                <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
+                  Item Name <span className="text-red-500">*</span>
+                </label>
+                <input
+                  type="text"
+                  value={name}
+                  onChange={(e) => setName(e.target.value)}
+                  className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-md bg-white dark:bg-gray-900 text-gray-900 dark:text-gray-100 focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                  required
+                />
+              </div>
+
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                 <div>
                   <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
-                    Item Name <span className="text-red-500">*</span>
+                    Model / SKU
                   </label>
                   <input
                     type="text"
-                    value={name}
-                    onChange={(e) => setName(e.target.value)}
+                    value={model}
+                    onChange={(e) => setModel(e.target.value)}
                     className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-md bg-white dark:bg-gray-900 text-gray-900 dark:text-gray-100 focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-                    required
                   />
                 </div>
-              )}
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
+                    Item Link
+                  </label>
+                  <input
+                    type="url"
+                    value={linkUrl}
+                    onChange={(e) => setLinkUrl(e.target.value)}
+                    className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-md bg-white dark:bg-gray-900 text-gray-900 dark:text-gray-100 focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                    placeholder="https://"
+                  />
+                </div>
+              </div>
 
               <div>
                 <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">

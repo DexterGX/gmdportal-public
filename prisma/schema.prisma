@@ -499,6 +499,7 @@ enum AccessoryDepartment {
 }
 
 enum AccessoryCategory {
+  INSERT_ITEM
   HANDLE
   PULLOUT
   TRIM

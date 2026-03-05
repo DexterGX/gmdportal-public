@@ -107,6 +107,15 @@ export default function AccessoriesClient({ userRole, userId }: Props) {
     );
   };
 
+  const getDeliveredCompletion = (items: AccessoryItemWithUser[]) => {
+    const total = items.length;
+    if (!total) return 0;
+    const delivered = items.filter(
+      (item) => item.status === "DELIVERED",
+    ).length;
+    return Math.round((delivered / total) * 100);
+  };
+
   if (loading) {
     return (
       <div className="flex items-center justify-center min-h-screen">
@@ -243,10 +252,10 @@ export default function AccessoriesClient({ userRole, userId }: Props) {
                     Item Status
                   </th>
                   <th className="px-6 py-3 text-center text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">
-                    Updated
+                    Completion
                   </th>
                   <th className="px-6 py-3 text-center text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">
-                    Actions
+                    Updated
                   </th>
                 </tr>
               </thead>
@@ -254,11 +263,13 @@ export default function AccessoriesClient({ userRole, userId }: Props) {
                 {trackers.map((tracker) => {
                   const counts = getStatusCounts(tracker.items);
                   const hasAttention = needsAttention(tracker.items);
+                  const completion = getDeliveredCompletion(tracker.items);
 
                   return (
                     <tr
                       key={tracker.id}
-                      className="hover:bg-gray-50 dark:hover:bg-gray-900/50 transition-colors"
+                      onClick={() => router.push(`/accessories/${tracker.id}`)}
+                      className="cursor-pointer hover:bg-gray-50 dark:hover:bg-gray-900/50 transition-transform hover:scale-[1.01] active:scale-[1.01]"
                     >
                       <td className="px-6 py-4 text-left">
                         <div className="flex items-start gap-3">
@@ -338,19 +349,27 @@ export default function AccessoriesClient({ userRole, userId }: Props) {
                           )}
                         </div>
                       </td>
+                      <td className="px-6 py-4 text-sm text-center">
+                        <div className="flex justify-center">
+                          <div
+                            className="relative flex items-center justify-center w-10 h-10 rounded-full"
+                            style={{
+                              background: `conic-gradient(#22c55e ${completion}%, #e5e7eb ${completion}% 100%)`,
+                            }}
+                            title={`Delivered ${completion}%`}
+                          >
+                            <div className="absolute inset-1 bg-white dark:bg-gray-800 rounded-full" />
+                            <span className="relative text-[10px] font-semibold text-gray-700 dark:text-gray-200">
+                              {completion}%
+                            </span>
+                          </div>
+                        </div>
+                      </td>
                       <td className="px-6 py-4 text-sm text-gray-500 dark:text-gray-400 text-center">
                         <div className="flex items-center gap-1 justify-center">
                           <Clock className="w-3 h-3" />
                           {new Date(tracker.updatedAt).toLocaleDateString()}
                         </div>
-                      </td>
-                      <td className="px-6 py-4 text-sm text-center">
-                        <Link
-                          href={`/accessories/${tracker.id}`}
-                          className="text-blue-600 hover:text-blue-700 dark:text-blue-400 dark:hover:text-blue-300 font-medium"
-                        >
-                          View Details
-                        </Link>
                       </td>
                     </tr>
                   );
@@ -364,11 +383,13 @@ export default function AccessoriesClient({ userRole, userId }: Props) {
             {trackers.map((tracker) => {
               const counts = getStatusCounts(tracker.items);
               const hasAttention = needsAttention(tracker.items);
+              const completion = getDeliveredCompletion(tracker.items);
 
               return (
                 <div
                   key={tracker.id}
-                  className="bg-white dark:bg-gray-800 rounded-lg shadow p-4"
+                  onClick={() => router.push(`/accessories/${tracker.id}`)}
+                  className="bg-white dark:bg-gray-800 rounded-lg shadow p-4 cursor-pointer transition-transform hover:scale-[1.01] active:scale-[1.01]"
                 >
                   {hasAttention && (
                     <div className="flex items-center gap-2 text-red-500 text-sm font-medium mb-2">
@@ -424,16 +445,28 @@ export default function AccessoriesClient({ userRole, userId }: Props) {
                     )}
                   </div>
 
+                  <div className="flex items-center justify-between text-sm mb-3">
+                    <span className="text-gray-500 dark:text-gray-400">
+                      Delivered
+                    </span>
+                    <div
+                      className="relative flex items-center justify-center w-10 h-10 rounded-full"
+                      style={{
+                        background: `conic-gradient(#22c55e ${completion}%, #e5e7eb ${completion}% 100%)`,
+                      }}
+                      title={`Delivered ${completion}%`}
+                    >
+                      <div className="absolute inset-1 bg-white dark:bg-gray-800 rounded-full" />
+                      <span className="relative text-[10px] font-semibold text-gray-700 dark:text-gray-200">
+                        {completion}%
+                      </span>
+                    </div>
+                  </div>
+
                   <div className="flex items-center justify-between text-sm">
                     <span className="text-gray-500 dark:text-gray-400">
                       Updated {new Date(tracker.updatedAt).toLocaleDateString()}
                     </span>
-                    <Link
-                      href={`/accessories/${tracker.id}`}
-                      className="text-blue-600 hover:text-blue-700 dark:text-blue-400 dark:hover:text-blue-300 font-medium"
-                    >
-                      View Details →
-                    </Link>
                   </div>
                 </div>
               );
