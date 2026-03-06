@@ -822,6 +822,121 @@ export async function getJobsForSelector(search?: string) {
   }
 }
 
+// Get jobs and customers for selector (customers without active jobs)
+export async function getJobSelectorOptions(search?: string) {
+  try {
+    const jobWhere: any = {
+      status: { in: ["ONGOING", "ON_HOLD"] },
+    };
+
+    if (search) {
+      jobWhere.OR = [
+        { jobName: { contains: search, mode: "insensitive" } },
+        {
+          customer: { displayName: { contains: search, mode: "insensitive" } },
+        },
+      ];
+    }
+
+    const jobs = await prisma.job.findMany({
+      where: jobWhere,
+      select: {
+        id: true,
+        jobNumber: true,
+        jobName: true,
+        status: true,
+        customer: {
+          select: {
+            id: true,
+            displayName: true,
+            companyName: true,
+            phone: true,
+            email: true,
+          },
+        },
+      },
+      orderBy: { jobNumber: "desc" },
+      take: 50,
+    });
+
+    const customerWhere: any = { active: true };
+    if (search) {
+      customerWhere.OR = [
+        { displayName: { contains: search, mode: "insensitive" } },
+        { companyName: { contains: search, mode: "insensitive" } },
+        { email: { contains: search, mode: "insensitive" } },
+        { phone: { contains: search, mode: "insensitive" } },
+      ];
+    }
+
+    customerWhere.jobs = {
+      none: {
+        status: { in: ["ONGOING", "ON_HOLD"] },
+      },
+    };
+
+    const customers = await prisma.customer.findMany({
+      where: customerWhere,
+      select: {
+        id: true,
+        displayName: true,
+        companyName: true,
+        phone: true,
+        email: true,
+      },
+      orderBy: { displayName: "asc" },
+      take: 50,
+    });
+
+    return { jobs, customers };
+  } catch (error) {
+    console.error("Error fetching selector options:", error);
+    throw new Error("Failed to fetch selector options");
+  }
+}
+
+// Create tracker by creating a job for a customer
+export async function createAccessoryTrackerForCustomer(data: {
+  customerId: string;
+  jobName: string;
+  invoiceNumber?: string;
+  invoiceCreatedAt?: Date;
+  remeasureApprovedAt?: Date;
+  department?: AccessoryDepartment;
+  notes?: string;
+  createdByUserId: string;
+}) {
+  try {
+    const tracker = await prisma.$transaction(async (tx) => {
+      const job = await tx.job.create({
+        data: {
+          customerId: data.customerId,
+          jobName: data.jobName,
+          status: "ONGOING",
+        },
+      });
+
+      return tx.accessoryTracker.create({
+        data: {
+          jobId: job.id,
+          invoiceNumber: data.invoiceNumber,
+          invoiceCreatedAt: data.invoiceCreatedAt,
+          remeasureApprovedAt: data.remeasureApprovedAt,
+          department: data.department,
+          notes: data.notes,
+          createdByUserId: data.createdByUserId,
+          updatedByUserId: data.createdByUserId,
+        },
+      });
+    });
+
+    return tracker;
+  } catch (error) {
+    console.error("Error creating tracker for customer:", error);
+    throw new Error("Failed to create tracker for customer");
+  }
+}
+
 // Get item history/events
 export async function getAccessoryItemEvents(itemId: string) {
   try {
