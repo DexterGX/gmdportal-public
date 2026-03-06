@@ -3,7 +3,11 @@
 import { useState, useEffect } from "react";
 import { useRouter } from "next/navigation";
 import { Search, ChevronLeft, Calendar, AlertCircle } from "lucide-react";
-import { getJobsForSelector, createAccessoryTracker } from "@/lib/accessories";
+import {
+  getJobSelectorOptions,
+  createAccessoryTracker,
+  createAccessoryTrackerForCustomer,
+} from "@/lib/accessories";
 import type { AccessoryDepartment } from "@prisma/client";
 
 interface Job {
@@ -20,6 +24,14 @@ interface Job {
   };
 }
 
+interface Customer {
+  id: string;
+  displayName: string;
+  companyName: string | null;
+  phone: string | null;
+  email: string | null;
+}
+
 interface Props {
   userId: string;
   userRole: string;
@@ -28,9 +40,14 @@ interface Props {
 export default function NewAccessoryTrackerClient({ userId, userRole }: Props) {
   const router = useRouter();
   const [jobs, setJobs] = useState<Job[]>([]);
+  const [customers, setCustomers] = useState<Customer[]>([]);
   const [searchTerm, setSearchTerm] = useState("");
   const [loadingJobs, setLoadingJobs] = useState(false);
   const [selectedJob, setSelectedJob] = useState<Job | null>(null);
+  const [selectedCustomer, setSelectedCustomer] = useState<Customer | null>(
+    null,
+  );
+  const [jobName, setJobName] = useState("");
   const [showJobDropdown, setShowJobDropdown] = useState(false);
 
   // Form fields
@@ -48,14 +65,16 @@ export default function NewAccessoryTrackerClient({ userId, userRole }: Props) {
       fetchJobs();
     } else {
       setJobs([]);
+      setCustomers([]);
     }
   }, [searchTerm]);
 
   const fetchJobs = async () => {
     setLoadingJobs(true);
     try {
-      const data = await getJobsForSelector(searchTerm);
-      setJobs(data);
+      const data = await getJobSelectorOptions(searchTerm);
+      setJobs(data.jobs);
+      setCustomers(data.customers);
     } catch (error) {
       console.error("Error fetching jobs:", error);
     } finally {
@@ -67,27 +86,47 @@ export default function NewAccessoryTrackerClient({ userId, userRole }: Props) {
     e.preventDefault();
     setError("");
 
-    if (!selectedJob) {
-      setError("Please select a job");
+    if (!selectedJob && !selectedCustomer) {
+      setError("Please select a job or customer");
+      return;
+    }
+
+    if (selectedCustomer && !jobName.trim()) {
+      setError("Please enter a job name for the customer");
       return;
     }
 
     setSubmitting(true);
 
     try {
-      const tracker = await createAccessoryTracker({
-        jobId: selectedJob.id,
-        invoiceNumber: invoiceNumber.trim() || undefined,
-        invoiceCreatedAt: invoiceCreatedAt
-          ? new Date(invoiceCreatedAt)
-          : undefined,
-        remeasureApprovedAt: remeasureApprovedAt
-          ? new Date(remeasureApprovedAt)
-          : undefined,
-        department: department || undefined,
-        notes: notes || undefined,
-        createdByUserId: userId,
-      });
+      const tracker = selectedJob
+        ? await createAccessoryTracker({
+            jobId: selectedJob.id,
+            invoiceNumber: invoiceNumber.trim() || undefined,
+            invoiceCreatedAt: invoiceCreatedAt
+              ? new Date(invoiceCreatedAt)
+              : undefined,
+            remeasureApprovedAt: remeasureApprovedAt
+              ? new Date(remeasureApprovedAt)
+              : undefined,
+            department: department || undefined,
+            notes: notes || undefined,
+            createdByUserId: userId,
+          })
+        : await createAccessoryTrackerForCustomer({
+            customerId: selectedCustomer!.id,
+            jobName: jobName.trim(),
+            invoiceNumber: invoiceNumber.trim() || undefined,
+            invoiceCreatedAt: invoiceCreatedAt
+              ? new Date(invoiceCreatedAt)
+              : undefined,
+            remeasureApprovedAt: remeasureApprovedAt
+              ? new Date(remeasureApprovedAt)
+              : undefined,
+            department: department || undefined,
+            notes: notes || undefined,
+            createdByUserId: userId,
+          });
 
       router.push(`/accessories/${tracker.id}`);
     } catch (error: any) {
@@ -137,14 +176,14 @@ export default function NewAccessoryTrackerClient({ userId, userRole }: Props) {
                 <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 w-5 h-5 text-gray-400" />
                 <input
                   type="text"
-                  placeholder="Search for a job..."
-                  value={selectedJob ? "" : searchTerm}
+                  placeholder="Search for a job or customer..."
+                  value={selectedJob || selectedCustomer ? "" : searchTerm}
                   onChange={(e) => {
                     setSearchTerm(e.target.value);
                     setShowJobDropdown(true);
                   }}
                   onFocus={() => setShowJobDropdown(true)}
-                  disabled={!!selectedJob}
+                  disabled={!!selectedJob || !!selectedCustomer}
                   className="w-full pl-10 pr-4 py-2 border border-gray-300 dark:border-gray-600 rounded-md bg-white dark:bg-gray-900 text-gray-900 dark:text-gray-100 focus:ring-2 focus:ring-blue-500 focus:border-transparent disabled:bg-gray-100 dark:disabled:bg-gray-700 disabled:cursor-not-allowed"
                 />
               </div>
@@ -173,6 +212,39 @@ export default function NewAccessoryTrackerClient({ userId, userRole }: Props) {
                       onClick={() => {
                         setSelectedJob(null);
                         setSearchTerm("");
+                        setJobName("");
+                      }}
+                      className="text-sm text-blue-600 hover:text-blue-700 dark:text-blue-400 dark:hover:text-blue-300"
+                    >
+                      Change
+                    </button>
+                  </div>
+                </div>
+              )}
+
+              {selectedCustomer && (
+                <div className="mt-3 p-4 bg-purple-50 dark:bg-purple-900/20 border border-purple-200 dark:border-purple-800 rounded-md">
+                  <div className="flex justify-between items-start">
+                    <div>
+                      <div className="font-semibold text-gray-900 dark:text-gray-100">
+                        {selectedCustomer.displayName}
+                      </div>
+                      <div className="text-sm text-gray-600 dark:text-gray-400 mt-1">
+                        {selectedCustomer.companyName &&
+                          `(${selectedCustomer.companyName})`}
+                      </div>
+                      {selectedCustomer.phone && (
+                        <div className="text-sm text-gray-500 dark:text-gray-500">
+                          {selectedCustomer.phone}
+                        </div>
+                      )}
+                    </div>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setSelectedCustomer(null);
+                        setSearchTerm("");
+                        setJobName("");
                       }}
                       className="text-sm text-blue-600 hover:text-blue-700 dark:text-blue-400 dark:hover:text-blue-300"
                     >
@@ -183,40 +255,90 @@ export default function NewAccessoryTrackerClient({ userId, userRole }: Props) {
               )}
 
               {/* Job Dropdown */}
-              {showJobDropdown && !selectedJob && searchTerm.length > 0 && (
-                <div className="absolute z-10 w-full mt-1 bg-white dark:bg-gray-800 border border-gray-300 dark:border-gray-600 rounded-md shadow-lg max-h-60 overflow-auto">
-                  {loadingJobs ? (
-                    <div className="p-4 text-center text-gray-500 dark:text-gray-400">
-                      Loading...
-                    </div>
-                  ) : jobs.length === 0 ? (
-                    <div className="p-4 text-center text-gray-500 dark:text-gray-400">
-                      No jobs found
-                    </div>
-                  ) : (
-                    jobs.map((job) => (
-                      <button
-                        key={job.id}
-                        type="button"
-                        onClick={() => {
-                          setSelectedJob(job);
-                          setShowJobDropdown(false);
-                        }}
-                        className="w-full text-left px-4 py-3 hover:bg-gray-50 dark:hover:bg-gray-700 border-b border-gray-100 dark:border-gray-700 last:border-b-0"
-                      >
-                        <div className="font-medium text-gray-900 dark:text-gray-100">
-                          Job #{job.jobNumber} - {job.jobName}
-                        </div>
-                        <div className="text-sm text-gray-600 dark:text-gray-400">
-                          {job.customer.displayName}
-                        </div>
-                      </button>
-                    ))
-                  )}
-                </div>
-              )}
+              {showJobDropdown &&
+                !selectedJob &&
+                !selectedCustomer &&
+                searchTerm.length > 0 && (
+                  <div className="absolute z-10 w-full mt-1 bg-white dark:bg-gray-800 border border-gray-300 dark:border-gray-600 rounded-md shadow-lg max-h-60 overflow-auto">
+                    {loadingJobs ? (
+                      <div className="p-4 text-center text-gray-500 dark:text-gray-400">
+                        Loading...
+                      </div>
+                    ) : jobs.length === 0 && customers.length === 0 ? (
+                      <div className="p-4 text-center text-gray-500 dark:text-gray-400">
+                        No jobs found
+                      </div>
+                    ) : (
+                      <>
+                        {jobs.length > 0 && (
+                          <div className="px-4 py-2 text-xs uppercase tracking-wide text-gray-400">
+                            Jobs
+                          </div>
+                        )}
+                        {jobs.map((job) => (
+                          <button
+                            key={job.id}
+                            type="button"
+                            onClick={() => {
+                              setSelectedJob(job);
+                              setSelectedCustomer(null);
+                              setShowJobDropdown(false);
+                            }}
+                            className="w-full text-left px-4 py-3 hover:bg-gray-50 dark:hover:bg-gray-700 border-b border-gray-100 dark:border-gray-700 last:border-b-0"
+                          >
+                            <div className="font-medium text-gray-900 dark:text-gray-100">
+                              Job #{job.jobNumber} - {job.jobName}
+                            </div>
+                            <div className="text-sm text-gray-600 dark:text-gray-400">
+                              {job.customer.displayName}
+                            </div>
+                          </button>
+                        ))}
+                        {customers.length > 0 && (
+                          <div className="px-4 py-2 text-xs uppercase tracking-wide text-gray-400">
+                            Customers (no active jobs)
+                          </div>
+                        )}
+                        {customers.map((customer) => (
+                          <button
+                            key={customer.id}
+                            type="button"
+                            onClick={() => {
+                              setSelectedCustomer(customer);
+                              setSelectedJob(null);
+                              setShowJobDropdown(false);
+                            }}
+                            className="w-full text-left px-4 py-3 hover:bg-gray-50 dark:hover:bg-gray-700 border-b border-gray-100 dark:border-gray-700 last:border-b-0"
+                          >
+                            <div className="font-medium text-gray-900 dark:text-gray-100">
+                              {customer.displayName}
+                            </div>
+                            <div className="text-sm text-gray-600 dark:text-gray-400">
+                              {customer.companyName || "Customer"}
+                            </div>
+                          </button>
+                        ))}
+                      </>
+                    )}
+                  </div>
+                )}
             </div>
           </div>
+
+          {selectedCustomer && !selectedJob && (
+            <div className="mb-6">
+              <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+                Job Name <span className="text-red-500">*</span>
+              </label>
+              <input
+                type="text"
+                value={jobName}
+                onChange={(e) => setJobName(e.target.value)}
+                placeholder="e.g., Accessories - Kitchen"
+                className="w-full px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-md bg-white dark:bg-gray-900 text-gray-900 dark:text-gray-100 focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+              />
+            </div>
+          )}
 
           {/* Milestone Dates */}
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 mb-6">
@@ -304,7 +426,11 @@ export default function NewAccessoryTrackerClient({ userId, userRole }: Props) {
           </button>
           <button
             type="submit"
-            disabled={submitting || !selectedJob}
+            disabled={
+              submitting ||
+              (!selectedJob && !selectedCustomer) ||
+              (selectedCustomer && !jobName.trim())
+            }
             className="px-6 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700 disabled:bg-gray-400 disabled:cursor-not-allowed transition-colors"
           >
             {submitting ? "Creating..." : "Create Tracker"}
