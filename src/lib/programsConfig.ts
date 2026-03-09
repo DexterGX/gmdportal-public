@@ -56,6 +56,7 @@ export function mapDbRoleToAppRole(dbRole: Role | null | undefined): AppRole {
 export type ProgramId =
   | "main"
   | "storeStock"
+  | "slabRack"
   | "slabs"
   | "users"
   | "closetJobs"
@@ -152,6 +153,43 @@ export const programs: ProgramConfig[] = [
         name: "Import / Export",
         path: "/slabsPriceList/admin/import",
         adminOnly: true,
+      },
+    ],
+    othersItems: [],
+  },
+  {
+    id: "slabRack",
+    name: "SlabBay",
+    basePath: "/slab-rack-display",
+    description: "Visualize slab rack availability.",
+    allowedRoles: [
+      "admin",
+      "sales",
+      "office",
+      "finance",
+      "specialist",
+      "installer",
+    ],
+    navItems: [
+      {
+        icon: BoxCubeIcon,
+        name: "SlabBay",
+        path: "/slab-rack-display",
+      },
+      {
+        icon: ListIcon,
+        name: "Inventory",
+        path: "/slab-rack-display/inventory",
+      },
+      {
+        icon: ListIcon,
+        name: "History Log",
+        path: "/slab-rack-display/history",
+      },
+      {
+        icon: Settings2,
+        name: "Rack Settings",
+        path: "/slab-rack-display/settings",
       },
     ],
     othersItems: [],

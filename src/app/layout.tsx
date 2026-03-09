@@ -5,6 +5,9 @@ import React from "react";
 export const metadata = {
   title: "Dashboard",
   description: "GM Design Portal",
+  icons: {
+    icon: "/logo_GM.png",
+  },
 };
 
 export default function RootLayout({
