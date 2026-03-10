@@ -12,29 +12,57 @@ import {
   saveState,
 } from "./storage";
 
+const SLAB_VIEW_LICENSE = "532b5c05af7b036ff8a0200d0c8dc6da";
+const buildSlabViewUrl = (scannerId: string) =>
+  `https://fusiondrivecloud.com/slabview/?license=${SLAB_VIEW_LICENSE}&SlabID=${encodeURIComponent(
+    scannerId,
+  )}`;
+
 export default function RackDetailClient({ userName }: { userName: string }) {
   const params = useParams();
   const router = useRouter();
   const rackId = String(params?.rackId ?? "").toLowerCase();
   const [state, setState] = useState<SlabBayState>(() => loadState());
+  const [isLoading, setIsLoading] = useState(true);
+  const [hasLoaded, setHasLoaded] = useState(false);
 
   useEffect(() => {
     let active = true;
-    fetchStateFromDb().then((data) => {
-      if (!active || !data) return;
-      setState(data);
-      saveState(data);
-    });
+    if (!hasLoaded) {
+      setIsLoading(true);
+    }
+    fetchStateFromDb()
+      .then((data) => {
+        if (!active || !data) return;
+        setState(data);
+        saveState(data);
+      })
+      .finally(() => {
+        if (!active) return;
+        setHasLoaded(true);
+        setIsLoading(false);
+      });
     return () => {
       active = false;
     };
-  }, []);
+  }, [hasLoaded]);
 
   const rack = useMemo(() => getRackById(state, rackId), [state, rackId]);
   const slabs = useMemo(
     () => (rack ? getSlabsByRack(state, rack.id) : []),
     [state, rack],
   );
+
+  if (!rack && !hasLoaded) {
+    return (
+      <div className="flex flex-col items-center justify-center gap-3 py-16">
+        <div className="h-8 w-8 rounded-full border-2 border-blue-600 border-t-transparent animate-spin" />
+        <p className="text-sm text-gray-500 dark:text-gray-400">
+          Loading rack...
+        </p>
+      </div>
+    );
+  }
 
   if (!rack) {
     return (
@@ -85,71 +113,91 @@ export default function RackDetailClient({ userName }: { userName: string }) {
       </div>
 
       <div className="bg-white dark:bg-gray-900 rounded-xl border border-gray-200 dark:border-gray-800 p-4">
-        <div className="overflow-x-auto">
-          <table className="min-w-full text-sm">
-            <thead>
-              <tr className="text-left text-xs uppercase tracking-wide text-gray-400">
-                <th className="py-2 pr-4">Slab ID</th>
-                <th className="py-2 pr-4">Scanner ID</th>
-                <th className="py-2 pr-4">Batch</th>
-                <th className="py-2 pr-4">Name</th>
-                <th className="py-2 pr-4">Type</th>
-                <th className="py-2 pr-4">Thickness</th>
-                <th className="py-2 pr-4">Size</th>
-                <th className="py-2 pr-4">Client</th>
-                <th className="py-2 pr-4">Date Added</th>
-              </tr>
-            </thead>
-            <tbody>
-              {slabs.map((slab) => (
-                <tr
-                  key={slab.id}
-                  className="border-t border-gray-100 dark:border-gray-800"
-                >
-                  <td className="py-3 pr-4 font-medium text-gray-800 dark:text-gray-100">
-                    {slab.id}
-                  </td>
-                  <td className="py-3 pr-4 text-gray-600 dark:text-gray-300">
-                    {slab.scannerId || "-"}
-                  </td>
-                  <td className="py-3 pr-4 text-gray-600 dark:text-gray-300">
-                    {slab.batchIndex && slab.batchSize
-                      ? `${slab.batchIndex}/${slab.batchSize}`
-                      : "-"}
-                  </td>
-                  <td className="py-3 pr-4 text-gray-600 dark:text-gray-300">
-                    {slab.name}
-                  </td>
-                  <td className="py-3 pr-4 text-gray-600 dark:text-gray-300">
-                    {slab.type}
-                  </td>
-                  <td className="py-3 pr-4 text-gray-600 dark:text-gray-300">
-                    {slab.thickness}
-                  </td>
-                  <td className="py-3 pr-4 text-gray-600 dark:text-gray-300">
-                    {slab.size}
-                  </td>
-                  <td className="py-3 pr-4 text-gray-600 dark:text-gray-300">
-                    {slab.clientName}
-                  </td>
-                  <td className="py-3 pr-4 text-gray-600 dark:text-gray-300">
-                    {slab.createdAt}
-                  </td>
+        {isLoading ? (
+          <div className="flex flex-col items-center justify-center gap-3 py-16">
+            <div className="h-8 w-8 rounded-full border-2 border-blue-600 border-t-transparent animate-spin" />
+            <p className="text-sm text-gray-500 dark:text-gray-400">
+              Loading slabs...
+            </p>
+          </div>
+        ) : (
+          <div className="overflow-x-auto">
+            <table className="min-w-full text-sm">
+              <thead>
+                <tr className="text-left text-xs uppercase tracking-wide text-gray-400">
+                  <th className="py-2 pr-4">Slab ID</th>
+                  <th className="py-2 pr-4">Scanner ID</th>
+                  <th className="py-2 pr-4">Batch</th>
+                  <th className="py-2 pr-4">Name</th>
+                  <th className="py-2 pr-4">Type</th>
+                  <th className="py-2 pr-4">Thickness</th>
+                  <th className="py-2 pr-4">Size</th>
+                  <th className="py-2 pr-4">Client</th>
+                  <th className="py-2 pr-4">Date Added</th>
                 </tr>
-              ))}
-              {slabs.length === 0 && (
-                <tr>
-                  <td
-                    colSpan={9}
-                    className="py-6 text-center text-gray-500 dark:text-gray-400"
+              </thead>
+              <tbody>
+                {slabs.map((slab) => (
+                  <tr
+                    key={slab.id}
+                    className="border-t border-gray-100 dark:border-gray-800"
                   >
-                    No slabs in this rack yet.
-                  </td>
-                </tr>
-              )}
-            </tbody>
-          </table>
-        </div>
+                    <td className="py-3 pr-4 font-medium text-gray-800 dark:text-gray-100">
+                      {slab.id}
+                    </td>
+                    <td className="py-3 pr-4 text-gray-600 dark:text-gray-300">
+                      {slab.scannerId ? (
+                        <a
+                          href={buildSlabViewUrl(slab.scannerId)}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          className="text-blue-600 hover:text-blue-700 hover:underline"
+                        >
+                          {slab.scannerId}
+                        </a>
+                      ) : (
+                        "-"
+                      )}
+                    </td>
+                    <td className="py-3 pr-4 text-gray-600 dark:text-gray-300">
+                      {slab.batchIndex && slab.batchSize
+                        ? `${slab.batchIndex}/${slab.batchSize}`
+                        : "-"}
+                    </td>
+                    <td className="py-3 pr-4 text-gray-600 dark:text-gray-300">
+                      {slab.name}
+                    </td>
+                    <td className="py-3 pr-4 text-gray-600 dark:text-gray-300">
+                      {slab.type}
+                    </td>
+                    <td className="py-3 pr-4 text-gray-600 dark:text-gray-300">
+                      {slab.thickness}
+                    </td>
+                    <td className="py-3 pr-4 text-gray-600 dark:text-gray-300">
+                      {slab.size}
+                    </td>
+                    <td className="py-3 pr-4 text-gray-600 dark:text-gray-300">
+                      {slab.clientName}
+                    </td>
+                    <td className="py-3 pr-4 text-gray-600 dark:text-gray-300">
+                      {slab.createdAt}
+                    </td>
+                  </tr>
+                ))}
+                {slabs.length === 0 && (
+                  <tr>
+                    <td
+                      colSpan={9}
+                      className="py-6 text-center text-gray-500 dark:text-gray-400"
+                    >
+                      No slabs in this rack yet.
+                    </td>
+                  </tr>
+                )}
+              </tbody>
+            </table>
+          </div>
+        )}
       </div>
     </div>
   );
