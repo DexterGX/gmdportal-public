@@ -4,6 +4,12 @@ import { useEffect, useMemo, useState } from "react";
 import type { SlabBayState } from "./mockData";
 import { fetchStateFromDb, loadState, saveState } from "./storage";
 
+const SLAB_VIEW_LICENSE = "532b5c05af7b036ff8a0200d0c8dc6da";
+const buildSlabViewUrl = (scannerId: string) =>
+  `https://fusiondrivecloud.com/slabview/?license=${SLAB_VIEW_LICENSE}&SlabID=${encodeURIComponent(
+    scannerId,
+  )}`;
+
 const formatType = (type: "entry" | "exit" | "move") => {
   if (type === "entry") return "Entry";
   if (type === "exit") return "Exit";
@@ -252,7 +258,18 @@ export default function HistoryClient() {
                       {entry.slabName}
                     </td>
                     <td className="py-3 pr-4 text-gray-600 dark:text-gray-300">
-                      {entry.slabScannerId || "-"}
+                      {entry.slabScannerId ? (
+                        <a
+                          href={buildSlabViewUrl(entry.slabScannerId)}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          className="text-blue-600 hover:text-blue-700 hover:underline"
+                        >
+                          {entry.slabScannerId}
+                        </a>
+                      ) : (
+                        "-"
+                      )}
                     </td>
                     <td className="py-3 pr-4 text-gray-600 dark:text-gray-300">
                       {entry.batchIndex && entry.batchSize

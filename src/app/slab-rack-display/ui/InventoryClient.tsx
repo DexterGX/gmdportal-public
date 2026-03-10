@@ -5,6 +5,12 @@ import type { SlabBayState } from "./mockData";
 import { fetchStateFromDb, loadState, saveState } from "./storage";
 import FilterMultiSelect from "@/components/filters/FilterMultiSelect";
 
+const SLAB_VIEW_LICENSE = "532b5c05af7b036ff8a0200d0c8dc6da";
+const buildSlabViewUrl = (scannerId: string) =>
+  `https://fusiondrivecloud.com/slabview/?license=${SLAB_VIEW_LICENSE}&SlabID=${encodeURIComponent(
+    scannerId,
+  )}`;
+
 export default function InventoryClient() {
   const [state, setState] = useState<SlabBayState>(() => loadState());
   const [searchTerm, setSearchTerm] = useState("");
@@ -232,7 +238,18 @@ export default function InventoryClient() {
                     className="border-t border-gray-100 dark:border-gray-800"
                   >
                     <td className="py-3 pr-4 text-gray-700 dark:text-gray-300">
-                      {slab.scannerId || "-"}
+                      {slab.scannerId ? (
+                        <a
+                          href={buildSlabViewUrl(slab.scannerId)}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          className="text-blue-600 hover:text-blue-700 hover:underline"
+                        >
+                          {slab.scannerId}
+                        </a>
+                      ) : (
+                        "-"
+                      )}
                     </td>
                     <td className="py-3 pr-4 text-gray-600 dark:text-gray-300">
                       {slab.id}
