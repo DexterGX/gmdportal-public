@@ -250,14 +250,14 @@ const AppSidebar: React.FC<{ userRole?: AppRole }> = ({ userRole }) => {
     <>
       {isMobileOpen && (
         <div
-          className="fixed inset-0 bg-black/40 z-40"
+          className="fixed inset-0 bg-black/40 z-40 print:hidden"
           onClick={() => toggleMobileSidebar()}
           aria-hidden
         />
       )}
 
       <aside
-        className={`flex-none flex flex-col px-5 bg-white dark:bg-gray-900 dark:border-gray-800 text-gray-900 transition-all duration-300 ease-in-out z-50 border-r border-gray-200 transform ${mobileTransformClass} ${
+        className={`flex-none flex flex-col px-5 bg-white dark:bg-gray-900 dark:border-gray-800 text-gray-900 transition-all duration-300 ease-in-out z-50 border-r border-gray-200 transform print:hidden ${mobileTransformClass} ${
           isMobile
             ? "fixed left-0 top-0 bottom-0 w-[290px]"
             : `sticky top-0 h-screen ${

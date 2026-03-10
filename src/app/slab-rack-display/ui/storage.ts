@@ -235,6 +235,9 @@ export const addSlab = (
     slabType: slab.type,
     clientName: slab.clientName,
     toRack: input.rackId.toUpperCase(),
+    batchId: slab.batchId,
+    batchIndex: slab.batchIndex,
+    batchSize: slab.batchSize,
     userName,
     timestamp: new Date().toLocaleString(),
   };
@@ -251,11 +254,13 @@ export const addSlab = (
 export const addMultipleSlabs = (
   state: SlabBayState,
   input: Omit<Slab, "id" | "createdAt" | "rackId">,
+  scannerIds: string[] | undefined,
   quantity: number,
   userName: string,
   preferredRackId?: string,
 ): SlabBayState => {
   let nextState = { ...state } as SlabBayState;
+  const batchId = quantity > 1 ? buildId("batch") : undefined;
 
   for (let i = 0; i < quantity; i += 1) {
     const nextRack = selectNextRack(
@@ -265,10 +270,15 @@ export const addMultipleSlabs = (
     );
     if (!nextRack) break;
 
+    const scannerId = scannerIds?.[i] ?? input.scannerId;
     nextState = addSlab(
       nextState,
       {
         ...input,
+        scannerId,
+        batchId,
+        batchIndex: quantity > 1 ? i + 1 : undefined,
+        batchSize: quantity > 1 ? quantity : undefined,
         rackId: nextRack.id,
       },
       userName,

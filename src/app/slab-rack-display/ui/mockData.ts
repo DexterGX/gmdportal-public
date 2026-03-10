@@ -19,6 +19,9 @@ export type Slab = {
   clientName: string;
   rackId: string;
   createdAt: string;
+  batchId?: string;
+  batchIndex?: number;
+  batchSize?: number;
 };
 
 export type HistoryEntry = {
@@ -32,6 +35,9 @@ export type HistoryEntry = {
   fromRack?: string;
   toRack?: string;
   exitNote?: string;
+  batchId?: string;
+  batchIndex?: number;
+  batchSize?: number;
   userName: string;
   timestamp: string;
 };

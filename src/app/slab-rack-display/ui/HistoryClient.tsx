@@ -60,7 +60,18 @@ export default function HistoryClient() {
     actionFilter,
   ]);
 
-  const displayRows = printMode === "all" ? state.history : rows;
+  const sortByMostRecent = (entries: typeof rows) =>
+    [...entries].sort((a, b) => {
+      const timeA = new Date(a.timestamp).getTime();
+      const timeB = new Date(b.timestamp).getTime();
+      if (!Number.isNaN(timeA) && !Number.isNaN(timeB)) return timeB - timeA;
+      return b.timestamp.localeCompare(a.timestamp);
+    });
+
+  const displayRows =
+    printMode === "all"
+      ? sortByMostRecent(state.history)
+      : sortByMostRecent(rows);
 
   const handlePrint = (mode: "filtered" | "all") => {
     setPrintMode(mode);
@@ -76,13 +87,27 @@ export default function HistoryClient() {
 
   useEffect(() => {
     let active = true;
-    fetchStateFromDb().then((data) => {
-      if (!active || !data) return;
-      setState(data);
-      saveState(data);
-    });
+    const load = () => {
+      fetchStateFromDb().then((data) => {
+        if (!active || !data) return;
+        setState(data);
+        saveState(data);
+      });
+    };
+
+    load();
+    const intervalId = window.setInterval(load, 10000);
+    const handleVisibility = () => {
+      if (document.visibilityState === "visible") {
+        load();
+      }
+    };
+    document.addEventListener("visibilitychange", handleVisibility);
+
     return () => {
       active = false;
+      window.clearInterval(intervalId);
+      document.removeEventListener("visibilitychange", handleVisibility);
     };
   }, []);
 
@@ -92,7 +117,7 @@ export default function HistoryClient() {
 
   return (
     <div className="space-y-6">
-      <div>
+      <div className="print:hidden">
         <h1 className="text-2xl font-semibold text-gray-800 dark:text-gray-200">
           Slab History Log
         </h1>
@@ -160,14 +185,23 @@ export default function HistoryClient() {
         id="print-area"
         className="bg-white dark:bg-gray-900 rounded-xl border border-gray-200 dark:border-gray-800 p-4 print:shadow-none print:bg-white"
       >
+        <div className="hidden print:block mb-3">
+          <h1 className="text-2xl font-semibold text-gray-800">
+            Slab History Log
+          </h1>
+        </div>
         <div className="overflow-x-auto">
-          <table className="min-w-full text-sm">
+          <table className="min-w-full text-sm print-history-table">
             <thead>
+              <tr className="hidden print:table-row print-spacer-row">
+                <th colSpan={11} aria-hidden="true" />
+              </tr>
               <tr className="text-left text-xs uppercase tracking-wide text-gray-400">
                 <th className="py-2 pr-4">Date</th>
                 <th className="py-2 pr-4">Action</th>
                 <th className="py-2 pr-4">Slab</th>
                 <th className="py-2 pr-4">Scanner ID</th>
+                <th className="py-2 pr-4">Batch</th>
                 <th className="py-2 pr-4">Type</th>
                 <th className="py-2 pr-4">Client</th>
                 <th className="py-2 pr-4">From</th>
@@ -195,6 +229,11 @@ export default function HistoryClient() {
                     {entry.slabScannerId || "-"}
                   </td>
                   <td className="py-3 pr-4 text-gray-600 dark:text-gray-300">
+                    {entry.batchIndex && entry.batchSize
+                      ? `${entry.batchIndex}/${entry.batchSize}`
+                      : "-"}
+                  </td>
+                  <td className="py-3 pr-4 text-gray-600 dark:text-gray-300">
                     {entry.slabType}
                   </td>
                   <td className="py-3 pr-4 text-gray-600 dark:text-gray-300">
@@ -217,7 +256,7 @@ export default function HistoryClient() {
               {displayRows.length === 0 && (
                 <tr>
                   <td
-                    colSpan={10}
+                    colSpan={11}
                     className="py-6 text-center text-gray-500 dark:text-gray-400"
                   >
                     No history entries yet.
