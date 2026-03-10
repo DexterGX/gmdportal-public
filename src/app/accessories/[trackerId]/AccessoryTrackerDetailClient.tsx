@@ -104,7 +104,7 @@ export default function AccessoryTrackerDetailClient({
 
   const totalItems = tracker.items.length;
   const deliveredItems = tracker.items.filter(
-    (item: any) => item.status === "DELIVERED",
+    (item: any) => item.status === "DELIVERED" || item.status === "INSTALLED",
   ).length;
   const completionPercent = totalItems
     ? Math.round((deliveredItems / totalItems) * 100)
