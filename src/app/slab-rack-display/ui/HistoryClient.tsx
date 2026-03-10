@@ -13,6 +13,8 @@ const formatType = (type: "entry" | "exit" | "move") => {
 export default function HistoryClient() {
   const [state, setState] = useState<SlabBayState>(() => loadState());
   const [mounted, setMounted] = useState(false);
+  const [isLoading, setIsLoading] = useState(true);
+  const [hasLoaded, setHasLoaded] = useState(false);
   const [clientFilter, setClientFilter] = useState("");
   const [slabFilter, setSlabFilter] = useState("");
   const [userFilter, setUserFilter] = useState("");
@@ -88,11 +90,20 @@ export default function HistoryClient() {
   useEffect(() => {
     let active = true;
     const load = () => {
-      fetchStateFromDb().then((data) => {
-        if (!active || !data) return;
-        setState(data);
-        saveState(data);
-      });
+      if (!hasLoaded) {
+        setIsLoading(true);
+      }
+      fetchStateFromDb()
+        .then((data) => {
+          if (!active || !data) return;
+          setState(data);
+          saveState(data);
+        })
+        .finally(() => {
+          if (!active) return;
+          setHasLoaded(true);
+          setIsLoading(false);
+        });
     };
 
     load();
@@ -109,10 +120,17 @@ export default function HistoryClient() {
       window.clearInterval(intervalId);
       document.removeEventListener("visibilitychange", handleVisibility);
     };
-  }, []);
+  }, [hasLoaded]);
 
   if (!mounted) {
-    return null;
+    return (
+      <div className="flex flex-col items-center justify-center gap-3 py-16">
+        <div className="h-8 w-8 rounded-full border-2 border-blue-600 border-t-transparent animate-spin" />
+        <p className="text-sm text-gray-500 dark:text-gray-400">
+          Loading history...
+        </p>
+      </div>
+    );
   }
 
   return (
@@ -190,82 +208,91 @@ export default function HistoryClient() {
             Slab History Log
           </h1>
         </div>
-        <div className="overflow-x-auto">
-          <table className="min-w-full text-sm print-history-table">
-            <thead>
-              <tr className="hidden print:table-row print-spacer-row">
-                <th colSpan={11} aria-hidden="true" />
-              </tr>
-              <tr className="text-left text-xs uppercase tracking-wide text-gray-400">
-                <th className="py-2 pr-4">Date</th>
-                <th className="py-2 pr-4">Action</th>
-                <th className="py-2 pr-4">Slab</th>
-                <th className="py-2 pr-4">Scanner ID</th>
-                <th className="py-2 pr-4">Batch</th>
-                <th className="py-2 pr-4">Type</th>
-                <th className="py-2 pr-4">Client</th>
-                <th className="py-2 pr-4">From</th>
-                <th className="py-2 pr-4">To</th>
-                <th className="py-2 pr-4">Exit Notes</th>
-                <th className="py-2 pr-4">User</th>
-              </tr>
-            </thead>
-            <tbody>
-              {displayRows.map((entry) => (
-                <tr
-                  key={entry.id}
-                  className="border-t border-gray-100 dark:border-gray-800"
-                >
-                  <td className="py-3 pr-4 text-gray-600 dark:text-gray-300">
-                    {entry.timestamp}
-                  </td>
-                  <td className="py-3 pr-4 font-medium text-gray-800 dark:text-gray-100">
-                    {formatType(entry.type)}
-                  </td>
-                  <td className="py-3 pr-4 text-gray-600 dark:text-gray-300">
-                    {entry.slabName}
-                  </td>
-                  <td className="py-3 pr-4 text-gray-600 dark:text-gray-300">
-                    {entry.slabScannerId || "-"}
-                  </td>
-                  <td className="py-3 pr-4 text-gray-600 dark:text-gray-300">
-                    {entry.batchIndex && entry.batchSize
-                      ? `${entry.batchIndex}/${entry.batchSize}`
-                      : "-"}
-                  </td>
-                  <td className="py-3 pr-4 text-gray-600 dark:text-gray-300">
-                    {entry.slabType}
-                  </td>
-                  <td className="py-3 pr-4 text-gray-600 dark:text-gray-300">
-                    {entry.clientName}
-                  </td>
-                  <td className="py-3 pr-4 text-gray-600 dark:text-gray-300">
-                    {entry.fromRack ? `${entry.fromRack}` : "-"}
-                  </td>
-                  <td className="py-3 pr-4 text-gray-600 dark:text-gray-300">
-                    {entry.toRack ? `${entry.toRack}` : "-"}
-                  </td>
-                  <td className="py-3 pr-4 text-gray-600 dark:text-gray-300">
-                    {entry.exitNote || "-"}
-                  </td>
-                  <td className="py-3 pr-4 text-gray-600 dark:text-gray-300">
-                    {entry.userName}
-                  </td>
+        {isLoading ? (
+          <div className="flex flex-col items-center justify-center gap-3 py-16">
+            <div className="h-8 w-8 rounded-full border-2 border-blue-600 border-t-transparent animate-spin" />
+            <p className="text-sm text-gray-500 dark:text-gray-400">
+              Loading history...
+            </p>
+          </div>
+        ) : (
+          <div className="overflow-x-auto">
+            <table className="min-w-full text-sm print-history-table">
+              <thead>
+                <tr className="hidden print:table-row print-spacer-row">
+                  <th colSpan={11} aria-hidden="true" />
                 </tr>
-              ))}
-              {displayRows.length === 0 && (
-                <tr>
-                  <td
-                    colSpan={11}
-                    className="py-6 text-center text-gray-500 dark:text-gray-400"
+                <tr className="text-left text-xs uppercase tracking-wide text-gray-400">
+                  <th className="py-2 pr-4">Date</th>
+                  <th className="py-2 pr-4">Action</th>
+                  <th className="py-2 pr-4">Slab</th>
+                  <th className="py-2 pr-4">Scanner ID</th>
+                  <th className="py-2 pr-4">Batch</th>
+                  <th className="py-2 pr-4">Type</th>
+                  <th className="py-2 pr-4">Client</th>
+                  <th className="py-2 pr-4">From</th>
+                  <th className="py-2 pr-4">To</th>
+                  <th className="py-2 pr-4">Exit Notes</th>
+                  <th className="py-2 pr-4">User</th>
+                </tr>
+              </thead>
+              <tbody>
+                {displayRows.map((entry) => (
+                  <tr
+                    key={entry.id}
+                    className="border-t border-gray-100 dark:border-gray-800"
                   >
-                    No history entries yet.
-                  </td>
-                </tr>
-              )}
-            </tbody>
-          </table>
-        </div>
+                    <td className="py-3 pr-4 text-gray-600 dark:text-gray-300">
+                      {entry.timestamp}
+                    </td>
+                    <td className="py-3 pr-4 font-medium text-gray-800 dark:text-gray-100">
+                      {formatType(entry.type)}
+                    </td>
+                    <td className="py-3 pr-4 text-gray-600 dark:text-gray-300">
+                      {entry.slabName}
+                    </td>
+                    <td className="py-3 pr-4 text-gray-600 dark:text-gray-300">
+                      {entry.slabScannerId || "-"}
+                    </td>
+                    <td className="py-3 pr-4 text-gray-600 dark:text-gray-300">
+                      {entry.batchIndex && entry.batchSize
+                        ? `${entry.batchIndex}/${entry.batchSize}`
+                        : "-"}
+                    </td>
+                    <td className="py-3 pr-4 text-gray-600 dark:text-gray-300">
+                      {entry.slabType}
+                    </td>
+                    <td className="py-3 pr-4 text-gray-600 dark:text-gray-300">
+                      {entry.clientName}
+                    </td>
+                    <td className="py-3 pr-4 text-gray-600 dark:text-gray-300">
+                      {entry.fromRack ? `${entry.fromRack}` : "-"}
+                    </td>
+                    <td className="py-3 pr-4 text-gray-600 dark:text-gray-300">
+                      {entry.toRack ? `${entry.toRack}` : "-"}
+                    </td>
+                    <td className="py-3 pr-4 text-gray-600 dark:text-gray-300">
+                      {entry.exitNote || "-"}
+                    </td>
+                    <td className="py-3 pr-4 text-gray-600 dark:text-gray-300">
+                      {entry.userName}
+                    </td>
+                  </tr>
+                ))}
+                {displayRows.length === 0 && (
+                  <tr>
+                    <td
+                      colSpan={11}
+                      className="py-6 text-center text-gray-500 dark:text-gray-400"
+                    >
+                      No history entries yet.
+                    </td>
+                  </tr>
+                )}
+              </tbody>
+            </table>
+          </div>
+        )}
       </div>
     </div>
   );

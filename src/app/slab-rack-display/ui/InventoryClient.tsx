@@ -11,6 +11,8 @@ export default function InventoryClient() {
   const [selectedRacks, setSelectedRacks] = useState<string[]>([]);
   const [selectedTypes, setSelectedTypes] = useState<string[]>([]);
   const [selectedThicknesses, setSelectedThicknesses] = useState<string[]>([]);
+  const [isLoading, setIsLoading] = useState(true);
+  const [hasLoaded, setHasLoaded] = useState(false);
 
   const formatTimestamp = (value: string) => {
     const date = new Date(value);
@@ -85,11 +87,20 @@ export default function InventoryClient() {
   useEffect(() => {
     let active = true;
     const load = () => {
-      fetchStateFromDb().then((data) => {
-        if (!active || !data) return;
-        setState(data);
-        saveState(data);
-      });
+      if (!hasLoaded) {
+        setIsLoading(true);
+      }
+      fetchStateFromDb()
+        .then((data) => {
+          if (!active || !data) return;
+          setState(data);
+          saveState(data);
+        })
+        .finally(() => {
+          if (!active) return;
+          setHasLoaded(true);
+          setIsLoading(false);
+        });
     };
 
     load();
@@ -106,7 +117,7 @@ export default function InventoryClient() {
       window.clearInterval(intervalId);
       document.removeEventListener("visibilitychange", handleVisibility);
     };
-  }, []);
+  }, [hasLoaded]);
 
   const handlePrint = () => {
     setTimeout(() => window.print(), 50);
@@ -187,87 +198,96 @@ export default function InventoryClient() {
             Slab Inventory
           </h1>
         </div>
-        <div className="overflow-x-auto">
-          <table className="min-w-full text-sm print-inventory-table">
-            <thead>
-              <tr className="hidden print:table-row print-spacer-row">
-                <th colSpan={10} aria-hidden="true" />
-              </tr>
-              <tr className="text-left text-xs uppercase tracking-wide text-gray-400">
-                <th className="py-2 pr-4">Scanner ID</th>
-                <th className="py-2 pr-4">Slab ID</th>
-                <th className="py-2 pr-4">Batch</th>
-                <th className="py-2 pr-4">Name</th>
-                <th className="py-2 pr-4">Type</th>
-                <th className="py-2 pr-4">Thickness</th>
-                <th className="py-2 pr-4">Size</th>
-                <th className="py-2 pr-4">Client</th>
-                <th className="py-2 pr-4">Rack</th>
-                <th className="py-2 pr-4">Date Added</th>
-              </tr>
-            </thead>
-            <tbody>
-              {rows.map((slab) => (
-                <tr
-                  key={slab.id}
-                  className="border-t border-gray-100 dark:border-gray-800"
-                >
-                  <td className="py-3 pr-4 text-gray-700 dark:text-gray-300">
-                    {slab.scannerId || "-"}
-                  </td>
-                  <td className="py-3 pr-4 text-gray-600 dark:text-gray-300">
-                    {slab.id}
-                  </td>
-                  <td className="py-3 pr-4 text-gray-600 dark:text-gray-300">
-                    {slab.batchIndex && slab.batchSize
-                      ? `${slab.batchIndex}/${slab.batchSize}`
-                      : "-"}
-                  </td>
-                  <td className="py-3 pr-4 text-gray-600 dark:text-gray-300">
-                    {slab.name}
-                  </td>
-                  <td className="py-3 pr-4 text-gray-600 dark:text-gray-300">
-                    {slab.type}
-                  </td>
-                  <td className="py-3 pr-4 text-gray-600 dark:text-gray-300">
-                    {slab.thickness}
-                  </td>
-                  <td className="py-3 pr-4 text-gray-600 dark:text-gray-300">
-                    {slab.size}
-                  </td>
-                  <td className="py-3 pr-4 text-gray-600 dark:text-gray-300">
-                    {slab.clientName}
-                  </td>
-                  <td className="py-3 pr-4 text-gray-600 dark:text-gray-300">
-                    {slab.rackId.toUpperCase()}
-                  </td>
-                  <td className="py-3 pr-4 text-gray-600 dark:text-gray-300">
-                    {(() => {
-                      const formatted = formatTimestamp(slab.createdAt);
-                      if (typeof formatted === "string") return formatted;
-                      return (
-                        <div>
-                          <div>{formatted.datePart}</div>
-                          <div>{formatted.timePart}</div>
-                        </div>
-                      );
-                    })()}
-                  </td>
+        {isLoading ? (
+          <div className="flex flex-col items-center justify-center gap-3 py-16">
+            <div className="h-8 w-8 rounded-full border-2 border-blue-600 border-t-transparent animate-spin" />
+            <p className="text-sm text-gray-500 dark:text-gray-400">
+              Loading inventory...
+            </p>
+          </div>
+        ) : (
+          <div className="overflow-x-auto">
+            <table className="min-w-full text-sm print-inventory-table">
+              <thead>
+                <tr className="hidden print:table-row print-spacer-row">
+                  <th colSpan={10} aria-hidden="true" />
                 </tr>
-              ))}
-              {rows.length === 0 && (
-                <tr>
-                  <td
-                    colSpan={10}
-                    className="py-6 text-center text-gray-500 dark:text-gray-400"
+                <tr className="text-left text-xs uppercase tracking-wide text-gray-400">
+                  <th className="py-2 pr-4">Scanner ID</th>
+                  <th className="py-2 pr-4">Slab ID</th>
+                  <th className="py-2 pr-4">Batch</th>
+                  <th className="py-2 pr-4">Name</th>
+                  <th className="py-2 pr-4">Type</th>
+                  <th className="py-2 pr-4">Thickness</th>
+                  <th className="py-2 pr-4">Size</th>
+                  <th className="py-2 pr-4">Client</th>
+                  <th className="py-2 pr-4">Rack</th>
+                  <th className="py-2 pr-4">Date Added</th>
+                </tr>
+              </thead>
+              <tbody>
+                {rows.map((slab) => (
+                  <tr
+                    key={slab.id}
+                    className="border-t border-gray-100 dark:border-gray-800"
                   >
-                    No slabs found.
-                  </td>
-                </tr>
-              )}
-            </tbody>
-          </table>
-        </div>
+                    <td className="py-3 pr-4 text-gray-700 dark:text-gray-300">
+                      {slab.scannerId || "-"}
+                    </td>
+                    <td className="py-3 pr-4 text-gray-600 dark:text-gray-300">
+                      {slab.id}
+                    </td>
+                    <td className="py-3 pr-4 text-gray-600 dark:text-gray-300">
+                      {slab.batchIndex && slab.batchSize
+                        ? `${slab.batchIndex}/${slab.batchSize}`
+                        : "-"}
+                    </td>
+                    <td className="py-3 pr-4 text-gray-600 dark:text-gray-300">
+                      {slab.name}
+                    </td>
+                    <td className="py-3 pr-4 text-gray-600 dark:text-gray-300">
+                      {slab.type}
+                    </td>
+                    <td className="py-3 pr-4 text-gray-600 dark:text-gray-300">
+                      {slab.thickness}
+                    </td>
+                    <td className="py-3 pr-4 text-gray-600 dark:text-gray-300">
+                      {slab.size}
+                    </td>
+                    <td className="py-3 pr-4 text-gray-600 dark:text-gray-300">
+                      {slab.clientName}
+                    </td>
+                    <td className="py-3 pr-4 text-gray-600 dark:text-gray-300">
+                      {slab.rackId.toUpperCase()}
+                    </td>
+                    <td className="py-3 pr-4 text-gray-600 dark:text-gray-300">
+                      {(() => {
+                        const formatted = formatTimestamp(slab.createdAt);
+                        if (typeof formatted === "string") return formatted;
+                        return (
+                          <div>
+                            <div>{formatted.datePart}</div>
+                            <div>{formatted.timePart}</div>
+                          </div>
+                        );
+                      })()}
+                    </td>
+                  </tr>
+                ))}
+                {rows.length === 0 && (
+                  <tr>
+                    <td
+                      colSpan={10}
+                      className="py-6 text-center text-gray-500 dark:text-gray-400"
+                    >
+                      No slabs found.
+                    </td>
+                  </tr>
+                )}
+              </tbody>
+            </table>
+          </div>
+        )}
       </div>
     </div>
   );

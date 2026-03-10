@@ -215,7 +215,7 @@ const selectNextRack = (
   )[0].rack;
 };
 
-export const addSlab = (
+const addSlabLocal = (
   state: SlabBayState,
   input: Omit<Slab, "id" | "createdAt">,
   userName: string,
@@ -242,11 +242,19 @@ export const addSlab = (
     timestamp: new Date().toLocaleString(),
   };
 
-  const nextState: SlabBayState = {
+  return {
     ...state,
     slabs: [...state.slabs, slab],
     history: [history, ...state.history],
   };
+};
+
+export const addSlab = (
+  state: SlabBayState,
+  input: Omit<Slab, "id" | "createdAt">,
+  userName: string,
+): SlabBayState => {
+  const nextState = addSlabLocal(state, input, userName);
   saveState(nextState);
   return nextState;
 };
@@ -261,17 +269,23 @@ export const addMultipleSlabs = (
 ): SlabBayState => {
   let nextState = { ...state } as SlabBayState;
   const batchId = quantity > 1 ? buildId("batch") : undefined;
+  let addedCount = 0;
+  const distribution = getRecommendedDistribution(
+    state,
+    quantity,
+    input.clientName || undefined,
+    preferredRackId,
+  );
 
-  for (let i = 0; i < quantity; i += 1) {
-    const nextRack = selectNextRack(
-      nextState,
-      input.clientName || undefined,
-      preferredRackId,
-    );
-    if (!nextRack) break;
+  const plannedRacks = distribution.plan.flatMap((item) =>
+    Array.from({ length: item.count }, () => item.rackId),
+  );
 
+  for (let i = 0; i < plannedRacks.length; i += 1) {
+    const rackId = plannedRacks[i];
+    if (!rackId) break;
     const scannerId = scannerIds?.[i] ?? input.scannerId;
-    nextState = addSlab(
+    nextState = addSlabLocal(
       nextState,
       {
         ...input,
@@ -279,11 +293,26 @@ export const addMultipleSlabs = (
         batchId,
         batchIndex: quantity > 1 ? i + 1 : undefined,
         batchSize: quantity > 1 ? quantity : undefined,
-        rackId: nextRack.id,
+        rackId,
       },
       userName,
     );
+    addedCount += 1;
   }
+
+  if (batchId && addedCount > 0 && addedCount !== quantity) {
+    nextState = {
+      ...nextState,
+      slabs: nextState.slabs.map((slab) =>
+        slab.batchId === batchId ? { ...slab, batchSize: addedCount } : slab,
+      ),
+      history: nextState.history.map((entry) =>
+        entry.batchId === batchId ? { ...entry, batchSize: addedCount } : entry,
+      ),
+    };
+  }
+
+  saveState(nextState);
 
   return nextState;
 };
