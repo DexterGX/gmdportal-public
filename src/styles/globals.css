@@ -27,7 +27,7 @@ body,
 @media print {
   /* Page setup */
   @page {
-    margin: 8mm;
+    margin: 15mm 12mm 12mm 12mm;
     size: A4 landscape;
   }
 
@@ -95,6 +95,171 @@ body,
     overflow: hidden;
     text-overflow: ellipsis;
     white-space: nowrap;
+  }
+
+  .print-inventory-table {
+    table-layout: fixed !important;
+    font-size: 8pt !important;
+    line-height: 1.25 !important;
+  }
+
+  .print-inventory-table th,
+  .print-inventory-table td {
+    white-space: normal !important;
+    word-break: break-word;
+    vertical-align: top;
+  }
+
+  .print-inventory-table .print-header-row th,
+  .print-inventory-table .print-spacer-row th {
+    border: none !important;
+    padding: 0 !important;
+  }
+
+  .print-inventory-table .print-header-row th {
+    font-size: 12pt !important;
+    font-weight: 700 !important;
+    padding-bottom: 2mm !important;
+  }
+
+  .print-inventory-table .print-spacer-row th {
+    height: 8mm !important;
+  }
+
+  .print-history-table {
+    table-layout: fixed !important;
+    font-size: 8pt !important;
+    line-height: 1.25 !important;
+  }
+
+  .print-history-table th,
+  .print-history-table td {
+    white-space: normal !important;
+    word-break: break-word;
+    vertical-align: top;
+  }
+
+  .print-history-table .print-spacer-row th {
+    border: none !important;
+    padding: 0 !important;
+    height: 8mm !important;
+  }
+
+  .print-history-table tbody tr {
+    page-break-inside: avoid;
+  }
+
+  .print-history-table th:nth-child(1),
+  .print-history-table td:nth-child(1) {
+    width: 12% !important;
+  }
+
+  .print-history-table th:nth-child(2),
+  .print-history-table td:nth-child(2) {
+    width: 6% !important;
+  }
+
+  .print-history-table th:nth-child(3),
+  .print-history-table td:nth-child(3) {
+    width: 9% !important;
+  }
+
+  .print-history-table th:nth-child(4),
+  .print-history-table td:nth-child(4) {
+    width: 9% !important;
+  }
+
+  .print-history-table th:nth-child(5),
+  .print-history-table td:nth-child(5) {
+    width: 5% !important;
+  }
+
+  .print-history-table th:nth-child(6),
+  .print-history-table td:nth-child(6) {
+    width: 6% !important;
+  }
+
+  .print-history-table th:nth-child(7),
+  .print-history-table td:nth-child(7) {
+    width: 14% !important;
+  }
+
+  .print-history-table th:nth-child(8),
+  .print-history-table td:nth-child(8) {
+    width: 5% !important;
+  }
+
+  .print-history-table th:nth-child(9),
+  .print-history-table td:nth-child(9) {
+    width: 5% !important;
+  }
+
+  .print-history-table th:nth-child(10),
+  .print-history-table td:nth-child(10) {
+    width: 10% !important;
+  }
+
+  .print-history-table th:nth-child(11),
+  .print-history-table td:nth-child(11) {
+    width: 9% !important;
+  }
+
+  .print-inventory-table thead th {
+    padding-top: 6mm !important;
+  }
+
+  .print-inventory-table tbody tr {
+    page-break-inside: avoid;
+  }
+
+  .print-inventory-table th:nth-child(1),
+  .print-inventory-table td:nth-child(1) {
+    width: 7% !important;
+  }
+
+  .print-inventory-table th:nth-child(2),
+  .print-inventory-table td:nth-child(2) {
+    width: 7% !important;
+  }
+
+  .print-inventory-table th:nth-child(3),
+  .print-inventory-table td:nth-child(3) {
+    width: 5% !important;
+  }
+
+  .print-inventory-table th:nth-child(4),
+  .print-inventory-table td:nth-child(4) {
+    width: 12% !important;
+  }
+
+  .print-inventory-table th:nth-child(5),
+  .print-inventory-table td:nth-child(5) {
+    width: 6% !important;
+  }
+
+  .print-inventory-table th:nth-child(6),
+  .print-inventory-table td:nth-child(6) {
+    width: 6% !important;
+  }
+
+  .print-inventory-table th:nth-child(7),
+  .print-inventory-table td:nth-child(7) {
+    width: 8% !important;
+  }
+
+  .print-inventory-table th:nth-child(8),
+  .print-inventory-table td:nth-child(8) {
+    width: 22% !important;
+  }
+
+  .print-inventory-table th:nth-child(9),
+  .print-inventory-table td:nth-child(9) {
+    width: 5% !important;
+  }
+
+  .print-inventory-table th:nth-child(10),
+  .print-inventory-table td:nth-child(10) {
+    width: 22% !important;
   }
 
   /* Specific column widths for better fit */

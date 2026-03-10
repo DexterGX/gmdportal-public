@@ -35,6 +35,7 @@ export default function SlabActions({
   const [loadingClients, setLoadingClients] = useState(false);
   const [clientName, setClientName] = useState("");
   const [scannerId, setScannerId] = useState("");
+  const [scannerIds, setScannerIds] = useState<string[]>([]);
   const [slabName, setSlabName] = useState("");
   const [thickness, setThickness] = useState("");
   const [sizeHeight, setSizeHeight] = useState("");
@@ -69,6 +70,7 @@ export default function SlabActions({
   >([]);
   const [pendingAdd, setPendingAdd] = useState<{
     input: Omit<Slab, "id" | "createdAt" | "rackId">;
+    scannerIds?: string[];
     quantity: number;
     preferredRackId?: string;
   } | null>(null);
@@ -179,6 +181,28 @@ export default function SlabActions({
   }, [slabName]);
 
   useEffect(() => {
+    const count = Number(quantity);
+    if (!Number.isFinite(count) || count <= 0) {
+      setScannerIds([]);
+      return;
+    }
+    setScannerIds((prev) => {
+      const next = [...prev];
+      if (next.length === 0 && scannerId) {
+        next[0] = scannerId;
+      }
+      if (next.length < count) {
+        for (let i = next.length; i < count; i += 1) {
+          next.push("");
+        }
+      } else if (next.length > count) {
+        next.length = count;
+      }
+      return next;
+    });
+  }, [quantity, scannerId]);
+
+  useEffect(() => {
     const handleClickOutside = (event: MouseEvent) => {
       const target = event.target as Node;
       if (
@@ -214,6 +238,7 @@ export default function SlabActions({
     setClientSuggestions([]);
     setClientName("");
     setScannerId("");
+    setScannerIds([]);
     setSlabName("");
     setThickness("");
     setSizeHeight("");
@@ -247,12 +272,14 @@ export default function SlabActions({
 
   const performAdd = (payload: {
     input: Omit<Slab, "id" | "createdAt" | "rackId">;
+    scannerIds?: string[];
     quantity: number;
     preferredRackId?: string;
   }) => {
     const next = addMultipleSlabs(
       state,
       payload.input,
+      payload.scannerIds,
       payload.quantity,
       userName,
       payload.preferredRackId,
@@ -276,8 +303,12 @@ export default function SlabActions({
       pushNotification("error", message);
       return;
     }
-    if (!scannerId.trim()) {
-      const message = "Please enter the D2 scanner ID.";
+    const scannerList = qty > 1 ? scannerIds : [scannerId];
+    if (scannerList.length !== qty || scannerList.some((id) => !id.trim())) {
+      const message =
+        qty > 1
+          ? "Please enter a D2 scanner ID for each slab."
+          : "Please enter the D2 scanner ID.";
       setActionError(message);
       pushNotification("error", message);
       return;
@@ -305,13 +336,14 @@ export default function SlabActions({
       selectedRack.capacity - getRackLoad(state, selectedRack.id);
     const payload = {
       input: {
-        scannerId,
+        scannerId: scannerList[0],
         name: slabName,
         type: slabType,
         thickness,
         size: `${sizeHeight} x ${sizeWidth}`,
         clientName,
       },
+      scannerIds: scannerList,
       quantity: qty,
       preferredRackId: selectedRack.id,
     };
@@ -611,11 +643,51 @@ export default function SlabActions({
                     </label>
                     <input
                       value={scannerId}
-                      onChange={(event) => setScannerId(event.target.value)}
+                      onChange={(event) => {
+                        const value = event.target.value;
+                        setScannerId(value);
+                        setScannerIds((prev) => {
+                          const next = [...prev];
+                          if (next.length === 0) next.push(value);
+                          else next[0] = value;
+                          return next;
+                        });
+                      }}
                       placeholder="D2-XXXX"
                       className="mt-1 w-full rounded-lg border border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-800 px-3 py-2 text-sm"
                     />
                   </div>
+                  {Number(quantity) > 1 && (
+                    <div className="sm:col-span-2">
+                      <label className="text-xs font-medium text-gray-500">
+                        Additional scanner IDs
+                      </label>
+                      <div className="mt-2 grid grid-cols-1 sm:grid-cols-2 gap-2">
+                        {Array.from(
+                          { length: Number(quantity) - 1 },
+                          (_, i) => {
+                            const index = i + 1;
+                            return (
+                              <input
+                                key={`scanner-${index}`}
+                                value={scannerIds[index] ?? ""}
+                                onChange={(event) => {
+                                  const value = event.target.value;
+                                  setScannerIds((prev) => {
+                                    const next = [...prev];
+                                    next[index] = value;
+                                    return next;
+                                  });
+                                }}
+                                placeholder={`D2-XXXX (Slab ${index + 1})`}
+                                className="w-full rounded-lg border border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-800 px-3 py-2 text-sm"
+                              />
+                            );
+                          },
+                        )}
+                      </div>
+                    </div>
+                  )}
                 </div>
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                   <div>

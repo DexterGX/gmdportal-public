@@ -91,6 +91,7 @@ export default function RackDetailClient({ userName }: { userName: string }) {
               <tr className="text-left text-xs uppercase tracking-wide text-gray-400">
                 <th className="py-2 pr-4">Slab ID</th>
                 <th className="py-2 pr-4">Scanner ID</th>
+                <th className="py-2 pr-4">Batch</th>
                 <th className="py-2 pr-4">Name</th>
                 <th className="py-2 pr-4">Type</th>
                 <th className="py-2 pr-4">Thickness</th>
@@ -110,6 +111,11 @@ export default function RackDetailClient({ userName }: { userName: string }) {
                   </td>
                   <td className="py-3 pr-4 text-gray-600 dark:text-gray-300">
                     {slab.scannerId || "-"}
+                  </td>
+                  <td className="py-3 pr-4 text-gray-600 dark:text-gray-300">
+                    {slab.batchIndex && slab.batchSize
+                      ? `${slab.batchIndex}/${slab.batchSize}`
+                      : "-"}
                   </td>
                   <td className="py-3 pr-4 text-gray-600 dark:text-gray-300">
                     {slab.name}
@@ -134,7 +140,7 @@ export default function RackDetailClient({ userName }: { userName: string }) {
               {slabs.length === 0 && (
                 <tr>
                   <td
-                    colSpan={8}
+                    colSpan={9}
                     className="py-6 text-center text-gray-500 dark:text-gray-400"
                   >
                     No slabs in this rack yet.

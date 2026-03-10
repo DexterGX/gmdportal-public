@@ -29,8 +29,17 @@ const ensureTables = async () => {
       "size" TEXT NOT NULL,
       "clientName" TEXT NOT NULL,
       "rackId" TEXT NOT NULL REFERENCES "SlabBayRack"("id") ON DELETE CASCADE,
-      "createdAt" TIMESTAMPTZ NOT NULL DEFAULT NOW()
+      "createdAt" TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+      "batchId" TEXT,
+      "batchIndex" INTEGER,
+      "batchSize" INTEGER
     );
+  `;
+  await sql`
+    ALTER TABLE "SlabBaySlab"
+      ADD COLUMN IF NOT EXISTS "batchId" TEXT,
+      ADD COLUMN IF NOT EXISTS "batchIndex" INTEGER,
+      ADD COLUMN IF NOT EXISTS "batchSize" INTEGER;
   `;
   await sql`
     CREATE TABLE IF NOT EXISTS "SlabBayHistory" (
@@ -44,9 +53,18 @@ const ensureTables = async () => {
       "fromRack" TEXT,
       "toRack" TEXT,
       "exitNote" TEXT,
+      "batchId" TEXT,
+      "batchIndex" INTEGER,
+      "batchSize" INTEGER,
       "userName" TEXT NOT NULL,
       "timestamp" TEXT NOT NULL
     );
+  `;
+  await sql`
+    ALTER TABLE "SlabBayHistory"
+      ADD COLUMN IF NOT EXISTS "batchId" TEXT,
+      ADD COLUMN IF NOT EXISTS "batchIndex" INTEGER,
+      ADD COLUMN IF NOT EXISTS "batchSize" INTEGER;
   `;
 };
 
@@ -97,6 +115,9 @@ const mapState = (state: SlabBayState) => ({
     clientName: slab.clientName,
     rackId: slab.rackId,
     createdAt: new Date(slab.createdAt),
+    batchId: slab.batchId ?? null,
+    batchIndex: slab.batchIndex ?? null,
+    batchSize: slab.batchSize ?? null,
   })),
   history: state.history.map((entry) => ({
     id: entry.id,
@@ -109,6 +130,9 @@ const mapState = (state: SlabBayState) => ({
     fromRack: entry.fromRack ?? null,
     toRack: entry.toRack ?? null,
     exitNote: entry.exitNote ?? null,
+    batchId: entry.batchId ?? null,
+    batchIndex: entry.batchIndex ?? null,
+    batchSize: entry.batchSize ?? null,
     userName: entry.userName,
     timestamp: entry.timestamp,
   })),
@@ -127,7 +151,8 @@ export async function GET() {
     SELECT * FROM "SlabBayHistory" ORDER BY "timestamp" DESC
   `;
 
-  if (racks.length === 0) {
+  let finalRacks = racks as Array<any>;
+  if (finalRacks.length === 0) {
     const defaults = buildDefaultRacks();
     await sql`
       INSERT INTO "SlabBayRack"
@@ -141,22 +166,13 @@ export async function GET() {
         "targetFill",
       )}
     `;
-    return NextResponse.json({
-      racks: defaults.map((rack) => ({
-        id: rack.id,
-        name: rack.name,
-        capacity: rack.capacity,
-        note: rack.note ?? undefined,
-        countTowardInventory: rack.countTowardInventory,
-        targetFill: rack.targetFill,
-      })),
-      slabs: [],
-      history: [],
-    });
+    finalRacks = (await sql`
+      SELECT * FROM "SlabBayRack" ORDER BY "name" ASC
+    `) as Array<any>;
   }
 
   return NextResponse.json({
-    racks: (racks as Array<any>).map((rack) => ({
+    racks: finalRacks.map((rack) => ({
       id: rack.id,
       name: rack.name,
       capacity: rack.capacity,
@@ -174,6 +190,9 @@ export async function GET() {
       clientName: slab.clientName,
       rackId: slab.rackId,
       createdAt: new Date(slab.createdAt).toISOString(),
+      batchId: slab.batchId ?? undefined,
+      batchIndex: slab.batchIndex ?? undefined,
+      batchSize: slab.batchSize ?? undefined,
     })),
     history: (history as Array<any>).map((entry) => ({
       id: entry.id,
@@ -186,6 +205,9 @@ export async function GET() {
       fromRack: entry.fromRack ?? undefined,
       toRack: entry.toRack ?? undefined,
       exitNote: entry.exitNote ?? undefined,
+      batchId: entry.batchId ?? undefined,
+      batchIndex: entry.batchIndex ?? undefined,
+      batchSize: entry.batchSize ?? undefined,
       userName: entry.userName,
       timestamp: entry.timestamp,
     })),
@@ -229,6 +251,9 @@ export async function PUT(request: Request) {
           "clientName",
           "rackId",
           "createdAt",
+          "batchId",
+          "batchIndex",
+          "batchSize",
         )}
       `;
     }
@@ -248,6 +273,9 @@ export async function PUT(request: Request) {
           "fromRack",
           "toRack",
           "exitNote",
+          "batchId",
+          "batchIndex",
+          "batchSize",
           "userName",
           "timestamp",
         )}

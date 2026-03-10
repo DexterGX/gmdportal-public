@@ -56,7 +56,7 @@ export default function Navbar({ user }: { user: any }) {
   };
 
   return (
-    <header className="h-16 bg-white dark:bg-gray-800 border-b border-gray-200 dark:border-gray-700 grid grid-cols-[auto_1fr_auto] items-center px-6">
+    <header className="h-16 bg-white dark:bg-gray-800 border-b border-gray-200 dark:border-gray-700 grid grid-cols-[auto_1fr_auto] items-center px-6 print:hidden">
       {/* Search + Hamburger */}
       <div className="flex items-center gap-3 min-w-0">
         <button
