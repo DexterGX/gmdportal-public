@@ -111,7 +111,7 @@ export default function AccessoriesClient({ userRole, userId }: Props) {
     const total = items.length;
     if (!total) return 0;
     const delivered = items.filter(
-      (item) => item.status === "DELIVERED",
+      (item) => item.status === "DELIVERED" || item.status === "INSTALLED",
     ).length;
     return Math.round((delivered / total) * 100);
   };
