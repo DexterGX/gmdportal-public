@@ -1,3 +1,4 @@
+// Prisma schema
 generator client {
   provider = "prisma-client-js"
 }
@@ -9,28 +10,30 @@ datasource db {
 }
 
 model User {
-  id                         String               @id @default(cuid())
-  name                       String?
-  email                      String?              @unique
-  emailVerified              DateTime?
-  image                      String?
-  username                   String?              @unique
-  passwordHash               String?
-  resetToken                 String?              @unique
-  resetTokenExpiry           DateTime?
-  role                       Role                 @default(UNASSIGNED)
-  active                     Boolean              @default(false)
-  accounts                   Account[]
-  approvedQuotes             ClosetQuote[]        @relation("ApprovedQuotes")
-  installerQuotes            ClosetQuote[]        @relation("InstallerQuotes")
-  submittedQuotes            ClosetQuote[]        @relation("SubmittedQuotes")
-  sessions                   Session[]
-  accessoryTrackersCreated   AccessoryTracker[]   @relation("AccessoryTrackerCreatedBy")
-  accessoryTrackersUpdated   AccessoryTracker[]   @relation("AccessoryTrackerUpdatedBy")
-  accessoryItemsCreated      AccessoryItem[]      @relation("AccessoryItemCreatedBy")
-  accessoryItemsUpdated      AccessoryItem[]      @relation("AccessoryItemUpdatedBy")
-  accessoryItemsAssigned     AccessoryItem[]      @relation("AccessoryItemAssignedTo")
-  accessoryItemEventsChanged AccessoryItemEvent[] @relation("AccessoryItemEventChangedBy")
+  id               String        @id @default(cuid())
+  name             String?
+  email            String?       @unique
+  emailVerified    DateTime?
+  image            String?
+  username         String?       @unique
+  passwordHash     String?
+  resetToken       String?       @unique
+  resetTokenExpiry DateTime?
+  role             Role          @default(UNASSIGNED)
+  active           Boolean       @default(false)
+  accounts         Account[]
+  approvedQuotes   ClosetQuote[] @relation("ApprovedQuotes")
+  installerQuotes  ClosetQuote[] @relation("InstallerQuotes")
+  submittedQuotes  ClosetQuote[] @relation("SubmittedQuotes")
+  sessions         Session[]
+  accessoryTrackersCreated AccessoryTracker[] @relation("AccessoryTrackerCreatedBy")
+  accessoryTrackersUpdated AccessoryTracker[] @relation("AccessoryTrackerUpdatedBy")
+  accessoryItemsCreated    AccessoryItem[]    @relation("AccessoryItemCreatedBy")
+  accessoryItemsUpdated    AccessoryItem[]    @relation("AccessoryItemUpdatedBy")
+  accessoryItemsAssigned   AccessoryItem[]    @relation("AccessoryItemAssignedTo")
+  accessoryItemEventsChanged   AccessoryItemEvent[]   @relation("AccessoryItemEventChangedBy")
+  sampleRequestsRequested      SampleRequest[]        @relation("SampleRequestRequestedBy")
+  sampleRequestHistoryChanged  SampleRequestHistory[] @relation("SampleRequestHistoryChangedBy")
 }
 
 model Account {
@@ -131,6 +134,52 @@ model Slab {
   thickness     SlabThickness
   widthIn       Decimal         @db.Decimal(6, 2)
   brand         SlabBrandConfig @relation(fields: [brandId], references: [id])
+}
+
+model SlabBayRack {
+  id                   String        @id
+  name                 String
+  capacity             Int
+  note                 String?
+  countTowardInventory Boolean       @default(true)
+  targetFill           Int           @default(5)
+  slabs                SlabBaySlab[]
+}
+
+model SlabBaySlab {
+  id         String   @id
+  scannerId  String
+  name       String
+  type       String
+  thickness  String
+  size       String
+  clientName String
+  brand      String?
+  batchId    String?
+  batchIndex Int?
+  batchSize  Int?
+  rackId     String
+  createdAt  DateTime @default(now())
+  rack       SlabBayRack @relation(fields: [rackId], references: [id])
+}
+
+model SlabBayHistory {
+  id            String   @id
+  type          String
+  slabId        String
+  slabScannerId String?
+  batchId       String?
+  batchIndex    Int?
+  batchSize     Int?
+  slabName      String
+  slabType      String
+  clientName    String
+  brand         String?
+  fromRack      String?
+  toRack        String?
+  exitNote      String?
+  userName      String
+  timestamp     String
 }
 
 model ClosetJob {
@@ -294,34 +343,48 @@ enum ClosetQuoteStatus {
   REJECTED
 }
 
+enum SampleRequestStatus {
+  REQUESTED
+  IN_PROGRESS
+  ORDERED
+  DELIVERED
+  CANCELED
+}
+
+enum SampleRequestType {
+  CABINET
+  COUNTERTOP
+}
+
 // Customer Management - QuickBooks & Pipedrive Integration
 model Customer {
-  id             String       @id @default(uuid())
-  type           CustomerType @default(PROSPECT)
-  quickbooksId   String?      @unique
-  pipedriveId    String?      @unique
-  companyCamId   String?
-  syncedToQB     Boolean      @default(false)
-  displayName    String
-  companyName    String?
-  givenName      String?
-  familyName     String?
-  email          String?
-  phone          String?
-  mobile         String?
-  billAddr       Json?
-  shipAddr       Json?
-  salesPerson    String?
-  balance        Decimal?     @db.Decimal(12, 2)
-  lastSyncedAt   DateTime?
-  quickbooksData Json?
-  pipedriveData  Json?
-  notes          String?
-  active         Boolean      @default(true)
-  createdAt      DateTime     @default(now())
-  updatedAt      DateTime     @updatedAt
-  closetJobs     ClosetJob[]
-  jobs           Job[]
+  id                 String       @id @default(uuid())
+  type               CustomerType @default(PROSPECT)
+  quickbooksId       String?      @unique
+  pipedriveId        String?      @unique
+  companyCamId       String?
+  syncedToQB         Boolean      @default(false)
+  displayName        String
+  companyName        String?
+  givenName          String?
+  familyName         String?
+  email              String?
+  phone              String?
+  mobile             String?
+  billAddr           Json?
+  shipAddr           Json?
+  salesPerson        String?
+  balance            Decimal?     @db.Decimal(12, 2)
+  lastSyncedAt       DateTime?
+  quickbooksData     Json?
+  pipedriveData      Json?
+  notes              String?
+  active             Boolean      @default(true)
+  createdAt          DateTime     @default(now())
+  updatedAt          DateTime     @updatedAt
+  closetJobs         ClosetJob[]
+  jobs               Job[]
+  sampleRequests     SampleRequest[]
 
   @@index([quickbooksId])
   @@index([pipedriveId])
@@ -331,23 +394,24 @@ model Customer {
 }
 
 model Job {
-  id               String            @id @default(uuid())
-  jobNumber        Int               @unique @default(autoincrement())
-  customerId       String
-  jobName          String
-  quickbooksJobId  String?           @unique
-  pipedriveId      String?           @unique
-  companyCamId     String?
-  status           JobStatus         @default(ONGOING)
-  value            Decimal?          @db.Decimal(12, 2)
-  notes            String?
-  createdAt        DateTime          @default(now())
-  updatedAt        DateTime          @updatedAt
-  lastSyncedAt     DateTime?
-  customer         Customer          @relation(fields: [customerId], references: [id], onDelete: Cascade)
-  closetJob        ClosetJob?
-  artifacts        JobArtifact[]
-  accessoryTracker AccessoryTracker?
+  id                String    @id @default(uuid())
+  jobNumber         Int       @unique @default(autoincrement())
+  customerId        String
+  jobName           String
+  quickbooksJobId   String?   @unique
+  pipedriveId       String?   @unique
+  companyCamId      String?
+  status            JobStatus @default(ONGOING)
+  value             Decimal?  @db.Decimal(12, 2)
+  notes             String?
+  createdAt         DateTime  @default(now())
+  updatedAt         DateTime  @updatedAt
+  lastSyncedAt      DateTime?
+  customer          Customer  @relation(fields: [customerId], references: [id], onDelete: Cascade)
+  closetJob         ClosetJob?
+  artifacts         JobArtifact[]
+  accessoryTracker  AccessoryTracker?
+  sampleRequests    SampleRequest[]
 
   @@index([customerId])
   @@index([quickbooksJobId])
@@ -359,15 +423,15 @@ model Job {
 model JobArtifact {
   id              String   @id @default(uuid())
   jobId           String
-  sourceApp       String // "CABINET_ESTIMATES", "SLABS", "CLOSET", "FILES", etc.
-  type            String // "LINK", "FILE", "NOTE", "SNAPSHOT"
+  sourceApp       String   // "CABINET_ESTIMATES", "SLABS", "CLOSET", "FILES", etc.
+  type            String   // "LINK", "FILE", "NOTE", "SNAPSHOT"
   title           String
-  url             String? // Deep link to internal page or external resource
-  fileStorageKey  String? // For FILE type: storage key/path
-  fileName        String? // Original filename
-  mimeType        String? // File MIME type
-  fileSize        Int? // File size in bytes
-  metadata        Json? // Optional structured data snapshot
+  url             String?  // Deep link to internal page or external resource
+  fileStorageKey  String?  // For FILE type: storage key/path
+  fileName        String?  // Original filename
+  mimeType        String?  // File MIME type
+  fileSize        Int?     // File size in bytes
+  metadata        Json?    // Optional structured data snapshot
   createdByUserId String?
   createdAt       DateTime @default(now())
   updatedAt       DateTime @updatedAt
@@ -376,6 +440,64 @@ model JobArtifact {
   @@index([jobId])
   @@index([sourceApp])
   @@index([type])
+}
+
+model SampleRequestProvider {
+  id            String            @id @default(cuid())
+  name          String
+  sampleType    SampleRequestType
+  contactName   String?
+  contactPhone  String?
+  contactEmail  String?
+  contactMethod String?
+  notes         String?
+  isActive      Boolean           @default(true)
+  createdAt     DateTime          @default(now())
+  updatedAt     DateTime          @updatedAt
+
+  @@unique([name, sampleType])
+  @@index([sampleType])
+  @@index([isActive])
+}
+
+model SampleRequest {
+  id                 String               @id @default(cuid())
+  status             SampleRequestStatus  @default(REQUESTED)
+  sampleType         SampleRequestType
+  brand              String
+  colorName          String
+  quantity           Int                  @default(1)
+  notes              String?
+  jobId              String?
+  job                Job?                 @relation(fields: [jobId], references: [id])
+  customerId         String?
+  customer           Customer?            @relation(fields: [customerId], references: [id])
+  jobName            String?
+  requestedByUserId  String?
+  requestedByUser    User?                @relation("SampleRequestRequestedBy", fields: [requestedByUserId], references: [id])
+  createdAt          DateTime             @default(now())
+  updatedAt          DateTime             @updatedAt
+  history            SampleRequestHistory[]
+
+  @@index([jobId])
+  @@index([customerId])
+  @@index([status])
+  @@index([sampleType])
+}
+
+model SampleRequestHistory {
+  id               String               @id @default(cuid())
+  requestId        String
+  request          SampleRequest        @relation(fields: [requestId], references: [id], onDelete: Cascade)
+  fromStatus       SampleRequestStatus?
+  toStatus         SampleRequestStatus?
+  message          String?
+  changedByUserId  String?
+  changedByUser    User?                @relation("SampleRequestHistoryChangedBy", fields: [changedByUserId], references: [id])
+  createdAt        DateTime             @default(now())
+
+  @@index([requestId])
+  @@index([createdAt])
 }
 
 enum CustomerType {
@@ -392,70 +514,70 @@ enum JobStatus {
 }
 
 model QuickBooksTokens {
-  id           String   @id @default(cuid())
-  accessToken  String
-  refreshToken String
-  expiresAt    DateTime
-  realmId      String
-  createdAt    DateTime @default(now())
-  updatedAt    DateTime @updatedAt
+  id            String   @id @default(cuid())
+  accessToken   String
+  refreshToken  String
+  expiresAt     DateTime
+  realmId       String
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
 }
 
 model SyncJob {
-  id               String    @id @default(cuid())
-  type             String    @default("customer_sync")
-  status           String    @default("running") // running, completed, cancelled, failed
-  startedAt        DateTime  @default(now())
-  completedAt      DateTime?
-  cancelledAt      DateTime?
-  totalRecords     Int?
-  processedRecords Int       @default(0)
-  createdRecords   Int       @default(0)
-  updatedRecords   Int       @default(0)
-  errorCount       Int       @default(0)
+  id            String   @id @default(cuid())
+  type          String   @default("customer_sync")
+  status        String   @default("running") // running, completed, cancelled, failed
+  startedAt     DateTime @default(now())
+  completedAt   DateTime?
+  cancelledAt   DateTime?
+  totalRecords  Int?
+  processedRecords Int   @default(0)
+  createdRecords   Int   @default(0)
+  updatedRecords   Int   @default(0)
+  errorCount       Int   @default(0)
   errorMessage     String?
-  cancelRequested  Boolean   @default(false)
-  createdAt        DateTime  @default(now())
-  updatedAt        DateTime  @updatedAt
+  cancelRequested  Boolean @default(false)
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
 }
 
 // Accessories Tracker - Track accessory purchases for cabinet/countertop jobs
 model AccessoryTracker {
-  id                  String               @id @default(cuid())
-  jobId               String               @unique
-  job                 Job                  @relation(fields: [jobId], references: [id], onDelete: Cascade)
-  invoiceNumber       String?
-  invoiceCreatedAt    DateTime?
-  remeasureApprovedAt DateTime?
-  department          AccessoryDepartment?
-  notes               String?
-  isArchived          Boolean              @default(false)
-  createdByUserId     String?
-  updatedByUserId     String?
-  createdByUser       User?                @relation("AccessoryTrackerCreatedBy", fields: [createdByUserId], references: [id])
-  updatedByUser       User?                @relation("AccessoryTrackerUpdatedBy", fields: [updatedByUserId], references: [id])
-  createdAt           DateTime             @default(now())
-  updatedAt           DateTime             @updatedAt
-  items               AccessoryItem[]
+  id                   String           @id @default(cuid())
+  jobId                String           @unique
+  job                  Job              @relation(fields: [jobId], references: [id], onDelete: Cascade)
+  invoiceNumber        String?
+  invoiceCreatedAt     DateTime?
+  remeasureApprovedAt  DateTime?
+  department           AccessoryDepartment?
+  notes                String?
+  isArchived           Boolean          @default(false)
+  createdByUserId      String?
+  updatedByUserId      String?
+  createdByUser        User?            @relation("AccessoryTrackerCreatedBy", fields: [createdByUserId], references: [id])
+  updatedByUser        User?            @relation("AccessoryTrackerUpdatedBy", fields: [updatedByUserId], references: [id])
+  createdAt            DateTime         @default(now())
+  updatedAt            DateTime         @updatedAt
+  items                AccessoryItem[]
 
   @@index([jobId])
 }
 
 model AccessoryItem {
-  id                  String               @id @default(cuid())
+  id                  String              @id @default(cuid())
   trackerId           String
-  tracker             AccessoryTracker     @relation(fields: [trackerId], references: [id], onDelete: Cascade)
+  tracker             AccessoryTracker    @relation(fields: [trackerId], references: [id], onDelete: Cascade)
   category            AccessoryCategory
   name                String
-  quantity            Int                  @default(1)
+  quantity            Int                 @default(1)
   sku                 String?
   vendor              String?
   linkUrl             String?
-  cost                Decimal?             @db.Decimal(10, 2)
-  retail              Decimal?             @db.Decimal(10, 2)
-  status              AccessoryItemStatus  @default(READY_TO_ORDER)
-  priority            AccessoryPriority    @default(NORMAL)
-  isArchived          Boolean              @default(false)
+  cost                Decimal?            @db.Decimal(10, 2)
+  retail              Decimal?            @db.Decimal(10, 2)
+  status              AccessoryItemStatus @default(READY_TO_ORDER)
+  priority            AccessoryPriority   @default(NORMAL)
+  isArchived          Boolean             @default(false)
   orderedAt           DateTime?
   etaAt               DateTime?
   deliveredAt         DateTime?
@@ -465,11 +587,11 @@ model AccessoryItem {
   lastStatusChangedAt DateTime?
   createdByUserId     String?
   updatedByUserId     String?
-  assignedToUser      User?                @relation("AccessoryItemAssignedTo", fields: [assignedToUserId], references: [id])
-  createdByUser       User?                @relation("AccessoryItemCreatedBy", fields: [createdByUserId], references: [id])
-  updatedByUser       User?                @relation("AccessoryItemUpdatedBy", fields: [updatedByUserId], references: [id])
-  createdAt           DateTime             @default(now())
-  updatedAt           DateTime             @updatedAt
+  assignedToUser       User?              @relation("AccessoryItemAssignedTo", fields: [assignedToUserId], references: [id])
+  createdByUser        User?              @relation("AccessoryItemCreatedBy", fields: [createdByUserId], references: [id])
+  updatedByUser        User?              @relation("AccessoryItemUpdatedBy", fields: [updatedByUserId], references: [id])
+  createdAt           DateTime            @default(now())
+  updatedAt           DateTime            @updatedAt
   events              AccessoryItemEvent[]
 
   @@index([trackerId])
@@ -478,16 +600,16 @@ model AccessoryItem {
 }
 
 model AccessoryItemEvent {
-  id              String               @id @default(cuid())
+  id              String    @id @default(cuid())
   itemId          String
-  item            AccessoryItem        @relation(fields: [itemId], references: [id], onDelete: Cascade)
+  item            AccessoryItem @relation(fields: [itemId], references: [id], onDelete: Cascade)
   type            AccessoryEventType
   fromStatus      AccessoryItemStatus?
   toStatus        AccessoryItemStatus?
   message         String?
   changedByUserId String?
-  changedByUser   User?                @relation("AccessoryItemEventChangedBy", fields: [changedByUserId], references: [id])
-  createdAt       DateTime             @default(now())
+  changedByUser   User?     @relation("AccessoryItemEventChangedBy", fields: [changedByUserId], references: [id])
+  createdAt       DateTime  @default(now())
 
   @@index([itemId])
   @@index([createdAt])

@@ -4,6 +4,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import type { Slab, SlabBayState } from "./mockData";
 import {
   addMultipleSlabs,
+  encodeClientName,
   exitSlab,
   getRackById,
   getRackLoad,
@@ -11,6 +12,7 @@ import {
   getRecommendedRack,
   getSlabsByRack,
   moveSlab,
+  splitClientName,
 } from "./storage";
 
 type ActionType = "add" | "move" | "exit" | null;
@@ -34,15 +36,24 @@ export default function SlabActions({
   const [showClientDropdown, setShowClientDropdown] = useState(false);
   const [loadingClients, setLoadingClients] = useState(false);
   const [clientName, setClientName] = useState("");
+  const [originalClientName, setOriginalClientName] = useState("");
+  const [originalClientSearchTerm, setOriginalClientSearchTerm] = useState("");
+  const [showOriginalClientDropdown, setShowOriginalClientDropdown] =
+    useState(false);
+  const [loadingOriginalClients, setLoadingOriginalClients] = useState(false);
+  const [originalClientSuggestions, setOriginalClientSuggestions] = useState<
+    string[]
+  >([]);
   const [scannerId, setScannerId] = useState("");
   const [scannerIds, setScannerIds] = useState<string[]>([]);
   const [slabName, setSlabName] = useState("");
+  const [brand, setBrand] = useState("");
   const [thickness, setThickness] = useState("");
   const [sizeHeight, setSizeHeight] = useState("");
   const [sizeWidth, setSizeWidth] = useState("");
   const [quantity, setQuantity] = useState<string>("1");
   const [slabType, setSlabType] = useState<
-    "SLAB" | "GMD" | "REMNANT" | "RESERVED"
+    "SLAB" | "GMD" | "REMNANT" | "RESERVED" | "CLIENT_SLAB"
   >("SLAB");
   const [selectedSlabId, setSelectedSlabId] = useState<string>("");
   const [fromRackId, setFromRackId] = useState<string>("");
@@ -79,6 +90,7 @@ export default function SlabActions({
     [],
   );
   const clientDropdownRef = useRef<HTMLDivElement | null>(null);
+  const originalClientDropdownRef = useRef<HTMLDivElement | null>(null);
   const slabDropdownRef = useRef<HTMLDivElement | null>(null);
 
   const racks = state.racks;
@@ -181,6 +193,34 @@ export default function SlabActions({
   }, [slabName]);
 
   useEffect(() => {
+    if (!originalClientSearchTerm) {
+      setOriginalClientSuggestions([]);
+      setLoadingOriginalClients(false);
+      return;
+    }
+    const controller = new AbortController();
+    setLoadingOriginalClients(true);
+    const timer = setTimeout(() => {
+      fetch(
+        `/api/slab-rack-display/clients?q=${encodeURIComponent(
+          originalClientSearchTerm,
+        )}`,
+        {
+          signal: controller.signal,
+        },
+      )
+        .then((res) => (res.ok ? res.json() : []))
+        .then((data) => setOriginalClientSuggestions(data))
+        .catch(() => undefined)
+        .finally(() => setLoadingOriginalClients(false));
+    }, 250);
+    return () => {
+      controller.abort();
+      clearTimeout(timer);
+    };
+  }, [originalClientSearchTerm]);
+
+  useEffect(() => {
     const count = Number(quantity);
     if (!Number.isFinite(count) || count <= 0) {
       setScannerIds([]);
@@ -212,6 +252,12 @@ export default function SlabActions({
         setShowClientDropdown(false);
       }
       if (
+        originalClientDropdownRef.current &&
+        !originalClientDropdownRef.current.contains(target)
+      ) {
+        setShowOriginalClientDropdown(false);
+      }
+      if (
         slabDropdownRef.current &&
         !slabDropdownRef.current.contains(target)
       ) {
@@ -226,10 +272,13 @@ export default function SlabActions({
     const filtered = fromRackId
       ? state.slabs.filter((slab) => slab.rackId === fromRackId)
       : state.slabs;
-    return filtered.map((slab) => ({
-      id: slab.id,
-      label: `${slab.name} (${slab.clientName}) - ${slab.rackId.toUpperCase()}`,
-    }));
+    return filtered.map((slab) => {
+      const { clientName } = splitClientName(slab.clientName);
+      return {
+        id: slab.id,
+        label: `${slab.name} (${clientName}) - ${slab.rackId.toUpperCase()}`,
+      };
+    });
   }, [state.slabs, fromRackId]);
 
   const resetForm = () => {
@@ -237,9 +286,15 @@ export default function SlabActions({
     setShowClientDropdown(false);
     setClientSuggestions([]);
     setClientName("");
+    setOriginalClientName("");
+    setOriginalClientSearchTerm("");
+    setShowOriginalClientDropdown(false);
+    setOriginalClientSuggestions([]);
+    setLoadingOriginalClients(false);
     setScannerId("");
     setScannerIds([]);
     setSlabName("");
+    setBrand("");
     setThickness("");
     setSizeHeight("");
     setSizeWidth("");
@@ -303,6 +358,12 @@ export default function SlabActions({
       pushNotification("error", message);
       return;
     }
+    if (slabType === "GMD" && !originalClientName.trim()) {
+      const message = "Please enter the original client for GMD slabs.";
+      setActionError(message);
+      pushNotification("error", message);
+      return;
+    }
     const scannerList = qty > 1 ? scannerIds : [scannerId];
     if (scannerList.length !== qty || scannerList.some((id) => !id.trim())) {
       const message =
@@ -315,6 +376,13 @@ export default function SlabActions({
     }
     if (!slabName.trim()) {
       const message = "Please enter a slab name.";
+      setActionError(message);
+      pushNotification("error", message);
+      return;
+    }
+    const normalizedBrand = brand.trim();
+    if (!normalizedBrand) {
+      const message = "Please enter the brand.";
       setActionError(message);
       pushNotification("error", message);
       return;
@@ -341,7 +409,11 @@ export default function SlabActions({
         type: slabType,
         thickness,
         size: `${sizeHeight} x ${sizeWidth}`,
-        clientName,
+        clientName: encodeClientName(
+          clientName,
+          slabType === "GMD" ? originalClientName : undefined,
+        ),
+        brand: normalizedBrand,
       },
       scannerIds: scannerList,
       quantity: qty,
@@ -483,7 +555,7 @@ export default function SlabActions({
                   </div>
                   <div>
                     <label className="text-xs font-medium text-gray-500">
-                      Client name
+                      {slabType === "GMD" ? "New client" : "Client name"}
                     </label>
                     <div className="relative mt-1" ref={clientDropdownRef}>
                       <input
@@ -567,6 +639,103 @@ export default function SlabActions({
                     )}
                   </div>
                 </div>
+                {slabType === "GMD" && (
+                  <div>
+                    <label className="text-xs font-medium text-gray-500">
+                      Original client
+                    </label>
+                    <div
+                      className="relative mt-1"
+                      ref={originalClientDropdownRef}
+                    >
+                      <input
+                        type="text"
+                        placeholder="Search for a customer..."
+                        value={originalClientSearchTerm}
+                        onChange={(event) => {
+                          setOriginalClientSearchTerm(event.target.value);
+                          setShowOriginalClientDropdown(true);
+                          if (!event.target.value) {
+                            setOriginalClientName("");
+                          }
+                        }}
+                        onFocus={() => setShowOriginalClientDropdown(true)}
+                        onBlur={() => {
+                          setTimeout(
+                            () => setShowOriginalClientDropdown(false),
+                            120,
+                          );
+                        }}
+                        disabled={Boolean(originalClientName)}
+                        className="w-full pl-10 pr-4 py-2 border border-gray-300 dark:border-gray-700 rounded-md bg-white dark:bg-gray-900 text-gray-900 dark:text-gray-100 focus:ring-2 focus:ring-blue-500 focus:border-transparent disabled:bg-gray-100 dark:disabled:bg-gray-700 disabled:cursor-not-allowed"
+                      />
+                      <span className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400">
+                        🔍
+                      </span>
+                      {showOriginalClientDropdown &&
+                        originalClientSearchTerm.length > 0 && (
+                          <div className="absolute z-20 w-full mt-1 bg-white dark:bg-gray-800 border border-gray-300 dark:border-gray-700 rounded-md shadow-lg max-h-60 overflow-auto">
+                            {loadingOriginalClients ? (
+                              <div className="p-4 text-center text-gray-500 dark:text-gray-400">
+                                Loading...
+                              </div>
+                            ) : originalClientSuggestions.length === 0 ? (
+                              <div className="p-4 text-center text-gray-500 dark:text-gray-400">
+                                No customers found
+                              </div>
+                            ) : (
+                              <>
+                                <div className="px-4 py-2 text-xs uppercase tracking-wide text-gray-400">
+                                  Customers
+                                </div>
+                                {originalClientSuggestions.map((client) => (
+                                  <button
+                                    key={client}
+                                    type="button"
+                                    onClick={() => {
+                                      setOriginalClientName(client);
+                                      setOriginalClientSearchTerm(client);
+                                      setShowOriginalClientDropdown(false);
+                                    }}
+                                    className="w-full text-left px-4 py-3 hover:bg-gray-50 dark:hover:bg-gray-700 border-b border-gray-100 dark:border-gray-700 last:border-b-0"
+                                  >
+                                    <div className="font-medium text-gray-900 dark:text-gray-100">
+                                      {client}
+                                    </div>
+                                    <div className="text-sm text-gray-600 dark:text-gray-400">
+                                      Customer
+                                    </div>
+                                  </button>
+                                ))}
+                              </>
+                            )}
+                          </div>
+                        )}
+                    </div>
+                    {originalClientName && (
+                      <div className="mt-2 flex items-center justify-between rounded-md border border-blue-200 dark:border-blue-800 bg-blue-50 dark:bg-blue-900/20 px-3 py-2">
+                        <div>
+                          <div className="text-sm font-semibold text-gray-900 dark:text-gray-100">
+                            {originalClientName}
+                          </div>
+                          <div className="text-xs text-gray-500 dark:text-gray-400">
+                            Selected customer
+                          </div>
+                        </div>
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setOriginalClientName("");
+                            setOriginalClientSearchTerm("");
+                          }}
+                          className="text-sm text-blue-600 hover:text-blue-700 dark:text-blue-400 dark:hover:text-blue-300"
+                        >
+                          Change
+                        </button>
+                      </div>
+                    )}
+                  </div>
+                )}
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                   <div>
                     <label className="text-xs font-medium text-gray-500">
@@ -623,6 +792,17 @@ export default function SlabActions({
                         </div>
                       )}
                     </div>
+                  </div>
+                  <div>
+                    <label className="text-xs font-medium text-gray-500">
+                      Brand
+                    </label>
+                    <input
+                      value={brand}
+                      onChange={(event) => setBrand(event.target.value)}
+                      placeholder="Brand"
+                      className="mt-1 w-full rounded-lg border border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-800 px-3 py-2 text-sm"
+                    />
                   </div>
                   <div>
                     <label className="text-xs font-medium text-gray-500">
@@ -697,13 +877,20 @@ export default function SlabActions({
                     <select
                       value={slabType}
                       onChange={(event) =>
-                        setSlabType(
-                          event.target.value as
+                        setSlabType((current) => {
+                          const next = event.target.value as
                             | "SLAB"
                             | "GMD"
                             | "REMNANT"
-                            | "RESERVED",
-                        )
+                            | "RESERVED"
+                            | "CLIENT_SLAB";
+                          if (next !== "GMD" && current === "GMD") {
+                            setOriginalClientName("");
+                            setOriginalClientSearchTerm("");
+                            setOriginalClientSuggestions([]);
+                          }
+                          return next;
+                        })
                       }
                       className="mt-1 w-full rounded-lg border border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-800 px-3 py-2 text-sm"
                     >
@@ -711,6 +898,7 @@ export default function SlabActions({
                       <option value="GMD">GMD</option>
                       <option value="REMNANT">REMNANT</option>
                       <option value="RESERVED">RESERVED</option>
+                      <option value="CLIENT_SLAB">CLIENT SLAB</option>
                     </select>
                   </div>
                   <div>

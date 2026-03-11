@@ -10,6 +10,7 @@ import {
   getSlabsByRack,
   loadState,
   saveState,
+  splitClientName,
 } from "./storage";
 
 const SLAB_VIEW_LICENSE = "532b5c05af7b036ff8a0200d0c8dc6da";
@@ -52,6 +53,29 @@ export default function RackDetailClient({ userName }: { userName: string }) {
     () => (rack ? getSlabsByRack(state, rack.id) : []),
     [state, rack],
   );
+
+  const formatTimestamp = (value: string) => {
+    const date = new Date(value);
+    if (Number.isNaN(date.getTime())) return { datePart: value, timePart: "" };
+    return {
+      datePart: date.toLocaleDateString(),
+      timePart: date.toLocaleTimeString(),
+    };
+  };
+
+  const renderClientCell = (clientValue: string, slabType: string) => {
+    const { clientName, originalClientName } = splitClientName(clientValue);
+    return (
+      <div className="space-y-1">
+        <div>{clientName || "-"}</div>
+        {slabType === "GMD" && originalClientName ? (
+          <div className="text-xs text-gray-500 dark:text-gray-400">
+            Original Client: {originalClientName}
+          </div>
+        ) : null}
+      </div>
+    );
+  };
 
   if (!rack && !hasLoaded) {
     return (
@@ -129,6 +153,7 @@ export default function RackDetailClient({ userName }: { userName: string }) {
                   <th className="py-2 pr-4">Scanner ID</th>
                   <th className="py-2 pr-4">Batch</th>
                   <th className="py-2 pr-4">Name</th>
+                  <th className="py-2 pr-4">Brand</th>
                   <th className="py-2 pr-4">Type</th>
                   <th className="py-2 pr-4">Thickness</th>
                   <th className="py-2 pr-4">Size</th>
@@ -168,6 +193,9 @@ export default function RackDetailClient({ userName }: { userName: string }) {
                       {slab.name}
                     </td>
                     <td className="py-3 pr-4 text-gray-600 dark:text-gray-300">
+                      {slab.brand || "-"}
+                    </td>
+                    <td className="py-3 pr-4 text-gray-600 dark:text-gray-300">
                       {slab.type}
                     </td>
                     <td className="py-3 pr-4 text-gray-600 dark:text-gray-300">
@@ -177,17 +205,31 @@ export default function RackDetailClient({ userName }: { userName: string }) {
                       {slab.size}
                     </td>
                     <td className="py-3 pr-4 text-gray-600 dark:text-gray-300">
-                      {slab.clientName}
+                      {renderClientCell(slab.clientName, slab.type)}
                     </td>
                     <td className="py-3 pr-4 text-gray-600 dark:text-gray-300">
-                      {slab.createdAt}
+                      {(() => {
+                        const { datePart, timePart } = formatTimestamp(
+                          slab.createdAt,
+                        );
+                        return (
+                          <div className="space-y-1">
+                            <div>{datePart}</div>
+                            {timePart ? (
+                              <div className="text-xs text-gray-500 dark:text-gray-400">
+                                {timePart}
+                              </div>
+                            ) : null}
+                          </div>
+                        );
+                      })()}
                     </td>
                   </tr>
                 ))}
                 {slabs.length === 0 && (
                   <tr>
                     <td
-                      colSpan={9}
+                      colSpan={10}
                       className="py-6 text-center text-gray-500 dark:text-gray-400"
                     >
                       No slabs in this rack yet.

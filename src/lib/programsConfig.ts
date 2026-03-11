@@ -34,20 +34,22 @@ export type AppRole =
 export function mapDbRoleToAppRole(dbRole: Role | null | undefined): AppRole {
   if (!dbRole) return "unassigned";
 
-  switch (dbRole) {
-    case "ADMIN" as Role:
+  const normalized = String(dbRole).trim().toUpperCase();
+
+  switch (normalized) {
+    case "ADMIN":
       return "admin";
-    case "SALES" as Role:
+    case "SALES":
       return "sales";
-    case "OFFICE" as Role:
+    case "OFFICE":
       return "office";
-    case "FINANCE" as Role:
+    case "FINANCE":
       return "finance";
-    case "SPECIALIST" as Role:
+    case "SPECIALIST":
       return "specialist";
-    case "INSTALLER" as Role:
+    case "INSTALLER":
       return "installer";
-    case "UNASSIGNED" as Role:
+    case "UNASSIGNED":
     default:
       return "unassigned";
   }
@@ -61,7 +63,8 @@ export type ProgramId =
   | "users"
   | "closetJobs"
   | "customers"
-  | "accessories";
+  | "accessories"
+  | "samplesRequest";
 
 export interface ProgramConfig {
   id: ProgramId;
@@ -101,6 +104,11 @@ export const programs: ProgramConfig[] = [
         icon: Package,
         name: "Accessories",
         path: "/accessories",
+      },
+      {
+        icon: Package,
+        name: "Samples Request",
+        path: "/samples-request",
       },
     ],
   },
@@ -248,6 +256,24 @@ export const programs: ProgramConfig[] = [
     navItems: [
       { icon: Package, name: "Accessories", path: "/accessories" },
       { icon: ListIcon, name: "History Log", path: "/accessories/history" },
+    ],
+    othersItems: [],
+  },
+  {
+    id: "samplesRequest",
+    name: "Samples Request",
+    basePath: "/samples-request",
+    description: "Track cabinet and countertop sample requests.",
+    allowedRoles: ["admin", "sales", "office"],
+    navItems: [
+      { icon: Package, name: "Samples Requested", path: "/samples-request" },
+      { icon: ListIcon, name: "History Log", path: "/samples-request/history" },
+      {
+        icon: Settings2,
+        name: "Settings",
+        path: "/samples-request/settings",
+        adminOnly: true,
+      },
     ],
     othersItems: [],
   },

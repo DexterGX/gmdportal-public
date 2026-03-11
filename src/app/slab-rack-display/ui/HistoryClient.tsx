@@ -2,7 +2,12 @@
 
 import { useEffect, useMemo, useState } from "react";
 import type { SlabBayState } from "./mockData";
-import { fetchStateFromDb, loadState, saveState } from "./storage";
+import {
+  fetchStateFromDb,
+  loadState,
+  saveState,
+  splitClientName,
+} from "./storage";
 
 const SLAB_VIEW_LICENSE = "532b5c05af7b036ff8a0200d0c8dc6da";
 const buildSlabViewUrl = (scannerId: string) =>
@@ -30,12 +35,21 @@ export default function HistoryClient() {
 
   const rows = useMemo(() => {
     return state.history.filter((entry) => {
+      const { clientName, originalClientName } = splitClientName(
+        entry.clientName,
+      );
       const matchesClient = clientFilter
-        ? entry.clientName.toLowerCase().includes(clientFilter.toLowerCase())
+        ? clientName.toLowerCase().includes(clientFilter.toLowerCase()) ||
+          (originalClientName || "")
+            .toLowerCase()
+            .includes(clientFilter.toLowerCase())
         : true;
       const matchesSlab = slabFilter
         ? entry.slabName.toLowerCase().includes(slabFilter.toLowerCase()) ||
           entry.slabId.toLowerCase().includes(slabFilter.toLowerCase()) ||
+          (entry.brand || "")
+            .toLowerCase()
+            .includes(slabFilter.toLowerCase()) ||
           (entry.slabScannerId
             ? entry.slabScannerId
                 .toLowerCase()
@@ -226,7 +240,7 @@ export default function HistoryClient() {
             <table className="min-w-full text-sm print-history-table">
               <thead>
                 <tr className="hidden print:table-row print-spacer-row">
-                  <th colSpan={11} aria-hidden="true" />
+                  <th colSpan={12} aria-hidden="true" />
                 </tr>
                 <tr className="text-left text-xs uppercase tracking-wide text-gray-400">
                   <th className="py-2 pr-4">Date</th>
@@ -234,6 +248,7 @@ export default function HistoryClient() {
                   <th className="py-2 pr-4">Slab</th>
                   <th className="py-2 pr-4">Scanner ID</th>
                   <th className="py-2 pr-4">Batch</th>
+                  <th className="py-2 pr-4">Brand</th>
                   <th className="py-2 pr-4">Type</th>
                   <th className="py-2 pr-4">Client</th>
                   <th className="py-2 pr-4">From</th>
@@ -277,10 +292,26 @@ export default function HistoryClient() {
                         : "-"}
                     </td>
                     <td className="py-3 pr-4 text-gray-600 dark:text-gray-300">
+                      {entry.brand || "-"}
+                    </td>
+                    <td className="py-3 pr-4 text-gray-600 dark:text-gray-300">
                       {entry.slabType}
                     </td>
                     <td className="py-3 pr-4 text-gray-600 dark:text-gray-300">
-                      {entry.clientName}
+                      {(() => {
+                        const { clientName, originalClientName } =
+                          splitClientName(entry.clientName);
+                        return (
+                          <div className="space-y-1">
+                            <div>{clientName || "-"}</div>
+                            {entry.slabType === "GMD" && originalClientName ? (
+                              <div className="text-xs text-gray-500 dark:text-gray-400">
+                                Original Client: {originalClientName}
+                              </div>
+                            ) : null}
+                          </div>
+                        );
+                      })()}
                     </td>
                     <td className="py-3 pr-4 text-gray-600 dark:text-gray-300">
                       {entry.fromRack ? `${entry.fromRack}` : "-"}

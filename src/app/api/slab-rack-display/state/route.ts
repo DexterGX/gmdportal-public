@@ -28,6 +28,7 @@ const ensureTables = async () => {
       "thickness" TEXT NOT NULL,
       "size" TEXT NOT NULL,
       "clientName" TEXT NOT NULL,
+      "brand" TEXT,
       "rackId" TEXT NOT NULL REFERENCES "SlabBayRack"("id") ON DELETE CASCADE,
       "createdAt" TIMESTAMPTZ NOT NULL DEFAULT NOW(),
       "batchId" TEXT,
@@ -37,6 +38,7 @@ const ensureTables = async () => {
   `;
   await sql`
     ALTER TABLE "SlabBaySlab"
+      ADD COLUMN IF NOT EXISTS "brand" TEXT,
       ADD COLUMN IF NOT EXISTS "batchId" TEXT,
       ADD COLUMN IF NOT EXISTS "batchIndex" INTEGER,
       ADD COLUMN IF NOT EXISTS "batchSize" INTEGER;
@@ -50,6 +52,7 @@ const ensureTables = async () => {
       "slabName" TEXT NOT NULL,
       "slabType" TEXT NOT NULL,
       "clientName" TEXT NOT NULL,
+      "brand" TEXT,
       "fromRack" TEXT,
       "toRack" TEXT,
       "exitNote" TEXT,
@@ -62,6 +65,7 @@ const ensureTables = async () => {
   `;
   await sql`
     ALTER TABLE "SlabBayHistory"
+      ADD COLUMN IF NOT EXISTS "brand" TEXT,
       ADD COLUMN IF NOT EXISTS "batchId" TEXT,
       ADD COLUMN IF NOT EXISTS "batchIndex" INTEGER,
       ADD COLUMN IF NOT EXISTS "batchSize" INTEGER;
@@ -113,6 +117,7 @@ const mapState = (state: SlabBayState) => ({
     thickness: slab.thickness,
     size: slab.size,
     clientName: slab.clientName,
+    brand: slab.brand?.trim() || null,
     rackId: slab.rackId,
     createdAt: new Date(slab.createdAt),
     batchId: slab.batchId ?? null,
@@ -127,6 +132,7 @@ const mapState = (state: SlabBayState) => ({
     slabName: entry.slabName,
     slabType: entry.slabType,
     clientName: entry.clientName,
+    brand: entry.brand ?? null,
     fromRack: entry.fromRack ?? null,
     toRack: entry.toRack ?? null,
     exitNote: entry.exitNote ?? null,
@@ -184,10 +190,16 @@ export async function GET() {
       id: slab.id,
       scannerId: slab.scannerId,
       name: slab.name,
-      type: slab.type as "SLAB" | "GMD" | "REMNANT" | "RESERVED",
+      type: slab.type as
+        | "SLAB"
+        | "GMD"
+        | "REMNANT"
+        | "RESERVED"
+        | "CLIENT_SLAB",
       thickness: slab.thickness,
       size: slab.size,
       clientName: slab.clientName,
+      brand: slab.brand ?? "",
       rackId: slab.rackId,
       createdAt: new Date(slab.createdAt).toISOString(),
       batchId: slab.batchId ?? undefined,
@@ -200,8 +212,14 @@ export async function GET() {
       slabId: entry.slabId,
       slabScannerId: entry.slabScannerId ?? undefined,
       slabName: entry.slabName,
-      slabType: entry.slabType as "SLAB" | "GMD" | "REMNANT" | "RESERVED",
+      slabType: entry.slabType as
+        | "SLAB"
+        | "GMD"
+        | "REMNANT"
+        | "RESERVED"
+        | "CLIENT_SLAB",
       clientName: entry.clientName,
+      brand: entry.brand ?? undefined,
       fromRack: entry.fromRack ?? undefined,
       toRack: entry.toRack ?? undefined,
       exitNote: entry.exitNote ?? undefined,
@@ -249,6 +267,7 @@ export async function PUT(request: Request) {
           "thickness",
           "size",
           "clientName",
+          "brand",
           "rackId",
           "createdAt",
           "batchId",
@@ -270,6 +289,7 @@ export async function PUT(request: Request) {
           "slabName",
           "slabType",
           "clientName",
+          "brand",
           "fromRack",
           "toRack",
           "exitNote",

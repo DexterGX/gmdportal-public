@@ -13,10 +13,11 @@ export type Slab = {
   id: string;
   scannerId: string;
   name: string;
-  type: "SLAB" | "GMD" | "REMNANT" | "RESERVED";
+  type: "SLAB" | "GMD" | "REMNANT" | "RESERVED" | "CLIENT_SLAB";
   thickness: string;
   size: string;
   clientName: string;
+  brand: string;
   rackId: string;
   createdAt: string;
   batchId?: string;
@@ -30,8 +31,9 @@ export type HistoryEntry = {
   slabId: string;
   slabScannerId?: string;
   slabName: string;
-  slabType: "SLAB" | "GMD" | "REMNANT" | "RESERVED";
+  slabType: "SLAB" | "GMD" | "REMNANT" | "RESERVED" | "CLIENT_SLAB";
   clientName: string;
+  brand?: string;
   fromRack?: string;
   toRack?: string;
   exitNote?: string;

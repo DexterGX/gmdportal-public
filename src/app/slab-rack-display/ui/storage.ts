@@ -8,6 +8,26 @@ import {
 const buildId = (prefix: string) =>
   `${prefix}-${Date.now()}-${Math.floor(Math.random() * 10000)}`;
 
+const ORIGINAL_CLIENT_SEPARATOR = "||";
+
+export const encodeClientName = (
+  clientName: string,
+  originalClientName?: string,
+) =>
+  originalClientName?.trim()
+    ? `${clientName.trim()}${ORIGINAL_CLIENT_SEPARATOR}${originalClientName.trim()}`
+    : clientName.trim();
+
+export const splitClientName = (value: string) => {
+  const [clientName, originalClientName] = value.split(
+    ORIGINAL_CLIENT_SEPARATOR,
+  );
+  return {
+    clientName: (clientName || "").trim(),
+    originalClientName: originalClientName?.trim() || undefined,
+  };
+};
+
 const SLAB_ID_COUNTER_KEY = "slabbay_slab_id_counter";
 
 const getNextSlabId = (state: SlabBayState) => {
@@ -138,7 +158,9 @@ export const getRecommendedRack = (
       .map((rack) => ({
         rack,
         count: slabs.filter(
-          (slab) => slab.rackId === rack.id && slab.clientName === clientName,
+          (slab) =>
+            slab.rackId === rack.id &&
+            splitClientName(slab.clientName).clientName === clientName,
         ).length,
         total: slabs.filter((slab) => slab.rackId === rack.id).length,
       }))
@@ -186,7 +208,9 @@ const selectNextRack = (
       .map((rack) => ({
         rack,
         count: state.slabs.filter(
-          (slab) => slab.rackId === rack.id && slab.clientName === clientName,
+          (slab) =>
+            slab.rackId === rack.id &&
+            splitClientName(slab.clientName).clientName === clientName,
         ).length,
         total: getRackLoad(state, rack.id),
       }))
@@ -234,6 +258,7 @@ const addSlabLocal = (
     slabName: slab.name,
     slabType: slab.type,
     clientName: slab.clientName,
+    brand: slab.brand,
     toRack: input.rackId.toUpperCase(),
     batchId: slab.batchId,
     batchIndex: slab.batchIndex,
@@ -273,7 +298,7 @@ export const addMultipleSlabs = (
   const distribution = getRecommendedDistribution(
     state,
     quantity,
-    input.clientName || undefined,
+    splitClientName(input.clientName).clientName || undefined,
     preferredRackId,
   );
 
@@ -410,6 +435,7 @@ export const moveSlab = (
     slabName: slab.name,
     slabType: slab.type,
     clientName: slab.clientName,
+    brand: slab.brand,
     fromRack: slab.rackId.toUpperCase(),
     toRack: toRackId.toUpperCase(),
     userName,
@@ -442,6 +468,7 @@ export const exitSlab = (
     slabName: slab.name,
     slabType: slab.type,
     clientName: slab.clientName,
+    brand: slab.brand,
     fromRack: slab.rackId.toUpperCase(),
     exitNote: exitNote?.trim() ? exitNote.trim() : undefined,
     userName,
