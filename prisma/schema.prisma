@@ -26,11 +26,11 @@ model User {
   installerQuotes  ClosetQuote[] @relation("InstallerQuotes")
   submittedQuotes  ClosetQuote[] @relation("SubmittedQuotes")
   sessions         Session[]
-  accessoryTrackersCreated     AccessoryTracker[]     @relation("AccessoryTrackerCreatedBy")
-  accessoryTrackersUpdated     AccessoryTracker[]     @relation("AccessoryTrackerUpdatedBy")
-  accessoryItemsCreated        AccessoryItem[]        @relation("AccessoryItemCreatedBy")
-  accessoryItemsUpdated        AccessoryItem[]        @relation("AccessoryItemUpdatedBy")
-  accessoryItemsAssigned       AccessoryItem[]        @relation("AccessoryItemAssignedTo")
+  accessoryTrackersCreated AccessoryTracker[] @relation("AccessoryTrackerCreatedBy")
+  accessoryTrackersUpdated AccessoryTracker[] @relation("AccessoryTrackerUpdatedBy")
+  accessoryItemsCreated    AccessoryItem[]    @relation("AccessoryItemCreatedBy")
+  accessoryItemsUpdated    AccessoryItem[]    @relation("AccessoryItemUpdatedBy")
+  accessoryItemsAssigned   AccessoryItem[]    @relation("AccessoryItemAssignedTo")
   accessoryItemEventsChanged   AccessoryItemEvent[]   @relation("AccessoryItemEventChangedBy")
   sampleRequestsRequested      SampleRequest[]        @relation("SampleRequestRequestedBy")
   sampleRequestHistoryChanged  SampleRequestHistory[] @relation("SampleRequestHistoryChangedBy")
@@ -154,6 +154,7 @@ model SlabBaySlab {
   thickness  String
   size       String
   clientName String
+  brand      String?
   batchId    String?
   batchIndex Int?
   batchSize  Int?
@@ -173,6 +174,7 @@ model SlabBayHistory {
   slabName      String
   slabType      String
   clientName    String
+  brand         String?
   fromRack      String?
   toRack        String?
   exitNote      String?
@@ -457,6 +459,7 @@ model SampleRequestProvider {
   @@index([sampleType])
   @@index([isActive])
 }
+
 model SampleRequest {
   id                 String               @id @default(cuid())
   status             SampleRequestStatus  @default(REQUESTED)
@@ -521,21 +524,21 @@ model QuickBooksTokens {
 }
 
 model SyncJob {
-  id               String    @id @default(cuid())
-  type             String    @default("customer_sync")
-  status           String    @default("running") // running, completed, cancelled, failed
-  startedAt        DateTime  @default(now())
-  completedAt      DateTime?
-  cancelledAt      DateTime?
-  totalRecords     Int?
-  processedRecords Int       @default(0)
-  createdRecords   Int       @default(0)
-  updatedRecords   Int       @default(0)
-  errorCount       Int       @default(0)
+  id            String   @id @default(cuid())
+  type          String   @default("customer_sync")
+  status        String   @default("running") // running, completed, cancelled, failed
+  startedAt     DateTime @default(now())
+  completedAt   DateTime?
+  cancelledAt   DateTime?
+  totalRecords  Int?
+  processedRecords Int   @default(0)
+  createdRecords   Int   @default(0)
+  updatedRecords   Int   @default(0)
+  errorCount       Int   @default(0)
   errorMessage     String?
-  cancelRequested  Boolean   @default(false)
-  createdAt        DateTime  @default(now())
-  updatedAt        DateTime  @updatedAt
+  cancelRequested  Boolean @default(false)
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
 }
 
 // Accessories Tracker - Track accessory purchases for cabinet/countertop jobs
@@ -656,4 +659,3 @@ enum AccessoryEventType {
   FIELD_EDIT
   CREATED
 }
-

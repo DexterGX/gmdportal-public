@@ -2,7 +2,12 @@
 
 import { useEffect, useMemo, useState } from "react";
 import type { SlabBayState } from "./mockData";
-import { fetchStateFromDb, loadState, saveState } from "./storage";
+import {
+  fetchStateFromDb,
+  loadState,
+  saveState,
+  splitClientName,
+} from "./storage";
 import FilterMultiSelect from "@/components/filters/FilterMultiSelect";
 
 const SLAB_VIEW_LICENSE = "532b5c05af7b036ff8a0200d0c8dc6da";
@@ -57,6 +62,9 @@ export default function InventoryClient() {
     const rackIds = selectedRacks.map((rack) => rack.toLowerCase());
     return state.slabs
       .filter((slab) => {
+        const { clientName, originalClientName } = splitClientName(
+          slab.clientName,
+        );
         const matchesRack =
           rackIds.length === 0 ? true : rackIds.includes(slab.rackId);
         const matchesType =
@@ -67,7 +75,9 @@ export default function InventoryClient() {
             : selectedThicknesses.includes(slab.thickness);
         const matchesTerm = term
           ? slab.name.toLowerCase().includes(term) ||
-            slab.clientName.toLowerCase().includes(term) ||
+            (slab.brand || "").toLowerCase().includes(term) ||
+            clientName.toLowerCase().includes(term) ||
+            (originalClientName || "").toLowerCase().includes(term) ||
             (slab.scannerId || "").toLowerCase().includes(term) ||
             slab.id.toLowerCase().includes(term)
           : true;
@@ -78,7 +88,9 @@ export default function InventoryClient() {
           numeric: true,
         });
         if (rackCompare !== 0) return rackCompare;
-        return a.clientName.localeCompare(b.clientName, undefined, {
+        const aClient = splitClientName(a.clientName).clientName;
+        const bClient = splitClientName(b.clientName).clientName;
+        return aClient.localeCompare(bClient, undefined, {
           numeric: true,
         });
       });
@@ -89,6 +101,20 @@ export default function InventoryClient() {
     selectedThicknesses,
     searchTerm,
   ]);
+
+  const renderClientCell = (slab: (typeof rows)[number]) => {
+    const { clientName, originalClientName } = splitClientName(slab.clientName);
+    return (
+      <div className="space-y-1">
+        <div>{clientName || "-"}</div>
+        {slab.type === "GMD" && originalClientName ? (
+          <div className="text-xs text-gray-500 dark:text-gray-400">
+            Original Client: {originalClientName}
+          </div>
+        ) : null}
+      </div>
+    );
+  };
 
   useEffect(() => {
     let active = true;
@@ -216,13 +242,14 @@ export default function InventoryClient() {
             <table className="min-w-full text-sm print-inventory-table">
               <thead>
                 <tr className="hidden print:table-row print-spacer-row">
-                  <th colSpan={10} aria-hidden="true" />
+                  <th colSpan={11} aria-hidden="true" />
                 </tr>
                 <tr className="text-left text-xs uppercase tracking-wide text-gray-400">
                   <th className="py-2 pr-4">Scanner ID</th>
                   <th className="py-2 pr-4">Slab ID</th>
                   <th className="py-2 pr-4">Batch</th>
                   <th className="py-2 pr-4">Name</th>
+                  <th className="py-2 pr-4">Brand</th>
                   <th className="py-2 pr-4">Type</th>
                   <th className="py-2 pr-4">Thickness</th>
                   <th className="py-2 pr-4">Size</th>
@@ -263,6 +290,9 @@ export default function InventoryClient() {
                       {slab.name}
                     </td>
                     <td className="py-3 pr-4 text-gray-600 dark:text-gray-300">
+                      {slab.brand || "-"}
+                    </td>
+                    <td className="py-3 pr-4 text-gray-600 dark:text-gray-300">
                       {slab.type}
                     </td>
                     <td className="py-3 pr-4 text-gray-600 dark:text-gray-300">
@@ -272,7 +302,7 @@ export default function InventoryClient() {
                       {slab.size}
                     </td>
                     <td className="py-3 pr-4 text-gray-600 dark:text-gray-300">
-                      {slab.clientName}
+                      {renderClientCell(slab)}
                     </td>
                     <td className="py-3 pr-4 text-gray-600 dark:text-gray-300">
                       {slab.rackId.toUpperCase()}

@@ -1,6 +1,7 @@
 "use server";
 
 import { prisma } from "@/lib/prisma";
+import { getCurrentUserWithRole } from "@/lib/authHelpers";
 
 export type SampleRequestStatus =
   | "REQUESTED"
@@ -154,11 +155,24 @@ export async function updateSampleRequestProvider(data: {
       data: {
         name: data.name?.trim(),
         sampleType: data.sampleType,
-        contactName: data.contactName === undefined ? undefined : data.contactName?.trim() || null,
-        contactPhone: data.contactPhone === undefined ? undefined : data.contactPhone?.trim() || null,
-        contactEmail: data.contactEmail === undefined ? undefined : data.contactEmail?.trim() || null,
-        contactMethod: data.contactMethod === undefined ? undefined : data.contactMethod?.trim() || null,
-        notes: data.notes === undefined ? undefined : data.notes?.trim() || null,
+        contactName:
+          data.contactName === undefined
+            ? undefined
+            : data.contactName?.trim() || null,
+        contactPhone:
+          data.contactPhone === undefined
+            ? undefined
+            : data.contactPhone?.trim() || null,
+        contactEmail:
+          data.contactEmail === undefined
+            ? undefined
+            : data.contactEmail?.trim() || null,
+        contactMethod:
+          data.contactMethod === undefined
+            ? undefined
+            : data.contactMethod?.trim() || null,
+        notes:
+          data.notes === undefined ? undefined : data.notes?.trim() || null,
         isActive: data.isActive,
       },
     })) as SampleRequestProvider;
@@ -439,6 +453,23 @@ export async function updateSampleRequestStatus(data: {
   message?: string;
 }): Promise<SampleRequestWithRelations> {
   try {
+    const { user, appRole, isActive } = await getCurrentUserWithRole();
+    if (!user || !isActive) {
+      throw new Error("Not authorized");
+    }
+    if (user.id !== data.userId) {
+      throw new Error("Not authorized");
+    }
+
+    const allowedRoles =
+      data.status === "CANCELED"
+        ? ["admin", "office", "sales"]
+        : ["admin", "office"];
+
+    if (!allowedRoles.includes(appRole)) {
+      throw new Error("Not authorized");
+    }
+
     return (await prismaClient.$transaction(async (trx: any) => {
       const existing = await trx.sampleRequest.findUnique({
         where: { id: data.requestId },

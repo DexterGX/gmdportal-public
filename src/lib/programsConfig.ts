@@ -34,20 +34,22 @@ export type AppRole =
 export function mapDbRoleToAppRole(dbRole: Role | null | undefined): AppRole {
   if (!dbRole) return "unassigned";
 
-  switch (dbRole) {
-    case "ADMIN" as Role:
+  const normalized = String(dbRole).trim().toUpperCase();
+
+  switch (normalized) {
+    case "ADMIN":
       return "admin";
-    case "SALES" as Role:
+    case "SALES":
       return "sales";
-    case "OFFICE" as Role:
+    case "OFFICE":
       return "office";
-    case "FINANCE" as Role:
+    case "FINANCE":
       return "finance";
-    case "SPECIALIST" as Role:
+    case "SPECIALIST":
       return "specialist";
-    case "INSTALLER" as Role:
+    case "INSTALLER":
       return "installer";
-    case "UNASSIGNED" as Role:
+    case "UNASSIGNED":
     default:
       return "unassigned";
   }

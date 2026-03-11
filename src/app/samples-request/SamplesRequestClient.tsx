@@ -93,8 +93,7 @@ export default function SamplesRequestClient({
     if (!sampleType) return [];
     return providers
       .filter(
-        (provider) =>
-          provider.sampleType === sampleType && provider.isActive,
+        (provider) => provider.sampleType === sampleType && provider.isActive,
       )
       .map((provider) => provider.name);
   }, [providers, sampleType]);
@@ -190,7 +189,10 @@ export default function SamplesRequestClient({
     }
 
     if (!quantity || quantity < 1) {
-      setNotification({ type: "error", message: "Quantity must be 1 or more." });
+      setNotification({
+        type: "error",
+        message: "Quantity must be 1 or more.",
+      });
       return;
     }
 
@@ -389,7 +391,9 @@ export default function SamplesRequestClient({
                     <tr
                       key={request.id}
                       className="hover:bg-gray-50 dark:hover:bg-gray-900/40 cursor-pointer"
-                      onClick={() => router.push(`/samples-request/${request.id}`)}
+                      onClick={() =>
+                        router.push(`/samples-request/${request.id}`)
+                      }
                     >
                       <td className="px-6 py-4">
                         <span
@@ -530,7 +534,9 @@ export default function SamplesRequestClient({
                 {showJobDropdown && !selectedJob && !selectedCustomer && (
                   <div className="absolute z-20 mt-2 w-full max-h-64 overflow-auto rounded-md border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800 shadow-lg">
                     {loadingJobs ? (
-                      <div className="p-4 text-sm text-gray-500">Loading...</div>
+                      <div className="p-4 text-sm text-gray-500">
+                        Loading...
+                      </div>
                     ) : (
                       <>
                         {jobs.length > 0 && (

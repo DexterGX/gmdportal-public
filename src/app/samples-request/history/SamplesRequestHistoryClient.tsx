@@ -160,7 +160,9 @@ export default function SamplesRequestHistoryClient() {
                   return (
                     <tr key={event.id}>
                       <td className="px-6 py-4 text-sm text-gray-600 dark:text-gray-300">
-                        <div>{new Date(event.createdAt).toLocaleDateString()}</div>
+                        <div>
+                          {new Date(event.createdAt).toLocaleDateString()}
+                        </div>
                         <div className="text-xs text-gray-500 dark:text-gray-400">
                           {new Date(event.createdAt).toLocaleTimeString()}
                         </div>
@@ -175,9 +177,10 @@ export default function SamplesRequestHistoryClient() {
                       </td>
                       <td className="px-6 py-4 text-sm text-gray-700 dark:text-gray-300">
                         {event.fromStatus
-                          ? `${event.fromStatus.replace(/_/g, " ")} → ${
-                              event.toStatus?.replace(/_/g, " ")
-                            }`
+                          ? `${event.fromStatus.replace(/_/g, " ")} → ${event.toStatus?.replace(
+                              /_/g,
+                              " ",
+                            )}`
                           : event.toStatus?.replace(/_/g, " ") || "—"}
                       </td>
                       <td className="px-6 py-4 text-sm text-gray-600 dark:text-gray-300">

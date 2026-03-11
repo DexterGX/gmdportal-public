@@ -45,7 +45,8 @@ export default function SamplesRequestDetailClient({
   >();
 
   const isAdmin = userRole === "admin";
-  const canManage = ["admin", "sales", "office"].includes(userRole);
+  const canManageStatus = ["admin", "office"].includes(userRole);
+  const canCancel = ["admin", "office", "sales"].includes(userRole);
 
   const reloadHistory = async (active = true) => {
     try {
@@ -88,7 +89,7 @@ export default function SamplesRequestDetailClient({
   }, [isAdmin, request.id, request.status, userId]);
 
   const changeStatus = async (nextStatus: SampleRequestStatus) => {
-    if (!canManage) return;
+    if (!canManageStatus) return;
     try {
       const updated = await updateSampleRequestStatus({
         requestId: request.id,
@@ -111,7 +112,7 @@ export default function SamplesRequestDetailClient({
   };
 
   const handleCancel = async () => {
-    if (!canManage) return;
+    if (!canCancel) return;
     try {
       const updated = await cancelSampleRequest({
         requestId: request.id,
@@ -130,9 +131,7 @@ export default function SamplesRequestDetailClient({
   };
 
   const clientName =
-    request.job?.customer.displayName ||
-    request.customer?.displayName ||
-    "—";
+    request.job?.customer.displayName || request.customer?.displayName || "—";
   const jobLabel = request.job
     ? `Job #${request.job.jobNumber} — ${request.job.jobName}`
     : request.jobName || "—";
@@ -154,36 +153,39 @@ export default function SamplesRequestDetailClient({
             {clientName} · {jobLabel}
           </p>
         </div>
-        {canManage && request.status !== "CANCELED" && (
+        {request.status !== "CANCELED" && (canManageStatus || canCancel) && (
           <div className="flex flex-wrap gap-2">
-            {statusOrder
-              .filter((status) =>
-                ["REQUESTED", "IN_PROGRESS", "ORDERED", "DELIVERED"].includes(
-                  status,
-                ),
-              )
-              .map((status) => (
-                <button
-                  key={status}
-                  type="button"
-                  onClick={() => changeStatus(status)}
-                  disabled={request.status === status}
-                  className={`px-4 py-2 text-sm font-medium rounded-md border transition-colors ${
-                    request.status === status
-                      ? "bg-blue-600 text-white border-blue-600"
-                      : "bg-white dark:bg-gray-800 text-gray-700 dark:text-gray-300 border-gray-300 dark:border-gray-600 hover:bg-gray-50 dark:hover:bg-gray-700"
-                  }`}
-                >
-                  {status.replace(/_/g, " ")}
-                </button>
-              ))}
-            <button
-              type="button"
-              onClick={handleCancel}
-              className="px-4 py-2 text-sm font-medium rounded-md border border-red-300 text-red-600 hover:bg-red-50"
-            >
-              Cancel
-            </button>
+            {canManageStatus &&
+              statusOrder
+                .filter((status) =>
+                  ["REQUESTED", "IN_PROGRESS", "ORDERED", "DELIVERED"].includes(
+                    status,
+                  ),
+                )
+                .map((status) => (
+                  <button
+                    key={status}
+                    type="button"
+                    onClick={() => changeStatus(status)}
+                    disabled={request.status === status}
+                    className={`px-4 py-2 text-sm font-medium rounded-md border transition-colors ${
+                      request.status === status
+                        ? "bg-blue-600 text-white border-blue-600"
+                        : "bg-white dark:bg-gray-800 text-gray-700 dark:text-gray-300 border-gray-300 dark:border-gray-600 hover:bg-gray-50 dark:hover:bg-gray-700"
+                    }`}
+                  >
+                    {status.replace(/_/g, " ")}
+                  </button>
+                ))}
+            {canCancel && (
+              <button
+                type="button"
+                onClick={handleCancel}
+                className="px-4 py-2 text-sm font-medium rounded-md border border-red-300 text-red-600 hover:bg-red-50"
+              >
+                Cancel
+              </button>
+            )}
           </div>
         )}
       </div>
@@ -218,7 +220,9 @@ export default function SamplesRequestDetailClient({
             {request.sampleType}
           </div>
           <div className="text-sm text-gray-500">Brand</div>
-          <div className="text-gray-800 dark:text-gray-200">{request.brand}</div>
+          <div className="text-gray-800 dark:text-gray-200">
+            {request.brand}
+          </div>
         </div>
         <div className="space-y-3">
           <div className="text-sm text-gray-500">Color Name</div>
@@ -257,11 +261,15 @@ export default function SamplesRequestDetailClient({
               <div className="font-medium">{provider.sampleType}</div>
             </div>
             <div>
-              <div className="text-xs uppercase text-gray-500">Contact Name</div>
+              <div className="text-xs uppercase text-gray-500">
+                Contact Name
+              </div>
               <div className="font-medium">{provider.contactName || "—"}</div>
             </div>
             <div>
-              <div className="text-xs uppercase text-gray-500">Contact Method</div>
+              <div className="text-xs uppercase text-gray-500">
+                Contact Method
+              </div>
               <div className="font-medium">{provider.contactMethod || "—"}</div>
             </div>
             <div>
@@ -273,7 +281,9 @@ export default function SamplesRequestDetailClient({
               <div className="font-medium">{provider.contactEmail || "—"}</div>
             </div>
             <div className="md:col-span-2">
-              <div className="text-xs uppercase text-gray-500">How we get it</div>
+              <div className="text-xs uppercase text-gray-500">
+                How we get it
+              </div>
               <div className="font-medium">{provider.notes || "—"}</div>
             </div>
           </div>
@@ -297,9 +307,10 @@ export default function SamplesRequestDetailClient({
               >
                 <div className="text-sm text-gray-600 dark:text-gray-300">
                   {entry.fromStatus
-                    ? `${entry.fromStatus.replace(/_/g, " ")} → ${
-                        entry.toStatus?.replace(/_/g, " ")
-                      }`
+                    ? `${entry.fromStatus.replace(/_/g, " ")} → ${entry.toStatus?.replace(
+                        /_/g,
+                        " ",
+                      )}`
                     : entry.toStatus?.replace(/_/g, " ") || "—"}
                 </div>
                 {entry.message && (

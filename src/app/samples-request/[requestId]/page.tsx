@@ -1,6 +1,9 @@
 import { redirect } from "next/navigation";
 import { getCurrentUserWithRole } from "@/lib/authHelpers";
-import { getSampleRequestById, getSampleRequestProviders } from "@/lib/samplesRequests";
+import {
+  getSampleRequestById,
+  getSampleRequestProviders,
+} from "@/lib/samplesRequests";
 import SamplesRequestDetailClient from "./SamplesRequestDetailClient";
 
 export default async function SampleRequestDetailPage({
