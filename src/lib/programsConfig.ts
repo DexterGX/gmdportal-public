@@ -61,7 +61,8 @@ export type ProgramId =
   | "users"
   | "closetJobs"
   | "customers"
-  | "accessories";
+  | "accessories"
+  | "samplesRequest";
 
 export interface ProgramConfig {
   id: ProgramId;
@@ -101,6 +102,11 @@ export const programs: ProgramConfig[] = [
         icon: Package,
         name: "Accessories",
         path: "/accessories",
+      },
+      {
+        icon: Package,
+        name: "Samples Request",
+        path: "/samples-request",
       },
     ],
   },
@@ -248,6 +254,24 @@ export const programs: ProgramConfig[] = [
     navItems: [
       { icon: Package, name: "Accessories", path: "/accessories" },
       { icon: ListIcon, name: "History Log", path: "/accessories/history" },
+    ],
+    othersItems: [],
+  },
+  {
+    id: "samplesRequest",
+    name: "Samples Request",
+    basePath: "/samples-request",
+    description: "Track cabinet and countertop sample requests.",
+    allowedRoles: ["admin", "sales", "office"],
+    navItems: [
+      { icon: Package, name: "Samples Requested", path: "/samples-request" },
+      { icon: ListIcon, name: "History Log", path: "/samples-request/history" },
+      {
+        icon: Settings2,
+        name: "Settings",
+        path: "/samples-request/settings",
+        adminOnly: true,
+      },
     ],
     othersItems: [],
   },
