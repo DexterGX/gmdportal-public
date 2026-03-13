@@ -56,25 +56,22 @@ export default function SlabLabelClient({ slab }: { slab: SlabLabelData }) {
   return (
     <>
       <style>{`
+        @media screen {
+          .print-sheet { display: none !important; }
+          .preview-sheet { display: flex; }
+        }
         @media print {
-          .no-print { display: none !important; }
+          .preview-sheet { display: none !important; }
+          .print-sheet { display: block !important; }
           @page { margin: 0; }
-          html, body { margin: 0 !important; padding: 0 !important; background: white !important; overflow: hidden !important; }
-          body * { visibility: hidden; }
-          .print-sheet, .print-sheet * { visibility: visible; }
-          .print-sheet {
-            position: fixed;
-            left: 0;
-            top: 0;
-            page-break-after: avoid;
-            break-after: avoid-page;
-          }
+          html, body { margin: 0 !important; padding: 0 !important; background: white !important; overflow: visible !important; }
+          .print-sheet { page-break-after: avoid; break-after: avoid-page; }
           .label-scale { transform: none !important; margin-bottom: 0 !important; }
         }
       `}</style>
 
       {/* Screen controls */}
-      <div className="no-print flex flex-col items-center gap-3 py-8 bg-gray-100 min-h-screen">
+      <div className="preview-sheet flex flex-col items-center gap-3 py-8 bg-gray-100 min-h-screen">
         <div className="flex items-center gap-3">
           <button
             onClick={() => window.print()}
@@ -108,7 +105,7 @@ export default function SlabLabelClient({ slab }: { slab: SlabLabelData }) {
       </div>
 
       {/* Print output */}
-      <div className="hidden print:block print-sheet">
+      <div className="print-sheet">
         <LabelBody slab={slab} infoRows={infoRows} qrUrl={qrUrl} />
       </div>
     </>
