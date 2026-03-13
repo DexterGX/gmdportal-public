@@ -146,6 +146,7 @@ model SlabBayRack {
   slabs                SlabBaySlab[]
 }
 
+
 model SlabBaySlab {
   id         String   @id
   scannerId  String
