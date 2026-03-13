@@ -80,7 +80,7 @@ export default function SlabLabelClient({ slab }: { slab: SlabLabelData }) {
             ← Back
           </button>
         </div>
-        <p className="text-xs text-gray-500">
+        <p className="text-xs text-gray-700 font-semibold">
           Label size: 7.5&quot; × 2.5&quot; &middot; Left 1&quot; is a tear-off
           strip for slab edge
         </p>
@@ -124,7 +124,7 @@ function LabelBody({
         flexDirection: "row",
         fontFamily: "Arial, Helvetica, sans-serif",
         backgroundColor: "#ffffff",
-        border: "1px solid #cccccc",
+        border: "2px solid #000000",
         boxSizing: "border-box",
         overflow: "hidden",
       }}
@@ -135,12 +135,12 @@ function LabelBody({
           width: "1in",
           flexShrink: 0,
           height: "2.5in",
-          borderRight: "2px dashed #aaaaaa",
+          borderRight: "2px dashed #111111",
           display: "flex",
           alignItems: "center",
           justifyContent: "center",
           overflow: "hidden",
-          backgroundColor: "#fafafa",
+          backgroundColor: "#ffffff",
           position: "relative",
         }}
       >
@@ -174,7 +174,7 @@ function LabelBody({
                 alignItems: "center",
                 justifyContent: "center",
                 fontSize: "6pt",
-                color: "#999",
+                color: "#000",
                 fontWeight: "bold",
               }}
             >
@@ -196,7 +196,7 @@ function LabelBody({
               style={{
                 fontSize: "8.5pt",
                 fontWeight: "bold",
-                color: "#111",
+                color: "#000",
                 whiteSpace: "nowrap",
                 overflow: "hidden",
                 textOverflow: "ellipsis",
@@ -208,7 +208,7 @@ function LabelBody({
               style={{
                 fontSize: "7pt",
                 fontWeight: "bold",
-                color: "#333",
+                color: "#000",
                 whiteSpace: "nowrap",
                 overflow: "hidden",
                 textOverflow: "ellipsis",
@@ -221,7 +221,7 @@ function LabelBody({
                 style={{
                   fontSize: "6.5pt",
                   fontWeight: "bold",
-                  color: "#555",
+                  color: "#000",
                   whiteSpace: "nowrap",
                 }}
               >
@@ -249,7 +249,7 @@ function LabelBody({
             alignItems: "center",
             gap: "6pt",
             padding: "8pt 8pt 8pt 10pt",
-            borderRight: "1px solid #d9d9d9",
+            borderRight: "2px solid #000000",
             backgroundColor: "#ffffff",
           }}
         >
@@ -268,7 +268,7 @@ function LabelBody({
                 alignItems: "center",
                 justifyContent: "center",
                 fontSize: "8pt",
-                color: "#999",
+                color: "#000",
                 fontWeight: "bold",
               }}
             >
@@ -277,9 +277,9 @@ function LabelBody({
           )}
           <div
             style={{
-              fontSize: "8.5pt",
+              fontSize: "10pt",
               fontWeight: "bold",
-              color: "#111",
+              color: "#000",
               textAlign: "center",
               lineHeight: 1.15,
             }}
@@ -300,16 +300,16 @@ function LabelBody({
           <div
             style={{
               padding: "7pt 10pt 6pt",
-              borderBottom: "2px solid #1a56db",
-              backgroundColor: "#f0f4ff",
+              borderBottom: "2px solid #000000",
+              backgroundColor: "#ffffff",
             }}
           >
             <span
               style={{
-                fontSize: "11pt",
+                fontSize: "13pt",
                 fontWeight: "bold",
-                color: "#1a56db",
-                letterSpacing: "0.05em",
+                color: "#000",
+                letterSpacing: "0.03em",
                 textTransform: "uppercase",
               }}
             >
@@ -332,7 +332,7 @@ function LabelBody({
                   display: "flex",
                   alignItems: "stretch",
                   borderBottom:
-                    idx < infoRows.length - 1 ? "1px solid #d8d8d8" : "none",
+                    idx < infoRows.length - 1 ? "1.5px solid #000000" : "none",
                   flex: 1,
                   minHeight: 0,
                 }}
@@ -345,15 +345,15 @@ function LabelBody({
                     alignItems: "center",
                     justifyContent: "flex-end",
                     padding: "0 8pt",
-                    backgroundColor: "#f8f8f8",
-                    borderRight: "1px solid #d8d8d8",
+                    backgroundColor: "#ffffff",
+                    borderRight: "1.5px solid #000000",
                   }}
                 >
                   <span
                     style={{
-                      fontSize: "8.5pt",
+                      fontSize: "9.6pt",
                       fontWeight: "bold",
-                      color: "#333",
+                      color: "#000",
                       whiteSpace: "nowrap",
                     }}
                   >
@@ -371,9 +371,9 @@ function LabelBody({
                 >
                   <span
                     style={{
-                      fontSize: "10pt",
+                      fontSize: "12pt",
                       fontWeight: "bold",
-                      color: "#111",
+                      color: "#000",
                       overflow: "hidden",
                       textOverflow: "ellipsis",
                       whiteSpace: "nowrap",
