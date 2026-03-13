@@ -81,7 +81,7 @@ export default function SlabLabelClient({ slab }: { slab: SlabLabelData }) {
           </button>
         </div>
         <p className="text-xs text-gray-500">
-          Label size: 7.5&quot; × 2.5&quot; &middot; Right 1&quot; is a tear-off
+          Label size: 7.5&quot; × 2.5&quot; &middot; Left 1&quot; is a tear-off
           strip for slab edge
         </p>
 
@@ -89,7 +89,7 @@ export default function SlabLabelClient({ slab }: { slab: SlabLabelData }) {
         <div
           className="label-scale"
           style={{
-            transform: "scale(1.5)",
+            transform: "scale(1.35)",
             transformOrigin: "top center",
             marginBottom: "4rem",
           }}
@@ -129,115 +129,13 @@ function LabelBody({
         overflow: "hidden",
       }}
     >
-      {/* ── Main info section: 6.5" wide ─────────────────────────── */}
-      <div
-        style={{
-          flex: 1,
-          display: "flex",
-          flexDirection: "column",
-          overflow: "hidden",
-        }}
-      >
-        {/* Header bar */}
-        <div
-          style={{
-            padding: "6pt 10pt 5pt",
-            borderBottom: "1.5px solid #1a56db",
-            backgroundColor: "#f0f4ff",
-          }}
-        >
-          <span
-            style={{
-              fontSize: "9pt",
-              fontWeight: "bold",
-              color: "#1a56db",
-              letterSpacing: "0.06em",
-              textTransform: "uppercase",
-            }}
-          >
-            GMD Portal — Slab Label
-          </span>
-        </div>
-
-        {/* Info rows with dividers */}
-        <div
-          style={{
-            flex: 1,
-            display: "flex",
-            flexDirection: "column",
-            overflow: "hidden",
-          }}
-        >
-          {infoRows.map(([label, value], idx) => (
-            <div
-              key={label}
-              style={{
-                display: "flex",
-                alignItems: "stretch",
-                borderBottom:
-                  idx < infoRows.length - 1 ? "1px solid #e0e0e0" : "none",
-                flex: 1,
-                minHeight: 0,
-              }}
-            >
-              {/* Label cell */}
-              <div
-                style={{
-                  width: "76pt",
-                  flexShrink: 0,
-                  display: "flex",
-                  alignItems: "center",
-                  justifyContent: "flex-end",
-                  padding: "0 6pt",
-                  backgroundColor: "#f8f8f8",
-                  borderRight: "1px solid #ddd",
-                }}
-              >
-                <span
-                  style={{
-                    fontSize: "7.5pt",
-                    fontWeight: "bold",
-                    color: "#444",
-                    whiteSpace: "nowrap",
-                  }}
-                >
-                  {label}
-                </span>
-              </div>
-              {/* Value cell */}
-              <div
-                style={{
-                  flex: 1,
-                  display: "flex",
-                  alignItems: "center",
-                  padding: "0 8pt",
-                  overflow: "hidden",
-                }}
-              >
-                <span
-                  style={{
-                    fontSize: "8.5pt",
-                    color: "#111",
-                    overflow: "hidden",
-                    textOverflow: "ellipsis",
-                    whiteSpace: "nowrap",
-                  }}
-                >
-                  {value}
-                </span>
-              </div>
-            </div>
-          ))}
-        </div>
-      </div>
-
-      {/* ── Tear-off strip: 1" wide on the RIGHT ─────────────────── */}
+      {/* ── Tear-off strip: 1" wide on the LEFT ──────────────────── */}
       <div
         style={{
           width: "1in",
           flexShrink: 0,
           height: "2.5in",
-          borderLeft: "2px dashed #aaaaaa",
+          borderRight: "2px dashed #aaaaaa",
           display: "flex",
           alignItems: "center",
           justifyContent: "center",
@@ -246,12 +144,6 @@ function LabelBody({
           position: "relative",
         }}
       >
-        {/*
-          The inner container is rotated -90deg.
-          Its natural dimensions: width=2.3in, height=0.88in
-          After rotation it becomes visually 0.88in wide × 2.3in tall,
-          which fits inside the 1in × 2.5in strip.
-        */}
         <div
           style={{
             position: "absolute",
@@ -259,38 +151,37 @@ function LabelBody({
             left: "50%",
             transform: "translate(-50%, -50%) rotate(-90deg)",
             width: "2.35in",
-            height: "0.9in",
+            height: "0.94in",
             display: "flex",
             flexDirection: "row",
             alignItems: "center",
-            gap: "6pt",
+            gap: "8pt",
           }}
         >
-          {/* QR code on the strip */}
           {qrUrl ? (
             <QRCode
               value={qrUrl}
-              style={{ width: "0.72in", height: "0.72in", flexShrink: 0 }}
+              style={{ width: "0.74in", height: "0.74in", flexShrink: 0 }}
             />
           ) : (
             <div
               style={{
-                width: "0.72in",
-                height: "0.72in",
+                width: "0.74in",
+                height: "0.74in",
                 flexShrink: 0,
                 backgroundColor: "#eee",
                 display: "flex",
                 alignItems: "center",
                 justifyContent: "center",
-                fontSize: "5pt",
+                fontSize: "6pt",
                 color: "#999",
+                fontWeight: "bold",
               }}
             >
               QR
             </div>
           )}
 
-          {/* Text next to QR */}
           <div
             style={{
               flex: 1,
@@ -298,12 +189,12 @@ function LabelBody({
               flexDirection: "column",
               justifyContent: "center",
               overflow: "hidden",
-              gap: "1.5pt",
+              gap: "2pt",
             }}
           >
             <div
               style={{
-                fontSize: "7.5pt",
+                fontSize: "8.5pt",
                 fontWeight: "bold",
                 color: "#111",
                 whiteSpace: "nowrap",
@@ -315,7 +206,8 @@ function LabelBody({
             </div>
             <div
               style={{
-                fontSize: "6.5pt",
+                fontSize: "7pt",
+                fontWeight: "bold",
                 color: "#333",
                 whiteSpace: "nowrap",
                 overflow: "hidden",
@@ -326,11 +218,172 @@ function LabelBody({
             </div>
             {slab.thickness && (
               <div
-                style={{ fontSize: "6pt", color: "#666", whiteSpace: "nowrap" }}
+                style={{
+                  fontSize: "6.5pt",
+                  fontWeight: "bold",
+                  color: "#555",
+                  whiteSpace: "nowrap",
+                }}
               >
                 T: {slab.thickness}
               </div>
             )}
+          </div>
+        </div>
+      </div>
+
+      {/* ── Main info section: 6.5" wide ─────────────────────────── */}
+      <div
+        style={{
+          flex: 1,
+          display: "grid",
+          gridTemplateColumns: "1.5in 1fr",
+          overflow: "hidden",
+        }}
+      >
+        <div
+          style={{
+            display: "flex",
+            flexDirection: "column",
+            justifyContent: "center",
+            alignItems: "center",
+            gap: "6pt",
+            padding: "8pt 8pt 8pt 10pt",
+            borderRight: "1px solid #d9d9d9",
+            backgroundColor: "#ffffff",
+          }}
+        >
+          {qrUrl ? (
+            <QRCode
+              value={qrUrl}
+              style={{ width: "1.22in", height: "1.22in", flexShrink: 0 }}
+            />
+          ) : (
+            <div
+              style={{
+                width: "1.22in",
+                height: "1.22in",
+                backgroundColor: "#eee",
+                display: "flex",
+                alignItems: "center",
+                justifyContent: "center",
+                fontSize: "8pt",
+                color: "#999",
+                fontWeight: "bold",
+              }}
+            >
+              QR
+            </div>
+          )}
+          <div
+            style={{
+              fontSize: "8.5pt",
+              fontWeight: "bold",
+              color: "#111",
+              textAlign: "center",
+              lineHeight: 1.15,
+            }}
+          >
+            SCAN FOR
+            <br />
+            SLAB DETAILS
+          </div>
+        </div>
+
+        <div
+          style={{
+            display: "flex",
+            flexDirection: "column",
+            overflow: "hidden",
+          }}
+        >
+          <div
+            style={{
+              padding: "7pt 10pt 6pt",
+              borderBottom: "2px solid #1a56db",
+              backgroundColor: "#f0f4ff",
+            }}
+          >
+            <span
+              style={{
+                fontSize: "11pt",
+                fontWeight: "bold",
+                color: "#1a56db",
+                letterSpacing: "0.05em",
+                textTransform: "uppercase",
+              }}
+            >
+              GMD Portal — Slab Label
+            </span>
+          </div>
+
+          <div
+            style={{
+              flex: 1,
+              display: "flex",
+              flexDirection: "column",
+              overflow: "hidden",
+            }}
+          >
+            {infoRows.map(([label, value], idx) => (
+              <div
+                key={label}
+                style={{
+                  display: "flex",
+                  alignItems: "stretch",
+                  borderBottom:
+                    idx < infoRows.length - 1 ? "1px solid #d8d8d8" : "none",
+                  flex: 1,
+                  minHeight: 0,
+                }}
+              >
+                <div
+                  style={{
+                    width: "88pt",
+                    flexShrink: 0,
+                    display: "flex",
+                    alignItems: "center",
+                    justifyContent: "flex-end",
+                    padding: "0 8pt",
+                    backgroundColor: "#f8f8f8",
+                    borderRight: "1px solid #d8d8d8",
+                  }}
+                >
+                  <span
+                    style={{
+                      fontSize: "8.5pt",
+                      fontWeight: "bold",
+                      color: "#333",
+                      whiteSpace: "nowrap",
+                    }}
+                  >
+                    {label}
+                  </span>
+                </div>
+                <div
+                  style={{
+                    flex: 1,
+                    display: "flex",
+                    alignItems: "center",
+                    padding: "0 10pt",
+                    overflow: "hidden",
+                  }}
+                >
+                  <span
+                    style={{
+                      fontSize: "10pt",
+                      fontWeight: "bold",
+                      color: "#111",
+                      overflow: "hidden",
+                      textOverflow: "ellipsis",
+                      whiteSpace: "nowrap",
+                    }}
+                  >
+                    {value}
+                  </span>
+                </div>
+              </div>
+            ))}
           </div>
         </div>
       </div>
