@@ -66,15 +66,8 @@ export default function SlabLabelClient({ slab }: { slab: SlabLabelData }) {
             position: fixed;
             left: 0;
             top: 0;
-            width: 100vw;
-            height: 100vh;
             page-break-after: avoid;
             break-after: avoid-page;
-          }
-          .label-root {
-            width: 100vw !important;
-            height: 100vh !important;
-            border-width: 2px !important;
           }
           .label-scale { transform: none !important; margin-bottom: 0 !important; }
         }
@@ -133,7 +126,6 @@ function LabelBody({
 }) {
   return (
     <div
-      className="label-root"
       style={{
         width: "7.5in",
         height: "2.5in",
