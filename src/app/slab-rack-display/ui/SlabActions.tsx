@@ -49,6 +49,12 @@ export default function SlabActions({
   const [slabName, setSlabName] = useState("");
   const [brand, setBrand] = useState("");
   const [thickness, setThickness] = useState("");
+  const [brandPickerOpen, setBrandPickerOpen] = useState(false);
+  const [brandSearchTerm, setBrandSearchTerm] = useState("");
+  const [thicknessPickerOpen, setThicknessPickerOpen] = useState(false);
+  const [typePickerOpen, setTypePickerOpen] = useState(false);
+  const [showSizeHDropdown, setShowSizeHDropdown] = useState(false);
+  const [showSizeWDropdown, setShowSizeWDropdown] = useState(false);
   const [sizeHeight, setSizeHeight] = useState("");
   const [sizeWidth, setSizeWidth] = useState("");
   const [quantity, setQuantity] = useState<string>("1");
@@ -64,8 +70,6 @@ export default function SlabActions({
   const [slabSearchTerm, setSlabSearchTerm] = useState("");
   const [showSlabDropdown, setShowSlabDropdown] = useState(false);
   const [actionError, setActionError] = useState<string | null>(null);
-  const [showSizeHDropdown, setShowSizeHDropdown] = useState(false);
-  const [showSizeWDropdown, setShowSizeWDropdown] = useState(false);
   const [confirmOpen, setConfirmOpen] = useState(false);
   const [confirmMessage, setConfirmMessage] = useState("");
   const [confirmPlan, setConfirmPlan] = useState<
@@ -89,6 +93,47 @@ export default function SlabActions({
     () => Array.from({ length: 201 }, (_, i) => String(i)),
     [],
   );
+  const thicknessOptions = useMemo(
+    () => ["6mm", "8mm", "10mm", "12mm", "2cm", "3cm"],
+    [],
+  );
+  const typeOptions = useMemo(
+    () => ["SLAB", "GMD", "REMNANT", "RESERVED", "CLIENT_SLAB"],
+    [],
+  );
+  const brandOptions = useMemo(
+    () => [
+      "CAMBRIA",
+      "CEASARSTONE - Porcelain",
+      "CEASARSTONE - Quartz",
+      "COMPAC",
+      "COSENTINO - Dekton Porcelain",
+      "COSENTINO - Silestone Quartz",
+      "COVERLAM(HRA) - Porcelain",
+      "DALTILE - Panoramic Porcelain",
+      "DALTILE - Quartz",
+      "KIVA",
+      "LX HAUSYS",
+      "MSI - Quartz",
+      "NEOLITH",
+      "OPUSTONE - Relativa Porcelain",
+      "OPUSTONE - Santamargherita Quartz",
+      "PENTAL - Quartz",
+      "SPECTRUM - Quartz",
+      "STONE MALL",
+      "TSFC",
+      "UMI - Infinity Porcelain",
+      "UMI - Pompeii Quartz",
+      "UMI - Vetrazzo",
+      "WILLSONART",
+    ],
+    [],
+  );
+  const filteredBrandOptions = useMemo(() => {
+    const term = brandSearchTerm.trim().toLowerCase();
+    if (!term) return brandOptions;
+    return brandOptions.filter((option) => option.toLowerCase().includes(term));
+  }, [brandOptions, brandSearchTerm]);
   const clientDropdownRef = useRef<HTMLDivElement | null>(null);
   const originalClientDropdownRef = useRef<HTMLDivElement | null>(null);
   const slabDropdownRef = useRef<HTMLDivElement | null>(null);
@@ -296,6 +341,12 @@ export default function SlabActions({
     setSlabName("");
     setBrand("");
     setThickness("");
+    setBrandPickerOpen(false);
+    setBrandSearchTerm("");
+    setThicknessPickerOpen(false);
+    setTypePickerOpen(false);
+    setShowSizeHDropdown(false);
+    setShowSizeWDropdown(false);
     setSizeHeight("");
     setSizeWidth("");
     setQuantity("1");
@@ -797,23 +848,25 @@ export default function SlabActions({
                     <label className="text-xs font-medium text-gray-500">
                       Brand
                     </label>
-                    <input
-                      value={brand}
-                      onChange={(event) => setBrand(event.target.value)}
-                      placeholder="Brand"
-                      className="mt-1 w-full rounded-lg border border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-800 px-3 py-2 text-sm"
-                    />
+                    <button
+                      type="button"
+                      onClick={() => setBrandPickerOpen(true)}
+                      className="mt-1 w-full rounded-lg border border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-800 px-3 py-2 text-left text-sm"
+                    >
+                      {brand || "Select brand"}
+                    </button>
                   </div>
                   <div>
                     <label className="text-xs font-medium text-gray-500">
                       Thickness
                     </label>
-                    <input
-                      value={thickness}
-                      onChange={(event) => setThickness(event.target.value)}
-                      placeholder="3cm"
-                      className="mt-1 w-full rounded-lg border border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-800 px-3 py-2 text-sm"
-                    />
+                    <button
+                      type="button"
+                      onClick={() => setThicknessPickerOpen(true)}
+                      className="mt-1 w-full rounded-lg border border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-800 px-3 py-2 text-left text-sm"
+                    >
+                      {thickness || "Select thickness"}
+                    </button>
                   </div>
                 </div>
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
@@ -874,32 +927,13 @@ export default function SlabActions({
                     <label className="text-xs font-medium text-gray-500">
                       Type
                     </label>
-                    <select
-                      value={slabType}
-                      onChange={(event) =>
-                        setSlabType((current) => {
-                          const next = event.target.value as
-                            | "SLAB"
-                            | "GMD"
-                            | "REMNANT"
-                            | "RESERVED"
-                            | "CLIENT_SLAB";
-                          if (next !== "GMD" && current === "GMD") {
-                            setOriginalClientName("");
-                            setOriginalClientSearchTerm("");
-                            setOriginalClientSuggestions([]);
-                          }
-                          return next;
-                        })
-                      }
-                      className="mt-1 w-full rounded-lg border border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-800 px-3 py-2 text-sm"
+                    <button
+                      type="button"
+                      onClick={() => setTypePickerOpen(true)}
+                      className="mt-1 w-full rounded-lg border border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-800 px-3 py-2 text-left text-sm"
                     >
-                      <option value="SLAB">SLAB</option>
-                      <option value="GMD">GMD</option>
-                      <option value="REMNANT">REMNANT</option>
-                      <option value="RESERVED">RESERVED</option>
-                      <option value="CLIENT_SLAB">CLIENT SLAB</option>
-                    </select>
+                      {slabType.replace(/_/g, " ")}
+                    </button>
                   </div>
                   <div>
                     <label className="text-xs font-medium text-gray-500">
@@ -920,11 +954,10 @@ export default function SlabActions({
                         }}
                         className="w-full pl-4 pr-4 py-2 border border-gray-300 dark:border-gray-700 rounded-md bg-white dark:bg-gray-900 text-gray-900 dark:text-gray-100 focus:ring-2 focus:ring-blue-500 focus:border-transparent"
                       />
-                      {showSizeHDropdown && sizeHeight.length > 0 && (
+                      {showSizeHDropdown && (
                         <div className="absolute z-20 w-full mt-1 bg-white dark:bg-gray-800 border border-gray-300 dark:border-gray-700 rounded-md shadow-lg max-h-60 overflow-auto">
                           {sizeOptions
                             .filter((opt) => opt.startsWith(sizeHeight))
-                            .slice(0, 50)
                             .map((opt) => (
                               <button
                                 key={opt}
@@ -963,11 +996,10 @@ export default function SlabActions({
                         }}
                         className="w-full pl-4 pr-4 py-2 border border-gray-300 dark:border-gray-700 rounded-md bg-white dark:bg-gray-900 text-gray-900 dark:text-gray-100 focus:ring-2 focus:ring-blue-500 focus:border-transparent"
                       />
-                      {showSizeWDropdown && sizeWidth.length > 0 && (
+                      {showSizeWDropdown && (
                         <div className="absolute z-20 w-full mt-1 bg-white dark:bg-gray-800 border border-gray-300 dark:border-gray-700 rounded-md shadow-lg max-h-60 overflow-auto">
                           {sizeOptions
                             .filter((opt) => opt.startsWith(sizeWidth))
-                            .slice(0, 50)
                             .map((opt) => (
                               <button
                                 key={opt}
@@ -1054,6 +1086,131 @@ export default function SlabActions({
                   >
                     Add slab
                   </button>
+                </div>
+              </div>
+            )}
+
+            {brandPickerOpen && (
+              <div className="fixed inset-0 z-[60] flex items-center justify-center bg-black/40 px-4">
+                <div className="w-full max-w-md max-h-[80vh] rounded-xl bg-white dark:bg-gray-900 border border-gray-200 dark:border-gray-800 shadow-xl overflow-hidden">
+                  <div className="flex items-center justify-between px-5 py-4 border-b border-gray-200 dark:border-gray-800">
+                    <div className="text-sm font-semibold text-gray-900 dark:text-gray-100">
+                      Select brand
+                    </div>
+                    <button
+                      type="button"
+                      onClick={() => setBrandPickerOpen(false)}
+                      className="text-sm text-gray-500 hover:text-gray-700"
+                    >
+                      Close
+                    </button>
+                  </div>
+                  <div className="px-5 py-3">
+                    <input
+                      type="text"
+                      value={brandSearchTerm}
+                      onChange={(event) =>
+                        setBrandSearchTerm(event.target.value)
+                      }
+                      placeholder="Search brand..."
+                      className="w-full rounded-lg border border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-800 px-3 py-2 text-sm"
+                    />
+                  </div>
+                  <div className="max-h-[52vh] overflow-y-auto px-2 pb-4">
+                    {filteredBrandOptions.map((option) => (
+                      <button
+                        key={option}
+                        type="button"
+                        onClick={() => {
+                          setBrand(option);
+                          setBrandPickerOpen(false);
+                        }}
+                        className="w-full text-left px-4 py-3 text-sm text-gray-900 dark:text-gray-100 hover:bg-gray-50 dark:hover:bg-gray-800 rounded-md"
+                      >
+                        {option}
+                      </button>
+                    ))}
+                    {filteredBrandOptions.length === 0 && (
+                      <div className="px-4 py-6 text-center text-sm text-gray-500 dark:text-gray-400">
+                        No matches
+                      </div>
+                    )}
+                  </div>
+                </div>
+              </div>
+            )}
+
+            {thicknessPickerOpen && (
+              <div className="fixed inset-0 z-[60] flex items-center justify-center bg-black/40 px-4">
+                <div className="w-full max-w-sm max-h-[70vh] rounded-xl bg-white dark:bg-gray-900 border border-gray-200 dark:border-gray-800 shadow-xl overflow-hidden">
+                  <div className="flex items-center justify-between px-5 py-4 border-b border-gray-200 dark:border-gray-800">
+                    <div className="text-sm font-semibold text-gray-900 dark:text-gray-100">
+                      Select thickness
+                    </div>
+                    <button
+                      type="button"
+                      onClick={() => setThicknessPickerOpen(false)}
+                      className="text-sm text-gray-500 hover:text-gray-700"
+                    >
+                      Close
+                    </button>
+                  </div>
+                  <div className="max-h-[50vh] overflow-y-auto px-2 py-3">
+                    {thicknessOptions.map((option) => (
+                      <button
+                        key={option}
+                        type="button"
+                        onClick={() => {
+                          setThickness(option);
+                          setThicknessPickerOpen(false);
+                        }}
+                        className="w-full text-left px-4 py-3 text-sm text-gray-900 dark:text-gray-100 hover:bg-gray-50 dark:hover:bg-gray-800 rounded-md"
+                      >
+                        {option}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+              </div>
+            )}
+
+            {typePickerOpen && (
+              <div className="fixed inset-0 z-[60] flex items-center justify-center bg-black/40 px-4">
+                <div className="w-full max-w-sm max-h-[70vh] rounded-xl bg-white dark:bg-gray-900 border border-gray-200 dark:border-gray-800 shadow-xl overflow-hidden">
+                  <div className="flex items-center justify-between px-5 py-4 border-b border-gray-200 dark:border-gray-800">
+                    <div className="text-sm font-semibold text-gray-900 dark:text-gray-100">
+                      Select type
+                    </div>
+                    <button
+                      type="button"
+                      onClick={() => setTypePickerOpen(false)}
+                      className="text-sm text-gray-500 hover:text-gray-700"
+                    >
+                      Close
+                    </button>
+                  </div>
+                  <div className="max-h-[50vh] overflow-y-auto px-2 py-3">
+                    {typeOptions.map((option) => (
+                      <button
+                        key={option}
+                        type="button"
+                        onClick={() => {
+                          setSlabType((current) => {
+                            if (option !== "GMD" && current === "GMD") {
+                              setOriginalClientName("");
+                              setOriginalClientSearchTerm("");
+                              setOriginalClientSuggestions([]);
+                            }
+                            return option as typeof slabType;
+                          });
+                          setTypePickerOpen(false);
+                        }}
+                        className="w-full text-left px-4 py-3 text-sm text-gray-900 dark:text-gray-100 hover:bg-gray-50 dark:hover:bg-gray-800 rounded-md"
+                      >
+                        {option.replace(/_/g, " ")}
+                      </button>
+                    ))}
+                  </div>
                 </div>
               </div>
             )}
