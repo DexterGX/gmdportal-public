@@ -61,6 +61,9 @@ export default function SlabActions({
   const [slabType, setSlabType] = useState<
     "SLAB" | "GMD" | "REMNANT" | "RESERVED" | "CLIENT_SLAB"
   >("SLAB");
+  const [finish, setFinish] = useState("");
+  const [notes, setNotes] = useState("");
+  const [jobId, setJobId] = useState("");
   const [selectedSlabId, setSelectedSlabId] = useState<string>("");
   const [fromRackId, setFromRackId] = useState<string>("");
   const [moveRackId, setMoveRackId] = useState<string>("");
@@ -349,6 +352,9 @@ export default function SlabActions({
     setShowSizeWDropdown(false);
     setSizeHeight("");
     setSizeWidth("");
+    setFinish("");
+    setNotes("");
+    setJobId("");
     setQuantity("1");
     setSlabType("SLAB");
     setSlabSearchTerm("");
@@ -465,6 +471,9 @@ export default function SlabActions({
           slabType === "GMD" ? originalClientName : undefined,
         ),
         brand: normalizedBrand,
+        finish: finish.trim() || undefined,
+        notes: notes.trim() || undefined,
+        jobId: jobId.trim() || undefined,
       },
       scannerIds: scannerList,
       quantity: qty,
@@ -1029,6 +1038,44 @@ export default function SlabActions({
                       className="mt-1 w-full rounded-lg border border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-800 px-3 py-2 text-sm"
                     />
                   </div>
+                </div>
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                  <div>
+                    <label className="text-xs font-medium text-gray-500">
+                      Finish
+                    </label>
+                    <input
+                      type="text"
+                      placeholder="e.g. Polished, Honed, Leathered..."
+                      value={finish}
+                      onChange={(event) => setFinish(event.target.value)}
+                      className="mt-1 w-full rounded-lg border border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-800 px-3 py-2 text-sm"
+                    />
+                  </div>
+                  <div>
+                    <label className="text-xs font-medium text-gray-500">
+                      Job ID
+                    </label>
+                    <input
+                      type="text"
+                      placeholder="Job ID..."
+                      value={jobId}
+                      onChange={(event) => setJobId(event.target.value)}
+                      className="mt-1 w-full rounded-lg border border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-800 px-3 py-2 text-sm"
+                    />
+                  </div>
+                </div>
+                <div>
+                  <label className="text-xs font-medium text-gray-500">
+                    Notes
+                  </label>
+                  <textarea
+                    placeholder="Optional notes..."
+                    value={notes}
+                    onChange={(event) => setNotes(event.target.value)}
+                    rows={2}
+                    className="mt-1 w-full rounded-lg border border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-800 px-3 py-2 text-sm resize-none"
+                  />
                 </div>
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                   <div>

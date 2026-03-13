@@ -159,6 +159,8 @@ export default function RackDetailClient({ userName }: { userName: string }) {
                   <th className="py-2 pr-4">Size</th>
                   <th className="py-2 pr-4">Client</th>
                   <th className="py-2 pr-4">Date Added</th>
+                  <th className="py-2 pr-4">Label</th>
+                  <th className="py-2 pr-4">Label</th>
                 </tr>
               </thead>
               <tbody>
@@ -224,12 +226,22 @@ export default function RackDetailClient({ userName }: { userName: string }) {
                         );
                       })()}
                     </td>
+                    <td className="py-3 pr-4 text-gray-600 dark:text-gray-300">
+                      <a
+                        href={`/print/slab-label/${slab.id}`}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="inline-flex items-center gap-1 rounded-md bg-gray-100 dark:bg-gray-800 px-2.5 py-1 text-xs font-medium text-gray-700 dark:text-gray-300 hover:bg-blue-100 dark:hover:bg-blue-900/30 hover:text-blue-700 transition-colors"
+                      >
+                        🖨️ Print
+                      </a>
+                    </td>
                   </tr>
                 ))}
                 {slabs.length === 0 && (
                   <tr>
                     <td
-                      colSpan={10}
+                      colSpan={11}
                       className="py-6 text-center text-gray-500 dark:text-gray-400"
                     >
                       No slabs in this rack yet.

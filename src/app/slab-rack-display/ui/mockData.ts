@@ -18,6 +18,9 @@ export type Slab = {
   size: string;
   clientName: string;
   brand: string;
+  finish?: string;
+  notes?: string;
+  jobId?: string;
   rackId: string;
   createdAt: string;
   batchId?: string;

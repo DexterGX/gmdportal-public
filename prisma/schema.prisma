@@ -155,6 +155,9 @@ model SlabBaySlab {
   size       String
   clientName String
   brand      String?
+  finish     String?
+  notes      String?
+  jobId      String?
   batchId    String?
   batchIndex Int?
   batchSize  Int?
