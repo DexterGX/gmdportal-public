@@ -42,24 +42,40 @@ export default function SlabLabelClient({ slab }: { slab: SlabLabelData }) {
   const typeLabel = TYPE_LABEL[slab.type] ?? slab.type;
 
   const infoRows: Array<[string, string]> = [
-    ["Scanner ID", slab.scannerId],
-    ["Slab Name", slab.name],
-    ["Provider", slab.brand],
-    ["Finish", slab.finish],
-    ["Thickness", slab.thickness],
-    ["Client Name", displayClient],
-    ["Slab Type", typeLabel],
-    ["Job ID", slab.jobId],
-    ["Notes", slab.notes],
-  ].filter(([, v]) => Boolean(v)) as Array<[string, string]>;
+    ["Scanner ID", slab.scannerId || "-"],
+    ["Slab Name", slab.name || "-"],
+    ["Provider", slab.brand || "-"],
+    ["Finish", slab.finish || "-"],
+    ["Thickness", slab.thickness || "-"],
+    ["Client Name", displayClient || "-"],
+    ["Slab Type", typeLabel || "-"],
+    ["Job ID", slab.jobId || "-"],
+    ["Notes", slab.notes || "-"],
+  ];
 
   return (
     <>
       <style>{`
         @media print {
           .no-print { display: none !important; }
-          @page { size: 7.5in 2.5in; margin: 0; }
-          body { margin: 0; padding: 0; background: white; }
+          @page { margin: 0; }
+          html, body { margin: 0 !important; padding: 0 !important; background: white !important; overflow: hidden !important; }
+          body * { visibility: hidden; }
+          .print-sheet, .print-sheet * { visibility: visible; }
+          .print-sheet {
+            position: fixed;
+            left: 0;
+            top: 0;
+            width: 100vw;
+            height: 100vh;
+            page-break-after: avoid;
+            break-after: avoid-page;
+          }
+          .label-root {
+            width: 100vw !important;
+            height: 100vh !important;
+            border-width: 2px !important;
+          }
           .label-scale { transform: none !important; margin-bottom: 0 !important; }
         }
       `}</style>
@@ -99,7 +115,7 @@ export default function SlabLabelClient({ slab }: { slab: SlabLabelData }) {
       </div>
 
       {/* Print output */}
-      <div className="hidden print:block">
+      <div className="hidden print:block print-sheet">
         <LabelBody slab={slab} infoRows={infoRows} qrUrl={qrUrl} />
       </div>
     </>
@@ -117,6 +133,7 @@ function LabelBody({
 }) {
   return (
     <div
+      className="label-root"
       style={{
         width: "7.5in",
         height: "2.5in",
@@ -295,6 +312,9 @@ function LabelBody({
             display: "flex",
             flexDirection: "column",
             overflow: "hidden",
+            borderTop: "1.5px solid #000000",
+            borderRight: "1.5px solid #000000",
+            borderBottom: "1.5px solid #000000",
           }}
         >
           <div
