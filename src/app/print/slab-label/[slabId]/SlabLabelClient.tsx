@@ -47,6 +47,7 @@ export default function SlabLabelClient({ slab }: { slab: SlabLabelData }) {
     ["Providor", slab.brand || "-"],
     ["Finish", slab.finish || "-"],
     ["Thickness", slab.thickness || "-"],
+    ["Size", slab.size || "-"],
     ["Client Name", displayClient || "-"],
     ["Notes", slab.notes || "-"],
     ["Slab Type", typeLabel || "-"],
