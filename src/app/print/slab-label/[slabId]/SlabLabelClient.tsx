@@ -297,26 +297,6 @@ function LabelBody({
         >
           <div
             style={{
-              padding: "7pt 10pt 6pt",
-              borderBottom: "2px solid #000000",
-              backgroundColor: "#ffffff",
-            }}
-          >
-            <span
-              style={{
-                fontSize: "13pt",
-                fontWeight: "bold",
-                color: "#000",
-                letterSpacing: "0.03em",
-                textTransform: "uppercase",
-              }}
-            >
-              GMD Portal — Slab Label
-            </span>
-          </div>
-
-          <div
-            style={{
               flex: 1,
               display: "flex",
               flexDirection: "column",
