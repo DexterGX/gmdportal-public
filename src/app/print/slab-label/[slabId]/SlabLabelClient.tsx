@@ -58,17 +58,8 @@ export default function SlabLabelClient({ slab }: { slab: SlabLabelData }) {
       <style>{`
         @media print {
           .no-print { display: none !important; }
-          @page { margin: 0; }
-          html, body { margin: 0 !important; padding: 0 !important; background: white !important; overflow: hidden !important; }
-          body * { visibility: hidden; }
-          .print-sheet, .print-sheet * { visibility: visible; }
-          .print-sheet {
-            position: fixed;
-            left: 0;
-            top: 0;
-            page-break-after: avoid;
-            break-after: avoid-page;
-          }
+          @page { size: 7.5in 2.5in; margin: 0; }
+          body { margin: 0; padding: 0; background: white; }
           .label-scale { transform: none !important; margin-bottom: 0 !important; }
         }
       `}</style>
@@ -108,7 +99,7 @@ export default function SlabLabelClient({ slab }: { slab: SlabLabelData }) {
       </div>
 
       {/* Print output */}
-      <div className="hidden print:block print-sheet">
+      <div className="hidden print:block">
         <LabelBody slab={slab} infoRows={infoRows} qrUrl={qrUrl} />
       </div>
     </>
