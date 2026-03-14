@@ -330,8 +330,7 @@ function LabelBody({
                 style={{
                   display: "flex",
                   alignItems: "stretch",
-                  borderBottom:
-                    idx < infoRows.length - 1 ? "1.5px solid #000000" : "none",
+                  borderTop: idx > 0 ? "1.5px solid #000000" : "none",
                   flex: 1,
                   minHeight: 0,
                 }}
