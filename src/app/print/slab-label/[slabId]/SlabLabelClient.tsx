@@ -58,7 +58,7 @@ export default function SlabLabelClient({ slab }: { slab: SlabLabelData }) {
       <style>{`
         @media print {
           .no-print { display: none !important; }
-          @page { size: 7.5in 2.5in; margin: 0; }
+          @page { margin: 0; }
           body { margin: 0; padding: 0; background: white; }
           .label-scale { transform: none !important; margin-bottom: 0 !important; }
         }
@@ -81,15 +81,14 @@ export default function SlabLabelClient({ slab }: { slab: SlabLabelData }) {
           </button>
         </div>
         <p className="text-xs text-gray-700 font-semibold">
-          Label size: 7.5&quot; × 2.5&quot; &middot; Left 1&quot; is a tear-off
-          strip for slab edge
+          Print size: using your printer driver default stock size
         </p>
 
         {/* Screen preview — scaled up for readability */}
         <div
           className="label-scale"
           style={{
-            transform: "scale(1.35)",
+            transform: "scale(1.1)",
             transformOrigin: "top center",
             marginBottom: "4rem",
           }}
@@ -118,8 +117,7 @@ function LabelBody({
   return (
     <div
       style={{
-        width: "7.5in",
-        height: "2.5in",
+        width: "100%",
         display: "flex",
         flexDirection: "row",
         fontFamily: "Arial, Helvetica, sans-serif",
