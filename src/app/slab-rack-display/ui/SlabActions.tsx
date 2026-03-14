@@ -48,9 +48,13 @@ export default function SlabActions({
   const [scannerIds, setScannerIds] = useState<string[]>([]);
   const [slabName, setSlabName] = useState("");
   const [brand, setBrand] = useState("");
+  const [brandOther, setBrandOther] = useState("");
   const [thickness, setThickness] = useState("");
   const [brandPickerOpen, setBrandPickerOpen] = useState(false);
   const [brandSearchTerm, setBrandSearchTerm] = useState("");
+  const [finishPickerOpen, setFinishPickerOpen] = useState(false);
+  const [finishSearchTerm, setFinishSearchTerm] = useState("");
+  const [finishOther, setFinishOther] = useState("");
   const [thicknessPickerOpen, setThicknessPickerOpen] = useState(false);
   const [typePickerOpen, setTypePickerOpen] = useState(false);
   const [showSizeHDropdown, setShowSizeHDropdown] = useState(false);
@@ -105,6 +109,7 @@ export default function SlabActions({
     () => ["SLAB", "GMD", "REMNANT", "RESERVED", "CLIENT_SLAB"],
     [],
   );
+  const OTHER_OPTION = "OTHER";
   const brandOptions = useMemo(
     () => [
       "CAMBRIA",
@@ -130,14 +135,84 @@ export default function SlabActions({
       "UMI - Pompeii Quartz",
       "UMI - Vetrazzo",
       "WILLSONART",
+      OTHER_OPTION,
+    ],
+    [OTHER_OPTION],
+  );
+  const finishOptions = useMemo(
+    () => [
+      "CONCRETE",
+      "DUAL",
+      "HONED",
+      "LEATHER",
+      "MATTE",
+      "NATURAL",
+      "OTHER",
+      "POLISHED",
+      "ROUGH",
+      "STONE",
+      "ULTRA_ROUGH",
+      "SATIN",
+      "SATIN_HONED",
+      "PATINATO",
+      "LEVIGATO_PEARL",
+      "GLAM",
+      "GINZA",
+      "HOLOS",
+      "TWILL",
+      "JUTA",
+      "DENIM",
+      "DAMIER",
+      "LAVA",
+      "SILK",
+      "LUXE",
+      "BRUSHED",
+      "TEXTURED",
+      "SMOOTH_MATTE",
+      "TEXTURED_MATTE",
+      "VELVET",
+      "TEXTURED_VELVET",
+      "SATIN_RIDGE",
+      "SUEDE",
+      "DECOR_POLISHED",
+      "NANOTECH_POLISHED",
+      "NATURAL_TOUCH",
+      "RIVERWASHED",
+      "SLATE",
+      "ULTRASOFT",
     ],
     [],
   );
+  const formatFinishOption = (value: string) =>
+    value
+      .toLowerCase()
+      .split("_")
+      .map((part) => part.charAt(0).toUpperCase() + part.slice(1))
+      .join(" ");
   const filteredBrandOptions = useMemo(() => {
     const term = brandSearchTerm.trim().toLowerCase();
     if (!term) return brandOptions;
     return brandOptions.filter((option) => option.toLowerCase().includes(term));
   }, [brandOptions, brandSearchTerm]);
+  const filteredFinishOptions = useMemo(() => {
+    const term = finishSearchTerm.trim().toLowerCase();
+    if (!term) return finishOptions;
+    return finishOptions.filter((option) =>
+      formatFinishOption(option).toLowerCase().includes(term),
+    );
+  }, [finishOptions, finishSearchTerm]);
+  const brandDisplayValue =
+    brand === OTHER_OPTION
+      ? brandOther.trim()
+        ? `Other - ${brandOther.trim()}`
+        : "Other"
+      : brand;
+  const finishDisplayValue =
+    finish === OTHER_OPTION
+      ? finishOther.trim()
+        ? `Other - ${finishOther.trim()}`
+        : "Other"
+      : finish;
   const clientDropdownRef = useRef<HTMLDivElement | null>(null);
   const originalClientDropdownRef = useRef<HTMLDivElement | null>(null);
   const slabDropdownRef = useRef<HTMLDivElement | null>(null);
@@ -344,9 +419,13 @@ export default function SlabActions({
     setScannerIds([]);
     setSlabName("");
     setBrand("");
+    setBrandOther("");
     setThickness("");
     setBrandPickerOpen(false);
     setBrandSearchTerm("");
+    setFinishPickerOpen(false);
+    setFinishSearchTerm("");
+    setFinishOther("");
     setThicknessPickerOpen(false);
     setTypePickerOpen(false);
     setShowSizeHDropdown(false);
@@ -452,9 +531,24 @@ export default function SlabActions({
       pushNotification("error", message);
       return;
     }
-    const normalizedBrand = brand.trim();
+    const normalizedBrand =
+      brand === OTHER_OPTION ? `Other - ${brandOther.trim()}` : brand.trim();
     if (!normalizedBrand) {
       const message = "Please enter the brand.";
+      setActionError(message);
+      pushNotification("error", message);
+      return;
+    }
+    if (brand === OTHER_OPTION && !brandOther.trim()) {
+      const message = "Please enter the custom brand name.";
+      setActionError(message);
+      pushNotification("error", message);
+      return;
+    }
+    const normalizedFinish =
+      finish === OTHER_OPTION ? `Other - ${finishOther.trim()}` : finish.trim();
+    if (finish === OTHER_OPTION && !finishOther.trim()) {
+      const message = "Please enter the custom finish name.";
       setActionError(message);
       pushNotification("error", message);
       return;
@@ -486,7 +580,7 @@ export default function SlabActions({
           slabType === "GMD" ? originalClientName : undefined,
         ),
         brand: normalizedBrand,
-        finish: finish.trim() || undefined,
+        finish: normalizedFinish || undefined,
         notes: notes.trim() || undefined,
         jobId: jobId.trim() || undefined,
       },
@@ -878,8 +972,17 @@ export default function SlabActions({
                       onClick={() => setBrandPickerOpen(true)}
                       className="mt-1 w-full rounded-lg border border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-800 px-3 py-2 text-left text-sm"
                     >
-                      {brand || "Select brand"}
+                      {brandDisplayValue || "Select brand"}
                     </button>
+                    {brand === OTHER_OPTION && (
+                      <input
+                        type="text"
+                        value={brandOther}
+                        onChange={(event) => setBrandOther(event.target.value)}
+                        placeholder="Type brand name..."
+                        className="mt-2 w-full rounded-lg border border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-800 px-3 py-2 text-sm"
+                      />
+                    )}
                   </div>
                   <div>
                     <label className="text-xs font-medium text-gray-500">
@@ -1060,13 +1163,22 @@ export default function SlabActions({
                     <label className="text-xs font-medium text-gray-500">
                       Finish
                     </label>
-                    <input
-                      type="text"
-                      placeholder="e.g. Polished, Honed, Leathered..."
-                      value={finish}
-                      onChange={(event) => setFinish(event.target.value)}
-                      className="mt-1 w-full rounded-lg border border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-800 px-3 py-2 text-sm"
-                    />
+                    <button
+                      type="button"
+                      onClick={() => setFinishPickerOpen(true)}
+                      className="mt-1 w-full rounded-lg border border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-800 px-3 py-2 text-left text-sm"
+                    >
+                      {finishDisplayValue || "Select finish"}
+                    </button>
+                    {finish === OTHER_OPTION && (
+                      <input
+                        type="text"
+                        value={finishOther}
+                        onChange={(event) => setFinishOther(event.target.value)}
+                        placeholder="Type finish name..."
+                        className="mt-2 w-full rounded-lg border border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-800 px-3 py-2 text-sm"
+                      />
+                    )}
                   </div>
                   <div>
                     <label className="text-xs font-medium text-gray-500">
@@ -1193,14 +1305,76 @@ export default function SlabActions({
                         type="button"
                         onClick={() => {
                           setBrand(option);
+                          if (option !== OTHER_OPTION) {
+                            setBrandOther("");
+                          }
                           setBrandPickerOpen(false);
                         }}
                         className="w-full text-left px-4 py-3 text-sm text-gray-900 dark:text-gray-100 hover:bg-gray-50 dark:hover:bg-gray-800 rounded-md"
                       >
-                        {option}
+                        {option === OTHER_OPTION ? "Other" : option}
                       </button>
                     ))}
                     {filteredBrandOptions.length === 0 && (
+                      <div className="px-4 py-6 text-center text-sm text-gray-500 dark:text-gray-400">
+                        No matches
+                      </div>
+                    )}
+                  </div>
+                </div>
+              </div>
+            )}
+
+            {finishPickerOpen && (
+              <div className="fixed inset-0 z-[60] flex items-center justify-center bg-black/40 px-4">
+                <div className="w-full max-w-md max-h-[80vh] rounded-xl bg-white dark:bg-gray-900 border border-gray-200 dark:border-gray-800 shadow-xl overflow-hidden">
+                  <div className="flex items-center justify-between px-5 py-4 border-b border-gray-200 dark:border-gray-800">
+                    <div className="text-sm font-semibold text-gray-900 dark:text-gray-100">
+                      Select finish
+                    </div>
+                    <button
+                      type="button"
+                      onClick={() => setFinishPickerOpen(false)}
+                      className="text-sm text-gray-500 hover:text-gray-700"
+                    >
+                      Close
+                    </button>
+                  </div>
+                  <div className="px-5 py-3">
+                    <input
+                      type="text"
+                      value={finishSearchTerm}
+                      onChange={(event) =>
+                        setFinishSearchTerm(event.target.value)
+                      }
+                      placeholder="Search finish..."
+                      className="w-full rounded-lg border border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-800 px-3 py-2 text-sm"
+                    />
+                  </div>
+                  <div className="max-h-[52vh] overflow-y-auto px-2 pb-4">
+                    {filteredFinishOptions.map((option) => (
+                      <button
+                        key={option}
+                        type="button"
+                        onClick={() => {
+                          setFinish(
+                            option === OTHER_OPTION
+                              ? OTHER_OPTION
+                              : formatFinishOption(option),
+                          );
+                          if (option !== OTHER_OPTION) {
+                            setFinishOther("");
+                          }
+                          setFinishPickerOpen(false);
+                        }}
+                        className="w-full text-left px-4 py-3 text-sm text-gray-900 dark:text-gray-100 hover:bg-gray-50 dark:hover:bg-gray-800 rounded-md"
+                      >
+                        {option === OTHER_OPTION
+                          ? "Other"
+                          : formatFinishOption(option)}
+                      </button>
+                    ))}
+                    {filteredFinishOptions.length === 0 && (
                       <div className="px-4 py-6 text-center text-sm text-gray-500 dark:text-gray-400">
                         No matches
                       </div>
