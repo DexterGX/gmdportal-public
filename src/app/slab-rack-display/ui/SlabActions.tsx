@@ -91,6 +91,7 @@ export default function SlabActions({
     scannerIds?: string[];
     quantity: number;
     preferredRackId?: string;
+    printLabels?: boolean;
   } | null>(null);
   const sizeOptions = useMemo(
     () => Array.from({ length: 201 }, (_, i) => String(i)),
@@ -387,6 +388,7 @@ export default function SlabActions({
     scannerIds?: string[];
     quantity: number;
     preferredRackId?: string;
+    printLabels?: boolean;
   }) => {
     const next = addMultipleSlabs(
       state,
@@ -396,12 +398,25 @@ export default function SlabActions({
       userName,
       payload.preferredRackId,
     );
+    if (payload.printLabels) {
+      const previousIds = new Set(state.slabs.map((slab) => slab.id));
+      const createdSlabs = next.slabs.filter(
+        (slab) => !previousIds.has(slab.id),
+      );
+      createdSlabs.forEach((slab) => {
+        window.open(
+          `/print/slab-label/${slab.id}`,
+          "_blank",
+          "noopener,noreferrer",
+        );
+      });
+    }
     onUpdate(next);
     resetForm();
     setAction(null);
   };
 
-  const handleAdd = () => {
+  const handleAdd = (printLabels = false) => {
     const qty = Number(quantity);
     if (!Number.isFinite(qty) || qty <= 0) {
       const message = "Please enter a valid quantity greater than 0.";
@@ -478,6 +493,7 @@ export default function SlabActions({
       scannerIds: scannerList,
       quantity: qty,
       preferredRackId: selectedRack.id,
+      printLabels,
     };
 
     if (qty > available) {
@@ -1128,10 +1144,17 @@ export default function SlabActions({
                   </button>
                   <button
                     type="button"
-                    onClick={handleAdd}
+                    onClick={() => handleAdd(false)}
                     className="px-4 py-2 text-sm font-medium text-white bg-blue-600 rounded-lg hover:bg-blue-700 transition-colors"
                   >
                     Add slab
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => handleAdd(true)}
+                    className="px-4 py-2 text-sm font-medium text-white bg-gray-900 rounded-lg hover:bg-black transition-colors"
+                  >
+                    Add & print label
                   </button>
                 </div>
               </div>
