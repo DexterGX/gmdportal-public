@@ -42,16 +42,16 @@ export default function SlabLabelClient({ slab }: { slab: SlabLabelData }) {
   const typeLabel = TYPE_LABEL[slab.type] ?? slab.type;
 
   const infoRows: Array<[string, string]> = [
-    ["Scanner ID", slab.scannerId],
-    ["Slab Name", slab.name],
-    ["Provider", slab.brand],
-    ["Finish", slab.finish],
-    ["Thickness", slab.thickness],
-    ["Client Name", displayClient],
-    ["Slab Type", typeLabel],
-    ["Job ID", slab.jobId],
-    ["Notes", slab.notes],
-  ].filter(([, v]) => Boolean(v)) as Array<[string, string]>;
+    ["Scanner ID", slab.scannerId || "-"],
+    ["Slab Name", slab.name || "-"],
+    ["Providor", slab.brand || "-"],
+    ["Finish", slab.finish || "-"],
+    ["Thickness", slab.thickness || "-"],
+    ["Client Name", displayClient || "-"],
+    ["Notes", slab.notes || "-"],
+    ["Slab Type", typeLabel || "-"],
+    ["Job ID", slab.jobId || "-"],
+  ];
 
   return (
     <>
@@ -317,12 +317,12 @@ function LabelBody({
               >
                 <div
                   style={{
-                    width: "88pt",
+                    width: "74pt",
                     flexShrink: 0,
                     display: "flex",
                     alignItems: "center",
-                    justifyContent: "flex-end",
-                    padding: "0 8pt",
+                    justifyContent: "flex-start",
+                    padding: "0 5pt",
                     backgroundColor: "#ffffff",
                     borderRight: "1.5px solid #000000",
                   }}
