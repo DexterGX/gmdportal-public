@@ -67,6 +67,7 @@ export default function SlabActions({
   >("SLAB");
   const [finish, setFinish] = useState("");
   const [notes, setNotes] = useState("");
+  const [scannerNotes, setScannerNotes] = useState<string[]>([]);
   const [jobId, setJobId] = useState("");
   const [selectedSlabId, setSelectedSlabId] = useState<string>("");
   const [fromRackId, setFromRackId] = useState<string>("");
@@ -93,10 +94,15 @@ export default function SlabActions({
   const [pendingAdd, setPendingAdd] = useState<{
     input: Omit<Slab, "id" | "createdAt" | "rackId">;
     scannerIds?: string[];
+    slabNotes?: string[];
     quantity: number;
     preferredRackId?: string;
     printLabels?: boolean;
   } | null>(null);
+  const [printSelectionOpen, setPrintSelectionOpen] = useState(false);
+  const [printSelectionSlabs, setPrintSelectionSlabs] = useState<
+    Array<{ id: string; scannerId: string; name: string }>
+  >([]);
   const sizeOptions = useMemo(
     () => Array.from({ length: 201 }, (_, i) => String(i)),
     [],
@@ -367,6 +373,28 @@ export default function SlabActions({
   }, [quantity, scannerId]);
 
   useEffect(() => {
+    const count = Number(quantity);
+    if (!Number.isFinite(count) || count <= 0) {
+      setScannerNotes([]);
+      return;
+    }
+    setScannerNotes((prev) => {
+      const next = [...prev];
+      if (count > 1 && next.length === 0 && notes.trim()) {
+        next[0] = notes;
+      }
+      if (next.length < count) {
+        for (let i = next.length; i < count; i += 1) {
+          next.push("");
+        }
+      } else if (next.length > count) {
+        next.length = count;
+      }
+      return next;
+    });
+  }, [quantity, notes]);
+
+  useEffect(() => {
     const handleClickOutside = (event: MouseEvent) => {
       const target = event.target as Node;
       if (
@@ -434,6 +462,7 @@ export default function SlabActions({
     setSizeWidth("");
     setFinish("");
     setNotes("");
+    setScannerNotes([]);
     setJobId("");
     setQuantity("1");
     setSlabType("SLAB");
@@ -451,6 +480,10 @@ export default function SlabActions({
     setPendingAdd(null);
   };
 
+  const openLabel = (slabId: string) => {
+    window.open(`/print/slab-label/${slabId}`, "_blank", "noopener,noreferrer");
+  };
+
   const pushNotification = (
     type: "success" | "error" | "warning",
     message: string,
@@ -465,6 +498,7 @@ export default function SlabActions({
   const performAdd = (payload: {
     input: Omit<Slab, "id" | "createdAt" | "rackId">;
     scannerIds?: string[];
+    slabNotes?: string[];
     quantity: number;
     preferredRackId?: string;
     printLabels?: boolean;
@@ -473,6 +507,7 @@ export default function SlabActions({
       state,
       payload.input,
       payload.scannerIds,
+      payload.slabNotes,
       payload.quantity,
       userName,
       payload.preferredRackId,
@@ -482,13 +517,18 @@ export default function SlabActions({
       const createdSlabs = next.slabs.filter(
         (slab) => !previousIds.has(slab.id),
       );
-      createdSlabs.forEach((slab) => {
-        window.open(
-          `/print/slab-label/${slab.id}`,
-          "_blank",
-          "noopener,noreferrer",
+      if (createdSlabs.length <= 1) {
+        createdSlabs.forEach((slab) => openLabel(slab.id));
+      } else {
+        setPrintSelectionSlabs(
+          createdSlabs.map((slab) => ({
+            id: slab.id,
+            scannerId: slab.scannerId,
+            name: slab.name,
+          })),
         );
-      });
+        setPrintSelectionOpen(true);
+      }
     }
     onUpdate(next);
     resetForm();
@@ -516,6 +556,10 @@ export default function SlabActions({
       return;
     }
     const scannerList = qty > 1 ? scannerIds : [scannerId];
+    const noteList =
+      qty > 1
+        ? Array.from({ length: qty }, (_, index) => scannerNotes[index] ?? "")
+        : [notes];
     if (scannerList.length !== qty || scannerList.some((id) => !id.trim())) {
       const message =
         qty > 1
@@ -581,10 +625,11 @@ export default function SlabActions({
         ),
         brand: normalizedBrand,
         finish: normalizedFinish || undefined,
-        notes: notes.trim() || undefined,
+        notes: noteList[0]?.trim() || undefined,
         jobId: jobId.trim() || undefined,
       },
       scannerIds: scannerList,
+      slabNotes: noteList,
       quantity: qty,
       preferredRackId: selectedRack.id,
       printLabels,
@@ -703,153 +748,60 @@ export default function SlabActions({
             </div>
 
             {action === "add" && (
-              <div className="mt-4 space-y-4">
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                  <div>
-                    <label className="text-xs font-medium text-gray-500">
-                      Rack
-                    </label>
-                    <select
-                      value={selectedRackId}
-                      onChange={(event) =>
-                        setSelectedRackId(event.target.value)
-                      }
-                      className="mt-1 w-full rounded-lg border border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-800 px-3 py-2 text-sm"
-                    >
-                      {sortedRacks.map((rack) => (
-                        <option key={rack.id} value={rack.id}>
-                          {rack.name}
-                        </option>
-                      ))}
-                    </select>
+              <div className="mt-4 space-y-5">
+                <div>
+                  <div className="text-xs font-semibold uppercase tracking-wide text-blue-600 dark:text-blue-400 border-l-2 border-blue-500 pl-2 mb-1">
+                    Rack and client
                   </div>
-                  <div>
-                    <label className="text-xs font-medium text-gray-500">
-                      {slabType === "GMD" ? "New client" : "Client name"}
-                    </label>
-                    <div className="relative mt-1" ref={clientDropdownRef}>
-                      <input
-                        type="text"
-                        placeholder="Search for a customer..."
-                        value={clientSearchTerm}
-                        onChange={(event) => {
-                          setClientSearchTerm(event.target.value);
-                          setShowClientDropdown(true);
-                        }}
-                        onFocus={() => setShowClientDropdown(true)}
-                        onBlur={() => {
-                          setTimeout(() => setShowClientDropdown(false), 120);
-                        }}
-                        disabled={Boolean(clientName)}
-                        className="w-full pl-10 pr-4 py-2 border border-gray-300 dark:border-gray-700 rounded-md bg-white dark:bg-gray-900 text-gray-900 dark:text-gray-100 focus:ring-2 focus:ring-blue-500 focus:border-transparent disabled:bg-gray-100 dark:disabled:bg-gray-700 disabled:cursor-not-allowed"
-                      />
-                      <span className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400">
-                        🔍
-                      </span>
-                      {showClientDropdown && clientSearchTerm.length > 0 && (
-                        <div className="absolute z-20 w-full mt-1 bg-white dark:bg-gray-800 border border-gray-300 dark:border-gray-700 rounded-md shadow-lg max-h-60 overflow-auto">
-                          {loadingClients ? (
-                            <div className="p-4 text-center text-gray-500 dark:text-gray-400">
-                              Loading...
-                            </div>
-                          ) : clientSuggestions.length === 0 ? (
-                            <div className="p-4 text-center text-gray-500 dark:text-gray-400">
-                              No customers found
-                            </div>
-                          ) : (
-                            <>
-                              <div className="px-4 py-2 text-xs uppercase tracking-wide text-gray-400">
-                                Customers
-                              </div>
-                              {clientSuggestions.map((client) => (
-                                <button
-                                  key={client}
-                                  type="button"
-                                  onClick={() => {
-                                    setClientName(client);
-                                    setClientSearchTerm(client);
-                                    setShowClientDropdown(false);
-                                  }}
-                                  className="w-full text-left px-4 py-3 hover:bg-gray-50 dark:hover:bg-gray-700 border-b border-gray-100 dark:border-gray-700 last:border-b-0"
-                                >
-                                  <div className="font-medium text-gray-900 dark:text-gray-100">
-                                    {client}
-                                  </div>
-                                  <div className="text-sm text-gray-600 dark:text-gray-400">
-                                    Customer
-                                  </div>
-                                </button>
-                              ))}
-                            </>
-                          )}
-                        </div>
-                      )}
+                  <div className="mt-2 grid grid-cols-1 sm:grid-cols-2 gap-3">
+                    <div>
+                      <label className="text-xs font-medium text-gray-500">
+                        Rack
+                      </label>
+                      <select
+                        value={selectedRackId}
+                        onChange={(event) =>
+                          setSelectedRackId(event.target.value)
+                        }
+                        className="mt-1 w-full rounded-lg border border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-800 px-3 py-2 text-sm"
+                      >
+                        {sortedRacks.map((rack) => (
+                          <option key={rack.id} value={rack.id}>
+                            {rack.name}
+                          </option>
+                        ))}
+                      </select>
                     </div>
-                    {clientName && (
-                      <div className="mt-2 flex items-center justify-between rounded-md border border-blue-200 dark:border-blue-800 bg-blue-50 dark:bg-blue-900/20 px-3 py-2">
-                        <div>
-                          <div className="text-sm font-semibold text-gray-900 dark:text-gray-100">
-                            {clientName}
-                          </div>
-                          <div className="text-xs text-gray-500 dark:text-gray-400">
-                            Selected customer
-                          </div>
-                        </div>
-                        <button
-                          type="button"
-                          onClick={() => {
-                            setClientName("");
-                            setClientSearchTerm("");
+                    <div>
+                      <label className="text-xs font-medium text-gray-500">
+                        {slabType === "GMD" ? "New client" : "Client name"}
+                      </label>
+                      <div className="relative mt-1" ref={clientDropdownRef}>
+                        <input
+                          type="text"
+                          placeholder="Search for a customer..."
+                          value={clientSearchTerm}
+                          onChange={(event) => {
+                            setClientSearchTerm(event.target.value);
+                            setShowClientDropdown(true);
                           }}
-                          className="text-sm text-blue-600 hover:text-blue-700 dark:text-blue-400 dark:hover:text-blue-300"
-                        >
-                          Change
-                        </button>
-                      </div>
-                    )}
-                  </div>
-                </div>
-                {slabType === "GMD" && (
-                  <div>
-                    <label className="text-xs font-medium text-gray-500">
-                      Original client
-                    </label>
-                    <div
-                      className="relative mt-1"
-                      ref={originalClientDropdownRef}
-                    >
-                      <input
-                        type="text"
-                        placeholder="Search for a customer..."
-                        value={originalClientSearchTerm}
-                        onChange={(event) => {
-                          setOriginalClientSearchTerm(event.target.value);
-                          setShowOriginalClientDropdown(true);
-                          if (!event.target.value) {
-                            setOriginalClientName("");
-                          }
-                        }}
-                        onFocus={() => setShowOriginalClientDropdown(true)}
-                        onBlur={() => {
-                          setTimeout(
-                            () => setShowOriginalClientDropdown(false),
-                            120,
-                          );
-                        }}
-                        disabled={Boolean(originalClientName)}
-                        className="w-full pl-10 pr-4 py-2 border border-gray-300 dark:border-gray-700 rounded-md bg-white dark:bg-gray-900 text-gray-900 dark:text-gray-100 focus:ring-2 focus:ring-blue-500 focus:border-transparent disabled:bg-gray-100 dark:disabled:bg-gray-700 disabled:cursor-not-allowed"
-                      />
-                      <span className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400">
-                        🔍
-                      </span>
-                      {showOriginalClientDropdown &&
-                        originalClientSearchTerm.length > 0 && (
+                          onFocus={() => setShowClientDropdown(true)}
+                          onBlur={() => {
+                            setTimeout(() => setShowClientDropdown(false), 120);
+                          }}
+                          disabled={Boolean(clientName)}
+                          className="w-full pl-10 pr-4 py-2 border border-gray-300 dark:border-gray-700 rounded-md bg-white dark:bg-gray-900 text-gray-900 dark:text-gray-100 focus:ring-2 focus:ring-blue-500 focus:border-transparent disabled:bg-gray-100 dark:disabled:bg-gray-700 disabled:cursor-not-allowed"
+                        />
+                        <span className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400">
+                          🔍
+                        </span>
+                        {showClientDropdown && clientSearchTerm.length > 0 && (
                           <div className="absolute z-20 w-full mt-1 bg-white dark:bg-gray-800 border border-gray-300 dark:border-gray-700 rounded-md shadow-lg max-h-60 overflow-auto">
-                            {loadingOriginalClients ? (
+                            {loadingClients ? (
                               <div className="p-4 text-center text-gray-500 dark:text-gray-400">
                                 Loading...
                               </div>
-                            ) : originalClientSuggestions.length === 0 ? (
+                            ) : clientSuggestions.length === 0 ? (
                               <div className="p-4 text-center text-gray-500 dark:text-gray-400">
                                 No customers found
                               </div>
@@ -858,14 +810,14 @@ export default function SlabActions({
                                 <div className="px-4 py-2 text-xs uppercase tracking-wide text-gray-400">
                                   Customers
                                 </div>
-                                {originalClientSuggestions.map((client) => (
+                                {clientSuggestions.map((client) => (
                                   <button
                                     key={client}
                                     type="button"
                                     onClick={() => {
-                                      setOriginalClientName(client);
-                                      setOriginalClientSearchTerm(client);
-                                      setShowOriginalClientDropdown(false);
+                                      setClientName(client);
+                                      setClientSearchTerm(client);
+                                      setShowClientDropdown(false);
                                     }}
                                     className="w-full text-left px-4 py-3 hover:bg-gray-50 dark:hover:bg-gray-700 border-b border-gray-100 dark:border-gray-700 last:border-b-0"
                                   >
@@ -881,156 +833,462 @@ export default function SlabActions({
                             )}
                           </div>
                         )}
-                    </div>
-                    {originalClientName && (
-                      <div className="mt-2 flex items-center justify-between rounded-md border border-blue-200 dark:border-blue-800 bg-blue-50 dark:bg-blue-900/20 px-3 py-2">
-                        <div>
-                          <div className="text-sm font-semibold text-gray-900 dark:text-gray-100">
-                            {originalClientName}
-                          </div>
-                          <div className="text-xs text-gray-500 dark:text-gray-400">
-                            Selected customer
-                          </div>
-                        </div>
-                        <button
-                          type="button"
-                          onClick={() => {
-                            setOriginalClientName("");
-                            setOriginalClientSearchTerm("");
-                          }}
-                          className="text-sm text-blue-600 hover:text-blue-700 dark:text-blue-400 dark:hover:text-blue-300"
-                        >
-                          Change
-                        </button>
                       </div>
-                    )}
-                  </div>
-                )}
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                  <div>
-                    <label className="text-xs font-medium text-gray-500">
-                      Slab name
-                    </label>
-                    <div className="relative mt-1" ref={slabDropdownRef}>
-                      <input
-                        type="text"
-                        placeholder="Search for a slab name..."
-                        value={slabSearchTerm}
-                        onChange={(event) => {
-                          setSlabSearchTerm(event.target.value);
-                          setSlabName(event.target.value);
-                          setShowSlabDropdown(true);
-                        }}
-                        onFocus={() => setShowSlabDropdown(true)}
-                        onBlur={() => {
-                          setTimeout(() => setShowSlabDropdown(false), 120);
-                        }}
-                        className="w-full pl-10 pr-4 py-2 border border-gray-300 dark:border-gray-700 rounded-md bg-white dark:bg-gray-900 text-gray-900 dark:text-gray-100 focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-                      />
-                      <span className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400">
-                        🔍
-                      </span>
-                      {showSlabDropdown && slabSearchTerm.length > 0 && (
-                        <div className="absolute z-20 w-full mt-1 bg-white dark:bg-gray-800 border border-gray-300 dark:border-gray-700 rounded-md shadow-lg max-h-60 overflow-auto">
-                          {slabSuggestions.length === 0 ? (
-                            <div className="p-4 text-center text-gray-500 dark:text-gray-400">
-                              No slab matches
+                      {clientName && (
+                        <div className="mt-2 flex items-center justify-between rounded-md border border-blue-200 dark:border-blue-800 bg-blue-50 dark:bg-blue-900/20 px-3 py-2">
+                          <div>
+                            <div className="text-sm font-semibold text-gray-900 dark:text-gray-100">
+                              {clientName}
                             </div>
-                          ) : (
-                            <>
-                              <div className="px-4 py-2 text-xs uppercase tracking-wide text-gray-400">
-                                Slab names
-                              </div>
-                              {slabSuggestions.map((name) => (
-                                <button
-                                  key={name}
-                                  type="button"
-                                  onClick={() => {
-                                    setSlabName(name);
-                                    setSlabSearchTerm(name);
-                                    setShowSlabDropdown(false);
-                                  }}
-                                  className="w-full text-left px-4 py-3 hover:bg-gray-50 dark:hover:bg-gray-700 border-b border-gray-100 dark:border-gray-700 last:border-b-0"
-                                >
-                                  <div className="font-medium text-gray-900 dark:text-gray-100">
-                                    {name}
-                                  </div>
-                                </button>
-                              ))}
-                            </>
-                          )}
+                            <div className="text-xs text-gray-500 dark:text-gray-400">
+                              Selected customer
+                            </div>
+                          </div>
+                          <button
+                            type="button"
+                            onClick={() => {
+                              setClientName("");
+                              setClientSearchTerm("");
+                            }}
+                            className="text-sm text-blue-600 hover:text-blue-700 dark:text-blue-400 dark:hover:text-blue-300"
+                          >
+                            Change
+                          </button>
                         </div>
                       )}
                     </div>
                   </div>
-                  <div>
-                    <label className="text-xs font-medium text-gray-500">
-                      Brand
-                    </label>
-                    <button
-                      type="button"
-                      onClick={() => setBrandPickerOpen(true)}
-                      className="mt-1 w-full rounded-lg border border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-800 px-3 py-2 text-left text-sm"
-                    >
-                      {brandDisplayValue || "Select brand"}
-                    </button>
-                    {brand === OTHER_OPTION && (
-                      <input
-                        type="text"
-                        value={brandOther}
-                        onChange={(event) => setBrandOther(event.target.value)}
-                        placeholder="Type brand name..."
-                        className="mt-2 w-full rounded-lg border border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-800 px-3 py-2 text-sm"
-                      />
-                    )}
-                  </div>
-                  <div>
-                    <label className="text-xs font-medium text-gray-500">
-                      Thickness
-                    </label>
-                    <button
-                      type="button"
-                      onClick={() => setThicknessPickerOpen(true)}
-                      className="mt-1 w-full rounded-lg border border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-800 px-3 py-2 text-left text-sm"
-                    >
-                      {thickness || "Select thickness"}
-                    </button>
-                  </div>
+                  {slabType === "GMD" && (
+                    <div className="mt-3">
+                      <label className="text-xs font-medium text-gray-500">
+                        Original client
+                      </label>
+                      <div
+                        className="relative mt-1"
+                        ref={originalClientDropdownRef}
+                      >
+                        <input
+                          type="text"
+                          placeholder="Search for a customer..."
+                          value={originalClientSearchTerm}
+                          onChange={(event) => {
+                            setOriginalClientSearchTerm(event.target.value);
+                            setShowOriginalClientDropdown(true);
+                            if (!event.target.value) {
+                              setOriginalClientName("");
+                            }
+                          }}
+                          onFocus={() => setShowOriginalClientDropdown(true)}
+                          onBlur={() => {
+                            setTimeout(
+                              () => setShowOriginalClientDropdown(false),
+                              120,
+                            );
+                          }}
+                          disabled={Boolean(originalClientName)}
+                          className="w-full pl-10 pr-4 py-2 border border-gray-300 dark:border-gray-700 rounded-md bg-white dark:bg-gray-900 text-gray-900 dark:text-gray-100 focus:ring-2 focus:ring-blue-500 focus:border-transparent disabled:bg-gray-100 dark:disabled:bg-gray-700 disabled:cursor-not-allowed"
+                        />
+                        <span className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400">
+                          🔍
+                        </span>
+                        {showOriginalClientDropdown &&
+                          originalClientSearchTerm.length > 0 && (
+                            <div className="absolute z-20 w-full mt-1 bg-white dark:bg-gray-800 border border-gray-300 dark:border-gray-700 rounded-md shadow-lg max-h-60 overflow-auto">
+                              {loadingOriginalClients ? (
+                                <div className="p-4 text-center text-gray-500 dark:text-gray-400">
+                                  Loading...
+                                </div>
+                              ) : originalClientSuggestions.length === 0 ? (
+                                <div className="p-4 text-center text-gray-500 dark:text-gray-400">
+                                  No customers found
+                                </div>
+                              ) : (
+                                <>
+                                  <div className="px-4 py-2 text-xs uppercase tracking-wide text-gray-400">
+                                    Customers
+                                  </div>
+                                  {originalClientSuggestions.map((client) => (
+                                    <button
+                                      key={client}
+                                      type="button"
+                                      onClick={() => {
+                                        setOriginalClientName(client);
+                                        setOriginalClientSearchTerm(client);
+                                        setShowOriginalClientDropdown(false);
+                                      }}
+                                      className="w-full text-left px-4 py-3 hover:bg-gray-50 dark:hover:bg-gray-700 border-b border-gray-100 dark:border-gray-700 last:border-b-0"
+                                    >
+                                      <div className="font-medium text-gray-900 dark:text-gray-100">
+                                        {client}
+                                      </div>
+                                      <div className="text-sm text-gray-600 dark:text-gray-400">
+                                        Customer
+                                      </div>
+                                    </button>
+                                  ))}
+                                </>
+                              )}
+                            </div>
+                          )}
+                      </div>
+                      {originalClientName && (
+                        <div className="mt-2 flex items-center justify-between rounded-md border border-blue-200 dark:border-blue-800 bg-blue-50 dark:bg-blue-900/20 px-3 py-2">
+                          <div>
+                            <div className="text-sm font-semibold text-gray-900 dark:text-gray-100">
+                              {originalClientName}
+                            </div>
+                            <div className="text-xs text-gray-500 dark:text-gray-400">
+                              Selected customer
+                            </div>
+                          </div>
+                          <button
+                            type="button"
+                            onClick={() => {
+                              setOriginalClientName("");
+                              setOriginalClientSearchTerm("");
+                            }}
+                            className="text-sm text-blue-600 hover:text-blue-700 dark:text-blue-400 dark:hover:text-blue-300"
+                          >
+                            Change
+                          </button>
+                        </div>
+                      )}
+                    </div>
+                  )}
                 </div>
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                  <div>
-                    <label className="text-xs font-medium text-gray-500">
-                      D2 Scanner ID
-                    </label>
-                    <input
-                      value={scannerId}
-                      onChange={(event) => {
-                        const value = event.target.value;
-                        setScannerId(value);
-                        setScannerIds((prev) => {
-                          const next = [...prev];
-                          if (next.length === 0) next.push(value);
-                          else next[0] = value;
-                          return next;
-                        });
-                      }}
-                      placeholder="D2-XXXX"
-                      className="mt-1 w-full rounded-lg border border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-800 px-3 py-2 text-sm"
-                    />
+
+                <div>
+                  <div className="text-xs font-semibold uppercase tracking-wide text-blue-600 dark:text-blue-400 border-l-2 border-blue-500 pl-2 mb-1">
+                    Slab selections
                   </div>
-                  {Number(quantity) > 1 && (
+                  <div className="mt-2 grid grid-cols-1 sm:grid-cols-2 gap-3">
+                    <div>
+                      <label className="text-xs font-medium text-gray-500">
+                        Slab name
+                      </label>
+                      <div className="relative mt-1" ref={slabDropdownRef}>
+                        <input
+                          type="text"
+                          placeholder="Search for a slab name..."
+                          value={slabSearchTerm}
+                          onChange={(event) => {
+                            setSlabSearchTerm(event.target.value);
+                            setSlabName(event.target.value);
+                            setShowSlabDropdown(true);
+                          }}
+                          onFocus={() => setShowSlabDropdown(true)}
+                          onBlur={() => {
+                            setTimeout(() => setShowSlabDropdown(false), 120);
+                          }}
+                          className="w-full pl-10 pr-4 py-2 border border-gray-300 dark:border-gray-700 rounded-md bg-white dark:bg-gray-900 text-gray-900 dark:text-gray-100 focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                        />
+                        <span className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400">
+                          🔍
+                        </span>
+                        {showSlabDropdown && slabSearchTerm.length > 0 && (
+                          <div className="absolute z-20 w-full mt-1 bg-white dark:bg-gray-800 border border-gray-300 dark:border-gray-700 rounded-md shadow-lg max-h-60 overflow-auto">
+                            {slabSuggestions.length === 0 ? (
+                              <div className="p-4 text-center text-gray-500 dark:text-gray-400">
+                                No slab matches
+                              </div>
+                            ) : (
+                              <>
+                                <div className="px-4 py-2 text-xs uppercase tracking-wide text-gray-400">
+                                  Slab names
+                                </div>
+                                {slabSuggestions.map((name) => (
+                                  <button
+                                    key={name}
+                                    type="button"
+                                    onClick={() => {
+                                      setSlabName(name);
+                                      setSlabSearchTerm(name);
+                                      setShowSlabDropdown(false);
+                                    }}
+                                    className="w-full text-left px-4 py-3 hover:bg-gray-50 dark:hover:bg-gray-700 border-b border-gray-100 dark:border-gray-700 last:border-b-0"
+                                  >
+                                    <div className="font-medium text-gray-900 dark:text-gray-100">
+                                      {name}
+                                    </div>
+                                  </button>
+                                ))}
+                              </>
+                            )}
+                          </div>
+                        )}
+                      </div>
+                    </div>
+                    <div>
+                      <label className="text-xs font-medium text-gray-500">
+                        Brand
+                      </label>
+                      <button
+                        type="button"
+                        onClick={() => setBrandPickerOpen(true)}
+                        className="mt-1 w-full rounded-lg border border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-800 px-3 py-2 text-left text-sm"
+                      >
+                        {brandDisplayValue || "Select brand"}
+                      </button>
+                      {brand === OTHER_OPTION && (
+                        <input
+                          type="text"
+                          value={brandOther}
+                          onChange={(event) => setBrandOther(event.target.value)}
+                          placeholder="Type brand name..."
+                          className="mt-2 w-full rounded-lg border border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-800 px-3 py-2 text-sm"
+                        />
+                      )}
+                    </div>
+                    <div>
+                      <label className="text-xs font-medium text-gray-500">
+                        Thickness
+                      </label>
+                      <button
+                        type="button"
+                        onClick={() => setThicknessPickerOpen(true)}
+                        className="mt-1 w-full rounded-lg border border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-800 px-3 py-2 text-left text-sm"
+                      >
+                        {thickness || "Select thickness"}
+                      </button>
+                    </div>
+                    <div>
+                      <label className="text-xs font-medium text-gray-500">
+                        Finish
+                      </label>
+                      <button
+                        type="button"
+                        onClick={() => setFinishPickerOpen(true)}
+                        className="mt-1 w-full rounded-lg border border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-800 px-3 py-2 text-left text-sm"
+                      >
+                        {finishDisplayValue || "Select finish"}
+                      </button>
+                      {finish === OTHER_OPTION && (
+                        <input
+                          type="text"
+                          value={finishOther}
+                          onChange={(event) => setFinishOther(event.target.value)}
+                          placeholder="Type finish name..."
+                          className="mt-2 w-full rounded-lg border border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-800 px-3 py-2 text-sm"
+                        />
+                      )}
+                    </div>
+                    <div>
+                      <label className="text-xs font-medium text-gray-500">
+                        Quantity
+                      </label>
+                      <input
+                        type="number"
+                        min={1}
+                        value={quantity}
+                        onChange={(event) => setQuantity(event.target.value)}
+                        className="mt-1 w-full rounded-lg border border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-800 px-3 py-2 text-sm"
+                      />
+                    </div>
+                    <div>
+                      <label className="text-xs font-medium text-gray-500">
+                        Type
+                      </label>
+                      <button
+                        type="button"
+                        onClick={() => setTypePickerOpen(true)}
+                        className="mt-1 w-full rounded-lg border border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-800 px-3 py-2 text-left text-sm"
+                      >
+                        {slabType.replace(/_/g, " ")}
+                      </button>
+                    </div>
+                    <div>
+                      <label className="text-xs font-medium text-gray-500">
+                        Size (H)
+                      </label>
+                      <div className="relative mt-1">
+                        <input
+                          type="text"
+                          placeholder="Search size..."
+                          value={sizeHeight}
+                          onChange={(event) => {
+                            setSizeHeight(event.target.value);
+                            setShowSizeHDropdown(true);
+                          }}
+                          onFocus={() => setShowSizeHDropdown(true)}
+                          onBlur={() => {
+                            setTimeout(() => setShowSizeHDropdown(false), 120);
+                          }}
+                          className="w-full pl-4 pr-4 py-2 border border-gray-300 dark:border-gray-700 rounded-md bg-white dark:bg-gray-900 text-gray-900 dark:text-gray-100 focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                        />
+                        {showSizeHDropdown && (
+                          <div className="absolute z-20 w-full mt-1 bg-white dark:bg-gray-800 border border-gray-300 dark:border-gray-700 rounded-md shadow-lg max-h-60 overflow-auto">
+                            {sizeOptions
+                              .filter((opt) => opt.startsWith(sizeHeight))
+                              .map((opt) => (
+                                <button
+                                  key={opt}
+                                  type="button"
+                                  onClick={() => {
+                                    setSizeHeight(opt);
+                                    setShowSizeHDropdown(false);
+                                  }}
+                                  className="w-full text-left px-4 py-2 hover:bg-gray-50 dark:hover:bg-gray-700 border-b border-gray-100 dark:border-gray-700 last:border-b-0"
+                                >
+                                  {opt}
+                                </button>
+                              ))}
+                          </div>
+                        )}
+                      </div>
+                    </div>
+                    <div>
+                      <label className="text-xs font-medium text-gray-500">
+                        Size (W)
+                      </label>
+                      <div className="relative mt-1">
+                        <input
+                          type="text"
+                          placeholder="Search size..."
+                          value={sizeWidth}
+                          onChange={(event) => {
+                            setSizeWidth(event.target.value);
+                            setShowSizeWDropdown(true);
+                          }}
+                          onFocus={() => setShowSizeWDropdown(true)}
+                          onBlur={() => {
+                            setTimeout(() => setShowSizeWDropdown(false), 120);
+                          }}
+                          className="w-full pl-4 pr-4 py-2 border border-gray-300 dark:border-gray-700 rounded-md bg-white dark:bg-gray-900 text-gray-900 dark:text-gray-100 focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                        />
+                        {showSizeWDropdown && (
+                          <div className="absolute z-20 w-full mt-1 bg-white dark:bg-gray-800 border border-gray-300 dark:border-gray-700 rounded-md shadow-lg max-h-60 overflow-auto">
+                            {sizeOptions
+                              .filter((opt) => opt.startsWith(sizeWidth))
+                              .map((opt) => (
+                                <button
+                                  key={opt}
+                                  type="button"
+                                  onClick={() => {
+                                    setSizeWidth(opt);
+                                    setShowSizeWDropdown(false);
+                                  }}
+                                  className="w-full text-left px-4 py-2 hover:bg-gray-50 dark:hover:bg-gray-700 border-b border-gray-100 dark:border-gray-700 last:border-b-0"
+                                >
+                                  {opt}
+                                </button>
+                              ))}
+                          </div>
+                        )}
+                      </div>
+                    </div>
                     <div className="sm:col-span-2">
                       <label className="text-xs font-medium text-gray-500">
-                        Additional scanner IDs
+                        Job ID
                       </label>
-                      <div className="mt-2 grid grid-cols-1 sm:grid-cols-2 gap-2">
-                        {Array.from(
-                          { length: Number(quantity) - 1 },
-                          (_, i) => {
-                            const index = i + 1;
-                            return (
+                      <input
+                        type="text"
+                        placeholder="Job ID..."
+                        value={jobId}
+                        onChange={(event) => setJobId(event.target.value)}
+                        className="mt-1 w-full rounded-lg border border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-800 px-3 py-2 text-sm"
+                      />
+                    </div>
+                  </div>
+                </div>
+
+                <div>
+                  <div className="text-xs font-semibold uppercase tracking-wide text-blue-600 dark:text-blue-400 border-l-2 border-blue-500 pl-2 mb-1">
+                    Scanner info &amp; notes
+                  </div>
+                  {Number(quantity) <= 1 ? (
+                    <div className="mt-2 grid grid-cols-2 gap-3">
+                      <div>
+                        <label className="text-xs font-medium text-gray-500">
+                          D2 Scanner ID
+                        </label>
+                        <input
+                          value={scannerId}
+                          onChange={(event) => {
+                            const value = event.target.value;
+                            setScannerId(value);
+                            setScannerIds((prev) => {
+                              const next = [...prev];
+                              if (next.length === 0) next.push(value);
+                              else next[0] = value;
+                              return next;
+                            });
+                          }}
+                          placeholder="D2-XXXX"
+                          className="mt-1 w-full h-9 rounded-lg border border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-800 px-3 py-2 text-sm"
+                        />
+                      </div>
+                      <div>
+                        <label className="text-xs font-medium text-gray-500">
+                          Notes
+                        </label>
+                        <textarea
+                          placeholder="Optional notes..."
+                          value={notes}
+                          onChange={(event) => setNotes(event.target.value)}
+                          rows={1}
+                          className="mt-1 w-full rounded-lg border border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-800 px-3 py-2 text-sm resize-none"
+                        />
+                      </div>
+                    </div>
+                  ) : (
+                    <div className="mt-2 space-y-3">
+                      {Array.from({ length: Number(quantity) }, (_, index) => {
+                        const thisScannerId = index === 0 ? scannerId : (scannerIds[index] ?? "");
+                        const size = [sizeHeight, sizeWidth].filter(Boolean).join(" x ");
+                        const previewParams = new URLSearchParams({
+                          scannerId: thisScannerId,
+                          name: slabName,
+                          type: slabType,
+                          thickness,
+                          size,
+                          clientName,
+                          brand: brandDisplayValue,
+                          finish: finishDisplayValue,
+                          notes: scannerNotes[index] ?? "",
+                          jobId,
+                          rackId: selectedRackId,
+                        });
+                        const canPrint = !!thisScannerId.trim();
+                        return (
+                        <div key={`slab-row-${index}`} className="grid gap-3 items-end" style={{ gridTemplateColumns: "auto 1fr 1fr" }}>
+                          <div className="flex flex-col items-center justify-end pb-0.5">
+                            <label className="text-xs font-medium text-gray-500 mb-1">Print</label>
+                            <button
+                              type="button"
+                              disabled={!canPrint}
+                              onClick={() => window.open(`/print/slab-label/preview?${previewParams.toString()}`, "_blank")}
+                              className={`h-9 w-9 flex items-center justify-center rounded-lg border text-sm transition-colors ${
+                                canPrint
+                                  ? "border-blue-500 text-blue-600 hover:bg-blue-50 dark:hover:bg-blue-900"
+                                  : "border-gray-200 text-gray-300 cursor-not-allowed"
+                              }`}
+                              title={canPrint ? "Print label for this slab" : "Enter scanner ID first"}
+                            >
+                              🖨️
+                            </button>
+                          </div>
+                          <div>
+                            <label className="text-xs font-medium text-gray-500">
+                              Slab {index + 1} — D2 Scanner ID
+                            </label>
+                            {index === 0 ? (
                               <input
-                                key={`scanner-${index}`}
+                                value={scannerId}
+                                onChange={(event) => {
+                                  const value = event.target.value;
+                                  setScannerId(value);
+                                  setScannerIds((prev) => {
+                                    const next = [...prev];
+                                    if (next.length === 0) next.push(value);
+                                    else next[0] = value;
+                                    return next;
+                                  });
+                                }}
+                                placeholder="D2-XXXX"
+                                className="mt-1 w-full h-9 rounded-lg border border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-800 px-3 py-2 text-sm"
+                              />
+                            ) : (
+                              <input
                                 value={scannerIds[index] ?? ""}
                                 onChange={(event) => {
                                   const value = event.target.value;
@@ -1041,195 +1299,60 @@ export default function SlabActions({
                                   });
                                 }}
                                 placeholder={`D2-XXXX (Slab ${index + 1})`}
-                                className="w-full rounded-lg border border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-800 px-3 py-2 text-sm"
+                                className="mt-1 w-full h-9 rounded-lg border border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-800 px-3 py-2 text-sm"
                               />
-                            );
-                          },
-                        )}
-                      </div>
+                            )}
+                          </div>
+                          <div>
+                            <label className="text-xs font-medium text-gray-500">
+                              Slab {index + 1} — Notes
+                            </label>
+                            <textarea
+                              placeholder="Optional notes..."
+                              value={scannerNotes[index] ?? ""}
+                              onChange={(event) => {
+                                const value = event.target.value;
+                                setScannerNotes((prev) => {
+                                  const next = [...prev];
+                                  next[index] = value;
+                                  return next;
+                                });
+                              }}
+                              rows={1}
+                              className="mt-1 w-full rounded-lg border border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-800 px-3 py-2 text-sm resize-none"
+                            />
+                          </div>
+                        </div>
+                        );
+                      })}
                     </div>
                   )}
                 </div>
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                  <div>
-                    <label className="text-xs font-medium text-gray-500">
-                      Type
-                    </label>
-                    <button
-                      type="button"
-                      onClick={() => setTypePickerOpen(true)}
-                      className="mt-1 w-full rounded-lg border border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-800 px-3 py-2 text-left text-sm"
-                    >
-                      {slabType.replace(/_/g, " ")}
-                    </button>
-                  </div>
-                  <div>
-                    <label className="text-xs font-medium text-gray-500">
-                      Size (H)
-                    </label>
-                    <div className="relative mt-1">
-                      <input
-                        type="text"
-                        placeholder="Search size..."
-                        value={sizeHeight}
-                        onChange={(event) => {
-                          setSizeHeight(event.target.value);
-                          setShowSizeHDropdown(true);
-                        }}
-                        onFocus={() => setShowSizeHDropdown(true)}
-                        onBlur={() => {
-                          setTimeout(() => setShowSizeHDropdown(false), 120);
-                        }}
-                        className="w-full pl-4 pr-4 py-2 border border-gray-300 dark:border-gray-700 rounded-md bg-white dark:bg-gray-900 text-gray-900 dark:text-gray-100 focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-                      />
-                      {showSizeHDropdown && (
-                        <div className="absolute z-20 w-full mt-1 bg-white dark:bg-gray-800 border border-gray-300 dark:border-gray-700 rounded-md shadow-lg max-h-60 overflow-auto">
-                          {sizeOptions
-                            .filter((opt) => opt.startsWith(sizeHeight))
-                            .map((opt) => (
-                              <button
-                                key={opt}
-                                type="button"
-                                onClick={() => {
-                                  setSizeHeight(opt);
-                                  setShowSizeHDropdown(false);
-                                }}
-                                className="w-full text-left px-4 py-2 hover:bg-gray-50 dark:hover:bg-gray-700 border-b border-gray-100 dark:border-gray-700 last:border-b-0"
-                              >
-                                {opt}
-                              </button>
-                            ))}
-                        </div>
-                      )}
-                    </div>
-                  </div>
-                </div>
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                  <div>
-                    <label className="text-xs font-medium text-gray-500">
-                      Size (W)
-                    </label>
-                    <div className="relative mt-1">
-                      <input
-                        type="text"
-                        placeholder="Search size..."
-                        value={sizeWidth}
-                        onChange={(event) => {
-                          setSizeWidth(event.target.value);
-                          setShowSizeWDropdown(true);
-                        }}
-                        onFocus={() => setShowSizeWDropdown(true)}
-                        onBlur={() => {
-                          setTimeout(() => setShowSizeWDropdown(false), 120);
-                        }}
-                        className="w-full pl-4 pr-4 py-2 border border-gray-300 dark:border-gray-700 rounded-md bg-white dark:bg-gray-900 text-gray-900 dark:text-gray-100 focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-                      />
-                      {showSizeWDropdown && (
-                        <div className="absolute z-20 w-full mt-1 bg-white dark:bg-gray-800 border border-gray-300 dark:border-gray-700 rounded-md shadow-lg max-h-60 overflow-auto">
-                          {sizeOptions
-                            .filter((opt) => opt.startsWith(sizeWidth))
-                            .map((opt) => (
-                              <button
-                                key={opt}
-                                type="button"
-                                onClick={() => {
-                                  setSizeWidth(opt);
-                                  setShowSizeWDropdown(false);
-                                }}
-                                className="w-full text-left px-4 py-2 hover:bg-gray-50 dark:hover:bg-gray-700 border-b border-gray-100 dark:border-gray-700 last:border-b-0"
-                              >
-                                {opt}
-                              </button>
-                            ))}
-                        </div>
-                      )}
-                    </div>
-                  </div>
-                  <div>
-                    <label className="text-xs font-medium text-gray-500">
-                      Quantity
-                    </label>
-                    <input
-                      type="number"
-                      min={1}
-                      value={quantity}
-                      onChange={(event) => setQuantity(event.target.value)}
-                      className="mt-1 w-full rounded-lg border border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-800 px-3 py-2 text-sm"
-                    />
-                  </div>
-                </div>
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                  <div>
-                    <label className="text-xs font-medium text-gray-500">
-                      Finish
-                    </label>
-                    <button
-                      type="button"
-                      onClick={() => setFinishPickerOpen(true)}
-                      className="mt-1 w-full rounded-lg border border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-800 px-3 py-2 text-left text-sm"
-                    >
-                      {finishDisplayValue || "Select finish"}
-                    </button>
-                    {finish === OTHER_OPTION && (
-                      <input
-                        type="text"
-                        value={finishOther}
-                        onChange={(event) => setFinishOther(event.target.value)}
-                        placeholder="Type finish name..."
-                        className="mt-2 w-full rounded-lg border border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-800 px-3 py-2 text-sm"
-                      />
-                    )}
-                  </div>
-                  <div>
-                    <label className="text-xs font-medium text-gray-500">
-                      Job ID
-                    </label>
-                    <input
-                      type="text"
-                      placeholder="Job ID..."
-                      value={jobId}
-                      onChange={(event) => setJobId(event.target.value)}
-                      className="mt-1 w-full rounded-lg border border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-800 px-3 py-2 text-sm"
-                    />
-                  </div>
-                </div>
+
                 <div>
-                  <label className="text-xs font-medium text-gray-500">
-                    Notes
-                  </label>
-                  <textarea
-                    placeholder="Optional notes..."
-                    value={notes}
-                    onChange={(event) => setNotes(event.target.value)}
-                    rows={2}
-                    className="mt-1 w-full rounded-lg border border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-800 px-3 py-2 text-sm resize-none"
-                  />
-                </div>
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                  <div>
-                    <label className="text-xs font-medium text-gray-500">
-                      Recommended rack
-                    </label>
-                    <div className="mt-1 rounded-lg border border-dashed border-gray-300 dark:border-gray-700 px-3 py-2 text-sm text-gray-600 dark:text-gray-300">
-                      {recommendedRack?.name ?? "No rack available"}
+                  <div className="text-xs font-semibold uppercase tracking-wide text-blue-600 dark:text-blue-400 border-l-2 border-blue-500 pl-2 mb-1">
+                    Recommended placement
+                  </div>
+                  <div className="mt-2 grid grid-cols-1 sm:grid-cols-2 gap-3">
+                    <div>
+                      <label className="text-xs font-medium text-gray-500">
+                        Recommended rack
+                      </label>
+                      <div className="mt-1 rounded-lg border border-dashed border-gray-300 dark:border-gray-700 px-3 py-2 text-sm text-gray-600 dark:text-gray-300">
+                        {recommendedRack?.name ?? "No rack available"}
+                      </div>
                     </div>
                   </div>
                 </div>
                 {distribution && distribution.plan.length > 0 && (
                   <div className="rounded-lg border border-gray-200 dark:border-gray-700 p-3 text-sm text-gray-600 dark:text-gray-300">
-                    <span className="font-medium">
-                      Recommended distribution:
-                    </span>{" "}
+                    <span className="font-medium">Recommended distribution:</span>{" "}
                     {distribution.plan
-                      .map(
-                        (item) =>
-                          `${item.count} in ${item.rackId.toUpperCase()}`,
-                      )
+                      .map((item) => `${item.count} in ${item.rackId.toUpperCase()}`)
                       .join(", ")}
                     {distribution.remaining > 0 && (
                       <span className="text-red-600 dark:text-red-400">
-                        {" "}
-                        (Remaining {distribution.remaining} not placed)
+                        {" "}(Remaining {distribution.remaining} not placed)
                       </span>
                     )}
                   </div>
@@ -1533,6 +1656,80 @@ export default function SlabActions({
                       className="px-4 py-2 text-sm font-medium text-white bg-blue-600 rounded-lg hover:bg-blue-700 transition-colors"
                     >
                       OK
+                    </button>
+                  </div>
+                </div>
+              </div>
+            )}
+
+            {printSelectionOpen && (
+              <div className="fixed inset-0 z-[70] flex items-center justify-center bg-black/40 px-4">
+                <div className="w-full max-w-lg rounded-xl bg-white dark:bg-gray-900 border border-gray-200 dark:border-gray-800 shadow-lg">
+                  <div className="flex items-center justify-between px-6 py-4 border-b border-gray-200 dark:border-gray-800">
+                    <h4 className="text-base font-semibold text-gray-800 dark:text-gray-100">
+                      Print slab labels
+                    </h4>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setPrintSelectionOpen(false);
+                        setPrintSelectionSlabs([]);
+                      }}
+                      className="text-sm text-gray-500 hover:text-gray-700"
+                    >
+                      Close
+                    </button>
+                  </div>
+                  <div className="px-6 py-4 space-y-3 max-h-[50vh] overflow-y-auto">
+                    <p className="text-sm text-gray-600 dark:text-gray-300">
+                      Choose which labels to print now.
+                    </p>
+                    {printSelectionSlabs.map((slab) => (
+                      <div
+                        key={slab.id}
+                        className="flex items-center justify-between rounded-lg border border-gray-200 dark:border-gray-800 px-3 py-2"
+                      >
+                        <div>
+                          <div className="text-sm font-medium text-gray-900 dark:text-gray-100">
+                            {slab.name}
+                          </div>
+                          <div className="text-xs text-gray-500 dark:text-gray-400">
+                            {slab.scannerId || slab.id}
+                          </div>
+                        </div>
+                        <button
+                          type="button"
+                          onClick={() => {
+                            openLabel(slab.id);
+                          }}
+                          className="px-3 py-1.5 text-xs font-medium text-white bg-blue-600 rounded-md hover:bg-blue-700 transition-colors"
+                        >
+                          Print
+                        </button>
+                      </div>
+                    ))}
+                  </div>
+                  <div className="flex justify-end gap-2 px-6 py-4 border-t border-gray-200 dark:border-gray-800">
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setPrintSelectionOpen(false);
+                        setPrintSelectionSlabs([]);
+                      }}
+                      className="px-4 py-2 text-sm font-medium text-gray-700 dark:text-gray-300 bg-white dark:bg-gray-700 border border-gray-300 dark:border-gray-600 rounded-lg hover:bg-gray-50 dark:hover:bg-gray-600 transition-colors"
+                    >
+                      Done
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        printSelectionSlabs.forEach((slab) => openLabel(slab.id));
+                        setPrintSelectionOpen(false);
+                        setPrintSelectionSlabs([]);
+                      }}
+                      className="px-4 py-2 text-sm font-medium text-white bg-gray-900 rounded-lg hover:bg-black transition-colors"
+                    >
+                      Print all
                     </button>
                   </div>
                 </div>

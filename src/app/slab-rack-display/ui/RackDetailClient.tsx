@@ -160,7 +160,6 @@ export default function RackDetailClient({ userName }: { userName: string }) {
                   <th className="py-2 pr-4">Client</th>
                   <th className="py-2 pr-4">Date Added</th>
                   <th className="py-2 pr-4">Label</th>
-                  <th className="py-2 pr-4">Label</th>
                 </tr>
               </thead>
               <tbody>

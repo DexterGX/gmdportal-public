@@ -288,6 +288,7 @@ export const addMultipleSlabs = (
   state: SlabBayState,
   input: Omit<Slab, "id" | "createdAt" | "rackId">,
   scannerIds: string[] | undefined,
+  slabNotes: string[] | undefined,
   quantity: number,
   userName: string,
   preferredRackId?: string,
@@ -310,11 +311,13 @@ export const addMultipleSlabs = (
     const rackId = plannedRacks[i];
     if (!rackId) break;
     const scannerId = scannerIds?.[i] ?? input.scannerId;
+    const note = slabNotes?.[i]?.trim();
     nextState = addSlabLocal(
       nextState,
       {
         ...input,
         scannerId,
+        notes: slabNotes ? (note || undefined) : input.notes,
         batchId,
         batchIndex: quantity > 1 ? i + 1 : undefined,
         batchSize: quantity > 1 ? quantity : undefined,
