@@ -414,7 +414,7 @@ model Job {
   customer          Customer  @relation(fields: [customerId], references: [id], onDelete: Cascade)
   closetJob         ClosetJob?
   artifacts         JobArtifact[]
-  accessoryTracker  AccessoryTracker?
+  accessoryTrackers AccessoryTracker[]
   sampleRequests    SampleRequest[]
 
   @@index([customerId])
@@ -548,7 +548,7 @@ model SyncJob {
 // Accessories Tracker - Track accessory purchases for cabinet/countertop jobs
 model AccessoryTracker {
   id                   String           @id @default(cuid())
-  jobId                String           @unique
+  jobId                String
   job                  Job              @relation(fields: [jobId], references: [id], onDelete: Cascade)
   invoiceNumber        String?
   invoiceCreatedAt     DateTime?

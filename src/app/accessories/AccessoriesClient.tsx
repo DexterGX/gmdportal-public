@@ -30,6 +30,7 @@ export default function AccessoriesClient({ userRole, userId }: Props) {
   const { isMobileOpen, isMobile } = useSidebar();
   const [trackers, setTrackers] = useState<AccessoryTrackerWithRelations[]>([]);
   const [loading, setLoading] = useState(true);
+  const [searchInput, setSearchInput] = useState("");
   const [searchTerm, setSearchTerm] = useState("");
   const [filterStatus, setFilterStatus] = useState<AccessoryItemStatus | "">(
     "",
@@ -38,13 +39,27 @@ export default function AccessoriesClient({ userRole, userId }: Props) {
     AccessoryDepartment | ""
   >("");
   const [filterNeedsAttention, setFilterNeedsAttention] = useState(false);
+  const [isFetching, setIsFetching] = useState(false);
+  const [hasLoaded, setHasLoaded] = useState(false);
+
+  useEffect(() => {
+    const handle = setTimeout(() => {
+      setSearchTerm(searchInput.trim());
+    }, 350);
+
+    return () => clearTimeout(handle);
+  }, [searchInput]);
 
   useEffect(() => {
     fetchTrackers();
   }, [searchTerm, filterStatus, filterDepartment, filterNeedsAttention]);
 
   const fetchTrackers = async () => {
-    setLoading(true);
+    const shouldShowLoading = !hasLoaded;
+    if (shouldShowLoading) {
+      setLoading(true);
+    }
+    setIsFetching(true);
     try {
       const data = await getAccessoryTrackers({
         search: searchTerm || undefined,
@@ -56,7 +71,11 @@ export default function AccessoriesClient({ userRole, userId }: Props) {
     } catch (error) {
       console.error("Error fetching trackers:", error);
     } finally {
-      setLoading(false);
+      setIsFetching(false);
+      if (shouldShowLoading) {
+        setLoading(false);
+      }
+      setHasLoaded(true);
     }
   };
 
@@ -153,6 +172,11 @@ export default function AccessoriesClient({ userRole, userId }: Props) {
 
       {/* Filters */}
       <div className="bg-white dark:bg-gray-800 rounded-lg shadow-sm p-4 mb-6">
+        {isFetching && hasLoaded && (
+          <div className="text-xs text-gray-500 dark:text-gray-400 mb-2">
+            Updating results...
+          </div>
+        )}
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
           {/* Search */}
           <div className="relative">
@@ -160,8 +184,8 @@ export default function AccessoriesClient({ userRole, userId }: Props) {
             <input
               type="text"
               placeholder="Search jobs, customers..."
-              value={searchTerm}
-              onChange={(e) => setSearchTerm(e.target.value)}
+              value={searchInput}
+              onChange={(e) => setSearchInput(e.target.value)}
               className="w-full pl-10 pr-4 py-2 border border-gray-300 dark:border-gray-600 rounded-md bg-white dark:bg-gray-900 text-gray-900 dark:text-gray-100 focus:ring-2 focus:ring-blue-500 focus:border-transparent"
             />
           </div>

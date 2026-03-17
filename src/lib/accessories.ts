@@ -289,15 +289,6 @@ export async function createAccessoryTracker(data: {
   createdByUserId: string;
 }) {
   try {
-    // Check if tracker already exists for this job
-    const existing = await prisma.accessoryTracker.findUnique({
-      where: { jobId: data.jobId },
-    });
-
-    if (existing) {
-      throw new Error("Accessory tracker already exists for this job");
-    }
-
     const tracker = await prisma.accessoryTracker.create({
       data: {
         jobId: data.jobId,
