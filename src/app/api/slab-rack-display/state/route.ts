@@ -213,9 +213,15 @@ export async function GET() {
       slab.notes ? String(slab.notes) : undefined,
     ]),
   );
-  const entryCreatedAtBySlabId = buildEntryCreatedAtMap(
-    history as Array<{ slabId: string; type: string; timestamp: string }>,
-  );
+  const historyRowsForCreatedAt = Array.from(history, (row) => {
+    const record = row as Record<string, unknown>;
+    return {
+      slabId: String(record.slabId ?? ""),
+      type: String(record.type ?? ""),
+      timestamp: String(record.timestamp ?? ""),
+    };
+  });
+  const entryCreatedAtBySlabId = buildEntryCreatedAtMap(historyRowsForCreatedAt);
 
   let finalRacks = racks as Array<any>;
   if (finalRacks.length === 0) {
