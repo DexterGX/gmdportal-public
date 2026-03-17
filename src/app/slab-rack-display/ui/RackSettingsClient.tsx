@@ -8,7 +8,6 @@ import {
   fetchStateFromDb,
   getSlabsByRack,
   loadState,
-  saveState,
   updateRack,
 } from "./storage";
 
@@ -30,7 +29,6 @@ export default function RackSettingsClient() {
       if (!active || !data) return;
       setState(data);
       setSelectedRackId(data.racks[0]?.id ?? "");
-      saveState(data);
     });
     return () => {
       active = false;

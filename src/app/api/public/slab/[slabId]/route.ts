@@ -12,7 +12,10 @@ export async function GET(
   const { slabId } = await params;
 
   const rows = await sql`
-    SELECT * FROM "SlabBaySlab" WHERE "id" = ${slabId} LIMIT 1
+    SELECT *
+    FROM "SlabBaySlab"
+    WHERE "id" = ${slabId} OR "scannerId" = ${slabId}
+    LIMIT 1
   `;
 
   if (rows.length === 0) {

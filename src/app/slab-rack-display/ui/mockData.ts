@@ -30,13 +30,14 @@ export type Slab = {
 
 export type HistoryEntry = {
   id: string;
-  type: "entry" | "exit" | "move";
+  type: "entry" | "exit" | "move" | "change";
   slabId: string;
   slabScannerId?: string;
   slabName: string;
   slabType: "SLAB" | "GMD" | "REMNANT" | "RESERVED" | "CLIENT_SLAB";
   clientName: string;
   brand?: string;
+  entryNote?: string;
   fromRack?: string;
   toRack?: string;
   exitNote?: string;

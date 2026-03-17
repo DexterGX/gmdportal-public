@@ -1,12 +1,13 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import type { SlabBayState } from "./mockData";
 import {
+  encodeClientName,
   fetchStateFromDb,
   loadState,
-  saveState,
   splitClientName,
+  updateSlab,
 } from "./storage";
 import FilterMultiSelect from "@/components/filters/FilterMultiSelect";
 
@@ -16,7 +17,35 @@ const buildSlabViewUrl = (scannerId: string) =>
     scannerId,
   )}`;
 
-export default function InventoryClient() {
+const baseBrandOptions = [
+  "CAMBRIA",
+  "CEASARSTONE - Porcelain",
+  "CEASARSTONE - Quartz",
+  "COMPAC",
+  "COSENTINO - Dekton Porcelain",
+  "COSENTINO - Silestone Quartz",
+  "COVERLAM(HRA) - Porcelain",
+  "DALTILE - Panoramic Porcelain",
+  "DALTILE - Quartz",
+  "KIVA",
+  "LX HAUSYS",
+  "MSI - Quartz",
+  "NEOLITH",
+  "OPUSTONE - Relativa Porcelain",
+  "OPUSTONE - Santamargherita Quartz",
+  "PENTAL - Quartz",
+  "SPECTRUM - Quartz",
+  "STONE MALL",
+  "TSFC",
+  "UMI - Infinity Porcelain",
+  "UMI - Pompeii Quartz",
+  "UMI - Vetrazzo",
+  "WILLSONART",
+];
+
+const baseThicknessOptions = ["6mm", "8mm", "10mm", "12mm", "2cm", "3cm"];
+
+export default function InventoryClient({ userName }: { userName: string }) {
   const [state, setState] = useState<SlabBayState>(() => loadState());
   const [searchTerm, setSearchTerm] = useState("");
   const [selectedRacks, setSelectedRacks] = useState<string[]>([]);
@@ -24,6 +53,44 @@ export default function InventoryClient() {
   const [selectedThicknesses, setSelectedThicknesses] = useState<string[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [hasLoaded, setHasLoaded] = useState(false);
+  const [editingSlabId, setEditingSlabId] = useState<string | null>(null);
+  const [editName, setEditName] = useState("");
+  const [editScannerId, setEditScannerId] = useState("");
+  const [editBrand, setEditBrand] = useState("");
+  const [editThickness, setEditThickness] = useState("");
+  const [editSizeH, setEditSizeH] = useState("");
+  const [editSizeW, setEditSizeW] = useState("");
+  const [editType, setEditType] = useState<
+    "SLAB" | "GMD" | "REMNANT" | "RESERVED" | "CLIENT_SLAB"
+  >("SLAB");
+  const [editBatchIndex, setEditBatchIndex] = useState("");
+  const [editBatchSize, setEditBatchSize] = useState("");
+  const [editClientName, setEditClientName] = useState("");
+  const [editOriginalClientName, setEditOriginalClientName] = useState("");
+  const [editNotes, setEditNotes] = useState("");
+  const [editRackId, setEditRackId] = useState("");
+  const [editClientSearchTerm, setEditClientSearchTerm] = useState("");
+  const [editOriginalClientSearchTerm, setEditOriginalClientSearchTerm] =
+    useState("");
+  const [editClientSuggestions, setEditClientSuggestions] = useState<string[]>(
+    [],
+  );
+  const [editOriginalClientSuggestions, setEditOriginalClientSuggestions] =
+    useState<string[]>([]);
+  const [showEditClientDropdown, setShowEditClientDropdown] = useState(false);
+  const [showEditOriginalClientDropdown, setShowEditOriginalClientDropdown] =
+    useState(false);
+  const [loadingEditClients, setLoadingEditClients] = useState(false);
+  const [loadingEditOriginalClients, setLoadingEditOriginalClients] =
+    useState(false);
+  const [editError, setEditError] = useState<string | null>(null);
+  const editClientDropdownRef = useRef<HTMLDivElement | null>(null);
+  const editOriginalClientDropdownRef = useRef<HTMLDivElement | null>(null);
+
+  const parseSize = (value: string) => {
+    const [h = "", w = ""] = value.split("x").map((part) => part.trim());
+    return { h, w };
+  };
 
   const formatTimestamp = (value: string) => {
     const date = new Date(value);
@@ -54,6 +121,28 @@ export default function InventoryClient() {
       Array.from(new Set(state.slabs.map((slab) => slab.thickness))).sort(
         (a, b) => a.localeCompare(b, undefined, { numeric: true }),
       ),
+    [state.slabs],
+  );
+
+  const brandOptions = useMemo(
+    () =>
+      Array.from(
+        new Set([
+          ...baseBrandOptions,
+          ...state.slabs.map((slab) => slab.brand).filter(Boolean),
+        ]),
+      ).sort((a, b) => a.localeCompare(b)),
+    [state.slabs],
+  );
+
+  const thicknessOptions = useMemo(
+    () =>
+      Array.from(
+        new Set([
+          ...baseThicknessOptions,
+          ...state.slabs.map((slab) => slab.thickness),
+        ]),
+      ).sort((a, b) => a.localeCompare(b, undefined, { numeric: true })),
     [state.slabs],
   );
 
@@ -126,7 +215,6 @@ export default function InventoryClient() {
         .then((data) => {
           if (!active || !data) return;
           setState(data);
-          saveState(data);
         })
         .finally(() => {
           if (!active) return;
@@ -151,6 +239,74 @@ export default function InventoryClient() {
     };
   }, [hasLoaded]);
 
+  useEffect(() => {
+    if (!editClientSearchTerm.trim()) {
+      setEditClientSuggestions([]);
+      setLoadingEditClients(false);
+      return;
+    }
+    const controller = new AbortController();
+    setLoadingEditClients(true);
+    const timer = setTimeout(() => {
+      fetch(
+        `/api/slab-rack-display/clients?q=${encodeURIComponent(editClientSearchTerm)}`,
+        { signal: controller.signal },
+      )
+        .then((res) => (res.ok ? res.json() : []))
+        .then((data) => setEditClientSuggestions(data))
+        .catch(() => undefined)
+        .finally(() => setLoadingEditClients(false));
+    }, 250);
+    return () => {
+      controller.abort();
+      clearTimeout(timer);
+    };
+  }, [editClientSearchTerm]);
+
+  useEffect(() => {
+    if (!editOriginalClientSearchTerm.trim()) {
+      setEditOriginalClientSuggestions([]);
+      setLoadingEditOriginalClients(false);
+      return;
+    }
+    const controller = new AbortController();
+    setLoadingEditOriginalClients(true);
+    const timer = setTimeout(() => {
+      fetch(
+        `/api/slab-rack-display/clients?q=${encodeURIComponent(editOriginalClientSearchTerm)}`,
+        { signal: controller.signal },
+      )
+        .then((res) => (res.ok ? res.json() : []))
+        .then((data) => setEditOriginalClientSuggestions(data))
+        .catch(() => undefined)
+        .finally(() => setLoadingEditOriginalClients(false));
+    }, 250);
+    return () => {
+      controller.abort();
+      clearTimeout(timer);
+    };
+  }, [editOriginalClientSearchTerm]);
+
+  useEffect(() => {
+    const handleClickOutside = (event: MouseEvent) => {
+      const target = event.target as Node;
+      if (
+        editClientDropdownRef.current &&
+        !editClientDropdownRef.current.contains(target)
+      ) {
+        setShowEditClientDropdown(false);
+      }
+      if (
+        editOriginalClientDropdownRef.current &&
+        !editOriginalClientDropdownRef.current.contains(target)
+      ) {
+        setShowEditOriginalClientDropdown(false);
+      }
+    };
+    document.addEventListener("mousedown", handleClickOutside);
+    return () => document.removeEventListener("mousedown", handleClickOutside);
+  }, []);
+
   const handlePrint = () => {
     setTimeout(() => window.print(), 50);
   };
@@ -160,6 +316,111 @@ export default function InventoryClient() {
     setSelectedRacks([]);
     setSelectedTypes([]);
     setSelectedThicknesses([]);
+  };
+
+  const openEditModal = (slabId: string) => {
+    const slab = state.slabs.find((item) => item.id === slabId);
+    if (!slab) return;
+    const { clientName, originalClientName } = splitClientName(slab.clientName);
+    const { h, w } = parseSize(slab.size);
+    setEditingSlabId(slab.id);
+    setEditName(slab.name);
+    setEditScannerId(slab.scannerId);
+    setEditBrand(slab.brand || "");
+    setEditThickness(slab.thickness);
+    setEditSizeH(h);
+    setEditSizeW(w);
+    setEditType(slab.type);
+    setEditBatchIndex(slab.batchIndex ? String(slab.batchIndex) : "");
+    setEditBatchSize(slab.batchSize ? String(slab.batchSize) : "");
+    setEditClientName(clientName);
+    setEditOriginalClientName(originalClientName || "");
+    setEditNotes(slab.notes || "");
+    setEditRackId(slab.rackId);
+    setEditClientSearchTerm(clientName);
+    setEditOriginalClientSearchTerm(originalClientName || "");
+    setEditClientSuggestions([]);
+    setEditOriginalClientSuggestions([]);
+    setShowEditClientDropdown(false);
+    setShowEditOriginalClientDropdown(false);
+    setEditError(null);
+  };
+
+  const closeEditModal = () => {
+    setEditingSlabId(null);
+    setEditError(null);
+  };
+
+  const handleSaveEdit = () => {
+    if (!editingSlabId) return;
+    if (!editName.trim()) {
+      setEditError("Slab name is required.");
+      return;
+    }
+    if (!editScannerId.trim()) {
+      setEditError("Scanner ID is required.");
+      return;
+    }
+    if (!editBrand.trim()) {
+      setEditError("Brand is required.");
+      return;
+    }
+    if (!editThickness.trim()) {
+      setEditError("Thickness is required.");
+      return;
+    }
+    if (!editSizeH.trim() || !editSizeW.trim()) {
+      setEditError("Size H and Size W are required.");
+      return;
+    }
+    if (!editType.trim()) {
+      setEditError("Type is required.");
+      return;
+    }
+    if (!editClientName.trim()) {
+      setEditError("Client is required.");
+      return;
+    }
+    if (editType === "GMD" && !editOriginalClientName.trim()) {
+      setEditError("Original client is required for GMD slabs.");
+      return;
+    }
+    setEditError(null);
+    const size = [editSizeH.trim(), editSizeW.trim()]
+      .filter(Boolean)
+      .join(" x ");
+    const batchIndexNum = Number(editBatchIndex);
+    const batchSizeNum = Number(editBatchSize);
+
+    const next = updateSlab(
+      state,
+      editingSlabId,
+      {
+        name: editName.trim(),
+        scannerId: editScannerId.trim(),
+        brand: editBrand,
+        thickness: editThickness.trim(),
+        size,
+        type: editType,
+        batchIndex:
+          Number.isFinite(batchIndexNum) && batchIndexNum > 0
+            ? batchIndexNum
+            : undefined,
+        batchSize:
+          Number.isFinite(batchSizeNum) && batchSizeNum > 0
+            ? batchSizeNum
+            : undefined,
+        clientName: encodeClientName(
+          editClientName.trim(),
+          editType === "GMD" ? editOriginalClientName.trim() : undefined,
+        ),
+        notes: editNotes,
+        rackId: editRackId,
+      },
+      userName,
+    );
+    setState(next);
+    closeEditModal();
   };
 
   return (
@@ -242,20 +503,22 @@ export default function InventoryClient() {
             <table className="min-w-full text-sm print-inventory-table">
               <thead>
                 <tr className="hidden print:table-row print-spacer-row">
-                  <th colSpan={11} aria-hidden="true" />
+                  <th colSpan={13} aria-hidden="true" />
                 </tr>
                 <tr className="text-left text-xs uppercase tracking-wide text-gray-400">
-                  <th className="py-2 pr-4">Scanner ID</th>
                   <th className="py-2 pr-4">Slab ID</th>
-                  <th className="py-2 pr-4">Batch</th>
+                  <th className="py-2 pr-4">Scanner ID</th>
                   <th className="py-2 pr-4">Name</th>
                   <th className="py-2 pr-4">Brand</th>
-                  <th className="py-2 pr-4">Type</th>
                   <th className="py-2 pr-4">Thickness</th>
                   <th className="py-2 pr-4">Size</th>
+                  <th className="py-2 pr-4">Batch</th>
+                  <th className="py-2 pr-4">Type</th>
                   <th className="py-2 pr-4">Client</th>
+                  <th className="py-2 pr-4">Notes</th>
                   <th className="py-2 pr-4">Rack</th>
                   <th className="py-2 pr-4">Date Added</th>
+                  <th className="py-2 pr-4 print:hidden">Edit</th>
                 </tr>
               </thead>
               <tbody>
@@ -264,6 +527,9 @@ export default function InventoryClient() {
                     key={slab.id}
                     className="border-t border-gray-100 dark:border-gray-800"
                   >
+                    <td className="py-3 pr-4 text-gray-600 dark:text-gray-300">
+                      {slab.id}
+                    </td>
                     <td className="py-3 pr-4 text-gray-700 dark:text-gray-300">
                       {slab.scannerId ? (
                         <a
@@ -279,21 +545,10 @@ export default function InventoryClient() {
                       )}
                     </td>
                     <td className="py-3 pr-4 text-gray-600 dark:text-gray-300">
-                      {slab.id}
-                    </td>
-                    <td className="py-3 pr-4 text-gray-600 dark:text-gray-300">
-                      {slab.batchIndex && slab.batchSize
-                        ? `${slab.batchIndex}/${slab.batchSize}`
-                        : "-"}
-                    </td>
-                    <td className="py-3 pr-4 text-gray-600 dark:text-gray-300">
                       {slab.name}
                     </td>
                     <td className="py-3 pr-4 text-gray-600 dark:text-gray-300">
                       {slab.brand || "-"}
-                    </td>
-                    <td className="py-3 pr-4 text-gray-600 dark:text-gray-300">
-                      {slab.type}
                     </td>
                     <td className="py-3 pr-4 text-gray-600 dark:text-gray-300">
                       {slab.thickness}
@@ -302,7 +557,18 @@ export default function InventoryClient() {
                       {slab.size}
                     </td>
                     <td className="py-3 pr-4 text-gray-600 dark:text-gray-300">
+                      {slab.batchIndex && slab.batchSize
+                        ? `${slab.batchIndex}/${slab.batchSize}`
+                        : "-"}
+                    </td>
+                    <td className="py-3 pr-4 text-gray-600 dark:text-gray-300">
+                      {slab.type}
+                    </td>
+                    <td className="py-3 pr-4 text-gray-600 dark:text-gray-300">
                       {renderClientCell(slab)}
+                    </td>
+                    <td className="py-3 pr-4 text-gray-600 dark:text-gray-300">
+                      {slab.notes || "-"}
                     </td>
                     <td className="py-3 pr-4 text-gray-600 dark:text-gray-300">
                       {slab.rackId.toUpperCase()}
@@ -319,12 +585,21 @@ export default function InventoryClient() {
                         );
                       })()}
                     </td>
+                    <td className="py-3 pr-4 print:hidden">
+                      <button
+                        type="button"
+                        onClick={() => openEditModal(slab.id)}
+                        className="inline-flex items-center rounded-lg border border-blue-500 px-2.5 py-1 text-xs font-medium text-blue-600 hover:bg-blue-50 dark:hover:bg-blue-900/30"
+                      >
+                        Edit
+                      </button>
+                    </td>
                   </tr>
                 ))}
                 {rows.length === 0 && (
                   <tr>
                     <td
-                      colSpan={10}
+                      colSpan={13}
                       className="py-6 text-center text-gray-500 dark:text-gray-400"
                     >
                       No slabs found.
@@ -336,6 +611,304 @@ export default function InventoryClient() {
           </div>
         )}
       </div>
+
+      {editingSlabId && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
+          <div className="w-full max-w-3xl max-h-[90vh] overflow-y-auto rounded-xl bg-white dark:bg-gray-900 border border-gray-200 dark:border-gray-700 p-5">
+            <div className="flex items-center justify-between">
+              <h2 className="text-lg font-semibold text-gray-800 dark:text-gray-100">
+                Edit slab details
+              </h2>
+              <button
+                type="button"
+                onClick={closeEditModal}
+                className="text-sm text-gray-500 hover:text-gray-700"
+              >
+                Close
+              </button>
+            </div>
+
+            <div className="mt-4 space-y-5">
+              <div>
+                <div className="text-xs font-semibold uppercase tracking-wide text-blue-600 dark:text-blue-400 border-l-2 border-blue-500 pl-2 mb-1">
+                  Slab details
+                </div>
+                {editError ? (
+                  <div className="mt-2 rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700">
+                    {editError}
+                  </div>
+                ) : null}
+                <div className="mt-2 grid grid-cols-1 sm:grid-cols-2 gap-3">
+                  <div>
+                    <label className="text-xs font-medium text-gray-500">
+                      Slab name
+                    </label>
+                    <input
+                      value={editName}
+                      onChange={(e) => setEditName(e.target.value)}
+                      className="mt-1 w-full rounded-lg border border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-800 px-3 py-2 text-sm"
+                    />
+                  </div>
+                  <div>
+                    <label className="text-xs font-medium text-gray-500">
+                      Scanner ID
+                    </label>
+                    <input
+                      value={editScannerId}
+                      onChange={(e) => setEditScannerId(e.target.value)}
+                      className="mt-1 w-full rounded-lg border border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-800 px-3 py-2 text-sm"
+                    />
+                  </div>
+                  <div>
+                    <label className="text-xs font-medium text-gray-500">
+                      Brand
+                    </label>
+                    <select
+                      value={editBrand}
+                      onChange={(e) => setEditBrand(e.target.value)}
+                      className="mt-1 w-full rounded-lg border border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-800 px-3 py-2 text-sm"
+                    >
+                      <option value="">Select brand</option>
+                      {brandOptions.map((option) => (
+                        <option key={option} value={option}>
+                          {option}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+                  <div>
+                    <label className="text-xs font-medium text-gray-500">
+                      Thickness
+                    </label>
+                    <select
+                      value={editThickness}
+                      onChange={(e) => setEditThickness(e.target.value)}
+                      className="mt-1 w-full rounded-lg border border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-800 px-3 py-2 text-sm"
+                    >
+                      <option value="">Select thickness</option>
+                      {thicknessOptions.map((option) => (
+                        <option key={option} value={option}>
+                          {option}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+                  <div>
+                    <label className="text-xs font-medium text-gray-500">
+                      Size (H)
+                    </label>
+                    <input
+                      value={editSizeH}
+                      onChange={(e) => setEditSizeH(e.target.value)}
+                      className="mt-1 w-full rounded-lg border border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-800 px-3 py-2 text-sm"
+                    />
+                  </div>
+                  <div>
+                    <label className="text-xs font-medium text-gray-500">
+                      Size (W)
+                    </label>
+                    <input
+                      value={editSizeW}
+                      onChange={(e) => setEditSizeW(e.target.value)}
+                      className="mt-1 w-full rounded-lg border border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-800 px-3 py-2 text-sm"
+                    />
+                  </div>
+                  <div>
+                    <label className="text-xs font-medium text-gray-500">
+                      Batch index
+                    </label>
+                    <input
+                      value={editBatchIndex}
+                      onChange={(e) => setEditBatchIndex(e.target.value)}
+                      className="mt-1 w-full rounded-lg border border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-800 px-3 py-2 text-sm"
+                    />
+                  </div>
+                  <div>
+                    <label className="text-xs font-medium text-gray-500">
+                      Batch size
+                    </label>
+                    <input
+                      value={editBatchSize}
+                      onChange={(e) => setEditBatchSize(e.target.value)}
+                      className="mt-1 w-full rounded-lg border border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-800 px-3 py-2 text-sm"
+                    />
+                  </div>
+                  <div>
+                    <label className="text-xs font-medium text-gray-500">
+                      Type
+                    </label>
+                    <select
+                      value={editType}
+                      onChange={(e) =>
+                        setEditType(
+                          e.target.value as
+                            | "SLAB"
+                            | "GMD"
+                            | "REMNANT"
+                            | "RESERVED"
+                            | "CLIENT_SLAB",
+                        )
+                      }
+                      className="mt-1 w-full rounded-lg border border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-800 px-3 py-2 text-sm"
+                    >
+                      <option value="SLAB">SLAB</option>
+                      <option value="GMD">GMD</option>
+                      <option value="REMNANT">REMNANT</option>
+                      <option value="RESERVED">RESERVED</option>
+                      <option value="CLIENT_SLAB">CLIENT_SLAB</option>
+                    </select>
+                  </div>
+                  <div ref={editClientDropdownRef} className="relative">
+                    <label className="text-xs font-medium text-gray-500">
+                      New client
+                    </label>
+                    <input
+                      value={editClientName}
+                      onFocus={() => setShowEditClientDropdown(true)}
+                      onChange={(e) => {
+                        const value = e.target.value;
+                        setEditClientName(value);
+                        setEditClientSearchTerm(value);
+                        setShowEditClientDropdown(true);
+                      }}
+                      className="mt-1 w-full rounded-lg border border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-800 px-3 py-2 text-sm"
+                    />
+                    {showEditClientDropdown && (
+                      <div className="absolute z-20 mt-1 max-h-48 w-full overflow-auto rounded-lg border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-900 shadow-lg">
+                        {loadingEditClients ? (
+                          <div className="px-3 py-2 text-sm text-gray-500">
+                            Loading...
+                          </div>
+                        ) : editClientSuggestions.length > 0 ? (
+                          editClientSuggestions.map((suggestion) => (
+                            <button
+                              key={suggestion}
+                              type="button"
+                              onClick={() => {
+                                setEditClientName(suggestion);
+                                setEditClientSearchTerm(suggestion);
+                                setShowEditClientDropdown(false);
+                              }}
+                              className="block w-full px-3 py-2 text-left text-sm hover:bg-gray-50 dark:hover:bg-gray-800"
+                            >
+                              {suggestion}
+                            </button>
+                          ))
+                        ) : editClientSearchTerm.trim() ? (
+                          <div className="px-3 py-2 text-sm text-gray-500">
+                            No matches found
+                          </div>
+                        ) : null}
+                      </div>
+                    )}
+                  </div>
+                  {editType === "GMD" ? (
+                    <div
+                      ref={editOriginalClientDropdownRef}
+                      className="relative"
+                    >
+                      <label className="text-xs font-medium text-gray-500">
+                        Original client
+                      </label>
+                      <input
+                        value={editOriginalClientName}
+                        onFocus={() => setShowEditOriginalClientDropdown(true)}
+                        onChange={(e) => {
+                          const value = e.target.value;
+                          setEditOriginalClientName(value);
+                          setEditOriginalClientSearchTerm(value);
+                          setShowEditOriginalClientDropdown(true);
+                        }}
+                        className="mt-1 w-full rounded-lg border border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-800 px-3 py-2 text-sm"
+                      />
+                      {showEditOriginalClientDropdown && (
+                        <div className="absolute z-20 mt-1 max-h-48 w-full overflow-auto rounded-lg border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-900 shadow-lg">
+                          {loadingEditOriginalClients ? (
+                            <div className="px-3 py-2 text-sm text-gray-500">
+                              Loading...
+                            </div>
+                          ) : editOriginalClientSuggestions.length > 0 ? (
+                            editOriginalClientSuggestions.map((suggestion) => (
+                              <button
+                                key={suggestion}
+                                type="button"
+                                onClick={() => {
+                                  setEditOriginalClientName(suggestion);
+                                  setEditOriginalClientSearchTerm(suggestion);
+                                  setShowEditOriginalClientDropdown(false);
+                                }}
+                                className="block w-full px-3 py-2 text-left text-sm hover:bg-gray-50 dark:hover:bg-gray-800"
+                              >
+                                {suggestion}
+                              </button>
+                            ))
+                          ) : editOriginalClientSearchTerm.trim() ? (
+                            <div className="px-3 py-2 text-sm text-gray-500">
+                              No matches found
+                            </div>
+                          ) : null}
+                        </div>
+                      )}
+                    </div>
+                  ) : null}
+                  <div className="sm:col-span-2">
+                    <label className="text-xs font-medium text-gray-500">
+                      Notes
+                    </label>
+                    <textarea
+                      value={editNotes}
+                      onChange={(e) => setEditNotes(e.target.value)}
+                      rows={2}
+                      className="mt-1 w-full rounded-lg border border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-800 px-3 py-2 text-sm resize-none"
+                    />
+                  </div>
+                </div>
+              </div>
+
+              <div>
+                <div className="text-xs font-semibold uppercase tracking-wide text-blue-600 dark:text-blue-400 border-l-2 border-blue-500 pl-2 mb-1">
+                  Placement
+                </div>
+                <div className="mt-2 grid grid-cols-1 sm:grid-cols-2 gap-3">
+                  <div>
+                    <label className="text-xs font-medium text-gray-500">
+                      Rack
+                    </label>
+                    <select
+                      value={editRackId}
+                      onChange={(e) => setEditRackId(e.target.value)}
+                      className="mt-1 w-full rounded-lg border border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-800 px-3 py-2 text-sm"
+                    >
+                      {state.racks.map((rack) => (
+                        <option key={rack.id} value={rack.id}>
+                          {rack.name}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            <div className="mt-5 flex items-center justify-end gap-2">
+              <button
+                type="button"
+                onClick={closeEditModal}
+                className="px-4 py-2 text-sm font-medium text-gray-700 dark:text-gray-300 bg-white dark:bg-gray-700 border border-gray-300 dark:border-gray-600 rounded-lg"
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                onClick={handleSaveEdit}
+                className="px-4 py-2 text-sm font-medium text-white bg-blue-600 rounded-lg hover:bg-blue-700"
+              >
+                Save changes
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

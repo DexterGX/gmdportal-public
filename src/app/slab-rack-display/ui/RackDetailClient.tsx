@@ -9,7 +9,6 @@ import {
   getRackById,
   getSlabsByRack,
   loadState,
-  saveState,
   splitClientName,
 } from "./storage";
 
@@ -36,7 +35,6 @@ export default function RackDetailClient({ userName }: { userName: string }) {
       .then((data) => {
         if (!active || !data) return;
         setState(data);
-        saveState(data);
       })
       .finally(() => {
         if (!active) return;
@@ -151,12 +149,12 @@ export default function RackDetailClient({ userName }: { userName: string }) {
                 <tr className="text-left text-xs uppercase tracking-wide text-gray-400">
                   <th className="py-2 pr-4">Slab ID</th>
                   <th className="py-2 pr-4">Scanner ID</th>
-                  <th className="py-2 pr-4">Batch</th>
                   <th className="py-2 pr-4">Name</th>
                   <th className="py-2 pr-4">Brand</th>
-                  <th className="py-2 pr-4">Type</th>
                   <th className="py-2 pr-4">Thickness</th>
                   <th className="py-2 pr-4">Size</th>
+                  <th className="py-2 pr-4">Batch</th>
+                  <th className="py-2 pr-4">Type</th>
                   <th className="py-2 pr-4">Client</th>
                   <th className="py-2 pr-4">Date Added</th>
                   <th className="py-2 pr-4">Label</th>
@@ -186,24 +184,24 @@ export default function RackDetailClient({ userName }: { userName: string }) {
                       )}
                     </td>
                     <td className="py-3 pr-4 text-gray-600 dark:text-gray-300">
-                      {slab.batchIndex && slab.batchSize
-                        ? `${slab.batchIndex}/${slab.batchSize}`
-                        : "-"}
-                    </td>
-                    <td className="py-3 pr-4 text-gray-600 dark:text-gray-300">
                       {slab.name}
                     </td>
                     <td className="py-3 pr-4 text-gray-600 dark:text-gray-300">
                       {slab.brand || "-"}
                     </td>
                     <td className="py-3 pr-4 text-gray-600 dark:text-gray-300">
-                      {slab.type}
-                    </td>
-                    <td className="py-3 pr-4 text-gray-600 dark:text-gray-300">
                       {slab.thickness}
                     </td>
                     <td className="py-3 pr-4 text-gray-600 dark:text-gray-300">
                       {slab.size}
+                    </td>
+                    <td className="py-3 pr-4 text-gray-600 dark:text-gray-300">
+                      {slab.batchIndex && slab.batchSize
+                        ? `${slab.batchIndex}/${slab.batchSize}`
+                        : "-"}
+                    </td>
+                    <td className="py-3 pr-4 text-gray-600 dark:text-gray-300">
+                      {slab.type}
                     </td>
                     <td className="py-3 pr-4 text-gray-600 dark:text-gray-300">
                       {renderClientCell(slab.clientName, slab.type)}
