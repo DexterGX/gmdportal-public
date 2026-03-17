@@ -1033,7 +1033,9 @@ export default function SlabActions({
                         <input
                           type="text"
                           value={brandOther}
-                          onChange={(event) => setBrandOther(event.target.value)}
+                          onChange={(event) =>
+                            setBrandOther(event.target.value)
+                          }
                           placeholder="Type brand name..."
                           className="mt-2 w-full rounded-lg border border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-800 px-3 py-2 text-sm"
                         />
@@ -1066,7 +1068,9 @@ export default function SlabActions({
                         <input
                           type="text"
                           value={finishOther}
-                          onChange={(event) => setFinishOther(event.target.value)}
+                          onChange={(event) =>
+                            setFinishOther(event.target.value)
+                          }
                           placeholder="Type finish name..."
                           className="mt-2 w-full rounded-lg border border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-800 px-3 py-2 text-sm"
                         />
@@ -1233,8 +1237,11 @@ export default function SlabActions({
                   ) : (
                     <div className="mt-2 space-y-3">
                       {Array.from({ length: Number(quantity) }, (_, index) => {
-                        const thisScannerId = index === 0 ? scannerId : (scannerIds[index] ?? "");
-                        const size = [sizeHeight, sizeWidth].filter(Boolean).join(" x ");
+                        const thisScannerId =
+                          index === 0 ? scannerId : (scannerIds[index] ?? "");
+                        const size = [sizeHeight, sizeWidth]
+                          .filter(Boolean)
+                          .join(" x ");
                         const previewParams = new URLSearchParams({
                           scannerId: thisScannerId,
                           name: slabName,
@@ -1250,79 +1257,94 @@ export default function SlabActions({
                         });
                         const canPrint = !!thisScannerId.trim();
                         return (
-                        <div key={`slab-row-${index}`} className="grid gap-3 items-end" style={{ gridTemplateColumns: "auto 1fr 1fr" }}>
-                          <div className="flex flex-col items-center justify-end pb-0.5">
-                            <label className="text-xs font-medium text-gray-500 mb-1">Print</label>
-                            <button
-                              type="button"
-                              disabled={!canPrint}
-                              onClick={() => window.open(`/print/slab-label/preview?${previewParams.toString()}`, "_blank")}
-                              className={`h-9 w-9 flex items-center justify-center rounded-lg border text-sm transition-colors ${
-                                canPrint
-                                  ? "border-blue-500 text-blue-600 hover:bg-blue-50 dark:hover:bg-blue-900"
-                                  : "border-gray-200 text-gray-300 cursor-not-allowed"
-                              }`}
-                              title={canPrint ? "Print label for this slab" : "Enter scanner ID first"}
-                            >
-                              🖨️
-                            </button>
-                          </div>
-                          <div>
-                            <label className="text-xs font-medium text-gray-500">
-                              Slab {index + 1} — D2 Scanner ID
-                            </label>
-                            {index === 0 ? (
-                              <input
-                                value={scannerId}
+                          <div
+                            key={`slab-row-${index}`}
+                            className="grid gap-3 items-end"
+                            style={{ gridTemplateColumns: "auto 1fr 1fr" }}
+                          >
+                            <div className="flex flex-col items-center justify-end pb-0.5">
+                              <label className="text-xs font-medium text-gray-500 mb-1">
+                                Print
+                              </label>
+                              <button
+                                type="button"
+                                disabled={!canPrint}
+                                onClick={() =>
+                                  window.open(
+                                    `/print/slab-label/preview?${previewParams.toString()}`,
+                                    "_blank",
+                                  )
+                                }
+                                className={`h-9 w-9 flex items-center justify-center rounded-lg border text-sm transition-colors ${
+                                  canPrint
+                                    ? "border-blue-500 text-blue-600 hover:bg-blue-50 dark:hover:bg-blue-900"
+                                    : "border-gray-200 text-gray-300 cursor-not-allowed"
+                                }`}
+                                title={
+                                  canPrint
+                                    ? "Print label for this slab"
+                                    : "Enter scanner ID first"
+                                }
+                              >
+                                🖨️
+                              </button>
+                            </div>
+                            <div>
+                              <label className="text-xs font-medium text-gray-500">
+                                Slab {index + 1} — D2 Scanner ID
+                              </label>
+                              {index === 0 ? (
+                                <input
+                                  value={scannerId}
+                                  onChange={(event) => {
+                                    const value = event.target.value;
+                                    setScannerId(value);
+                                    setScannerIds((prev) => {
+                                      const next = [...prev];
+                                      if (next.length === 0) next.push(value);
+                                      else next[0] = value;
+                                      return next;
+                                    });
+                                  }}
+                                  placeholder="D2-XXXX"
+                                  className="mt-1 w-full h-9 rounded-lg border border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-800 px-3 py-2 text-sm"
+                                />
+                              ) : (
+                                <input
+                                  value={scannerIds[index] ?? ""}
+                                  onChange={(event) => {
+                                    const value = event.target.value;
+                                    setScannerIds((prev) => {
+                                      const next = [...prev];
+                                      next[index] = value;
+                                      return next;
+                                    });
+                                  }}
+                                  placeholder={`D2-XXXX (Slab ${index + 1})`}
+                                  className="mt-1 w-full h-9 rounded-lg border border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-800 px-3 py-2 text-sm"
+                                />
+                              )}
+                            </div>
+                            <div>
+                              <label className="text-xs font-medium text-gray-500">
+                                Slab {index + 1} — Notes
+                              </label>
+                              <textarea
+                                placeholder="Optional notes..."
+                                value={scannerNotes[index] ?? ""}
                                 onChange={(event) => {
                                   const value = event.target.value;
-                                  setScannerId(value);
-                                  setScannerIds((prev) => {
-                                    const next = [...prev];
-                                    if (next.length === 0) next.push(value);
-                                    else next[0] = value;
-                                    return next;
-                                  });
-                                }}
-                                placeholder="D2-XXXX"
-                                className="mt-1 w-full h-9 rounded-lg border border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-800 px-3 py-2 text-sm"
-                              />
-                            ) : (
-                              <input
-                                value={scannerIds[index] ?? ""}
-                                onChange={(event) => {
-                                  const value = event.target.value;
-                                  setScannerIds((prev) => {
+                                  setScannerNotes((prev) => {
                                     const next = [...prev];
                                     next[index] = value;
                                     return next;
                                   });
                                 }}
-                                placeholder={`D2-XXXX (Slab ${index + 1})`}
-                                className="mt-1 w-full h-9 rounded-lg border border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-800 px-3 py-2 text-sm"
+                                rows={1}
+                                className="mt-1 w-full rounded-lg border border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-800 px-3 py-2 text-sm resize-none"
                               />
-                            )}
+                            </div>
                           </div>
-                          <div>
-                            <label className="text-xs font-medium text-gray-500">
-                              Slab {index + 1} — Notes
-                            </label>
-                            <textarea
-                              placeholder="Optional notes..."
-                              value={scannerNotes[index] ?? ""}
-                              onChange={(event) => {
-                                const value = event.target.value;
-                                setScannerNotes((prev) => {
-                                  const next = [...prev];
-                                  next[index] = value;
-                                  return next;
-                                });
-                              }}
-                              rows={1}
-                              className="mt-1 w-full rounded-lg border border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-800 px-3 py-2 text-sm resize-none"
-                            />
-                          </div>
-                        </div>
                         );
                       })}
                     </div>
@@ -1346,13 +1368,19 @@ export default function SlabActions({
                 </div>
                 {distribution && distribution.plan.length > 0 && (
                   <div className="rounded-lg border border-gray-200 dark:border-gray-700 p-3 text-sm text-gray-600 dark:text-gray-300">
-                    <span className="font-medium">Recommended distribution:</span>{" "}
+                    <span className="font-medium">
+                      Recommended distribution:
+                    </span>{" "}
                     {distribution.plan
-                      .map((item) => `${item.count} in ${item.rackId.toUpperCase()}`)
+                      .map(
+                        (item) =>
+                          `${item.count} in ${item.rackId.toUpperCase()}`,
+                      )
                       .join(", ")}
                     {distribution.remaining > 0 && (
                       <span className="text-red-600 dark:text-red-400">
-                        {" "}(Remaining {distribution.remaining} not placed)
+                        {" "}
+                        (Remaining {distribution.remaining} not placed)
                       </span>
                     )}
                   </div>
@@ -1723,7 +1751,9 @@ export default function SlabActions({
                     <button
                       type="button"
                       onClick={() => {
-                        printSelectionSlabs.forEach((slab) => openLabel(slab.id));
+                        printSelectionSlabs.forEach((slab) =>
+                          openLabel(slab.id),
+                        );
                         setPrintSelectionOpen(false);
                         setPrintSelectionSlabs([]);
                       }}

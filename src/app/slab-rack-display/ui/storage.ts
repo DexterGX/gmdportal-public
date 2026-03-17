@@ -243,11 +243,12 @@ const addSlabLocal = (
   state: SlabBayState,
   input: Omit<Slab, "id" | "createdAt">,
   userName: string,
+  createdAt?: string,
 ): SlabBayState => {
   const slab: Slab = {
     ...input,
     id: getNextSlabId(state),
-    createdAt: new Date().toISOString(),
+    createdAt: createdAt ?? new Date().toISOString(),
   };
 
   const history: HistoryEntry = {
@@ -296,6 +297,7 @@ export const addMultipleSlabs = (
   let nextState = { ...state } as SlabBayState;
   const batchId = quantity > 1 ? buildId("batch") : undefined;
   let addedCount = 0;
+  let baseTime = new Date();
   const distribution = getRecommendedDistribution(
     state,
     quantity,
@@ -312,18 +314,20 @@ export const addMultipleSlabs = (
     if (!rackId) break;
     const scannerId = scannerIds?.[i] ?? input.scannerId;
     const note = slabNotes?.[i]?.trim();
+    const slabTime = new Date(baseTime.getTime() + i);
     nextState = addSlabLocal(
       nextState,
       {
         ...input,
         scannerId,
-        notes: slabNotes ? (note || undefined) : input.notes,
+        notes: slabNotes ? note || undefined : input.notes,
         batchId,
         batchIndex: quantity > 1 ? i + 1 : undefined,
         batchSize: quantity > 1 ? quantity : undefined,
         rackId,
       },
       userName,
+      slabTime.toISOString(),
     );
     addedCount += 1;
   }
