@@ -5,12 +5,7 @@ import { useRouter } from "next/navigation";
 import RackCard from "./RackCard";
 import SlabActions from "./SlabActions";
 import { type SlabBayState } from "./mockData";
-import {
-  fetchStateFromDb,
-  getSlabsByRack,
-  loadState,
-  saveState,
-} from "./storage";
+import { fetchStateFromDb, getSlabsByRack, loadState } from "./storage";
 
 export default function SlabRackDisplayClient({
   userName,
@@ -27,7 +22,6 @@ export default function SlabRackDisplayClient({
     fetchStateFromDb().then((data) => {
       if (!active || !data) return;
       setState(data);
-      saveState(data);
     });
     return () => {
       active = false;

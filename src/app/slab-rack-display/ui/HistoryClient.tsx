@@ -2,12 +2,7 @@
 
 import { useEffect, useMemo, useState } from "react";
 import type { SlabBayState } from "./mockData";
-import {
-  fetchStateFromDb,
-  loadState,
-  saveState,
-  splitClientName,
-} from "./storage";
+import { fetchStateFromDb, loadState, splitClientName } from "./storage";
 
 const SLAB_VIEW_LICENSE = "532b5c05af7b036ff8a0200d0c8dc6da";
 const buildSlabViewUrl = (scannerId: string) =>
@@ -15,10 +10,27 @@ const buildSlabViewUrl = (scannerId: string) =>
     scannerId,
   )}`;
 
-const formatType = (type: "entry" | "exit" | "move") => {
+const formatType = (type: "entry" | "exit" | "move" | "change") => {
   if (type === "entry") return "Entry";
   if (type === "exit") return "Exit";
+  if (type === "change") return "Change";
   return "Move";
+};
+
+const formatHistoryTimestamp = (value: string) => {
+  const parsed = new Date(value);
+  if (!Number.isNaN(parsed.getTime())) {
+    return {
+      datePart: parsed.toLocaleDateString(),
+      timePart: parsed.toLocaleTimeString(),
+    };
+  }
+
+  const [datePart, ...rest] = value.split(",");
+  return {
+    datePart: (datePart || value).trim(),
+    timePart: rest.join(",").trim(),
+  };
 };
 
 export default function HistoryClient() {
@@ -95,6 +107,18 @@ export default function HistoryClient() {
       ? sortByMostRecent(state.history)
       : sortByMostRecent(rows);
 
+  const entryNoteBySlabId = useMemo(() => {
+    const map = new Map<string, string>();
+    for (const item of state.history) {
+      if (item.type !== "entry") continue;
+      const note = item.entryNote?.trim();
+      if (note && !map.has(item.slabId)) {
+        map.set(item.slabId, note);
+      }
+    }
+    return map;
+  }, [state.history]);
+
   const handlePrint = (mode: "filtered" | "all") => {
     setPrintMode(mode);
     setTimeout(() => window.print(), 50);
@@ -117,7 +141,6 @@ export default function HistoryClient() {
         .then((data) => {
           if (!active || !data) return;
           setState(data);
-          saveState(data);
         })
         .finally(() => {
           if (!active) return;
@@ -197,6 +220,7 @@ export default function HistoryClient() {
           >
             <option value="all">All actions</option>
             <option value="entry">Entry</option>
+            <option value="change">Change</option>
             <option value="move">Move</option>
             <option value="exit">Exit</option>
           </select>
@@ -253,7 +277,7 @@ export default function HistoryClient() {
                   <th className="py-2 pr-4">Client</th>
                   <th className="py-2 pr-4">From</th>
                   <th className="py-2 pr-4">To</th>
-                  <th className="py-2 pr-4">Exit Notes</th>
+                  <th className="py-2 pr-4">Notes</th>
                   <th className="py-2 pr-4">User</th>
                 </tr>
               </thead>
@@ -264,7 +288,21 @@ export default function HistoryClient() {
                     className="border-t border-gray-100 dark:border-gray-800"
                   >
                     <td className="py-3 pr-4 text-gray-600 dark:text-gray-300">
-                      {entry.timestamp}
+                      {(() => {
+                        const { datePart, timePart } = formatHistoryTimestamp(
+                          entry.timestamp,
+                        );
+                        return (
+                          <div className="space-y-1">
+                            <div>{datePart}</div>
+                            {timePart ? (
+                              <div className="text-xs text-gray-500 dark:text-gray-400">
+                                {timePart}
+                              </div>
+                            ) : null}
+                          </div>
+                        );
+                      })()}
                     </td>
                     <td className="py-3 pr-4 font-medium text-gray-800 dark:text-gray-100">
                       {formatType(entry.type)}
@@ -320,7 +358,22 @@ export default function HistoryClient() {
                       {entry.toRack ? `${entry.toRack}` : "-"}
                     </td>
                     <td className="py-3 pr-4 text-gray-600 dark:text-gray-300">
-                      {entry.exitNote || "-"}
+                      <div className="space-y-1">
+                        <div>
+                          <span className="text-xs text-gray-500 dark:text-gray-400">
+                            Entry:
+                          </span>{" "}
+                          <span>
+                            {entryNoteBySlabId.get(entry.slabId) || "-"}
+                          </span>
+                        </div>
+                        <div>
+                          <span className="text-xs text-gray-500 dark:text-gray-400">
+                            Exit:
+                          </span>{" "}
+                          <span>{entry.exitNote || "-"}</span>
+                        </div>
+                      </div>
                     </td>
                     <td className="py-3 pr-4 text-gray-600 dark:text-gray-300">
                       {entry.userName}

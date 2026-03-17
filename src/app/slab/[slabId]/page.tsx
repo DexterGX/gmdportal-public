@@ -6,6 +6,12 @@ const sql = postgres(process.env.DIRECT_URL || process.env.DATABASE_URL || "", {
   ssl: "require",
 });
 
+const SLAB_VIEW_LICENSE = "532b5c05af7b036ff8a0200d0c8dc6da";
+const buildSlabViewUrl = (scannerId: string) =>
+  `https://fusiondrivecloud.com/slabview/?license=${SLAB_VIEW_LICENSE}&SlabID=${encodeURIComponent(
+    scannerId,
+  )}`;
+
 type SlabRow = {
   id: string;
   scannerId: string;
@@ -24,7 +30,10 @@ type SlabRow = {
 
 async function getSlab(slabId: string): Promise<SlabRow | null> {
   const rows = await sql<SlabRow[]>`
-    SELECT * FROM "SlabBaySlab" WHERE "id" = ${slabId} LIMIT 1
+    SELECT *
+    FROM "SlabBaySlab"
+    WHERE "id" = ${slabId} OR "scannerId" = ${slabId}
+    LIMIT 1
   `;
   return rows[0] ?? null;
 }
@@ -124,7 +133,18 @@ export default async function SlabPublicPage({
                   {label}
                 </dt>
                 <dd className="flex-1 text-sm text-gray-900 break-words">
-                  {value || "-"}
+                  {label === "Scanner ID" && slab.scannerId ? (
+                    <a
+                      href={buildSlabViewUrl(slab.scannerId)}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="text-blue-600 hover:text-blue-700 hover:underline"
+                    >
+                      {slab.scannerId}
+                    </a>
+                  ) : (
+                    value || "-"
+                  )}
                 </dd>
               </div>
             ))}

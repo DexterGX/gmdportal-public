@@ -219,6 +219,15 @@ export default function SlabActions({
         ? `Other - ${finishOther.trim()}`
         : "Other"
       : finish;
+  const capitalizeInput = (value: string) =>
+    value
+      .trim()
+      .replace(/\s+/g, " ")
+      .replace(
+        /(^|[\s-])([a-z])/g,
+        (_, prefix: string, letter: string) =>
+          `${prefix}${letter.toUpperCase()}`,
+      );
   const clientDropdownRef = useRef<HTMLDivElement | null>(null);
   const originalClientDropdownRef = useRef<HTMLDivElement | null>(null);
   const slabDropdownRef = useRef<HTMLDivElement | null>(null);
@@ -575,6 +584,9 @@ export default function SlabActions({
       pushNotification("error", message);
       return;
     }
+    const normalizedSlabName = capitalizeInput(slabName);
+    const normalizedClientName = capitalizeInput(clientName);
+    const normalizedOriginalClientName = capitalizeInput(originalClientName);
     const normalizedBrand =
       brand === OTHER_OPTION ? `Other - ${brandOther.trim()}` : brand.trim();
     if (!normalizedBrand) {
@@ -615,13 +627,13 @@ export default function SlabActions({
     const payload = {
       input: {
         scannerId: scannerList[0],
-        name: slabName,
+        name: normalizedSlabName,
         type: slabType,
         thickness,
         size: `${sizeHeight} x ${sizeWidth}`,
         clientName: encodeClientName(
-          clientName,
-          slabType === "GMD" ? originalClientName : undefined,
+          normalizedClientName,
+          slabType === "GMD" ? normalizedOriginalClientName : undefined,
         ),
         brand: normalizedBrand,
         finish: normalizedFinish || undefined,

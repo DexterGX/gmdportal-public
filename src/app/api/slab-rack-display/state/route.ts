@@ -59,6 +59,7 @@ const ensureTables = async () => {
       "slabType" TEXT NOT NULL,
       "clientName" TEXT NOT NULL,
       "brand" TEXT,
+      "entryNote" TEXT,
       "fromRack" TEXT,
       "toRack" TEXT,
       "exitNote" TEXT,
@@ -72,6 +73,7 @@ const ensureTables = async () => {
   await sql`
     ALTER TABLE "SlabBayHistory"
       ADD COLUMN IF NOT EXISTS "brand" TEXT,
+      ADD COLUMN IF NOT EXISTS "entryNote" TEXT,
       ADD COLUMN IF NOT EXISTS "batchId" TEXT,
       ADD COLUMN IF NOT EXISTS "batchIndex" INTEGER,
       ADD COLUMN IF NOT EXISTS "batchSize" INTEGER;
@@ -113,52 +115,85 @@ const sanitizeCreatedAt = (value: string) => {
   return parsed;
 };
 
-const mapState = (state: SlabBayState) => ({
-  racks: state.racks.map((rack) => ({
-    id: rack.id,
-    name: rack.name,
-    capacity: rack.capacity,
-    note: rack.note ?? null,
-    countTowardInventory: rack.countTowardInventory,
-    targetFill: rack.targetFill,
-  })),
-  slabs: state.slabs.map((slab) => ({
-    id: slab.id,
-    scannerId: slab.scannerId,
-    name: slab.name,
-    type: slab.type,
-    thickness: slab.thickness,
-    size: slab.size,
-    clientName: slab.clientName,
-    brand: slab.brand?.trim() || null,
-    finish: slab.finish?.trim() || null,
-    notes: slab.notes?.trim() || null,
-    jobId: slab.jobId?.trim() || null,
-    rackId: slab.rackId,
-    createdAt: sanitizeCreatedAt(slab.createdAt),
-    batchId: slab.batchId ?? null,
-    batchIndex: slab.batchIndex ?? null,
-    batchSize: slab.batchSize ?? null,
-  })),
-  history: state.history.map((entry) => ({
-    id: entry.id,
-    type: entry.type,
-    slabId: entry.slabId,
-    slabScannerId: entry.slabScannerId ?? null,
-    slabName: entry.slabName,
-    slabType: entry.slabType,
-    clientName: entry.clientName,
-    brand: entry.brand ?? null,
-    fromRack: entry.fromRack ?? null,
-    toRack: entry.toRack ?? null,
-    exitNote: entry.exitNote ?? null,
-    batchId: entry.batchId ?? null,
-    batchIndex: entry.batchIndex ?? null,
-    batchSize: entry.batchSize ?? null,
-    userName: entry.userName,
-    timestamp: entry.timestamp,
-  })),
-});
+const parseHistoryTimestamp = (value: string) => {
+  const parsed = new Date(value);
+  if (Number.isNaN(parsed.getTime())) return null;
+  return parsed;
+};
+
+const buildEntryCreatedAtMap = (
+  historyRows: Array<{ slabId: string; type: string; timestamp: string }>,
+) => {
+  const map = new Map<string, Date>();
+  for (const row of historyRows) {
+    if (row.type !== "entry") continue;
+    const parsed = parseHistoryTimestamp(row.timestamp);
+    if (!parsed) continue;
+    const existing = map.get(row.slabId);
+    if (!existing || parsed.getTime() < existing.getTime()) {
+      map.set(row.slabId, parsed);
+    }
+  }
+  return map;
+};
+
+const mapState = (state: SlabBayState) => {
+  const slabNotesById = new Map(
+    state.slabs.map((slab) => [slab.id, slab.notes?.trim() || null]),
+  );
+
+  return {
+    racks: state.racks.map((rack) => ({
+      id: rack.id,
+      name: rack.name,
+      capacity: rack.capacity,
+      note: rack.note ?? null,
+      countTowardInventory: rack.countTowardInventory,
+      targetFill: rack.targetFill,
+    })),
+    slabs: state.slabs.map((slab) => ({
+      id: slab.id,
+      scannerId: slab.scannerId,
+      name: slab.name,
+      type: slab.type,
+      thickness: slab.thickness,
+      size: slab.size,
+      clientName: slab.clientName,
+      brand: slab.brand?.trim() || null,
+      finish: slab.finish?.trim() || null,
+      notes: slab.notes?.trim() || null,
+      jobId: slab.jobId?.trim() || null,
+      rackId: slab.rackId,
+      createdAt: sanitizeCreatedAt(slab.createdAt),
+      batchId: slab.batchId ?? null,
+      batchIndex: slab.batchIndex ?? null,
+      batchSize: slab.batchSize ?? null,
+    })),
+    history: state.history.map((entry) => ({
+      id: entry.id,
+      type: entry.type,
+      slabId: entry.slabId,
+      slabScannerId: entry.slabScannerId ?? null,
+      slabName: entry.slabName,
+      slabType: entry.slabType,
+      clientName: entry.clientName,
+      brand: entry.brand ?? null,
+      entryNote:
+        entry.entryNote ??
+        (entry.type === "entry"
+          ? (slabNotesById.get(entry.slabId) ?? null)
+          : null),
+      fromRack: entry.fromRack ?? null,
+      toRack: entry.toRack ?? null,
+      exitNote: entry.exitNote ?? null,
+      batchId: entry.batchId ?? null,
+      batchIndex: entry.batchIndex ?? null,
+      batchSize: entry.batchSize ?? null,
+      userName: entry.userName,
+      timestamp: entry.timestamp,
+    })),
+  };
+};
 
 export async function GET() {
   await ensureTables();
@@ -172,6 +207,15 @@ export async function GET() {
   const history = await sql`
     SELECT * FROM "SlabBayHistory" ORDER BY "timestamp" DESC
   `;
+  const slabNotesById = new Map(
+    (slabs as Array<any>).map((slab) => [
+      String(slab.id),
+      slab.notes ? String(slab.notes) : undefined,
+    ]),
+  );
+  const entryCreatedAtBySlabId = buildEntryCreatedAtMap(
+    history as Array<{ slabId: string; type: string; timestamp: string }>,
+  );
 
   let finalRacks = racks as Array<any>;
   if (finalRacks.length === 0) {
@@ -220,14 +264,16 @@ export async function GET() {
       notes: slab.notes ?? undefined,
       jobId: slab.jobId ?? undefined,
       rackId: slab.rackId,
-      createdAt: new Date(slab.createdAt).toISOString(),
+      createdAt: (
+        entryCreatedAtBySlabId.get(slab.id) ?? new Date(slab.createdAt)
+      ).toISOString(),
       batchId: slab.batchId ?? undefined,
       batchIndex: slab.batchIndex ?? undefined,
       batchSize: slab.batchSize ?? undefined,
     })),
     history: (history as Array<any>).map((entry) => ({
       id: entry.id,
-      type: entry.type as "entry" | "exit" | "move",
+      type: entry.type as "entry" | "exit" | "move" | "change",
       slabId: entry.slabId,
       slabScannerId: entry.slabScannerId ?? undefined,
       slabName: entry.slabName,
@@ -239,6 +285,11 @@ export async function GET() {
         | "CLIENT_SLAB",
       clientName: entry.clientName,
       brand: entry.brand ?? undefined,
+      entryNote:
+        entry.entryNote ??
+        (entry.type === "entry"
+          ? slabNotesById.get(String(entry.slabId))
+          : undefined),
       fromRack: entry.fromRack ?? undefined,
       toRack: entry.toRack ?? undefined,
       exitNote: entry.exitNote ?? undefined,
@@ -255,6 +306,32 @@ export async function PUT(request: Request) {
   const body = (await request.json()) as SlabBayState;
   const mapped = mapState(body);
   await ensureTables();
+
+  const existingSlabs = (await sql`
+    SELECT "id", "createdAt" FROM "SlabBaySlab"
+  `) as Array<{ id: string; createdAt: Date | string }>;
+  const existingCreatedAtById = new Map(
+    existingSlabs.map((slab) => [
+      slab.id,
+      slab.createdAt instanceof Date
+        ? slab.createdAt
+        : new Date(slab.createdAt),
+    ]),
+  );
+  const entryCreatedAtBySlabId = buildEntryCreatedAtMap(
+    mapped.history.map((entry) => ({
+      slabId: entry.slabId,
+      type: entry.type,
+      timestamp: entry.timestamp,
+    })),
+  );
+  const slabsToPersist = mapped.slabs.map((slab) => ({
+    ...slab,
+    createdAt:
+      entryCreatedAtBySlabId.get(slab.id) ??
+      existingCreatedAtById.get(slab.id) ??
+      slab.createdAt,
+  }));
 
   await sql.begin(async (trx) => {
     await trx`TRUNCATE TABLE "SlabBayHistory", "SlabBaySlab", "SlabBayRack" CASCADE`;
@@ -274,11 +351,11 @@ export async function PUT(request: Request) {
       `;
     }
 
-    if (mapped.slabs.length > 0) {
+    if (slabsToPersist.length > 0) {
       await trx`
         INSERT INTO "SlabBaySlab"
         ${trx(
-          mapped.slabs,
+          slabsToPersist,
           "id",
           "scannerId",
           "name",
@@ -312,6 +389,7 @@ export async function PUT(request: Request) {
           "slabType",
           "clientName",
           "brand",
+          "entryNote",
           "fromRack",
           "toRack",
           "exitNote",

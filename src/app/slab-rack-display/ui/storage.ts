@@ -260,6 +260,7 @@ const addSlabLocal = (
     slabType: slab.type,
     clientName: slab.clientName,
     brand: slab.brand,
+    entryNote: slab.notes?.trim() || undefined,
     toRack: input.rackId.toUpperCase(),
     batchId: slab.batchId,
     batchIndex: slab.batchIndex,
@@ -485,6 +486,48 @@ export const exitSlab = (
   const nextState: SlabBayState = {
     ...state,
     slabs: state.slabs.filter((item) => item.id !== slabId),
+    history: [history, ...state.history],
+  };
+  saveState(nextState);
+  return nextState;
+};
+
+export const updateSlab = (
+  state: SlabBayState,
+  slabId: string,
+  updates: Partial<Omit<Slab, "id" | "createdAt">>,
+  userName: string,
+): SlabBayState => {
+  const slab = state.slabs.find((item) => item.id === slabId);
+  if (!slab) return state;
+
+  const updatedSlab = {
+    ...slab,
+    ...updates,
+    brand: updates.brand?.trim() ?? slab.brand,
+    finish: updates.finish?.trim() || undefined,
+    notes: updates.notes?.trim() || undefined,
+    jobId: updates.jobId?.trim() || undefined,
+  };
+
+  const history: HistoryEntry = {
+    id: buildId("log"),
+    type: "change",
+    slabId: updatedSlab.id,
+    slabScannerId: updatedSlab.scannerId,
+    slabName: updatedSlab.name,
+    slabType: updatedSlab.type,
+    clientName: updatedSlab.clientName,
+    brand: updatedSlab.brand,
+    fromRack: slab.rackId.toUpperCase(),
+    toRack: updatedSlab.rackId.toUpperCase(),
+    userName,
+    timestamp: new Date().toLocaleString(),
+  };
+
+  const nextState: SlabBayState = {
+    ...state,
+    slabs: state.slabs.map((slab) => (slab.id === slabId ? updatedSlab : slab)),
     history: [history, ...state.history],
   };
   saveState(nextState);
