@@ -106,6 +106,13 @@ const buildDefaultRacks = () => {
   ];
 };
 
+const sanitizeCreatedAt = (value: string) => {
+  const parsed = new Date(value);
+  if (Number.isNaN(parsed.getTime())) return new Date();
+  if (parsed.getTime() > Date.now()) return new Date();
+  return parsed;
+};
+
 const mapState = (state: SlabBayState) => ({
   racks: state.racks.map((rack) => ({
     id: rack.id,
@@ -128,7 +135,7 @@ const mapState = (state: SlabBayState) => ({
     notes: slab.notes?.trim() || null,
     jobId: slab.jobId?.trim() || null,
     rackId: slab.rackId,
-    createdAt: new Date(slab.createdAt),
+    createdAt: sanitizeCreatedAt(slab.createdAt),
     batchId: slab.batchId ?? null,
     batchIndex: slab.batchIndex ?? null,
     batchSize: slab.batchSize ?? null,
