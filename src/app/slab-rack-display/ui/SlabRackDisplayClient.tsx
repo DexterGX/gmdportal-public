@@ -6,6 +6,10 @@ import RackCard from "./RackCard";
 import SlabActions from "./SlabActions";
 import { type SlabBayState } from "./mockData";
 import { fetchStateFromDb, getSlabsByRack, loadState } from "./storage";
+import {
+  fetchExpectedDeliveries,
+  type SlabDeliveryExpectation,
+} from "./expectedDeliveries";
 
 export default function SlabRackDisplayClient({
   userName,
@@ -14,6 +18,9 @@ export default function SlabRackDisplayClient({
 }) {
   const router = useRouter();
   const [state, setState] = useState<SlabBayState>(() => loadState());
+  const [expectedDeliveries, setExpectedDeliveries] = useState<
+    SlabDeliveryExpectation[]
+  >([]);
   const [mounted, setMounted] = useState(false);
 
   useEffect(() => {
@@ -23,6 +30,20 @@ export default function SlabRackDisplayClient({
       if (!active || !data) return;
       setState(data);
     });
+    return () => {
+      active = false;
+    };
+  }, []);
+
+  useEffect(() => {
+    let active = true;
+    fetchExpectedDeliveries()
+      .then((data) => {
+        if (!active) return;
+        setExpectedDeliveries(data);
+      })
+      .catch(() => undefined);
+
     return () => {
       active = false;
     };
@@ -113,7 +134,13 @@ export default function SlabRackDisplayClient({
             </div>
           </div>
         </div>
-        <SlabActions state={state} onUpdate={setState} userName={userName} />
+        <SlabActions
+          state={state}
+          onUpdate={setState}
+          userName={userName}
+          expectedDeliveries={expectedDeliveries}
+          onExpectedDeliveriesChange={setExpectedDeliveries}
+        />
       </div>
 
       <div className="flex flex-wrap items-center gap-4 text-xs text-gray-500 dark:text-gray-400">

@@ -59,6 +59,8 @@ const ensureTables = async () => {
       "slabType" TEXT NOT NULL,
       "clientName" TEXT NOT NULL,
       "brand" TEXT,
+      "finish" TEXT,
+      "jobId" TEXT,
       "entryNote" TEXT,
       "fromRack" TEXT,
       "toRack" TEXT,
@@ -73,6 +75,8 @@ const ensureTables = async () => {
   await sql`
     ALTER TABLE "SlabBayHistory"
       ADD COLUMN IF NOT EXISTS "brand" TEXT,
+      ADD COLUMN IF NOT EXISTS "finish" TEXT,
+      ADD COLUMN IF NOT EXISTS "jobId" TEXT,
       ADD COLUMN IF NOT EXISTS "entryNote" TEXT,
       ADD COLUMN IF NOT EXISTS "batchId" TEXT,
       ADD COLUMN IF NOT EXISTS "batchIndex" INTEGER,
@@ -178,6 +182,8 @@ const mapState = (state: SlabBayState) => {
       slabType: entry.slabType,
       clientName: entry.clientName,
       brand: entry.brand ?? null,
+      finish: entry.finish ?? null,
+      jobId: entry.jobId ?? null,
       entryNote:
         entry.entryNote ??
         (entry.type === "entry"
@@ -221,7 +227,9 @@ export async function GET() {
       timestamp: String(record.timestamp ?? ""),
     };
   });
-  const entryCreatedAtBySlabId = buildEntryCreatedAtMap(historyRowsForCreatedAt);
+  const entryCreatedAtBySlabId = buildEntryCreatedAtMap(
+    historyRowsForCreatedAt,
+  );
 
   let finalRacks = racks as Array<any>;
   if (finalRacks.length === 0) {
@@ -291,6 +299,8 @@ export async function GET() {
         | "CLIENT_SLAB",
       clientName: entry.clientName,
       brand: entry.brand ?? undefined,
+      finish: entry.finish ?? undefined,
+      jobId: entry.jobId ?? undefined,
       entryNote:
         entry.entryNote ??
         (entry.type === "entry"
@@ -395,6 +405,8 @@ export async function PUT(request: Request) {
           "slabType",
           "clientName",
           "brand",
+          "finish",
+          "jobId",
           "entryNote",
           "fromRack",
           "toRack",

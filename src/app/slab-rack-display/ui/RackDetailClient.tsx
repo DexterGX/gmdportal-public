@@ -151,11 +151,13 @@ export default function RackDetailClient({ userName }: { userName: string }) {
                   <th className="py-2 pr-4">Scanner ID</th>
                   <th className="py-2 pr-4">Name</th>
                   <th className="py-2 pr-4">Brand</th>
+                  <th className="py-2 pr-4">Finish</th>
                   <th className="py-2 pr-4">Thickness</th>
                   <th className="py-2 pr-4">Size</th>
                   <th className="py-2 pr-4">Batch</th>
                   <th className="py-2 pr-4">Type</th>
                   <th className="py-2 pr-4">Client</th>
+                  <th className="py-2 pr-4">Job ID</th>
                   <th className="py-2 pr-4">Date Added</th>
                   <th className="py-2 pr-4">Label</th>
                 </tr>
@@ -190,6 +192,9 @@ export default function RackDetailClient({ userName }: { userName: string }) {
                       {slab.brand || "-"}
                     </td>
                     <td className="py-3 pr-4 text-gray-600 dark:text-gray-300">
+                      {slab.finish || "-"}
+                    </td>
+                    <td className="py-3 pr-4 text-gray-600 dark:text-gray-300">
                       {slab.thickness}
                     </td>
                     <td className="py-3 pr-4 text-gray-600 dark:text-gray-300">
@@ -205,6 +210,9 @@ export default function RackDetailClient({ userName }: { userName: string }) {
                     </td>
                     <td className="py-3 pr-4 text-gray-600 dark:text-gray-300">
                       {renderClientCell(slab.clientName, slab.type)}
+                    </td>
+                    <td className="py-3 pr-4 text-gray-600 dark:text-gray-300">
+                      {slab.jobId || "-"}
                     </td>
                     <td className="py-3 pr-4 text-gray-600 dark:text-gray-300">
                       {(() => {
@@ -238,7 +246,7 @@ export default function RackDetailClient({ userName }: { userName: string }) {
                 {slabs.length === 0 && (
                   <tr>
                     <td
-                      colSpan={11}
+                      colSpan={13}
                       className="py-6 text-center text-gray-500 dark:text-gray-400"
                     >
                       No slabs in this rack yet.

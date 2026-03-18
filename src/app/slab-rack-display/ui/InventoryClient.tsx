@@ -45,6 +45,55 @@ const baseBrandOptions = [
 
 const baseThicknessOptions = ["6mm", "8mm", "10mm", "12mm", "2cm", "3cm"];
 
+const baseFinishOptions = [
+  "CONCRETE",
+  "DUAL",
+  "HONED",
+  "LEATHER",
+  "MATTE",
+  "NATURAL",
+  "OTHER",
+  "POLISHED",
+  "ROUGH",
+  "STONE",
+  "ULTRA_ROUGH",
+  "SATIN",
+  "SATIN_HONED",
+  "PATINATO",
+  "LEVIGATO_PEARL",
+  "GLAM",
+  "GINZA",
+  "HOLOS",
+  "TWILL",
+  "JUTA",
+  "DENIM",
+  "DAMIER",
+  "LAVA",
+  "SILK",
+  "LUXE",
+  "BRUSHED",
+  "TEXTURED",
+  "SMOOTH_MATTE",
+  "TEXTURED_MATTE",
+  "VELVET",
+  "TEXTURED_VELVET",
+  "SATIN_RIDGE",
+  "SUEDE",
+  "DECOR_POLISHED",
+  "NANOTECH_POLISHED",
+  "NATURAL_TOUCH",
+  "RIVERWASHED",
+  "SLATE",
+  "ULTRASOFT",
+];
+
+const formatFinishOption = (value: string) =>
+  value
+    .toLowerCase()
+    .split("_")
+    .map((part) => part.charAt(0).toUpperCase() + part.slice(1))
+    .join(" ");
+
 export default function InventoryClient({ userName }: { userName: string }) {
   const [state, setState] = useState<SlabBayState>(() => loadState());
   const [searchTerm, setSearchTerm] = useState("");
@@ -57,6 +106,7 @@ export default function InventoryClient({ userName }: { userName: string }) {
   const [editName, setEditName] = useState("");
   const [editScannerId, setEditScannerId] = useState("");
   const [editBrand, setEditBrand] = useState("");
+  const [editFinish, setEditFinish] = useState("");
   const [editThickness, setEditThickness] = useState("");
   const [editSizeH, setEditSizeH] = useState("");
   const [editSizeW, setEditSizeW] = useState("");
@@ -68,6 +118,7 @@ export default function InventoryClient({ userName }: { userName: string }) {
   const [editClientName, setEditClientName] = useState("");
   const [editOriginalClientName, setEditOriginalClientName] = useState("");
   const [editNotes, setEditNotes] = useState("");
+  const [editJobId, setEditJobId] = useState("");
   const [editRackId, setEditRackId] = useState("");
   const [editClientSearchTerm, setEditClientSearchTerm] = useState("");
   const [editOriginalClientSearchTerm, setEditOriginalClientSearchTerm] =
@@ -146,6 +197,19 @@ export default function InventoryClient({ userName }: { userName: string }) {
     [state.slabs],
   );
 
+  const finishOptions = useMemo(
+    () =>
+      Array.from(
+        new Set([
+          ...baseFinishOptions,
+          ...state.slabs.map((slab) => slab.finish || "").filter(Boolean),
+        ]),
+      ).sort((a, b) =>
+        formatFinishOption(a).localeCompare(formatFinishOption(b)),
+      ),
+    [state.slabs],
+  );
+
   const rows = useMemo(() => {
     const term = searchTerm.trim().toLowerCase();
     const rackIds = selectedRacks.map((rack) => rack.toLowerCase());
@@ -165,6 +229,8 @@ export default function InventoryClient({ userName }: { userName: string }) {
         const matchesTerm = term
           ? slab.name.toLowerCase().includes(term) ||
             (slab.brand || "").toLowerCase().includes(term) ||
+            (slab.finish || "").toLowerCase().includes(term) ||
+            (slab.jobId || "").toLowerCase().includes(term) ||
             clientName.toLowerCase().includes(term) ||
             (originalClientName || "").toLowerCase().includes(term) ||
             (slab.scannerId || "").toLowerCase().includes(term) ||
@@ -327,6 +393,7 @@ export default function InventoryClient({ userName }: { userName: string }) {
     setEditName(slab.name);
     setEditScannerId(slab.scannerId);
     setEditBrand(slab.brand || "");
+    setEditFinish(slab.finish || "");
     setEditThickness(slab.thickness);
     setEditSizeH(h);
     setEditSizeW(w);
@@ -336,6 +403,7 @@ export default function InventoryClient({ userName }: { userName: string }) {
     setEditClientName(clientName);
     setEditOriginalClientName(originalClientName || "");
     setEditNotes(slab.notes || "");
+    setEditJobId(slab.jobId || "");
     setEditRackId(slab.rackId);
     setEditClientSearchTerm(clientName);
     setEditOriginalClientSearchTerm(originalClientName || "");
@@ -399,6 +467,7 @@ export default function InventoryClient({ userName }: { userName: string }) {
         name: editName.trim(),
         scannerId: editScannerId.trim(),
         brand: editBrand,
+        finish: editFinish,
         thickness: editThickness.trim(),
         size,
         type: editType,
@@ -415,6 +484,7 @@ export default function InventoryClient({ userName }: { userName: string }) {
           editType === "GMD" ? editOriginalClientName.trim() : undefined,
         ),
         notes: editNotes,
+        jobId: editJobId,
         rackId: editRackId,
       },
       userName,
@@ -503,18 +573,20 @@ export default function InventoryClient({ userName }: { userName: string }) {
             <table className="min-w-full text-sm print-inventory-table">
               <thead>
                 <tr className="hidden print:table-row print-spacer-row">
-                  <th colSpan={13} aria-hidden="true" />
+                  <th colSpan={15} aria-hidden="true" />
                 </tr>
                 <tr className="text-left text-xs uppercase tracking-wide text-gray-400">
                   <th className="py-2 pr-4">Slab ID</th>
                   <th className="py-2 pr-4">Scanner ID</th>
                   <th className="py-2 pr-4">Name</th>
                   <th className="py-2 pr-4">Brand</th>
+                  <th className="py-2 pr-4">Finish</th>
                   <th className="py-2 pr-4">Thickness</th>
                   <th className="py-2 pr-4">Size</th>
                   <th className="py-2 pr-4">Batch</th>
                   <th className="py-2 pr-4">Type</th>
                   <th className="py-2 pr-4">Client</th>
+                  <th className="py-2 pr-4">Job ID</th>
                   <th className="py-2 pr-4">Notes</th>
                   <th className="py-2 pr-4">Rack</th>
                   <th className="py-2 pr-4">Date Added</th>
@@ -551,6 +623,9 @@ export default function InventoryClient({ userName }: { userName: string }) {
                       {slab.brand || "-"}
                     </td>
                     <td className="py-3 pr-4 text-gray-600 dark:text-gray-300">
+                      {slab.finish || "-"}
+                    </td>
+                    <td className="py-3 pr-4 text-gray-600 dark:text-gray-300">
                       {slab.thickness}
                     </td>
                     <td className="py-3 pr-4 text-gray-600 dark:text-gray-300">
@@ -566,6 +641,9 @@ export default function InventoryClient({ userName }: { userName: string }) {
                     </td>
                     <td className="py-3 pr-4 text-gray-600 dark:text-gray-300">
                       {renderClientCell(slab)}
+                    </td>
+                    <td className="py-3 pr-4 text-gray-600 dark:text-gray-300">
+                      {slab.jobId || "-"}
                     </td>
                     <td className="py-3 pr-4 text-gray-600 dark:text-gray-300">
                       {slab.notes || "-"}
@@ -599,7 +677,7 @@ export default function InventoryClient({ userName }: { userName: string }) {
                 {rows.length === 0 && (
                   <tr>
                     <td
-                      colSpan={13}
+                      colSpan={15}
                       className="py-6 text-center text-gray-500 dark:text-gray-400"
                     >
                       No slabs found.
@@ -672,6 +750,23 @@ export default function InventoryClient({ userName }: { userName: string }) {
                       {brandOptions.map((option) => (
                         <option key={option} value={option}>
                           {option}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+                  <div>
+                    <label className="text-xs font-medium text-gray-500">
+                      Finish
+                    </label>
+                    <select
+                      value={editFinish}
+                      onChange={(e) => setEditFinish(e.target.value)}
+                      className="mt-1 w-full rounded-lg border border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-800 px-3 py-2 text-sm"
+                    >
+                      <option value="">Select finish</option>
+                      {finishOptions.map((option) => (
+                        <option key={option} value={option}>
+                          {formatFinishOption(option)}
                         </option>
                       ))}
                     </select>
@@ -851,6 +946,16 @@ export default function InventoryClient({ userName }: { userName: string }) {
                       )}
                     </div>
                   ) : null}
+                  <div>
+                    <label className="text-xs font-medium text-gray-500">
+                      Job ID
+                    </label>
+                    <input
+                      value={editJobId}
+                      onChange={(e) => setEditJobId(e.target.value)}
+                      className="mt-1 w-full rounded-lg border border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-800 px-3 py-2 text-sm"
+                    />
+                  </div>
                   <div className="sm:col-span-2">
                     <label className="text-xs font-medium text-gray-500">
                       Notes
