@@ -44,7 +44,10 @@ const AppSidebar: React.FC<{ userRole?: AppRole }> = ({ userRole }) => {
 
   // Filter nav items based on user role - hide adminOnly items for non-admins
   const navItems = program.navItems.filter(
-    (item) => !item.adminOnly || userRole === "admin",
+    (item) =>
+      (!item.adminOnly || userRole === "admin") &&
+      (!item.allowedRoles ||
+        (userRole ? item.allowedRoles.includes(userRole) : false)),
   );
 
   // Split items into regular and admin-only for grouping

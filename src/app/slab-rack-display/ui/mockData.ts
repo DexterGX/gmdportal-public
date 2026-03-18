@@ -37,6 +37,8 @@ export type HistoryEntry = {
   slabType: "SLAB" | "GMD" | "REMNANT" | "RESERVED" | "CLIENT_SLAB";
   clientName: string;
   brand?: string;
+  finish?: string;
+  jobId?: string;
   entryNote?: string;
   fromRack?: string;
   toRack?: string;

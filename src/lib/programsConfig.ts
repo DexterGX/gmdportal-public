@@ -195,6 +195,12 @@ export const programs: ProgramConfig[] = [
         path: "/slab-rack-display/history",
       },
       {
+        icon: Package,
+        name: "Slab Delivery",
+        path: "/slab-rack-display/delivery",
+        allowedRoles: ["admin", "office"],
+      },
+      {
         icon: Settings2,
         name: "Rack Settings",
         path: "/slab-rack-display/settings",

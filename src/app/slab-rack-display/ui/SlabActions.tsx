@@ -1,7 +1,9 @@
 "use client";
 
 import { useEffect, useMemo, useRef, useState } from "react";
+import { AlertTriangle } from "lucide-react";
 import type { Slab, SlabBayState } from "./mockData";
+import type { SlabDeliveryExpectation } from "./expectedDeliveries";
 import {
   addMultipleSlabs,
   encodeClientName,
@@ -14,6 +16,7 @@ import {
   moveSlab,
   splitClientName,
 } from "./storage";
+import { deleteExpectedDelivery } from "./expectedDeliveries";
 
 type ActionType = "add" | "move" | "exit" | null;
 
@@ -22,11 +25,15 @@ export default function SlabActions({
   onUpdate,
   defaultRackId,
   userName,
+  expectedDeliveries = [],
+  onExpectedDeliveriesChange,
 }: {
   state: SlabBayState;
   onUpdate: (next: SlabBayState) => void;
   defaultRackId?: string;
   userName: string;
+  expectedDeliveries?: SlabDeliveryExpectation[];
+  onExpectedDeliveriesChange?: (next: SlabDeliveryExpectation[]) => void;
 }) {
   const [action, setAction] = useState<ActionType>(null);
   const [selectedRackId, setSelectedRackId] = useState(
@@ -103,6 +110,10 @@ export default function SlabActions({
   const [printSelectionSlabs, setPrintSelectionSlabs] = useState<
     Array<{ id: string; scannerId: string; name: string }>
   >([]);
+  const [deliveryPickerOpen, setDeliveryPickerOpen] = useState(false);
+  const [selectedDeliveryId, setSelectedDeliveryId] = useState<string | null>(
+    null,
+  );
   const sizeOptions = useMemo(
     () => Array.from({ length: 201 }, (_, i) => String(i)),
     [],
@@ -257,6 +268,12 @@ export default function SlabActions({
   const recommendedRack = useMemo(
     () => getRecommendedRack(state, clientName || undefined),
     [state, clientName],
+  );
+
+  const pendingExpectedSlabCount = useMemo(
+    () =>
+      expectedDeliveries.reduce((sum, delivery) => sum + delivery.quantity, 0),
+    [expectedDeliveries],
   );
 
   const distribution = useMemo(() => {
@@ -487,6 +504,44 @@ export default function SlabActions({
     setConfirmPlan([]);
     setConfirmRemaining(0);
     setPendingAdd(null);
+    setSelectedDeliveryId(null);
+  };
+
+  const applyExpectedDelivery = (delivery: SlabDeliveryExpectation) => {
+    setSelectedDeliveryId(delivery.id);
+    setClientName(delivery.clientName);
+    setClientSearchTerm(delivery.clientName);
+    setOriginalClientName(delivery.originalClientName ?? "");
+    setOriginalClientSearchTerm(delivery.originalClientName ?? "");
+    setSlabName(delivery.slabName);
+    setSlabSearchTerm(delivery.slabName);
+    setBrand(
+      delivery.brand.startsWith("Other - ") ? OTHER_OPTION : delivery.brand,
+    );
+    setBrandOther(
+      delivery.brand.startsWith("Other - ")
+        ? delivery.brand.replace(/^Other -\s*/, "")
+        : "",
+    );
+    setThickness(delivery.thickness);
+    setFinish(
+      delivery.finish?.startsWith("Other - ")
+        ? OTHER_OPTION
+        : (delivery.finish ?? ""),
+    );
+    setFinishOther(
+      delivery.finish?.startsWith("Other - ")
+        ? delivery.finish.replace(/^Other -\s*/, "")
+        : "",
+    );
+    setQuantity(String(delivery.quantity));
+    setSlabType(delivery.slabType);
+    setJobId(delivery.jobId ?? "");
+    setNotes(delivery.notes ?? "");
+    setScannerNotes([delivery.notes ?? "", ...delivery.extraNotes]);
+    setAction("add");
+    setDeliveryPickerOpen(false);
+    setActionError(null);
   };
 
   const openLabel = (slabId: string) => {
@@ -666,6 +721,22 @@ export default function SlabActions({
     }
 
     performAdd(payload);
+    if (selectedDeliveryId && onExpectedDeliveriesChange) {
+      void deleteExpectedDelivery(selectedDeliveryId)
+        .then(() => {
+          onExpectedDeliveriesChange(
+            expectedDeliveries.filter(
+              (delivery) => delivery.id !== selectedDeliveryId,
+            ),
+          );
+        })
+        .catch(() => {
+          pushNotification(
+            "warning",
+            "Slab was added, but the expected delivery item could not be removed.",
+          );
+        });
+    }
     pushNotification("success", "Slab entry completed successfully.");
   };
 
@@ -736,7 +807,106 @@ export default function SlabActions({
         >
           Exit Slab
         </button>
+        <button
+          type="button"
+          onClick={() => setDeliveryPickerOpen(true)}
+          className="relative inline-flex items-center gap-2 rounded-lg border border-amber-300 bg-amber-50 px-4 py-2 text-sm font-medium text-amber-800 transition-colors hover:bg-amber-100 dark:border-amber-800 dark:bg-amber-900/20 dark:text-amber-200"
+        >
+          <span className="relative inline-flex h-6 w-6 items-center justify-center">
+            <AlertTriangle className="h-6 w-6 fill-amber-200 text-amber-600 dark:fill-amber-700/40 dark:text-amber-300" />
+            <span className="absolute inset-0 flex items-center justify-center text-[10px] font-bold">
+              {pendingExpectedSlabCount}
+            </span>
+          </span>
+          Expected deliveries
+        </button>
       </div>
+
+      {deliveryPickerOpen && (
+        <div className="fixed inset-0 z-[60] flex items-center justify-center bg-black/40 px-4">
+          <div className="w-full max-w-2xl max-h-[85vh] overflow-hidden rounded-xl border border-gray-200 bg-white shadow-lg dark:border-gray-800 dark:bg-gray-900">
+            <div className="flex items-center justify-between border-b border-gray-200 px-6 py-4 dark:border-gray-800">
+              <div>
+                <h4 className="text-base font-semibold text-gray-900 dark:text-gray-100">
+                  Expected slab deliveries
+                </h4>
+                <p className="text-sm text-gray-500 dark:text-gray-400">
+                  Select one to prefill the Add Slab form.
+                </p>
+              </div>
+              <button
+                type="button"
+                onClick={() => setDeliveryPickerOpen(false)}
+                className="text-sm text-gray-500 hover:text-gray-700"
+              >
+                Close
+              </button>
+            </div>
+
+            <div className="max-h-[70vh] overflow-y-auto px-6 py-4">
+              {expectedDeliveries.length === 0 ? (
+                <div className="rounded-lg border border-dashed border-gray-300 px-4 py-10 text-center text-sm text-gray-500 dark:border-gray-700 dark:text-gray-400">
+                  No expected deliveries available.
+                </div>
+              ) : (
+                <div className="space-y-3">
+                  {expectedDeliveries.map((delivery) => (
+                    <button
+                      key={delivery.id}
+                      type="button"
+                      onClick={() => applyExpectedDelivery(delivery)}
+                      className="w-full rounded-xl border border-gray-200 px-4 py-4 text-left transition-colors hover:border-amber-300 hover:bg-amber-50 dark:border-gray-800 dark:hover:border-amber-700 dark:hover:bg-amber-900/10"
+                    >
+                      <div className="flex items-start justify-between gap-4">
+                        <div>
+                          <div className="text-sm font-semibold text-gray-900 dark:text-gray-100">
+                            {delivery.slabName}
+                          </div>
+                          <div className="text-sm text-gray-600 dark:text-gray-300">
+                            {delivery.clientName}
+                            {delivery.originalClientName
+                              ? ` / ${delivery.originalClientName}`
+                              : ""}
+                          </div>
+                        </div>
+                        <div className="rounded-full bg-amber-100 px-3 py-1 text-xs font-semibold text-amber-700 dark:bg-amber-900/30 dark:text-amber-300">
+                          {delivery.quantity} slab
+                          {delivery.quantity === 1 ? "" : "s"}
+                        </div>
+                      </div>
+
+                      <div className="mt-3 flex flex-wrap gap-2 text-xs">
+                        <span className="rounded-full bg-gray-100 px-3 py-1 font-semibold text-gray-700 dark:bg-gray-800 dark:text-gray-300">
+                          {delivery.slabType.replace(/_/g, " ")}
+                        </span>
+                        <span className="rounded-full bg-gray-100 px-3 py-1 font-semibold text-gray-700 dark:bg-gray-800 dark:text-gray-300">
+                          {delivery.brand}
+                        </span>
+                        <span className="rounded-full bg-gray-100 px-3 py-1 font-semibold text-gray-700 dark:bg-gray-800 dark:text-gray-300">
+                          {delivery.thickness}
+                        </span>
+                        {delivery.finish && (
+                          <span className="rounded-full bg-gray-100 px-3 py-1 font-semibold text-gray-700 dark:bg-gray-800 dark:text-gray-300">
+                            {delivery.finish}
+                          </span>
+                        )}
+                      </div>
+
+                      {(delivery.jobId || delivery.notes) && (
+                        <div className="mt-3 text-sm text-gray-500 dark:text-gray-400">
+                          {delivery.jobId ? `Job ID: ${delivery.jobId}` : ""}
+                          {delivery.jobId && delivery.notes ? " • " : ""}
+                          {delivery.notes ? `Notes: ${delivery.notes}` : ""}
+                        </div>
+                      )}
+                    </button>
+                  ))}
+                </div>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
 
       {action && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 px-4">
@@ -761,6 +931,12 @@ export default function SlabActions({
 
             {action === "add" && (
               <div className="mt-4 space-y-5">
+                {selectedDeliveryId && (
+                  <div className="rounded-lg border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-800 dark:border-amber-800 dark:bg-amber-900/20 dark:text-amber-200">
+                    Prefilled from expected delivery. After the slab is added,
+                    this expected delivery will be removed automatically.
+                  </div>
+                )}
                 <div>
                   <div className="text-xs font-semibold uppercase tracking-wide text-blue-600 dark:text-blue-400 border-l-2 border-blue-500 pl-2 mb-1">
                     Rack and client

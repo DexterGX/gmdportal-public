@@ -62,6 +62,12 @@ export default function HistoryClient() {
           (entry.brand || "")
             .toLowerCase()
             .includes(slabFilter.toLowerCase()) ||
+          (entry.finish || "")
+            .toLowerCase()
+            .includes(slabFilter.toLowerCase()) ||
+          (entry.jobId || "")
+            .toLowerCase()
+            .includes(slabFilter.toLowerCase()) ||
           (entry.slabScannerId
             ? entry.slabScannerId
                 .toLowerCase()
@@ -264,7 +270,7 @@ export default function HistoryClient() {
             <table className="min-w-full text-sm print-history-table">
               <thead>
                 <tr className="hidden print:table-row print-spacer-row">
-                  <th colSpan={12} aria-hidden="true" />
+                  <th colSpan={14} aria-hidden="true" />
                 </tr>
                 <tr className="text-left text-xs uppercase tracking-wide text-gray-400">
                   <th className="py-2 pr-4">Date</th>
@@ -273,10 +279,12 @@ export default function HistoryClient() {
                   <th className="py-2 pr-4">Scanner ID</th>
                   <th className="py-2 pr-4">Batch</th>
                   <th className="py-2 pr-4">Brand</th>
+                  <th className="py-2 pr-4">Finish</th>
                   <th className="py-2 pr-4">Type</th>
                   <th className="py-2 pr-4">Client</th>
                   <th className="py-2 pr-4">From</th>
                   <th className="py-2 pr-4">To</th>
+                  <th className="py-2 pr-4">Job ID</th>
                   <th className="py-2 pr-4">Notes</th>
                   <th className="py-2 pr-4">User</th>
                 </tr>
@@ -333,6 +341,9 @@ export default function HistoryClient() {
                       {entry.brand || "-"}
                     </td>
                     <td className="py-3 pr-4 text-gray-600 dark:text-gray-300">
+                      {entry.finish || "-"}
+                    </td>
+                    <td className="py-3 pr-4 text-gray-600 dark:text-gray-300">
                       {entry.slabType}
                     </td>
                     <td className="py-3 pr-4 text-gray-600 dark:text-gray-300">
@@ -356,6 +367,9 @@ export default function HistoryClient() {
                     </td>
                     <td className="py-3 pr-4 text-gray-600 dark:text-gray-300">
                       {entry.toRack ? `${entry.toRack}` : "-"}
+                    </td>
+                    <td className="py-3 pr-4 text-gray-600 dark:text-gray-300">
+                      {entry.jobId || "-"}
                     </td>
                     <td className="py-3 pr-4 text-gray-600 dark:text-gray-300">
                       <div className="space-y-1">
@@ -383,7 +397,7 @@ export default function HistoryClient() {
                 {displayRows.length === 0 && (
                   <tr>
                     <td
-                      colSpan={11}
+                      colSpan={14}
                       className="py-6 text-center text-gray-500 dark:text-gray-400"
                     >
                       No history entries yet.
