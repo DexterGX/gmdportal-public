@@ -30,11 +30,15 @@ export type Slab = {
 
 export type HistoryEntry = {
   id: string;
-  type: "entry" | "exit" | "move" | "change";
+  type: "entry" | "exit" | "move" | "change" | "recovery";
   slabId: string;
   slabScannerId?: string;
   slabName: string;
   slabType: "SLAB" | "GMD" | "REMNANT" | "RESERVED" | "CLIENT_SLAB";
+  slabThickness?: string;
+  slabSize?: string;
+  slabNotes?: string;
+  slabCreatedAt?: string;
   clientName: string;
   brand?: string;
   finish?: string;
@@ -46,6 +50,7 @@ export type HistoryEntry = {
   batchId?: string;
   batchIndex?: number;
   batchSize?: number;
+  recoveredFromHistoryId?: string;
   userName: string;
   timestamp: string;
 };

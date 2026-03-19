@@ -177,11 +177,19 @@ model SlabBayHistory {
   batchSize     Int?
   slabName      String
   slabType      String
+  slabThickness String?
+  slabSize      String?
+  slabNotes     String?
+  slabCreatedAt String?
   clientName    String
   brand         String?
+  finish        String?
+  jobId         String?
+  entryNote     String?
   fromRack      String?
   toRack        String?
   exitNote      String?
+  recoveredFromHistoryId String?
   userName      String
   timestamp     String
 }

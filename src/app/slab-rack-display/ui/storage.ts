@@ -99,6 +99,24 @@ export const getSlabsByRack = (state: SlabBayState, rackId: string) =>
 export const getRackLoad = (state: SlabBayState, rackId: string) =>
   state.slabs.filter((slab) => slab.rackId === rackId).length;
 
+const buildHistorySnapshot = (slab: Slab) => ({
+  slabId: slab.id,
+  slabScannerId: slab.scannerId,
+  slabName: slab.name,
+  slabType: slab.type,
+  slabThickness: slab.thickness,
+  slabSize: slab.size,
+  slabNotes: slab.notes?.trim() || undefined,
+  slabCreatedAt: slab.createdAt,
+  clientName: slab.clientName,
+  brand: slab.brand,
+  finish: slab.finish,
+  jobId: slab.jobId,
+  batchId: slab.batchId,
+  batchIndex: slab.batchIndex,
+  batchSize: slab.batchSize,
+});
+
 export const addRack = (state: SlabBayState, rack: Rack): SlabBayState => {
   const nextState: SlabBayState = {
     ...state,
@@ -254,19 +272,9 @@ const addSlabLocal = (
   const history: HistoryEntry = {
     id: buildId("log"),
     type: "entry",
-    slabId: slab.id,
-    slabScannerId: slab.scannerId,
-    slabName: slab.name,
-    slabType: slab.type,
-    clientName: slab.clientName,
-    brand: slab.brand,
-    finish: slab.finish,
-    jobId: slab.jobId,
+    ...buildHistorySnapshot(slab),
     entryNote: slab.notes?.trim() || undefined,
     toRack: input.rackId.toUpperCase(),
-    batchId: slab.batchId,
-    batchIndex: slab.batchIndex,
-    batchSize: slab.batchSize,
     userName,
     timestamp: new Date().toLocaleString(),
   };
@@ -440,14 +448,7 @@ export const moveSlab = (
   const history: HistoryEntry = {
     id: buildId("log"),
     type: "move",
-    slabId: slab.id,
-    slabScannerId: slab.scannerId,
-    slabName: slab.name,
-    slabType: slab.type,
-    clientName: slab.clientName,
-    brand: slab.brand,
-    finish: slab.finish,
-    jobId: slab.jobId,
+    ...buildHistorySnapshot(slab),
     fromRack: slab.rackId.toUpperCase(),
     toRack: toRackId.toUpperCase(),
     userName,
@@ -475,14 +476,7 @@ export const exitSlab = (
   const history: HistoryEntry = {
     id: buildId("log"),
     type: "exit",
-    slabId: slab.id,
-    slabScannerId: slab.scannerId,
-    slabName: slab.name,
-    slabType: slab.type,
-    clientName: slab.clientName,
-    brand: slab.brand,
-    finish: slab.finish,
-    jobId: slab.jobId,
+    ...buildHistorySnapshot(slab),
     fromRack: slab.rackId.toUpperCase(),
     exitNote: exitNote?.trim() ? exitNote.trim() : undefined,
     userName,
@@ -519,14 +513,7 @@ export const updateSlab = (
   const history: HistoryEntry = {
     id: buildId("log"),
     type: "change",
-    slabId: updatedSlab.id,
-    slabScannerId: updatedSlab.scannerId,
-    slabName: updatedSlab.name,
-    slabType: updatedSlab.type,
-    clientName: updatedSlab.clientName,
-    brand: updatedSlab.brand,
-    finish: updatedSlab.finish,
-    jobId: updatedSlab.jobId,
+    ...buildHistorySnapshot(updatedSlab),
     fromRack: slab.rackId.toUpperCase(),
     toRack: updatedSlab.rackId.toUpperCase(),
     userName,
@@ -555,4 +542,81 @@ export const updateRack = (
   };
   saveState(nextState);
   return nextState;
+};
+
+export const recoverExitedSlab = (
+  state: SlabBayState,
+  exitHistoryId: string,
+  targetRackId: string,
+  userName: string,
+): { nextState: SlabBayState; error?: string } => {
+  const exitEntry = state.history.find(
+    (entry) => entry.id === exitHistoryId && entry.type === "exit",
+  );
+  if (!exitEntry) {
+    return { nextState: state, error: "Exit record not found." };
+  }
+
+  if (state.slabs.some((slab) => slab.id === exitEntry.slabId)) {
+    return {
+      nextState: state,
+      error: "This slab is already active in inventory.",
+    };
+  }
+
+  if (!exitEntry.slabThickness || !exitEntry.slabSize) {
+    return {
+      nextState: state,
+      error:
+        "This exit record does not contain enough slab details to restore it.",
+    };
+  }
+
+  const rack = state.racks.find((item) => item.id === targetRackId);
+  if (!rack) {
+    return { nextState: state, error: "Selected rack no longer exists." };
+  }
+
+  if (getRackLoad(state, rack.id) >= rack.capacity) {
+    return { nextState: state, error: "Selected rack is full." };
+  }
+
+  const restoredSlab: Slab = {
+    id: exitEntry.slabId,
+    scannerId: exitEntry.slabScannerId ?? "",
+    name: exitEntry.slabName,
+    type: exitEntry.slabType,
+    thickness: exitEntry.slabThickness,
+    size: exitEntry.slabSize,
+    clientName: exitEntry.clientName,
+    brand: exitEntry.brand || "",
+    finish: exitEntry.finish,
+    notes: exitEntry.slabNotes?.trim() || undefined,
+    jobId: exitEntry.jobId?.trim() || undefined,
+    rackId: rack.id,
+    createdAt: exitEntry.slabCreatedAt ?? new Date().toISOString(),
+    batchId: exitEntry.batchId,
+    batchIndex: exitEntry.batchIndex,
+    batchSize: exitEntry.batchSize,
+  };
+
+  const history: HistoryEntry = {
+    id: buildId("log"),
+    type: "recovery",
+    ...buildHistorySnapshot(restoredSlab),
+    fromRack: exitEntry.fromRack,
+    toRack: rack.name,
+    exitNote: exitEntry.exitNote,
+    recoveredFromHistoryId: exitEntry.id,
+    userName,
+    timestamp: new Date().toLocaleString(),
+  };
+
+  const nextState: SlabBayState = {
+    ...state,
+    slabs: [...state.slabs, restoredSlab],
+    history: [history, ...state.history],
+  };
+  saveState(nextState);
+  return { nextState };
 };

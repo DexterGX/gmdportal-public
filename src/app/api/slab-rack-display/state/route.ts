@@ -57,6 +57,10 @@ const ensureTables = async () => {
       "slabScannerId" TEXT,
       "slabName" TEXT NOT NULL,
       "slabType" TEXT NOT NULL,
+      "slabThickness" TEXT,
+      "slabSize" TEXT,
+      "slabNotes" TEXT,
+      "slabCreatedAt" TEXT,
       "clientName" TEXT NOT NULL,
       "brand" TEXT,
       "finish" TEXT,
@@ -68,19 +72,25 @@ const ensureTables = async () => {
       "batchId" TEXT,
       "batchIndex" INTEGER,
       "batchSize" INTEGER,
+      "recoveredFromHistoryId" TEXT,
       "userName" TEXT NOT NULL,
       "timestamp" TEXT NOT NULL
     );
   `;
   await sql`
     ALTER TABLE "SlabBayHistory"
+      ADD COLUMN IF NOT EXISTS "slabThickness" TEXT,
+      ADD COLUMN IF NOT EXISTS "slabSize" TEXT,
+      ADD COLUMN IF NOT EXISTS "slabNotes" TEXT,
+      ADD COLUMN IF NOT EXISTS "slabCreatedAt" TEXT,
       ADD COLUMN IF NOT EXISTS "brand" TEXT,
       ADD COLUMN IF NOT EXISTS "finish" TEXT,
       ADD COLUMN IF NOT EXISTS "jobId" TEXT,
       ADD COLUMN IF NOT EXISTS "entryNote" TEXT,
       ADD COLUMN IF NOT EXISTS "batchId" TEXT,
       ADD COLUMN IF NOT EXISTS "batchIndex" INTEGER,
-      ADD COLUMN IF NOT EXISTS "batchSize" INTEGER;
+      ADD COLUMN IF NOT EXISTS "batchSize" INTEGER,
+      ADD COLUMN IF NOT EXISTS "recoveredFromHistoryId" TEXT;
   `;
 };
 
@@ -180,6 +190,10 @@ const mapState = (state: SlabBayState) => {
       slabScannerId: entry.slabScannerId ?? null,
       slabName: entry.slabName,
       slabType: entry.slabType,
+      slabThickness: entry.slabThickness ?? null,
+      slabSize: entry.slabSize ?? null,
+      slabNotes: entry.slabNotes ?? null,
+      slabCreatedAt: entry.slabCreatedAt ?? null,
       clientName: entry.clientName,
       brand: entry.brand ?? null,
       finish: entry.finish ?? null,
@@ -195,6 +209,7 @@ const mapState = (state: SlabBayState) => {
       batchId: entry.batchId ?? null,
       batchIndex: entry.batchIndex ?? null,
       batchSize: entry.batchSize ?? null,
+      recoveredFromHistoryId: entry.recoveredFromHistoryId ?? null,
       userName: entry.userName,
       timestamp: entry.timestamp,
     })),
@@ -287,7 +302,7 @@ export async function GET() {
     })),
     history: (history as Array<any>).map((entry) => ({
       id: entry.id,
-      type: entry.type as "entry" | "exit" | "move" | "change",
+      type: entry.type as "entry" | "exit" | "move" | "change" | "recovery",
       slabId: entry.slabId,
       slabScannerId: entry.slabScannerId ?? undefined,
       slabName: entry.slabName,
@@ -297,6 +312,10 @@ export async function GET() {
         | "REMNANT"
         | "RESERVED"
         | "CLIENT_SLAB",
+      slabThickness: entry.slabThickness ?? undefined,
+      slabSize: entry.slabSize ?? undefined,
+      slabNotes: entry.slabNotes ?? undefined,
+      slabCreatedAt: entry.slabCreatedAt ?? undefined,
       clientName: entry.clientName,
       brand: entry.brand ?? undefined,
       finish: entry.finish ?? undefined,
@@ -312,6 +331,7 @@ export async function GET() {
       batchId: entry.batchId ?? undefined,
       batchIndex: entry.batchIndex ?? undefined,
       batchSize: entry.batchSize ?? undefined,
+      recoveredFromHistoryId: entry.recoveredFromHistoryId ?? undefined,
       userName: entry.userName,
       timestamp: entry.timestamp,
     })),
@@ -403,6 +423,10 @@ export async function PUT(request: Request) {
           "slabScannerId",
           "slabName",
           "slabType",
+          "slabThickness",
+          "slabSize",
+          "slabNotes",
+          "slabCreatedAt",
           "clientName",
           "brand",
           "finish",
@@ -414,6 +438,7 @@ export async function PUT(request: Request) {
           "batchId",
           "batchIndex",
           "batchSize",
+          "recoveredFromHistoryId",
           "userName",
           "timestamp",
         )}
