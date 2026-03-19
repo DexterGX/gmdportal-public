@@ -2,7 +2,13 @@
 
 import { useEffect, useMemo, useState } from "react";
 import type { SlabBayState } from "./mockData";
-import { fetchStateFromDb, loadState, splitClientName } from "./storage";
+import {
+  fetchStateFromDb,
+  getRackLoad,
+  loadState,
+  recoverExitedSlab,
+  splitClientName,
+} from "./storage";
 
 const SLAB_VIEW_LICENSE = "532b5c05af7b036ff8a0200d0c8dc6da";
 const buildSlabViewUrl = (scannerId: string) =>
@@ -10,10 +16,13 @@ const buildSlabViewUrl = (scannerId: string) =>
     scannerId,
   )}`;
 
-const formatType = (type: "entry" | "exit" | "move" | "change") => {
+const formatType = (
+  type: "entry" | "exit" | "move" | "change" | "recovery",
+) => {
   if (type === "entry") return "Entry";
   if (type === "exit") return "Exit";
   if (type === "change") return "Change";
+  if (type === "recovery") return "Recovery";
   return "Move";
 };
 
@@ -33,7 +42,7 @@ const formatHistoryTimestamp = (value: string) => {
   };
 };
 
-export default function HistoryClient() {
+export default function HistoryClient({ userName }: { userName: string }) {
   const [state, setState] = useState<SlabBayState>(() => loadState());
   const [mounted, setMounted] = useState(false);
   const [isLoading, setIsLoading] = useState(true);
@@ -44,6 +53,11 @@ export default function HistoryClient() {
   const [dateFilter, setDateFilter] = useState("");
   const [actionFilter, setActionFilter] = useState("all");
   const [printMode, setPrintMode] = useState<"filtered" | "all">("filtered");
+  const [selectedExitHistoryId, setSelectedExitHistoryId] = useState<
+    string | null
+  >(null);
+  const [recoveryRackId, setRecoveryRackId] = useState("");
+  const [recoveryError, setRecoveryError] = useState<string | null>(null);
 
   const rows = useMemo(() => {
     return state.history.filter((entry) => {
@@ -66,6 +80,12 @@ export default function HistoryClient() {
             .toLowerCase()
             .includes(slabFilter.toLowerCase()) ||
           (entry.jobId || "")
+            .toLowerCase()
+            .includes(slabFilter.toLowerCase()) ||
+          (entry.slabSize || "")
+            .toLowerCase()
+            .includes(slabFilter.toLowerCase()) ||
+          (entry.slabThickness || "")
             .toLowerCase()
             .includes(slabFilter.toLowerCase()) ||
           (entry.slabScannerId
@@ -117,13 +137,135 @@ export default function HistoryClient() {
     const map = new Map<string, string>();
     for (const item of state.history) {
       if (item.type !== "entry") continue;
-      const note = item.entryNote?.trim();
+      const note = item.entryNote?.trim() || item.slabNotes?.trim();
       if (note && !map.has(item.slabId)) {
         map.set(item.slabId, note);
       }
     }
     return map;
   }, [state.history]);
+
+  const rackAvailability = useMemo(
+    () =>
+      state.racks
+        .map((rack) => ({
+          rack,
+          load: getRackLoad(state, rack.id),
+          available: getRackLoad(state, rack.id) < rack.capacity,
+        }))
+        .sort((a, b) =>
+          a.rack.name.localeCompare(b.rack.name, undefined, { numeric: true }),
+        ),
+    [state],
+  );
+
+  const selectedExitEntry = useMemo(
+    () =>
+      selectedExitHistoryId
+        ? state.history.find(
+            (entry) =>
+              entry.id === selectedExitHistoryId && entry.type === "exit",
+          ) || null
+        : null,
+    [selectedExitHistoryId, state.history],
+  );
+
+  const activeSlabIds = useMemo(
+    () => new Set(state.slabs.map((slab) => slab.id)),
+    [state.slabs],
+  );
+
+  const preferredRecoveryRack = useMemo(() => {
+    if (!selectedExitEntry) return undefined;
+    const originalRackId = selectedExitEntry.fromRack?.toLowerCase();
+    return (
+      rackAvailability.find(({ rack, available }) =>
+        available && originalRackId ? rack.id === originalRackId : false,
+      )?.rack || rackAvailability.find(({ available }) => available)?.rack
+    );
+  }, [rackAvailability, selectedExitEntry]);
+
+  const originalRackStatus = useMemo(() => {
+    if (!selectedExitEntry?.fromRack) return null;
+    const originalRackId = selectedExitEntry.fromRack.toLowerCase();
+    const info = rackAvailability.find(
+      ({ rack }) => rack.id === originalRackId,
+    );
+    if (!info) {
+      return {
+        tone: "text-red-600 dark:text-red-400",
+        label: `Original rack ${selectedExitEntry.fromRack} no longer exists.`,
+      };
+    }
+
+    if (info.available) {
+      return {
+        tone: "text-green-600 dark:text-green-400",
+        label: `Original rack ${info.rack.name} is available (${info.load}/${info.rack.capacity}).`,
+      };
+    }
+
+    return {
+      tone: "text-amber-600 dark:text-amber-400",
+      label: `Original rack ${info.rack.name} is full (${info.load}/${info.rack.capacity}). Choose another rack.`,
+    };
+  }, [rackAvailability, selectedExitEntry]);
+
+  const selectedRecoveryRack = useMemo(
+    () =>
+      rackAvailability.find(({ rack }) => rack.id === recoveryRackId)?.rack ||
+      null,
+    [rackAvailability, recoveryRackId],
+  );
+
+  const canRecoverSelectedExit = useMemo(() => {
+    if (!selectedExitEntry) return false;
+    if (activeSlabIds.has(selectedExitEntry.slabId)) return false;
+    if (!selectedExitEntry.slabThickness || !selectedExitEntry.slabSize)
+      return false;
+    return rackAvailability.some(({ available }) => available);
+  }, [activeSlabIds, rackAvailability, selectedExitEntry]);
+
+  useEffect(() => {
+    if (!selectedExitEntry) return;
+    if (!preferredRecoveryRack) {
+      setRecoveryRackId("");
+      return;
+    }
+    setRecoveryRackId((current) => current || preferredRecoveryRack.id);
+  }, [preferredRecoveryRack, selectedExitEntry]);
+
+  const openRecoveryDialog = (historyId: string) => {
+    setSelectedExitHistoryId(historyId);
+    setRecoveryError(null);
+  };
+
+  const closeRecoveryDialog = () => {
+    setSelectedExitHistoryId(null);
+    setRecoveryRackId("");
+    setRecoveryError(null);
+  };
+
+  const handleRecover = () => {
+    if (!selectedExitEntry || !recoveryRackId) {
+      setRecoveryError("Select a rack to restore this slab.");
+      return;
+    }
+
+    const result = recoverExitedSlab(
+      state,
+      selectedExitEntry.id,
+      recoveryRackId,
+      userName,
+    );
+    if (result.error) {
+      setRecoveryError(result.error);
+      return;
+    }
+
+    setState(result.nextState);
+    closeRecoveryDialog();
+  };
 
   const handlePrint = (mode: "filtered" | "all") => {
     setPrintMode(mode);
@@ -229,6 +371,7 @@ export default function HistoryClient() {
             <option value="change">Change</option>
             <option value="move">Move</option>
             <option value="exit">Exit</option>
+            <option value="recovery">Recovery</option>
           </select>
         </div>
         <div className="mt-4 flex flex-wrap gap-2">
@@ -313,7 +456,22 @@ export default function HistoryClient() {
                       })()}
                     </td>
                     <td className="py-3 pr-4 font-medium text-gray-800 dark:text-gray-100">
-                      {formatType(entry.type)}
+                      {entry.type === "exit" ? (
+                        <>
+                          <button
+                            type="button"
+                            onClick={() => openRecoveryDialog(entry.id)}
+                            className="print:hidden rounded-md border border-amber-200 bg-amber-50 px-2.5 py-1 text-xs font-semibold text-amber-700 transition-colors hover:bg-amber-100 dark:border-amber-800 dark:bg-amber-950/40 dark:text-amber-300"
+                          >
+                            Exit
+                          </button>
+                          <span className="hidden print:inline">
+                            {formatType(entry.type)}
+                          </span>
+                        </>
+                      ) : (
+                        formatType(entry.type)
+                      )}
                     </td>
                     <td className="py-3 pr-4 text-gray-600 dark:text-gray-300">
                       {entry.slabName}
@@ -387,6 +545,15 @@ export default function HistoryClient() {
                           </span>{" "}
                           <span>{entry.exitNote || "-"}</span>
                         </div>
+                        {entry.type === "recovery" &&
+                        entry.recoveredFromHistoryId ? (
+                          <div>
+                            <span className="text-xs text-gray-500 dark:text-gray-400">
+                              Restored:
+                            </span>{" "}
+                            <span>From exit record</span>
+                          </div>
+                        ) : null}
                       </div>
                     </td>
                     <td className="py-3 pr-4 text-gray-600 dark:text-gray-300">
@@ -409,6 +576,209 @@ export default function HistoryClient() {
           </div>
         )}
       </div>
+
+      {selectedExitEntry ? (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4 print:hidden">
+          <div className="w-full max-w-2xl rounded-2xl border border-gray-200 bg-white p-6 shadow-xl dark:border-gray-800 dark:bg-gray-900">
+            <div className="flex items-start justify-between gap-4">
+              <div>
+                <h2 className="text-xl font-semibold text-gray-900 dark:text-gray-100">
+                  Retrieve exited slab
+                </h2>
+                <p className="mt-1 text-sm text-gray-500 dark:text-gray-400">
+                  Restore this slab to its original rack or move it to another
+                  rack with space.
+                </p>
+              </div>
+              <button
+                type="button"
+                onClick={closeRecoveryDialog}
+                className="rounded-md p-2 text-gray-400 transition-colors hover:bg-gray-100 hover:text-gray-600 dark:hover:bg-gray-800 dark:hover:text-gray-200"
+                aria-label="Close recovery dialog"
+              >
+                ×
+              </button>
+            </div>
+
+            <div className="mt-5 grid gap-4 rounded-xl border border-gray-200 bg-gray-50 p-4 text-sm dark:border-gray-800 dark:bg-gray-950/40 md:grid-cols-2">
+              <div>
+                <div className="text-xs uppercase tracking-wide text-gray-500 dark:text-gray-400">
+                  Slab
+                </div>
+                <div className="mt-1 font-medium text-gray-900 dark:text-gray-100">
+                  {selectedExitEntry.slabName}
+                </div>
+                <div className="mt-1 text-gray-600 dark:text-gray-300">
+                  {selectedExitEntry.slabId}
+                </div>
+              </div>
+              <div>
+                <div className="text-xs uppercase tracking-wide text-gray-500 dark:text-gray-400">
+                  Scanner ID
+                </div>
+                <div className="mt-1 text-gray-900 dark:text-gray-100">
+                  {selectedExitEntry.slabScannerId || "-"}
+                </div>
+              </div>
+              <div>
+                <div className="text-xs uppercase tracking-wide text-gray-500 dark:text-gray-400">
+                  Client
+                </div>
+                <div className="mt-1 text-gray-900 dark:text-gray-100">
+                  {splitClientName(selectedExitEntry.clientName).clientName ||
+                    "-"}
+                </div>
+              </div>
+              <div>
+                <div className="text-xs uppercase tracking-wide text-gray-500 dark:text-gray-400">
+                  Type
+                </div>
+                <div className="mt-1 text-gray-900 dark:text-gray-100">
+                  {selectedExitEntry.slabType}
+                </div>
+              </div>
+              <div>
+                <div className="text-xs uppercase tracking-wide text-gray-500 dark:text-gray-400">
+                  Brand / Finish
+                </div>
+                <div className="mt-1 text-gray-900 dark:text-gray-100">
+                  {[selectedExitEntry.brand, selectedExitEntry.finish]
+                    .filter(Boolean)
+                    .join(" / ") || "-"}
+                </div>
+              </div>
+              <div>
+                <div className="text-xs uppercase tracking-wide text-gray-500 dark:text-gray-400">
+                  Size / Thickness
+                </div>
+                <div className="mt-1 text-gray-900 dark:text-gray-100">
+                  {[selectedExitEntry.slabSize, selectedExitEntry.slabThickness]
+                    .filter(Boolean)
+                    .join(" / ") || "-"}
+                </div>
+              </div>
+              <div>
+                <div className="text-xs uppercase tracking-wide text-gray-500 dark:text-gray-400">
+                  Job ID
+                </div>
+                <div className="mt-1 text-gray-900 dark:text-gray-100">
+                  {selectedExitEntry.jobId || "-"}
+                </div>
+              </div>
+              <div>
+                <div className="text-xs uppercase tracking-wide text-gray-500 dark:text-gray-400">
+                  Original rack
+                </div>
+                <div className="mt-1 text-gray-900 dark:text-gray-100">
+                  {selectedExitEntry.fromRack || "-"}
+                </div>
+              </div>
+              <div className="md:col-span-2">
+                <div className="text-xs uppercase tracking-wide text-gray-500 dark:text-gray-400">
+                  Notes
+                </div>
+                <div className="mt-1 space-y-1 text-gray-900 dark:text-gray-100">
+                  <div>
+                    <span className="text-gray-500 dark:text-gray-400">
+                      Entry:
+                    </span>{" "}
+                    {entryNoteBySlabId.get(selectedExitEntry.slabId) ||
+                      selectedExitEntry.slabNotes ||
+                      "-"}
+                  </div>
+                  <div>
+                    <span className="text-gray-500 dark:text-gray-400">
+                      Exit:
+                    </span>{" "}
+                    {selectedExitEntry.exitNote || "-"}
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            <div className="mt-5 space-y-3">
+              {activeSlabIds.has(selectedExitEntry.slabId) ? (
+                <p className="rounded-lg border border-blue-200 bg-blue-50 px-3 py-2 text-sm text-blue-700 dark:border-blue-900 dark:bg-blue-950/40 dark:text-blue-300">
+                  This slab is already active in inventory, so this exit record
+                  cannot be restored again.
+                </p>
+              ) : null}
+
+              {!selectedExitEntry.slabThickness ||
+              !selectedExitEntry.slabSize ? (
+                <p className="rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700 dark:border-red-900 dark:bg-red-950/40 dark:text-red-300">
+                  This older exit record is missing slab size or thickness, so
+                  it cannot be restored automatically.
+                </p>
+              ) : null}
+
+              {originalRackStatus ? (
+                <p className={`text-sm ${originalRackStatus.tone}`}>
+                  {originalRackStatus.label}
+                </p>
+              ) : null}
+
+              <label className="block">
+                <span className="mb-2 block text-sm font-medium text-gray-700 dark:text-gray-300">
+                  Restore to rack
+                </span>
+                <select
+                  value={recoveryRackId}
+                  onChange={(event) => setRecoveryRackId(event.target.value)}
+                  disabled={!canRecoverSelectedExit}
+                  className="w-full rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm text-gray-900 dark:border-gray-700 dark:bg-gray-800 dark:text-gray-100 disabled:cursor-not-allowed disabled:opacity-60"
+                >
+                  <option value="">Select a rack</option>
+                  {rackAvailability
+                    .filter(({ available }) => available)
+                    .map(({ rack, load }) => (
+                      <option key={rack.id} value={rack.id}>
+                        {rack.name} ({load}/{rack.capacity})
+                      </option>
+                    ))}
+                </select>
+              </label>
+
+              {selectedRecoveryRack ? (
+                <p className="text-sm text-gray-500 dark:text-gray-400">
+                  The slab will be restored into {selectedRecoveryRack.name}.
+                </p>
+              ) : null}
+
+              {!rackAvailability.some(({ available }) => available) ? (
+                <p className="rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-700 dark:border-amber-900 dark:bg-amber-950/40 dark:text-amber-300">
+                  No racks currently have space available. Free up a spot first,
+                  then try again.
+                </p>
+              ) : null}
+
+              {recoveryError ? (
+                <p className="rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700 dark:border-red-900 dark:bg-red-950/40 dark:text-red-300">
+                  {recoveryError}
+                </p>
+              ) : null}
+            </div>
+
+            <div className="mt-6 flex justify-end gap-3">
+              <button
+                type="button"
+                onClick={closeRecoveryDialog}
+                className="rounded-lg border border-gray-300 px-4 py-2 text-sm font-medium text-gray-700 transition-colors hover:bg-gray-50 dark:border-gray-700 dark:text-gray-300 dark:hover:bg-gray-800"
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                onClick={handleRecover}
+                disabled={!canRecoverSelectedExit || !recoveryRackId}
+                className="rounded-lg bg-blue-600 px-4 py-2 text-sm font-medium text-white transition-colors hover:bg-blue-700 disabled:cursor-not-allowed disabled:bg-blue-300 dark:disabled:bg-blue-900/50"
+              >
+                Recover slab
+              </button>
+            </div>
+          </div>
+        </div>
+      ) : null}
     </div>
   );
 }
