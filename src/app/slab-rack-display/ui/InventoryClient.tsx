@@ -11,6 +11,24 @@ import {
 } from "./storage";
 import FilterMultiSelect from "@/components/filters/FilterMultiSelect";
 
+type InventorySortKey =
+  | "id"
+  | "scannerId"
+  | "name"
+  | "brand"
+  | "finish"
+  | "thickness"
+  | "size"
+  | "batch"
+  | "type"
+  | "client"
+  | "jobId"
+  | "notes"
+  | "rack"
+  | "createdAt";
+
+type SortDirection = "asc" | "desc";
+
 const SLAB_VIEW_LICENSE = "532b5c05af7b036ff8a0200d0c8dc6da";
 const buildSlabViewUrl = (scannerId: string) =>
   `https://fusiondrivecloud.com/slabview/?license=${SLAB_VIEW_LICENSE}&SlabID=${encodeURIComponent(
@@ -96,10 +114,16 @@ const formatFinishOption = (value: string) =>
 
 export default function InventoryClient({ userName }: { userName: string }) {
   const [state, setState] = useState<SlabBayState>(() => loadState());
-  const [searchTerm, setSearchTerm] = useState("");
+  const [slabSearchTerm, setSlabSearchTerm] = useState("");
+  const [clientSearchTerm, setClientSearchTerm] = useState("");
+  const [userSearchTerm, setUserSearchTerm] = useState("");
+  const [notesSearchTerm, setNotesSearchTerm] = useState("");
+  const [selectedBrands, setSelectedBrands] = useState<string[]>([]);
   const [selectedRacks, setSelectedRacks] = useState<string[]>([]);
   const [selectedTypes, setSelectedTypes] = useState<string[]>([]);
   const [selectedThicknesses, setSelectedThicknesses] = useState<string[]>([]);
+  const [sortKey, setSortKey] = useState<InventorySortKey>("rack");
+  const [sortDirection, setSortDirection] = useState<SortDirection>("asc");
   const [isLoading, setIsLoading] = useState(true);
   const [hasLoaded, setHasLoaded] = useState(false);
   const [editingSlabId, setEditingSlabId] = useState<string | null>(null);
@@ -210,51 +234,166 @@ export default function InventoryClient({ userName }: { userName: string }) {
     [state.slabs],
   );
 
+  const slabUsersById = useMemo(() => {
+    const map = new Map<string, string>();
+    for (const entry of state.history) {
+      const existing = map.get(entry.slabId);
+      const users = new Set(
+        (existing ? existing.split("\n") : []).filter(Boolean),
+      );
+      if (entry.userName.trim()) {
+        users.add(entry.userName.trim());
+      }
+      map.set(entry.slabId, Array.from(users).join("\n"));
+    }
+    return map;
+  }, [state.history]);
+
+  const compareValues = (
+    left: string | number,
+    right: string | number,
+    direction: SortDirection,
+    numeric = false,
+  ) => {
+    const result = numeric
+      ? Number(left) - Number(right)
+      : String(left).localeCompare(String(right), undefined, {
+          numeric: true,
+          sensitivity: "base",
+        });
+    return direction === "asc" ? result : -result;
+  };
+
+  const handleSort = (key: InventorySortKey) => {
+    if (sortKey === key) {
+      setSortDirection((current) => (current === "asc" ? "desc" : "asc"));
+      return;
+    }
+    setSortKey(key);
+    setSortDirection("asc");
+  };
+
+  const renderSortLabel = (key: InventorySortKey, label: string) => {
+    const indicator =
+      sortKey === key ? (sortDirection === "asc" ? " ▲" : " ▼") : "";
+    return `${label}${indicator}`;
+  };
+
   const rows = useMemo(() => {
-    const term = searchTerm.trim().toLowerCase();
+    const slabTerm = slabSearchTerm.trim().toLowerCase();
+    const clientTerm = clientSearchTerm.trim().toLowerCase();
+    const userTerm = userSearchTerm.trim().toLowerCase();
+    const notesTerm = notesSearchTerm.trim().toLowerCase();
     const rackIds = selectedRacks.map((rack) => rack.toLowerCase());
     return state.slabs
       .filter((slab) => {
         const { clientName, originalClientName } = splitClientName(
           slab.clientName,
         );
+        const slabUsers = (slabUsersById.get(slab.id) || "").toLowerCase();
         const matchesRack =
           rackIds.length === 0 ? true : rackIds.includes(slab.rackId);
+        const matchesBrand =
+          selectedBrands.length === 0
+            ? true
+            : selectedBrands.includes(slab.brand || "");
         const matchesType =
           selectedTypes.length === 0 ? true : selectedTypes.includes(slab.type);
         const matchesThickness =
           selectedThicknesses.length === 0
             ? true
             : selectedThicknesses.includes(slab.thickness);
-        const matchesTerm = term
-          ? slab.name.toLowerCase().includes(term) ||
-            (slab.brand || "").toLowerCase().includes(term) ||
-            (slab.finish || "").toLowerCase().includes(term) ||
-            (slab.jobId || "").toLowerCase().includes(term) ||
-            clientName.toLowerCase().includes(term) ||
-            (originalClientName || "").toLowerCase().includes(term) ||
-            (slab.scannerId || "").toLowerCase().includes(term) ||
-            slab.id.toLowerCase().includes(term)
+        const matchesSlab = slabTerm
+          ? slab.name.toLowerCase().includes(slabTerm) ||
+            (slab.brand || "").toLowerCase().includes(slabTerm) ||
+            (slab.finish || "").toLowerCase().includes(slabTerm) ||
+            (slab.jobId || "").toLowerCase().includes(slabTerm) ||
+            (slab.scannerId || "").toLowerCase().includes(slabTerm) ||
+            slab.id.toLowerCase().includes(slabTerm)
           : true;
-        return matchesRack && matchesType && matchesThickness && matchesTerm;
+        const matchesClient = clientTerm
+          ? clientName.toLowerCase().includes(clientTerm) ||
+            (originalClientName || "").toLowerCase().includes(clientTerm)
+          : true;
+        const matchesUser = userTerm ? slabUsers.includes(userTerm) : true;
+        const matchesNotes = notesTerm
+          ? (slab.notes || "").toLowerCase().includes(notesTerm)
+          : true;
+        return (
+          matchesRack &&
+          matchesBrand &&
+          matchesType &&
+          matchesThickness &&
+          matchesSlab &&
+          matchesClient &&
+          matchesUser &&
+          matchesNotes
+        );
       })
       .sort((a, b) => {
-        const rackCompare = a.rackId.localeCompare(b.rackId, undefined, {
-          numeric: true,
-        });
-        if (rackCompare !== 0) return rackCompare;
         const aClient = splitClientName(a.clientName).clientName;
         const bClient = splitClientName(b.clientName).clientName;
-        return aClient.localeCompare(bClient, undefined, {
-          numeric: true,
-        });
+        const aBatch =
+          a.batchIndex && a.batchSize ? `${a.batchIndex}/${a.batchSize}` : "";
+        const bBatch =
+          b.batchIndex && b.batchSize ? `${b.batchIndex}/${b.batchSize}` : "";
+
+        switch (sortKey) {
+          case "id":
+            return compareValues(a.id, b.id, sortDirection);
+          case "scannerId":
+            return compareValues(
+              a.scannerId || "",
+              b.scannerId || "",
+              sortDirection,
+            );
+          case "name":
+            return compareValues(a.name, b.name, sortDirection);
+          case "brand":
+            return compareValues(a.brand || "", b.brand || "", sortDirection);
+          case "finish":
+            return compareValues(a.finish || "", b.finish || "", sortDirection);
+          case "thickness":
+            return compareValues(a.thickness, b.thickness, sortDirection);
+          case "size":
+            return compareValues(a.size, b.size, sortDirection);
+          case "batch":
+            return compareValues(aBatch, bBatch, sortDirection);
+          case "type":
+            return compareValues(a.type, b.type, sortDirection);
+          case "client":
+            return compareValues(aClient, bClient, sortDirection);
+          case "jobId":
+            return compareValues(a.jobId || "", b.jobId || "", sortDirection);
+          case "notes":
+            return compareValues(a.notes || "", b.notes || "", sortDirection);
+          case "rack":
+            return compareValues(a.rackId, b.rackId, sortDirection);
+          case "createdAt": {
+            const aTime = new Date(a.createdAt).getTime();
+            const bTime = new Date(b.createdAt).getTime();
+            if (!Number.isNaN(aTime) && !Number.isNaN(bTime)) {
+              return compareValues(aTime, bTime, sortDirection, true);
+            }
+            return compareValues(a.createdAt, b.createdAt, sortDirection);
+          }
+          default:
+            return 0;
+        }
       });
   }, [
     state.slabs,
+    slabUsersById,
     selectedRacks,
     selectedTypes,
     selectedThicknesses,
-    searchTerm,
+    slabSearchTerm,
+    clientSearchTerm,
+    userSearchTerm,
+    notesSearchTerm,
+    selectedBrands,
+    sortDirection,
+    sortKey,
   ]);
 
   const renderClientCell = (slab: (typeof rows)[number]) => {
@@ -378,7 +517,11 @@ export default function InventoryClient({ userName }: { userName: string }) {
   };
 
   const handleClearFilters = () => {
-    setSearchTerm("");
+    setSlabSearchTerm("");
+    setClientSearchTerm("");
+    setUserSearchTerm("");
+    setNotesSearchTerm("");
+    setSelectedBrands([]);
     setSelectedRacks([]);
     setSelectedTypes([]);
     setSelectedThicknesses([]);
@@ -505,34 +648,66 @@ export default function InventoryClient({ userName }: { userName: string }) {
       </div>
 
       <div className="bg-white dark:bg-gray-900 rounded-xl border border-gray-200 dark:border-gray-800 p-4 print:hidden">
-        <div className="flex flex-wrap items-center gap-3">
+        <div className="grid gap-3 md:grid-cols-2 lg:grid-cols-4 xl:grid-cols-8">
           <input
-            value={searchTerm}
-            onChange={(event) => setSearchTerm(event.target.value)}
-            placeholder="Search by slab, client, or scanner ID"
-            className="min-w-[240px] flex-1 rounded-lg border border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-800 px-3 py-2 text-sm"
+            value={slabSearchTerm}
+            onChange={(event) => setSlabSearchTerm(event.target.value)}
+            placeholder="Filter by slab"
+            className="rounded-lg border border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-800 px-3 py-2 text-sm"
+          />
+          <input
+            value={clientSearchTerm}
+            onChange={(event) => setClientSearchTerm(event.target.value)}
+            placeholder="Filter by client"
+            className="rounded-lg border border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-800 px-3 py-2 text-sm"
+          />
+          <input
+            value={userSearchTerm}
+            onChange={(event) => setUserSearchTerm(event.target.value)}
+            placeholder="Filter by user"
+            className="rounded-lg border border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-800 px-3 py-2 text-sm"
+          />
+          <input
+            value={notesSearchTerm}
+            onChange={(event) => setNotesSearchTerm(event.target.value)}
+            placeholder="Filter by notes"
+            className="rounded-lg border border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-800 px-3 py-2 text-sm"
+          />
+          <FilterMultiSelect
+            label="Brand"
+            options={brandOptions}
+            selected={selectedBrands}
+            onChange={setSelectedBrands}
+            fullWidth
+            matchInputStyle
           />
           <FilterMultiSelect
             label="Racks"
             options={racks}
             selected={selectedRacks}
             onChange={setSelectedRacks}
+            fullWidth
+            matchInputStyle
           />
           <FilterMultiSelect
             label="Type"
             options={types}
             selected={selectedTypes}
             onChange={setSelectedTypes}
+            fullWidth
+            matchInputStyle
           />
           <FilterMultiSelect
             label="Thickness"
             options={thicknesses}
             selected={selectedThicknesses}
             onChange={setSelectedThicknesses}
+            fullWidth
+            matchInputStyle
           />
-          <div className="ml-auto text-sm text-gray-500 dark:text-gray-400">
-            Showing {rows.length} of {state.slabs.length}
-          </div>
+        </div>
+        <div className="mt-3 text-sm text-gray-500 dark:text-gray-400">
+          Showing {rows.length} of {state.slabs.length}
         </div>
         <div className="mt-4 flex flex-wrap gap-2">
           <button
@@ -576,20 +751,132 @@ export default function InventoryClient({ userName }: { userName: string }) {
                   <th colSpan={15} aria-hidden="true" />
                 </tr>
                 <tr className="text-left text-xs uppercase tracking-wide text-gray-400">
-                  <th className="py-2 pr-4">Slab ID</th>
-                  <th className="py-2 pr-4">Scanner ID</th>
-                  <th className="py-2 pr-4">Name</th>
-                  <th className="py-2 pr-4">Brand</th>
-                  <th className="py-2 pr-4">Finish</th>
-                  <th className="py-2 pr-4">Thickness</th>
-                  <th className="py-2 pr-4">Size</th>
-                  <th className="py-2 pr-4">Batch</th>
-                  <th className="py-2 pr-4">Type</th>
-                  <th className="py-2 pr-4">Client</th>
-                  <th className="py-2 pr-4">Job ID</th>
-                  <th className="py-2 pr-4">Notes</th>
-                  <th className="py-2 pr-4">Rack</th>
-                  <th className="py-2 pr-4">Date Added</th>
+                  <th className="py-2 pr-4">
+                    <button
+                      type="button"
+                      onClick={() => handleSort("id")}
+                      className="font-inherit uppercase tracking-wide hover:text-gray-600 dark:hover:text-gray-200"
+                    >
+                      {renderSortLabel("id", "Slab ID")}
+                    </button>
+                  </th>
+                  <th className="py-2 pr-4">
+                    <button
+                      type="button"
+                      onClick={() => handleSort("scannerId")}
+                      className="font-inherit uppercase tracking-wide hover:text-gray-600 dark:hover:text-gray-200"
+                    >
+                      {renderSortLabel("scannerId", "Scanner ID")}
+                    </button>
+                  </th>
+                  <th className="py-2 pr-4">
+                    <button
+                      type="button"
+                      onClick={() => handleSort("name")}
+                      className="font-inherit uppercase tracking-wide hover:text-gray-600 dark:hover:text-gray-200"
+                    >
+                      {renderSortLabel("name", "Name")}
+                    </button>
+                  </th>
+                  <th className="py-2 pr-4">
+                    <button
+                      type="button"
+                      onClick={() => handleSort("brand")}
+                      className="font-inherit uppercase tracking-wide hover:text-gray-600 dark:hover:text-gray-200"
+                    >
+                      {renderSortLabel("brand", "Brand")}
+                    </button>
+                  </th>
+                  <th className="py-2 pr-4">
+                    <button
+                      type="button"
+                      onClick={() => handleSort("finish")}
+                      className="font-inherit uppercase tracking-wide hover:text-gray-600 dark:hover:text-gray-200"
+                    >
+                      {renderSortLabel("finish", "Finish")}
+                    </button>
+                  </th>
+                  <th className="py-2 pr-4">
+                    <button
+                      type="button"
+                      onClick={() => handleSort("thickness")}
+                      className="font-inherit uppercase tracking-wide hover:text-gray-600 dark:hover:text-gray-200"
+                    >
+                      {renderSortLabel("thickness", "Thickness")}
+                    </button>
+                  </th>
+                  <th className="py-2 pr-4">
+                    <button
+                      type="button"
+                      onClick={() => handleSort("size")}
+                      className="font-inherit uppercase tracking-wide hover:text-gray-600 dark:hover:text-gray-200"
+                    >
+                      {renderSortLabel("size", "Size")}
+                    </button>
+                  </th>
+                  <th className="py-2 pr-4">
+                    <button
+                      type="button"
+                      onClick={() => handleSort("batch")}
+                      className="font-inherit uppercase tracking-wide hover:text-gray-600 dark:hover:text-gray-200"
+                    >
+                      {renderSortLabel("batch", "Batch")}
+                    </button>
+                  </th>
+                  <th className="py-2 pr-4">
+                    <button
+                      type="button"
+                      onClick={() => handleSort("type")}
+                      className="font-inherit uppercase tracking-wide hover:text-gray-600 dark:hover:text-gray-200"
+                    >
+                      {renderSortLabel("type", "Type")}
+                    </button>
+                  </th>
+                  <th className="py-2 pr-4">
+                    <button
+                      type="button"
+                      onClick={() => handleSort("client")}
+                      className="font-inherit uppercase tracking-wide hover:text-gray-600 dark:hover:text-gray-200"
+                    >
+                      {renderSortLabel("client", "Client")}
+                    </button>
+                  </th>
+                  <th className="py-2 pr-4">
+                    <button
+                      type="button"
+                      onClick={() => handleSort("jobId")}
+                      className="font-inherit uppercase tracking-wide hover:text-gray-600 dark:hover:text-gray-200"
+                    >
+                      {renderSortLabel("jobId", "Job ID")}
+                    </button>
+                  </th>
+                  <th className="py-2 pr-4">
+                    <button
+                      type="button"
+                      onClick={() => handleSort("notes")}
+                      className="font-inherit uppercase tracking-wide hover:text-gray-600 dark:hover:text-gray-200"
+                    >
+                      {renderSortLabel("notes", "Notes")}
+                    </button>
+                  </th>
+                  <th className="py-2 pr-4">
+                    <button
+                      type="button"
+                      onClick={() => handleSort("rack")}
+                      className="font-inherit uppercase tracking-wide hover:text-gray-600 dark:hover:text-gray-200"
+                    >
+                      {renderSortLabel("rack", "Rack")}
+                    </button>
+                  </th>
+                  <th className="py-2 pr-4">
+                    <button
+                      type="button"
+                      onClick={() => handleSort("createdAt")}
+                      className="font-inherit uppercase tracking-wide hover:text-gray-600 dark:hover:text-gray-200"
+                    >
+                      {renderSortLabel("createdAt", "Date Added")}
+                    </button>
+                  </th>
                   <th className="py-2 pr-4 print:hidden">Edit</th>
                 </tr>
               </thead>

@@ -8,6 +8,8 @@ type Props = {
   options: string[];
   selected: string[];
   onChange: (selected: string[]) => void;
+  fullWidth?: boolean;
+  matchInputStyle?: boolean;
 };
 
 export default function FilterMultiSelect({
@@ -15,6 +17,8 @@ export default function FilterMultiSelect({
   options,
   selected,
   onChange,
+  fullWidth = false,
+  matchInputStyle = false,
 }: Props) {
   const [isOpen, setIsOpen] = useState(false);
   const dropdownRef = useRef<HTMLDivElement>(null);
@@ -49,22 +53,35 @@ export default function FilterMultiSelect({
     selected.length === 0
       ? "Any"
       : selected.length === 1
-      ? selected[0]
-      : `${selected.length} selected`;
+        ? selected[0]
+        : `${selected.length} selected`;
+
+  const triggerClassName = matchInputStyle
+    ? `flex h-10 ${fullWidth ? "w-full" : "inline-flex"} items-center justify-between gap-2 rounded-lg border border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-800 px-3 text-sm text-gray-700 dark:text-gray-300 transition-colors hover:border-gray-400 dark:hover:border-gray-600`
+    : `${fullWidth ? "w-full justify-between" : "inline-flex"} items-center gap-2 px-3 py-2 rounded-lg border text-sm transition-colors ${
+        selected.length > 0
+          ? "bg-blue-50 dark:bg-blue-900/20 border-blue-200 dark:border-blue-800 text-blue-700 dark:text-blue-300"
+          : "bg-white dark:bg-gray-800 border-gray-300 dark:border-gray-600 text-gray-700 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-700"
+      }`;
 
   return (
-    <div className="relative" ref={dropdownRef}>
+    <div
+      className={fullWidth ? "relative w-full" : "relative"}
+      ref={dropdownRef}
+    >
       <button
         type="button"
         onClick={() => setIsOpen(!isOpen)}
-        className={`inline-flex items-center gap-2 px-3 py-1.5 rounded-lg border text-sm transition-colors ${
-          selected.length > 0
-            ? "bg-blue-50 dark:bg-blue-900/20 border-blue-200 dark:border-blue-800 text-blue-700 dark:text-blue-300"
-            : "bg-white dark:bg-gray-800 border-gray-300 dark:border-gray-600 text-gray-700 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-700"
-        }`}
+        className={triggerClassName}
       >
-        <span className="font-medium">{label}:</span>
-        <span>{displayText}</span>
+        {matchInputStyle ? (
+          <span className="truncate">{`${label}: ${displayText}`}</span>
+        ) : (
+          <>
+            <span className="font-medium">{label}:</span>
+            <span>{displayText}</span>
+          </>
+        )}
         <ChevronDown
           className={`w-4 h-4 transition-transform ${
             isOpen ? "rotate-180" : ""
@@ -73,7 +90,9 @@ export default function FilterMultiSelect({
       </button>
 
       {isOpen && (
-        <div className="absolute top-full left-0 mt-1 w-56 bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-lg shadow-lg z-50 max-h-64 overflow-y-auto">
+        <div
+          className={`${fullWidth ? "w-full min-w-56" : "w-56"} absolute top-full left-0 mt-1 bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-lg shadow-lg z-50 max-h-64 overflow-y-auto`}
+        >
           {options.length === 0 ? (
             <div className="px-3 py-2 text-sm text-gray-500 dark:text-gray-400">
               No options available
