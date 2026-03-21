@@ -2,6 +2,7 @@
 
 import { useEffect, useMemo, useState } from "react";
 import type { SlabBayState } from "./mockData";
+import FilterMultiSelect from "@/components/filters/FilterMultiSelect";
 import {
   fetchStateFromDb,
   getRackLoad,
@@ -9,6 +10,24 @@ import {
   recoverExitedSlab,
   splitClientName,
 } from "./storage";
+
+type HistorySortKey =
+  | "date"
+  | "action"
+  | "slab"
+  | "scannerId"
+  | "batch"
+  | "brand"
+  | "finish"
+  | "type"
+  | "client"
+  | "from"
+  | "to"
+  | "jobId"
+  | "notes"
+  | "user";
+
+type SortDirection = "asc" | "desc";
 
 const SLAB_VIEW_LICENSE = "532b5c05af7b036ff8a0200d0c8dc6da";
 const buildSlabViewUrl = (scannerId: string) =>
@@ -50,20 +69,38 @@ export default function HistoryClient({ userName }: { userName: string }) {
   const [clientFilter, setClientFilter] = useState("");
   const [slabFilter, setSlabFilter] = useState("");
   const [userFilter, setUserFilter] = useState("");
+  const [notesFilter, setNotesFilter] = useState("");
   const [dateFilter, setDateFilter] = useState("");
   const [actionFilter, setActionFilter] = useState("all");
+  const [selectedBrands, setSelectedBrands] = useState<string[]>([]);
   const [printMode, setPrintMode] = useState<"filtered" | "all">("filtered");
+  const [sortKey, setSortKey] = useState<HistorySortKey>("date");
+  const [sortDirection, setSortDirection] = useState<SortDirection>("desc");
   const [selectedExitHistoryId, setSelectedExitHistoryId] = useState<
     string | null
   >(null);
   const [recoveryRackId, setRecoveryRackId] = useState("");
   const [recoveryError, setRecoveryError] = useState<string | null>(null);
 
+  const brandOptions = useMemo(
+    () =>
+      Array.from(
+        new Set(
+          state.history.map((entry) => entry.brand || "").filter(Boolean),
+        ),
+      ).sort((a, b) => a.localeCompare(b, undefined, { sensitivity: "base" })),
+    [state.history],
+  );
+
   const rows = useMemo(() => {
     return state.history.filter((entry) => {
       const { clientName, originalClientName } = splitClientName(
         entry.clientName,
       );
+      const combinedNotes = [entry.entryNote, entry.slabNotes, entry.exitNote]
+        .filter(Boolean)
+        .join(" ")
+        .toLowerCase();
       const matchesClient = clientFilter
         ? clientName.toLowerCase().includes(clientFilter.toLowerCase()) ||
           (originalClientName || "")
@@ -97,9 +134,16 @@ export default function HistoryClient({ userName }: { userName: string }) {
       const matchesUser = userFilter
         ? entry.userName.toLowerCase().includes(userFilter.toLowerCase())
         : true;
+      const matchesNotes = notesFilter
+        ? combinedNotes.includes(notesFilter.toLowerCase())
+        : true;
       const matchesDate = dateFilter
         ? entry.timestamp.toLowerCase().includes(dateFilter.toLowerCase())
         : true;
+      const matchesBrand =
+        selectedBrands.length === 0
+          ? true
+          : selectedBrands.includes(entry.brand || "");
       const matchesAction =
         actionFilter === "all" ? true : entry.type === actionFilter;
 
@@ -107,7 +151,9 @@ export default function HistoryClient({ userName }: { userName: string }) {
         matchesClient &&
         matchesSlab &&
         matchesUser &&
+        matchesNotes &&
         matchesDate &&
+        matchesBrand &&
         matchesAction
       );
     });
@@ -116,22 +162,109 @@ export default function HistoryClient({ userName }: { userName: string }) {
     clientFilter,
     slabFilter,
     userFilter,
+    notesFilter,
     dateFilter,
+    selectedBrands,
     actionFilter,
   ]);
 
-  const sortByMostRecent = (entries: typeof rows) =>
+  const compareValues = (
+    left: string | number,
+    right: string | number,
+    direction: SortDirection,
+    numeric = false,
+  ) => {
+    const result = numeric
+      ? Number(left) - Number(right)
+      : String(left).localeCompare(String(right), undefined, {
+          numeric: true,
+          sensitivity: "base",
+        });
+    return direction === "asc" ? result : -result;
+  };
+
+  const handleSort = (key: HistorySortKey) => {
+    if (sortKey === key) {
+      setSortDirection((current) => (current === "asc" ? "desc" : "asc"));
+      return;
+    }
+    setSortKey(key);
+    setSortDirection(key === "date" ? "desc" : "asc");
+  };
+
+  const renderSortLabel = (key: HistorySortKey, label: string) => {
+    const indicator =
+      sortKey === key ? (sortDirection === "asc" ? " ▲" : " ▼") : "";
+    return `${label}${indicator}`;
+  };
+
+  const sortRows = (entries: typeof rows) =>
     [...entries].sort((a, b) => {
-      const timeA = new Date(a.timestamp).getTime();
-      const timeB = new Date(b.timestamp).getTime();
-      if (!Number.isNaN(timeA) && !Number.isNaN(timeB)) return timeB - timeA;
-      return b.timestamp.localeCompare(a.timestamp);
+      const aClient = splitClientName(a.clientName).clientName;
+      const bClient = splitClientName(b.clientName).clientName;
+      const aNotes =
+        `${a.entryNote || a.slabNotes || ""} ${a.exitNote || ""}`.trim();
+      const bNotes =
+        `${b.entryNote || b.slabNotes || ""} ${b.exitNote || ""}`.trim();
+      const aBatch =
+        a.batchIndex && a.batchSize ? `${a.batchIndex}/${a.batchSize}` : "";
+      const bBatch =
+        b.batchIndex && b.batchSize ? `${b.batchIndex}/${b.batchSize}` : "";
+
+      switch (sortKey) {
+        case "date": {
+          const aTime = new Date(a.timestamp).getTime();
+          const bTime = new Date(b.timestamp).getTime();
+          if (!Number.isNaN(aTime) && !Number.isNaN(bTime)) {
+            return compareValues(aTime, bTime, sortDirection, true);
+          }
+          return compareValues(a.timestamp, b.timestamp, sortDirection);
+        }
+        case "action":
+          return compareValues(
+            formatType(a.type),
+            formatType(b.type),
+            sortDirection,
+          );
+        case "slab":
+          return compareValues(a.slabName, b.slabName, sortDirection);
+        case "scannerId":
+          return compareValues(
+            a.slabScannerId || "",
+            b.slabScannerId || "",
+            sortDirection,
+          );
+        case "batch":
+          return compareValues(aBatch, bBatch, sortDirection);
+        case "brand":
+          return compareValues(a.brand || "", b.brand || "", sortDirection);
+        case "finish":
+          return compareValues(a.finish || "", b.finish || "", sortDirection);
+        case "type":
+          return compareValues(a.slabType, b.slabType, sortDirection);
+        case "client":
+          return compareValues(aClient, bClient, sortDirection);
+        case "from":
+          return compareValues(
+            a.fromRack || "",
+            b.fromRack || "",
+            sortDirection,
+          );
+        case "to":
+          return compareValues(a.toRack || "", b.toRack || "", sortDirection);
+        case "jobId":
+          return compareValues(a.jobId || "", b.jobId || "", sortDirection);
+        case "notes":
+          return compareValues(aNotes, bNotes, sortDirection);
+        case "user":
+          return compareValues(a.userName, b.userName, sortDirection);
+        default:
+          return 0;
+      }
     });
 
   const displayRows =
-    printMode === "all"
-      ? sortByMostRecent(state.history)
-      : sortByMostRecent(rows);
+    printMode === "all" ? sortRows(state.history) : sortRows(rows);
 
   const entryNoteBySlabId = useMemo(() => {
     const map = new Map<string, string>();
@@ -336,7 +469,7 @@ export default function HistoryClient({ userName }: { userName: string }) {
       </div>
 
       <div className="bg-white dark:bg-gray-900 rounded-xl border border-gray-200 dark:border-gray-800 p-4 print:hidden">
-        <div className="grid gap-3 md:grid-cols-5">
+        <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-7">
           <input
             value={clientFilter}
             onChange={(event) => setClientFilter(event.target.value)}
@@ -356,10 +489,24 @@ export default function HistoryClient({ userName }: { userName: string }) {
             className="rounded-lg border border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-800 px-3 py-2 text-sm"
           />
           <input
+            value={notesFilter}
+            onChange={(event) => setNotesFilter(event.target.value)}
+            placeholder="Filter by notes"
+            className="rounded-lg border border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-800 px-3 py-2 text-sm"
+          />
+          <input
             value={dateFilter}
             onChange={(event) => setDateFilter(event.target.value)}
             placeholder="Filter by date"
             className="rounded-lg border border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-800 px-3 py-2 text-sm"
+          />
+          <FilterMultiSelect
+            label="Brand"
+            options={brandOptions}
+            selected={selectedBrands}
+            onChange={setSelectedBrands}
+            fullWidth
+            matchInputStyle
           />
           <select
             value={actionFilter}
@@ -416,20 +563,132 @@ export default function HistoryClient({ userName }: { userName: string }) {
                   <th colSpan={14} aria-hidden="true" />
                 </tr>
                 <tr className="text-left text-xs uppercase tracking-wide text-gray-400">
-                  <th className="py-2 pr-4">Date</th>
-                  <th className="py-2 pr-4">Action</th>
-                  <th className="py-2 pr-4">Slab</th>
-                  <th className="py-2 pr-4">Scanner ID</th>
-                  <th className="py-2 pr-4">Batch</th>
-                  <th className="py-2 pr-4">Brand</th>
-                  <th className="py-2 pr-4">Finish</th>
-                  <th className="py-2 pr-4">Type</th>
-                  <th className="py-2 pr-4">Client</th>
-                  <th className="py-2 pr-4">From</th>
-                  <th className="py-2 pr-4">To</th>
-                  <th className="py-2 pr-4">Job ID</th>
-                  <th className="py-2 pr-4">Notes</th>
-                  <th className="py-2 pr-4">User</th>
+                  <th className="py-2 pr-4">
+                    <button
+                      type="button"
+                      onClick={() => handleSort("date")}
+                      className="font-inherit uppercase tracking-wide hover:text-gray-600 dark:hover:text-gray-200"
+                    >
+                      {renderSortLabel("date", "Date")}
+                    </button>
+                  </th>
+                  <th className="py-2 pr-4">
+                    <button
+                      type="button"
+                      onClick={() => handleSort("action")}
+                      className="font-inherit uppercase tracking-wide hover:text-gray-600 dark:hover:text-gray-200"
+                    >
+                      {renderSortLabel("action", "Action")}
+                    </button>
+                  </th>
+                  <th className="py-2 pr-4">
+                    <button
+                      type="button"
+                      onClick={() => handleSort("slab")}
+                      className="font-inherit uppercase tracking-wide hover:text-gray-600 dark:hover:text-gray-200"
+                    >
+                      {renderSortLabel("slab", "Slab")}
+                    </button>
+                  </th>
+                  <th className="py-2 pr-4">
+                    <button
+                      type="button"
+                      onClick={() => handleSort("scannerId")}
+                      className="font-inherit uppercase tracking-wide hover:text-gray-600 dark:hover:text-gray-200"
+                    >
+                      {renderSortLabel("scannerId", "Scanner ID")}
+                    </button>
+                  </th>
+                  <th className="py-2 pr-4">
+                    <button
+                      type="button"
+                      onClick={() => handleSort("batch")}
+                      className="font-inherit uppercase tracking-wide hover:text-gray-600 dark:hover:text-gray-200"
+                    >
+                      {renderSortLabel("batch", "Batch")}
+                    </button>
+                  </th>
+                  <th className="py-2 pr-4">
+                    <button
+                      type="button"
+                      onClick={() => handleSort("brand")}
+                      className="font-inherit uppercase tracking-wide hover:text-gray-600 dark:hover:text-gray-200"
+                    >
+                      {renderSortLabel("brand", "Brand")}
+                    </button>
+                  </th>
+                  <th className="py-2 pr-4">
+                    <button
+                      type="button"
+                      onClick={() => handleSort("finish")}
+                      className="font-inherit uppercase tracking-wide hover:text-gray-600 dark:hover:text-gray-200"
+                    >
+                      {renderSortLabel("finish", "Finish")}
+                    </button>
+                  </th>
+                  <th className="py-2 pr-4">
+                    <button
+                      type="button"
+                      onClick={() => handleSort("type")}
+                      className="font-inherit uppercase tracking-wide hover:text-gray-600 dark:hover:text-gray-200"
+                    >
+                      {renderSortLabel("type", "Type")}
+                    </button>
+                  </th>
+                  <th className="py-2 pr-4">
+                    <button
+                      type="button"
+                      onClick={() => handleSort("client")}
+                      className="font-inherit uppercase tracking-wide hover:text-gray-600 dark:hover:text-gray-200"
+                    >
+                      {renderSortLabel("client", "Client")}
+                    </button>
+                  </th>
+                  <th className="py-2 pr-4">
+                    <button
+                      type="button"
+                      onClick={() => handleSort("from")}
+                      className="font-inherit uppercase tracking-wide hover:text-gray-600 dark:hover:text-gray-200"
+                    >
+                      {renderSortLabel("from", "From")}
+                    </button>
+                  </th>
+                  <th className="py-2 pr-4">
+                    <button
+                      type="button"
+                      onClick={() => handleSort("to")}
+                      className="font-inherit uppercase tracking-wide hover:text-gray-600 dark:hover:text-gray-200"
+                    >
+                      {renderSortLabel("to", "To")}
+                    </button>
+                  </th>
+                  <th className="py-2 pr-4">
+                    <button
+                      type="button"
+                      onClick={() => handleSort("jobId")}
+                      className="font-inherit uppercase tracking-wide hover:text-gray-600 dark:hover:text-gray-200"
+                    >
+                      {renderSortLabel("jobId", "Job ID")}
+                    </button>
+                  </th>
+                  <th className="py-2 pr-4">
+                    <button
+                      type="button"
+                      onClick={() => handleSort("notes")}
+                      className="font-inherit uppercase tracking-wide hover:text-gray-600 dark:hover:text-gray-200"
+                    >
+                      {renderSortLabel("notes", "Notes")}
+                    </button>
+                  </th>
+                  <th className="py-2 pr-4">
+                    <button
+                      type="button"
+                      onClick={() => handleSort("user")}
+                      className="font-inherit uppercase tracking-wide hover:text-gray-600 dark:hover:text-gray-200"
+                    >
+                      {renderSortLabel("user", "User")}
+                    </button>
+                  </th>
                 </tr>
               </thead>
               <tbody>
