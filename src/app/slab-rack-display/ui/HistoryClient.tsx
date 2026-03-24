@@ -68,7 +68,7 @@ export default function HistoryClient({ userName }: { userName: string }) {
   const [hasLoaded, setHasLoaded] = useState(false);
   const [clientFilter, setClientFilter] = useState("");
   const [slabFilter, setSlabFilter] = useState("");
-  const [userFilter, setUserFilter] = useState("");
+  const [scannerIdFilter, setScannerIdFilter] = useState("");
   const [notesFilter, setNotesFilter] = useState("");
   const [dateFilter, setDateFilter] = useState("");
   const [actionFilter, setActionFilter] = useState("all");
@@ -131,8 +131,10 @@ export default function HistoryClient({ userName }: { userName: string }) {
                 .includes(slabFilter.toLowerCase())
             : false)
         : true;
-      const matchesUser = userFilter
-        ? entry.userName.toLowerCase().includes(userFilter.toLowerCase())
+      const matchesUser = scannerIdFilter
+        ? (entry.slabScannerId || "")
+            .toLowerCase()
+            .includes(scannerIdFilter.toLowerCase())
         : true;
       const matchesNotes = notesFilter
         ? combinedNotes.includes(notesFilter.toLowerCase())
@@ -161,7 +163,7 @@ export default function HistoryClient({ userName }: { userName: string }) {
     state.history,
     clientFilter,
     slabFilter,
-    userFilter,
+    scannerIdFilter,
     notesFilter,
     dateFilter,
     selectedBrands,
@@ -471,21 +473,21 @@ export default function HistoryClient({ userName }: { userName: string }) {
       <div className="bg-white dark:bg-gray-900 rounded-xl border border-gray-200 dark:border-gray-800 p-4 print:hidden">
         <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-7">
           <input
-            value={clientFilter}
-            onChange={(event) => setClientFilter(event.target.value)}
-            placeholder="Filter by client"
-            className="rounded-lg border border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-800 px-3 py-2 text-sm"
-          />
-          <input
             value={slabFilter}
             onChange={(event) => setSlabFilter(event.target.value)}
             placeholder="Filter by slab"
             className="rounded-lg border border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-800 px-3 py-2 text-sm"
           />
           <input
-            value={userFilter}
-            onChange={(event) => setUserFilter(event.target.value)}
-            placeholder="Filter by user"
+            value={clientFilter}
+            onChange={(event) => setClientFilter(event.target.value)}
+            placeholder="Filter by client"
+            className="rounded-lg border border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-800 px-3 py-2 text-sm"
+          />
+          <input
+            value={scannerIdFilter}
+            onChange={(event) => setScannerIdFilter(event.target.value)}
+            placeholder="Filter by scanner ID"
             className="rounded-lg border border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-800 px-3 py-2 text-sm"
           />
           <input
