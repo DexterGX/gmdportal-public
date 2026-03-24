@@ -116,7 +116,7 @@ export default function InventoryClient({ userName }: { userName: string }) {
   const [state, setState] = useState<SlabBayState>(() => loadState());
   const [slabSearchTerm, setSlabSearchTerm] = useState("");
   const [clientSearchTerm, setClientSearchTerm] = useState("");
-  const [userSearchTerm, setUserSearchTerm] = useState("");
+  const [scannerIdSearchTerm, setScannerIdSearchTerm] = useState("");
   const [notesSearchTerm, setNotesSearchTerm] = useState("");
   const [selectedBrands, setSelectedBrands] = useState<string[]>([]);
   const [selectedRacks, setSelectedRacks] = useState<string[]>([]);
@@ -234,21 +234,6 @@ export default function InventoryClient({ userName }: { userName: string }) {
     [state.slabs],
   );
 
-  const slabUsersById = useMemo(() => {
-    const map = new Map<string, string>();
-    for (const entry of state.history) {
-      const existing = map.get(entry.slabId);
-      const users = new Set(
-        (existing ? existing.split("\n") : []).filter(Boolean),
-      );
-      if (entry.userName.trim()) {
-        users.add(entry.userName.trim());
-      }
-      map.set(entry.slabId, Array.from(users).join("\n"));
-    }
-    return map;
-  }, [state.history]);
-
   const compareValues = (
     left: string | number,
     right: string | number,
@@ -282,7 +267,7 @@ export default function InventoryClient({ userName }: { userName: string }) {
   const rows = useMemo(() => {
     const slabTerm = slabSearchTerm.trim().toLowerCase();
     const clientTerm = clientSearchTerm.trim().toLowerCase();
-    const userTerm = userSearchTerm.trim().toLowerCase();
+    const scannerIdTerm = scannerIdSearchTerm.trim().toLowerCase();
     const notesTerm = notesSearchTerm.trim().toLowerCase();
     const rackIds = selectedRacks.map((rack) => rack.toLowerCase());
     return state.slabs
@@ -290,7 +275,6 @@ export default function InventoryClient({ userName }: { userName: string }) {
         const { clientName, originalClientName } = splitClientName(
           slab.clientName,
         );
-        const slabUsers = (slabUsersById.get(slab.id) || "").toLowerCase();
         const matchesRack =
           rackIds.length === 0 ? true : rackIds.includes(slab.rackId);
         const matchesBrand =
@@ -315,7 +299,9 @@ export default function InventoryClient({ userName }: { userName: string }) {
           ? clientName.toLowerCase().includes(clientTerm) ||
             (originalClientName || "").toLowerCase().includes(clientTerm)
           : true;
-        const matchesUser = userTerm ? slabUsers.includes(userTerm) : true;
+        const matchesUser = scannerIdTerm
+          ? (slab.scannerId || "").toLowerCase().includes(scannerIdTerm)
+          : true;
         const matchesNotes = notesTerm
           ? (slab.notes || "").toLowerCase().includes(notesTerm)
           : true;
@@ -383,13 +369,12 @@ export default function InventoryClient({ userName }: { userName: string }) {
       });
   }, [
     state.slabs,
-    slabUsersById,
     selectedRacks,
     selectedTypes,
     selectedThicknesses,
     slabSearchTerm,
     clientSearchTerm,
-    userSearchTerm,
+    scannerIdSearchTerm,
     notesSearchTerm,
     selectedBrands,
     sortDirection,
@@ -519,7 +504,7 @@ export default function InventoryClient({ userName }: { userName: string }) {
   const handleClearFilters = () => {
     setSlabSearchTerm("");
     setClientSearchTerm("");
-    setUserSearchTerm("");
+    setScannerIdSearchTerm("");
     setNotesSearchTerm("");
     setSelectedBrands([]);
     setSelectedRacks([]);
@@ -662,9 +647,9 @@ export default function InventoryClient({ userName }: { userName: string }) {
             className="rounded-lg border border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-800 px-3 py-2 text-sm"
           />
           <input
-            value={userSearchTerm}
-            onChange={(event) => setUserSearchTerm(event.target.value)}
-            placeholder="Filter by user"
+            value={scannerIdSearchTerm}
+            onChange={(event) => setScannerIdSearchTerm(event.target.value)}
+            placeholder="Filter by scanner ID"
             className="rounded-lg border border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-800 px-3 py-2 text-sm"
           />
           <input
