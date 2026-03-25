@@ -60,6 +60,7 @@ export type ProgramId =
   | "storeStock"
   | "slabRack"
   | "slabs"
+  | "settings"
   | "users"
   | "closetJobs"
   | "customers"
@@ -161,6 +162,31 @@ export const programs: ProgramConfig[] = [
         name: "Import / Export",
         path: "/slabsPriceList/admin/import",
         adminOnly: true,
+      },
+    ],
+    othersItems: [],
+  },
+  {
+    id: "settings",
+    name: "Settings",
+    basePath: "/settings",
+    description: "Centralized shared settings for all programs.",
+    allowedRoles: ["admin"],
+    navItems: [
+      {
+        icon: GridIcon,
+        name: "Overview",
+        path: "/settings",
+      },
+      {
+        icon: Settings2,
+        name: "Company Documents",
+        path: "/settings/company-documents",
+      },
+      {
+        icon: ListIcon,
+        name: "Cabinets Info",
+        path: "/settings/cabinets",
       },
     ],
     othersItems: [],

@@ -266,6 +266,33 @@ model ClosetEstimateSettings {
   printOverviewTemplate String   @default("Custom closet system for the {AREA} at {ADDRESS}, including design, materials, and professional installation as illustrated in the 3D views below.")
 }
 
+model CompanyDocumentSettings {
+  id          String   @id @default(cuid())
+  companyName String   @default("GM Design")
+  phoneNumber String?  @default("(305) XXX-XXXX")
+  address     String?
+  logoUrl     String   @default("/logo.svg")
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+}
+
+model CabinetProviderSettings {
+  id           String   @id @default(cuid())
+  actualName   String
+  displayName  String
+  contactName  String?
+  contactPhone String?
+  contactEmail String?
+  address      String?
+  isActive     Boolean  @default(true)
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  @@unique([actualName])
+  @@index([displayName])
+  @@index([isActive])
+}
+
 enum Role {
   ADMIN
   SALES

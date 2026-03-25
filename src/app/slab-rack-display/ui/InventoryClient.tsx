@@ -6,6 +6,7 @@ import {
   encodeClientName,
   fetchStateFromDb,
   loadState,
+  saveStateToDb,
   splitClientName,
   updateSlab,
 } from "./storage";
@@ -126,6 +127,7 @@ export default function InventoryClient({ userName }: { userName: string }) {
   const [sortDirection, setSortDirection] = useState<SortDirection>("asc");
   const [isLoading, setIsLoading] = useState(true);
   const [hasLoaded, setHasLoaded] = useState(false);
+  const [isSavingEdit, setIsSavingEdit] = useState(false);
   const [editingSlabId, setEditingSlabId] = useState<string | null>(null);
   const [editName, setEditName] = useState("");
   const [editScannerId, setEditScannerId] = useState("");
@@ -398,6 +400,9 @@ export default function InventoryClient({ userName }: { userName: string }) {
   useEffect(() => {
     let active = true;
     const load = () => {
+      if (isSavingEdit) {
+        return;
+      }
       if (!hasLoaded) {
         setIsLoading(true);
       }
@@ -427,7 +432,7 @@ export default function InventoryClient({ userName }: { userName: string }) {
       window.clearInterval(intervalId);
       document.removeEventListener("visibilitychange", handleVisibility);
     };
-  }, [hasLoaded]);
+  }, [hasLoaded, isSavingEdit]);
 
   useEffect(() => {
     if (!editClientSearchTerm.trim()) {
@@ -547,7 +552,7 @@ export default function InventoryClient({ userName }: { userName: string }) {
     setEditError(null);
   };
 
-  const handleSaveEdit = () => {
+  const handleSaveEdit = async () => {
     if (!editingSlabId) return;
     if (!editName.trim()) {
       setEditError("Slab name is required.");
@@ -617,8 +622,19 @@ export default function InventoryClient({ userName }: { userName: string }) {
       },
       userName,
     );
-    setState(next);
-    closeEditModal();
+
+    try {
+      setIsSavingEdit(true);
+      await saveStateToDb(next);
+      setState(next);
+      closeEditModal();
+    } catch {
+      setEditError(
+        "Unable to save this slab edit right now. Please try again.",
+      );
+    } finally {
+      setIsSavingEdit(false);
+    }
   };
 
   return (
@@ -1271,6 +1287,7 @@ export default function InventoryClient({ userName }: { userName: string }) {
               <button
                 type="button"
                 onClick={closeEditModal}
+                disabled={isSavingEdit}
                 className="px-4 py-2 text-sm font-medium text-gray-700 dark:text-gray-300 bg-white dark:bg-gray-700 border border-gray-300 dark:border-gray-600 rounded-lg"
               >
                 Cancel
@@ -1278,9 +1295,10 @@ export default function InventoryClient({ userName }: { userName: string }) {
               <button
                 type="button"
                 onClick={handleSaveEdit}
-                className="px-4 py-2 text-sm font-medium text-white bg-blue-600 rounded-lg hover:bg-blue-700"
+                disabled={isSavingEdit}
+                className="px-4 py-2 text-sm font-medium text-white bg-blue-600 rounded-lg hover:bg-blue-700 disabled:cursor-not-allowed disabled:opacity-60"
               >
-                Save changes
+                {isSavingEdit ? "Saving..." : "Save changes"}
               </button>
             </div>
           </div>
