@@ -66,6 +66,11 @@ export const saveState = (state: SlabBayState) => {
   void syncStateToDb(state);
 };
 
+export const saveStateToDb = async (state: SlabBayState) => {
+  if (typeof window === "undefined") return;
+  await syncStateToDb(state);
+};
+
 export const fetchStateFromDb = async (): Promise<SlabBayState | null> => {
   try {
     const response = await fetch("/api/slab-rack-display/state", {
@@ -79,14 +84,14 @@ export const fetchStateFromDb = async (): Promise<SlabBayState | null> => {
 };
 
 export const syncStateToDb = async (state: SlabBayState) => {
-  try {
-    await fetch("/api/slab-rack-display/state", {
-      method: "PUT",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(state),
-    });
-  } catch {
-    // ignore sync errors; local storage remains source of truth offline
+  const response = await fetch("/api/slab-rack-display/state", {
+    method: "PUT",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(state),
+  });
+
+  if (!response.ok) {
+    throw new Error("Failed to sync SlabBay state.");
   }
 };
 
