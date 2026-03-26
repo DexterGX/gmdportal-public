@@ -5,6 +5,7 @@ import type { Rack, SlabBayState } from "./mockData";
 import {
   addDefaultRacks,
   addRack,
+  deleteRackWithReassignment,
   fetchStateFromDb,
   getSlabsByRack,
   loadState,
@@ -22,6 +23,7 @@ export default function RackSettingsClient() {
   const [newRackTargetFill, setNewRackTargetFill] = useState("5");
   const [newRackNote, setNewRackNote] = useState("");
   const [newRackCountToward, setNewRackCountToward] = useState(true);
+  const [deleteDestinationRackId, setDeleteDestinationRackId] = useState("");
 
   useEffect(() => {
     let active = true;
@@ -51,6 +53,11 @@ export default function RackSettingsClient() {
   const slabsInRack = useMemo(
     () => (selectedRack ? getSlabsByRack(state, selectedRack.id) : []),
     [state, selectedRack],
+  );
+
+  const destinationOptions = useMemo(
+    () => sortedRacks.filter((rack) => rack.id !== selectedRackId),
+    [sortedRacks, selectedRackId],
   );
 
   const handleUpdate = (updates: Partial<Rack>) => {
@@ -124,6 +131,31 @@ export default function RackSettingsClient() {
     setState(next);
     setSelectedRackId(next.racks[0]?.id ?? "");
     setError(null);
+  };
+
+  const handleDeleteRack = () => {
+    if (!selectedRack) {
+      setError("Select a rack to delete.");
+      return;
+    }
+
+    const result = deleteRackWithReassignment(
+      state,
+      selectedRack.id,
+      slabsInRack.length > 0 ? deleteDestinationRackId || null : null,
+      "Rack Settings",
+    );
+
+    if (result.error) {
+      setError(result.error);
+      return;
+    }
+
+    setError(null);
+    setState(result.nextState);
+    setDeleteDestinationRackId("");
+    const nextSelected = result.nextState.racks[0]?.id ?? "";
+    setSelectedRackId(nextSelected);
   };
 
   return (
@@ -224,6 +256,51 @@ export default function RackSettingsClient() {
                 Create default racks
               </button>
             </div>
+          </div>
+
+          <div className="border-t border-gray-200 dark:border-gray-800 pt-4 space-y-3">
+            <h3 className="text-sm font-semibold text-red-700 dark:text-red-300">
+              Delete rack
+            </h3>
+            {slabsInRack.length > 0 ? (
+              <>
+                <p className="text-xs text-gray-500 dark:text-gray-400">
+                  This rack has {slabsInRack.length} slab
+                  {slabsInRack.length === 1 ? "" : "s"}. Choose where to move
+                  them before deleting this rack.
+                </p>
+                <select
+                  value={deleteDestinationRackId}
+                  onChange={(event) =>
+                    setDeleteDestinationRackId(event.target.value)
+                  }
+                  className="w-full rounded-lg border border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-800 px-3 py-2 text-sm"
+                  disabled={destinationOptions.length === 0}
+                >
+                  <option value="">Select destination rack</option>
+                  {destinationOptions.map((rack) => (
+                    <option key={rack.id} value={rack.id}>
+                      {rack.name}
+                    </option>
+                  ))}
+                </select>
+              </>
+            ) : (
+              <p className="text-xs text-gray-500 dark:text-gray-400">
+                This rack is empty and can be deleted directly.
+              </p>
+            )}
+            <button
+              type="button"
+              onClick={handleDeleteRack}
+              disabled={
+                !selectedRack ||
+                (slabsInRack.length > 0 && !deleteDestinationRackId)
+              }
+              className="px-3 py-2 text-sm font-medium text-white bg-red-600 rounded-lg hover:bg-red-700 disabled:cursor-not-allowed disabled:opacity-60 transition-colors"
+            >
+              Delete rack
+            </button>
           </div>
         </div>
 

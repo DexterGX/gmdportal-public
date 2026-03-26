@@ -58,5 +58,7 @@ export default async function CustomerDetailPage({
     })),
   };
 
-  return <CustomerDetailClient customer={serializedCustomer} userRole={appRole} />;
+  return (
+    <CustomerDetailClient customer={serializedCustomer} userRole={appRole} />
+  );
 }

@@ -188,6 +188,11 @@ export const programs: ProgramConfig[] = [
         name: "Cabinets Info",
         path: "/settings/cabinets",
       },
+      {
+        icon: Table2,
+        name: "Cabinet Installation",
+        path: "/settings/cabinet-installation",
+      },
     ],
     othersItems: [],
   },

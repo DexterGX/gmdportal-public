@@ -6,7 +6,22 @@ const connectionString =
   process.env.DIRECT_URL || process.env.DATABASE_URL || "";
 const sql = postgres(connectionString, {
   ssl: "require",
+  onnotice: () => {
+    // Suppress noisy IF NOT EXISTS notices from Postgres.
+  },
 });
+
+let ensureTablesPromise: Promise<void> | null = null;
+
+const ensureTablesOnce = async () => {
+  if (!ensureTablesPromise) {
+    ensureTablesPromise = ensureTables().catch((error) => {
+      ensureTablesPromise = null;
+      throw error;
+    });
+  }
+  await ensureTablesPromise;
+};
 
 const ensureTables = async () => {
   await sql`
@@ -217,7 +232,7 @@ const mapState = (state: SlabBayState) => {
 };
 
 export async function GET() {
-  await ensureTables();
+  await ensureTablesOnce();
 
   const racks = await sql`
     SELECT * FROM "SlabBayRack" ORDER BY "name" ASC
@@ -341,7 +356,7 @@ export async function GET() {
 export async function PUT(request: Request) {
   const body = (await request.json()) as SlabBayState;
   const mapped = mapState(body);
-  await ensureTables();
+  await ensureTablesOnce();
 
   const existingSlabs = (await sql`
     SELECT "id", "createdAt" FROM "SlabBaySlab"

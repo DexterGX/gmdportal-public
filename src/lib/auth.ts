@@ -8,7 +8,9 @@ import bcrypt from "bcryptjs";
 const THIRTY_DAYS = 30 * 24 * 60 * 60;
 
 export const authOptions: NextAuthOptions = {
-  debug: true, // 👈 logs everything to your server console
+  debug:
+    process.env.NODE_ENV === "development" &&
+    process.env.NEXTAUTH_DEBUG === "true",
   adapter: PrismaAdapter(prisma),
   session: {
     strategy: "jwt",
@@ -43,7 +45,7 @@ export const authOptions: NextAuthOptions = {
 
         const isValid = await bcrypt.compare(
           credentials.password,
-          user.passwordHash
+          user.passwordHash,
         );
         if (!isValid) return null;
 
