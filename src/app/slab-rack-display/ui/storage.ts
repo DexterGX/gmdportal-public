@@ -549,6 +549,87 @@ export const updateRack = (
   return nextState;
 };
 
+export const deleteRackWithReassignment = (
+  state: SlabBayState,
+  rackId: string,
+  destinationRackId: string | null,
+  userName: string,
+): { nextState: SlabBayState; error?: string } => {
+  const sourceRack = state.racks.find((rack) => rack.id === rackId);
+  if (!sourceRack) {
+    return { nextState: state, error: "Selected rack no longer exists." };
+  }
+
+  const slabsInSource = state.slabs.filter((slab) => slab.rackId === rackId);
+  if (slabsInSource.length > 0) {
+    if (!destinationRackId) {
+      return {
+        nextState: state,
+        error: "Choose a destination rack for existing slabs before deletion.",
+      };
+    }
+    if (destinationRackId === rackId) {
+      return {
+        nextState: state,
+        error:
+          "Destination rack must be different from the rack being deleted.",
+      };
+    }
+
+    const destinationRack = state.racks.find(
+      (rack) => rack.id === destinationRackId,
+    );
+    if (!destinationRack) {
+      return {
+        nextState: state,
+        error: "Destination rack no longer exists.",
+      };
+    }
+
+    const destinationLoad = getRackLoad(state, destinationRack.id);
+    const availableSlots = destinationRack.capacity - destinationLoad;
+    if (availableSlots < slabsInSource.length) {
+      return {
+        nextState: state,
+        error: `Destination rack needs ${slabsInSource.length} free slots but only ${Math.max(0, availableSlots)} are available.`,
+      };
+    }
+  }
+
+  const movedSlabIds = new Set(slabsInSource.map((slab) => slab.id));
+  const updatedSlabs =
+    destinationRackId && slabsInSource.length > 0
+      ? state.slabs.map((slab) =>
+          movedSlabIds.has(slab.id)
+            ? { ...slab, rackId: destinationRackId }
+            : slab,
+        )
+      : state.slabs;
+
+  const moveHistory: HistoryEntry[] =
+    destinationRackId && slabsInSource.length > 0
+      ? slabsInSource.map((slab) => ({
+          id: buildId("log"),
+          type: "move",
+          ...buildHistorySnapshot(slab),
+          fromRack: rackId.toUpperCase(),
+          toRack: destinationRackId.toUpperCase(),
+          userName,
+          timestamp: new Date().toLocaleString(),
+        }))
+      : [];
+
+  const nextState: SlabBayState = {
+    ...state,
+    racks: state.racks.filter((rack) => rack.id !== rackId),
+    slabs: updatedSlabs,
+    history: [...moveHistory, ...state.history],
+  };
+
+  saveState(nextState);
+  return { nextState };
+};
+
 export const recoverExitedSlab = (
   state: SlabBayState,
   exitHistoryId: string,

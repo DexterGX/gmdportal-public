@@ -79,6 +79,7 @@ export async function POST(request: NextRequest) {
       contactPhone,
       contactEmail,
       address,
+      notes,
       isActive,
     }: {
       actualName?: string;
@@ -87,6 +88,7 @@ export async function POST(request: NextRequest) {
       contactPhone?: string | null;
       contactEmail?: string | null;
       address?: string | null;
+      notes?: string | null;
       isActive?: boolean;
     } = body;
 
@@ -105,6 +107,7 @@ export async function POST(request: NextRequest) {
         contactPhone: contactPhone ? contactPhone.trim() : null,
         contactEmail: contactEmail ? contactEmail.trim() : null,
         address: address ? address.trim() : null,
+        notes: notes ? notes.trim() : null,
         isActive: isActive ?? true,
       },
     });
@@ -139,6 +142,7 @@ export async function PATCH(request: NextRequest) {
       contactPhone,
       contactEmail,
       address,
+      notes,
       isActive,
     }: {
       id?: string;
@@ -148,6 +152,7 @@ export async function PATCH(request: NextRequest) {
       contactPhone?: string | null;
       contactEmail?: string | null;
       address?: string | null;
+      notes?: string | null;
       isActive?: boolean;
     } = body;
 
@@ -171,6 +176,7 @@ export async function PATCH(request: NextRequest) {
         contactPhone: contactPhone ? contactPhone.trim() : null,
         contactEmail: contactEmail ? contactEmail.trim() : null,
         address: address ? address.trim() : null,
+        notes: notes ? notes.trim() : null,
         isActive: isActive ?? true,
       },
     });
