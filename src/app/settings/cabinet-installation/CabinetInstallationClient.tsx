@@ -204,6 +204,15 @@ function downloadCsv(filename: string, rows: (string | number)[][]) {
   document.body.removeChild(link);
 }
 
+function escapeHtml(value: string) {
+  return value
+    .replaceAll("&", "&amp;")
+    .replaceAll("<", "&lt;")
+    .replaceAll(">", "&gt;")
+    .replaceAll('"', "&quot;")
+    .replaceAll("'", "&#39;");
+}
+
 export default function CabinetInstallationClient({
   initialProfiles,
   initialCostTiers,
@@ -1076,6 +1085,104 @@ export default function CabinetInstallationClient({
     downloadCsv("cabinet_installation_items.csv", rows);
   };
 
+  const printSpreadsheet = (
+    title: string,
+    headers: string[],
+    rows: string[][],
+  ) => {
+    const printableRows = rows
+      .map(
+        (row) =>
+          `<tr>${row.map((cell) => `<td>${escapeHtml(cell)}</td>`).join("")}</tr>`,
+      )
+      .join("");
+
+    const tableBody =
+      printableRows ||
+      `<tr><td colspan="${headers.length}" style="text-align:center;color:#6b7280;">No rows found.</td></tr>`;
+
+    const printWindow = window.open("", "_blank");
+    if (!printWindow) return;
+
+    printWindow.document.write(`
+      <!doctype html>
+      <html>
+        <head>
+          <meta charset="utf-8" />
+          <title>${escapeHtml(title)}</title>
+          <style>
+            @page { size: landscape; margin: 10mm; }
+            body { font-family: Calibri, Arial, sans-serif; color: #111827; margin: 0; }
+            h1 { font-size: 16px; margin: 0 0 10px; font-weight: 600; }
+            table { width: 100%; border-collapse: collapse; font-size: 11px; table-layout: fixed; }
+            th, td { border: 1px solid #c7c7c7; padding: 6px; text-align: left; vertical-align: top; word-break: break-word; }
+            th { background: #f2f2f2; font-weight: 700; }
+          </style>
+        </head>
+        <body>
+          <h1>${escapeHtml(title)}</h1>
+          <table>
+            <thead>
+              <tr>${headers.map((header) => `<th>${escapeHtml(header)}</th>`).join("")}</tr>
+            </thead>
+            <tbody>
+              ${tableBody}
+            </tbody>
+          </table>
+        </body>
+      </html>
+    `);
+
+    printWindow.document.close();
+    printWindow.focus();
+    printWindow.print();
+    printWindow.close();
+  };
+
+  const printProfilesList = () => {
+    const rows = profiles.map((profile) => [
+      profile.name,
+      profile.code || "-",
+      profile.costTier?.name || "-",
+      profile.notes || "-",
+      profile.isActive ? "Active" : "Inactive",
+    ]);
+
+    printSpreadsheet(
+      "Installer Profiles",
+      ["Name", "Code", "Cost Tier", "Notes", "Status"],
+      rows,
+    );
+  };
+
+  const printItemsList = () => {
+    const rows = filteredAndSortedItems.map((item) => [
+      item.code || "-",
+      item.description,
+      item.category || "-",
+      formatMoney(item.defaultWillingToPay),
+      getCostByTier(item, "A"),
+      getCostByTier(item, "B"),
+      formatMoney(item.salePrice),
+      item.isActive ? "Active" : "Inactive",
+    ]);
+
+    printSpreadsheet(
+      "Installation Price List",
+      [
+        "Code",
+        "Description",
+        "Category",
+        "Default Willing To Pay",
+        "Cost A",
+        "Cost B",
+        "Sale Price",
+        "Status",
+      ],
+      rows,
+    );
+  };
+
   return (
     <div className="space-y-6">
       <div className="flex flex-col sm:flex-row sm:items-start sm:justify-between gap-3">
@@ -1130,7 +1237,7 @@ export default function CabinetInstallationClient({
             <div className="flex items-center gap-2">
               <button
                 type="button"
-                onClick={() => window.print()}
+                onClick={printProfilesList}
                 className="inline-flex items-center gap-2 px-3 py-2 text-sm border border-gray-300 dark:border-gray-600 rounded-lg"
               >
                 <Printer className="w-4 h-4" />
@@ -1279,7 +1386,7 @@ export default function CabinetInstallationClient({
             <div className="flex items-center gap-2">
               <button
                 type="button"
-                onClick={() => window.print()}
+                onClick={printItemsList}
                 className="inline-flex items-center gap-2 px-3 py-2 text-sm border border-gray-300 dark:border-gray-600 rounded-lg"
               >
                 <Printer className="w-4 h-4" />

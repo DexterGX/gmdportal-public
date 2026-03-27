@@ -6,8 +6,19 @@ import { getCurrentUserWithRole } from "@/lib/authHelpers";
 export default async function DashboardPage() {
   const { appRole, isActive } = await getCurrentUserWithRole();
 
-  // show all programs EXCEPT the "main" program itself
-  const visiblePrograms = programs.filter((p) => p.id !== "main");
+  // show all programs EXCEPT the "main" program itself, sorted alphabetically
+  // with no-access programs moved to the end (also alphabetically sorted)
+  const visiblePrograms = programs
+    .filter((p) => p.id !== "main")
+    .map((p) => ({
+      program: p,
+      hasAccess: userCanAccessProgram(p, appRole, isActive),
+    }))
+    .sort((a, b) => {
+      if (a.hasAccess !== b.hasAccess) return a.hasAccess ? -1 : 1;
+      return a.program.name.localeCompare(b.program.name);
+    })
+    .map(({ program }) => program);
 
   return (
     <div className="space-y-6">
