@@ -290,12 +290,7 @@ export default function InventoryClient({ userName }: { userName: string }) {
             ? true
             : selectedThicknesses.includes(slab.thickness);
         const matchesSlab = slabTerm
-          ? slab.name.toLowerCase().includes(slabTerm) ||
-            (slab.brand || "").toLowerCase().includes(slabTerm) ||
-            (slab.finish || "").toLowerCase().includes(slabTerm) ||
-            (slab.jobId || "").toLowerCase().includes(slabTerm) ||
-            (slab.scannerId || "").toLowerCase().includes(slabTerm) ||
-            slab.id.toLowerCase().includes(slabTerm)
+          ? slab.name.toLowerCase().includes(slabTerm)
           : true;
         const matchesClient = clientTerm
           ? clientName.toLowerCase().includes(clientTerm) ||
@@ -653,7 +648,7 @@ export default function InventoryClient({ userName }: { userName: string }) {
           <input
             value={slabSearchTerm}
             onChange={(event) => setSlabSearchTerm(event.target.value)}
-            placeholder="Filter by slab"
+            placeholder="Filter by slab name"
             className="rounded-lg border border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-800 px-3 py-2 text-sm"
           />
           <input
