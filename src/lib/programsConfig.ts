@@ -158,6 +158,12 @@ export const programs: ProgramConfig[] = [
         adminOnly: true,
       },
       {
+        icon: TicketPercent,
+        name: "Manage Promotional",
+        path: "/slabsPriceList/admin/promotional",
+        adminOnly: true,
+      },
+      {
         icon: PageIcon,
         name: "Import / Export",
         path: "/slabsPriceList/admin/import",

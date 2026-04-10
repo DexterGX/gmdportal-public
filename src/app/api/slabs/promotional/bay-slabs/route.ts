@@ -1,0 +1,72 @@
+import { NextResponse } from "next/server";
+import { getServerSession } from "next-auth";
+import authOptions from "@/lib/auth";
+import { getCurrentUserWithRole } from "@/lib/authHelpers";
+import postgres from "postgres";
+
+const connectionString =
+  process.env.DIRECT_URL || process.env.DATABASE_URL || "";
+const sql = postgres(connectionString, {
+  ssl: "require",
+  onnotice: () => {},
+});
+
+/**
+ * GET /api/slabs/promotional/bay-slabs
+ * Returns GMD and REMNANT slabs from SlabBaySlab (for admin picker).
+ * Query params: q (search), includePromoted (default false)
+ */
+export async function GET(request: Request) {
+  const session = await getServerSession(authOptions);
+  if (!session?.user) {
+    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  }
+
+  const { appRole } = await getCurrentUserWithRole();
+  if (appRole !== "admin") {
+    return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+  }
+
+  const { searchParams } = new URL(request.url);
+  const q = searchParams.get("q")?.trim().toLowerCase() ?? "";
+  const includePromoted = searchParams.get("includePromoted") === "true";
+
+  let rows;
+  if (includePromoted) {
+    rows = await sql`
+      SELECT sb.*
+      FROM "SlabBaySlab" sb
+      WHERE sb."type" IN ('GMD', 'REMNANT')
+      ORDER BY sb."name" ASC
+    `;
+  } else {
+    rows = await sql`
+      SELECT sb.*
+      FROM "SlabBaySlab" sb
+      WHERE sb."type" IN ('GMD', 'REMNANT')
+        AND sb."id" NOT IN (
+          SELECT "slabBaySlabId" FROM "PromotionalSlab"
+        )
+      ORDER BY sb."name" ASC
+    `;
+  }
+
+  let result = rows as Array<Record<string, unknown>>;
+
+  if (q) {
+    result = result.filter(
+      (r) =>
+        String(r.name ?? "")
+          .toLowerCase()
+          .includes(q) ||
+        String(r.id ?? "")
+          .toLowerCase()
+          .includes(q) ||
+        String(r.brand ?? "")
+          .toLowerCase()
+          .includes(q),
+    );
+  }
+
+  return NextResponse.json(result);
+}
