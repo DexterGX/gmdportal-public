@@ -5,6 +5,16 @@ import { useRouter } from "next/navigation";
 import Link from "next/link";
 import { X, Upload, Image as ImageIcon } from "lucide-react";
 
+const MAX_IMAGES = 30;
+const MAX_FILE_SIZE = 10 * 1024 * 1024; // 10MB
+const ALLOWED_IMAGE_TYPES = [
+  "image/jpeg",
+  "image/png",
+  "image/jpg",
+  "image/webp",
+  "image/gif",
+];
+
 interface Job {
   id: string;
   quoteNumber: string;
@@ -50,12 +60,49 @@ export default function NewQuoteForm({
 
   const handleFileSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
     const files = Array.from(e.target.files || []);
-    const newPreviews: FilePreview[] = files.map((file) => ({
+
+    const invalidTypeFiles = files.filter(
+      (file) => !ALLOWED_IMAGE_TYPES.includes(file.type)
+    );
+    if (invalidTypeFiles.length > 0) {
+      alert(
+        "Some files were skipped because they are not supported. Allowed formats: JPG, JPEG, PNG, WebP, GIF."
+      );
+    }
+
+    const oversizedFiles = files.filter((file) => file.size > MAX_FILE_SIZE);
+    if (oversizedFiles.length > 0) {
+      alert("Some files were skipped because they are larger than 10MB.");
+    }
+
+    const validFiles = files.filter(
+      (file) =>
+        ALLOWED_IMAGE_TYPES.includes(file.type) && file.size <= MAX_FILE_SIZE
+    );
+
+    const availableSlots = MAX_IMAGES - selectedFiles.length;
+    if (availableSlots <= 0) {
+      alert(`You can upload a maximum of ${MAX_IMAGES} images per quote.`);
+      e.target.value = "";
+      return;
+    }
+
+    const filesToAdd = validFiles.slice(0, availableSlots);
+    if (validFiles.length > filesToAdd.length) {
+      alert(
+        `Only ${MAX_IMAGES} images are allowed. Extra images were not added.`
+      );
+    }
+
+    const newPreviews: FilePreview[] = filesToAdd.map((file) => ({
       file,
       preview: URL.createObjectURL(file),
       caption: file.name,
     }));
     setSelectedFiles([...selectedFiles, ...newPreviews]);
+
+    // Allow selecting the same file again later if user removes it.
+    e.target.value = "";
   };
 
   const handleRemoveFile = (index: number) => {
@@ -75,6 +122,12 @@ export default function NewQuoteForm({
     e.preventDefault();
     setSubmitting(true);
 
+    if (selectedFiles.length > MAX_IMAGES) {
+      alert(`You can upload a maximum of ${MAX_IMAGES} images per quote.`);
+      setSubmitting(false);
+      return;
+    }
+
     try {
       // Step 1: Create the quote
       const quoteResponse = await fetch(`/api/closet-jobs/${job.id}/quotes`, {
@@ -92,25 +145,31 @@ export default function NewQuoteForm({
 
       // Step 2: Upload files if any selected
       if (selectedFiles.length > 0) {
-        const formData = new FormData();
+        const uploadData = new FormData();
         selectedFiles.forEach(({ file }) => {
-          formData.append("files", file);
+          uploadData.append("files", file);
         });
 
         const filesResponse = await fetch(
           `/api/closet-jobs/${job.id}/quotes/${quoteId}/files`,
           {
             method: "POST",
-            body: formData,
+            body: uploadData,
           }
         );
 
         if (!filesResponse.ok) {
           const error = await filesResponse.json();
-          console.error("File upload error:", error);
-          // Don't fail the whole submission if files fail
-          alert(
-            `Quote created but some files failed to upload: ${error.error}`
+          console.error("File upload error, rolling back quote:", error);
+
+          // Enforce all-or-nothing behavior: if image upload fails, delete the quote.
+          await fetch(`/api/closet-jobs/${job.id}/quotes/${quoteId}`, {
+            method: "DELETE",
+          });
+
+          throw new Error(
+            error.error ||
+              "Image upload failed, so the quote was not submitted."
           );
         }
       }
@@ -242,7 +301,7 @@ export default function NewQuoteForm({
               <input
                 ref={fileInputRef}
                 type="file"
-                accept="image/*"
+                 accept=".jpg,.jpeg,.png,.webp,.gif,image/jpeg,image/png,image/webp,image/gif"
                 multiple
                 onChange={handleFileSelect}
                 className="hidden"
@@ -250,8 +309,12 @@ export default function NewQuoteForm({
             </div>
             <p className="text-xs text-gray-500 mb-3">
               Upload images from your device. These will be shown to the client
-              on the printed quote. Supported formats: JPG, PNG, WebP, GIF (max
-              10MB each).
+              on the printed quote. Supported formats: JPG, JPEG, PNG, WebP,
+              GIF. Up to 30 images, 10MB max each.
+            </p>
+
+            <p className="text-xs text-gray-500 mb-3">
+              Selected: {selectedFiles.length} / {MAX_IMAGES}
             </p>
 
             {selectedFiles.length > 0 ? (

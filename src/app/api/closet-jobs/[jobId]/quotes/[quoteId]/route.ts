@@ -1,6 +1,9 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { getCurrentUserWithRole } from "@/lib/authHelpers";
+import { supabaseAdmin } from "@/lib/supabase/server";
+
+const BUCKET_NAME = "closet-quotes";
 
 type QuoteRouteContext = {
   params: Promise<{ jobId: string; quoteId: string }>;
@@ -98,6 +101,93 @@ export async function PATCH(request: NextRequest, context: QuoteRouteContext) {
     console.error("Error updating quote:", error);
     return NextResponse.json(
       { error: "Failed to update quote" },
+      { status: 500 }
+    );
+  }
+}
+
+// DELETE /api/closet-jobs/[jobId]/quotes/[quoteId] - Delete quote (Installer/Admin)
+export async function DELETE(request: NextRequest, context: QuoteRouteContext) {
+  try {
+    const { jobId, quoteId } = await context.params;
+    const { user, appRole } = await getCurrentUserWithRole();
+
+    if (!user || appRole === "unassigned") {
+      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+    }
+
+    if (![
+      "admin",
+      "installer",
+    ].includes(appRole)) {
+      return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+    }
+
+    const quote = await prisma.closetQuote.findUnique({
+      where: { id: quoteId },
+      include: {
+        closetJob: true,
+        files: true,
+      },
+    });
+
+    if (!quote || quote.closetJobId !== jobId) {
+      return NextResponse.json({ error: "Quote not found" }, { status: 404 });
+    }
+
+    // Installer can only delete own quotes for their assigned jobs.
+    if (appRole === "installer") {
+      if (quote.closetJob.installerId !== user.id || quote.submittedById !== user.id) {
+        return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+      }
+    }
+
+    const storagePaths = quote.files
+      .map((file) => {
+        const marker = `${BUCKET_NAME}/`;
+        const markerIndex = file.fileUrl.indexOf(marker);
+        if (markerIndex === -1) {
+          return null;
+        }
+        return file.fileUrl.slice(markerIndex + marker.length);
+      })
+      .filter((path): path is string => Boolean(path));
+
+    await prisma.closetQuote.delete({ where: { id: quoteId } });
+
+    if (storagePaths.length > 0) {
+      await supabaseAdmin.storage.from(BUCKET_NAME).remove(storagePaths);
+    }
+
+    // Recompute job status after quote deletion.
+    const remainingQuotes = await prisma.closetQuote.findMany({
+      where: { closetJobId: jobId },
+      select: { status: true },
+    });
+
+    const hasApprovedQuote = remainingQuotes.some(
+      (item) => item.status === "APPROVED"
+    );
+    const hasPendingReviewQuote = remainingQuotes.some(
+      (item) => item.status === "PENDING_REVIEW"
+    );
+
+    const nextJobStatus = hasApprovedQuote
+      ? "APPROVED"
+      : hasPendingReviewQuote
+      ? "REVIEW"
+      : "QUOTE";
+
+    await prisma.closetJob.update({
+      where: { id: jobId },
+      data: { status: nextJobStatus },
+    });
+
+    return NextResponse.json({ success: true });
+  } catch (error) {
+    console.error("Error deleting quote:", error);
+    return NextResponse.json(
+      { error: "Failed to delete quote" },
       { status: 500 }
     );
   }
