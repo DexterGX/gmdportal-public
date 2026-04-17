@@ -1,6 +1,8 @@
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { getCurrentUserWithRole } from "@/lib/authHelpers";
+import { ASSIGNABLE_APP_ROLES } from "@/lib/programsConfig";
+import { normalizeRoleKey } from "@/lib/systemRoles";
 
 export async function POST(req: Request) {
   const { user, appRole, isActive } = await getCurrentUserWithRole();
@@ -11,16 +13,10 @@ export async function POST(req: Request) {
   }
 
   const body = await req.json();
-  const { userId, role, active } = body as {
+  const { userId, role, roles, active } = body as {
     userId: string;
-    role?:
-      | "ADMIN"
-      | "SALES"
-      | "OFFICE"
-      | "FINANCE"
-      | "SPECIALIST"
-      | "INSTALLER"
-      | "UNASSIGNED";
+    role?: string;
+    roles?: string[];
     active?: boolean;
   };
 
@@ -28,14 +24,58 @@ export async function POST(req: Request) {
     return new NextResponse("Missing userId", { status: 400 });
   }
 
+  const builtInRoleByAppKey: Record<string, string> = {
+    admin: "ADMIN",
+    sales: "SALES",
+    office: "OFFICE",
+    finance: "FINANCE",
+    specialist: "SPECIALIST",
+    installer: "INSTALLER",
+  };
+
+  const activeRoles = await prisma.systemRoleSetting.findMany({
+    where: { isActive: true },
+    select: { key: true },
+  });
+
+  const allowedRoles = new Set(activeRoles.map((item) => item.key));
+
   const data: any = {};
-  if (role) data.role = role;
+
+  if (Array.isArray(roles)) {
+    const normalized = Array.from(
+      new Set(
+        roles
+          .filter((value): value is string => typeof value === "string")
+          .map((value) => normalizeRoleKey(value))
+          .filter((value) => allowedRoles.has(value))
+      )
+    );
+
+    const cleaned = normalized.filter((value) => value !== "unassigned");
+
+    data.roles = cleaned;
+    const firstBuiltIn = cleaned.find((value) =>
+      ASSIGNABLE_APP_ROLES.includes(value as (typeof ASSIGNABLE_APP_ROLES)[number])
+    );
+    data.role = firstBuiltIn ? builtInRoleByAppKey[firstBuiltIn] : "UNASSIGNED";
+  } else if (role) {
+    const normalized = normalizeRoleKey(role);
+    if (normalized && normalized !== "unassigned" && allowedRoles.has(normalized)) {
+      data.roles = [normalized];
+      data.role = builtInRoleByAppKey[normalized] || "UNASSIGNED";
+    } else {
+      data.roles = [];
+      data.role = "UNASSIGNED";
+    }
+  }
+
   if (typeof active === "boolean") data.active = active;
 
   const updated = await prisma.user.update({
     where: { id: userId },
     data,
-    select: { id: true, role: true, active: true },
+    select: { id: true, role: true, roles: true, active: true },
   });
 
   return NextResponse.json(updated);

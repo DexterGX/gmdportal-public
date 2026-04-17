@@ -127,9 +127,18 @@ export async function POST(request: NextRequest) {
       where: {
         id: effectiveSalesPersonId,
         active: true,
-        role: {
-          in: ["ADMIN", "SALES"],
-        },
+        OR: [
+          {
+            roles: {
+              hasSome: ["admin", "sales"],
+            },
+          },
+          {
+            role: {
+              in: ["ADMIN", "SALES"],
+            },
+          },
+        ],
       },
       select: {
         id: true,

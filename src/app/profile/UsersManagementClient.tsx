@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import Image from "next/image";
 import { Trash2 } from "lucide-react";
 
@@ -9,15 +9,15 @@ type UserDto = {
   name: string | null;
   email: string | null;
   image: string | null;
-  role:
-    | "ADMIN"
-    | "SALES"
-    | "OFFICE"
-    | "FINANCE"
-    | "SPECIALIST"
-    | "INSTALLER"
-    | "UNASSIGNED";
+  role: string;
+  roles: string[];
   active: boolean;
+};
+
+type SystemRole = {
+  key: string;
+  label: string;
+  isBuiltIn: boolean;
 };
 
 export default function UsersManagementClient({
@@ -28,6 +28,22 @@ export default function UsersManagementClient({
   canManage: boolean;
 }) {
   const [localUsers, setLocalUsers] = useState(users);
+  const [roles, setRoles] = useState<SystemRole[]>([]);
+
+  useEffect(() => {
+    if (!canManage) return;
+
+    fetch("/api/settings/program-roles", { cache: "no-store" })
+      .then((response) => response.json())
+      .then((payload) => {
+        if (Array.isArray(payload?.roles)) {
+          setRoles(payload.roles);
+        }
+      })
+      .catch(() => {
+        setRoles([]);
+      });
+  }, [canManage]);
 
   const handleChange = async (userId: string, update: Partial<UserDto>) => {
     setLocalUsers((prev) =>
@@ -35,12 +51,17 @@ export default function UsersManagementClient({
     );
 
     try {
+      const rolesPayload = update.roles
+        ? update.roles.filter((value) => value !== "unassigned")
+        : undefined;
+
       await fetch("/api/users/manage", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           userId,
           role: update.role,
+          roles: rolesPayload,
           active: update.active,
         }),
       });
@@ -81,23 +102,39 @@ export default function UsersManagementClient({
   };
 
   const roleLabel = (role: UserDto["role"]) => {
-    switch (role) {
-      case "ADMIN":
-        return "Admin";
-      case "SALES":
-        return "Sales";
-      case "OFFICE":
-        return "Office";
-      case "FINANCE":
-        return "Finance";
-      case "INSTALLER":
-        return "Installer";
-      case "SPECIALIST":
-        return "Specialist";
-      case "UNASSIGNED":
-      default:
-        return "Unassigned";
+    if (!role) return "Unassigned";
+    return role
+      .split("-")
+      .map((part) => part.charAt(0).toUpperCase() + part.slice(1))
+      .join(" ");
+  };
+
+  const getEffectiveRoles = (user: UserDto): string[] => {
+    const fromArray = (user.roles || []).filter(
+      (value): value is string => typeof value === "string" && Boolean(value)
+    );
+
+    if (fromArray.length > 0) {
+      return Array.from(new Set(fromArray));
     }
+
+    if (user.role && user.role !== "unassigned") {
+      return [user.role];
+    }
+
+    return [];
+  };
+
+  const toggleRole = (user: UserDto, role: string) => {
+    const current = getEffectiveRoles(user);
+    const next = current.includes(role)
+      ? current.filter((value) => value !== role)
+      : [...current, role];
+
+    handleChange(user.id, {
+      roles: next,
+      role: next[0] || "unassigned",
+    });
   };
 
   return (
@@ -138,31 +175,30 @@ export default function UsersManagementClient({
             {/* RIGHT: role + status controls + delete */}
             <div className="flex flex-col sm:flex-row sm:items-center sm:gap-6 text-sm">
               {/* Role block */}
-              <div className="flex items-center gap-2 mb-2 sm:mb-0">
-                <span className="text-gray-500 dark:text-gray-400 text-xs">
-                  Role:
-                </span>
+              <div className="flex flex-col gap-2 mb-2 sm:mb-0 min-w-[220px]">
+                <span className="text-gray-500 dark:text-gray-400 text-xs">Roles:</span>
                 {canManage ? (
-                  <select
-                    value={user.role}
-                    onChange={(e) =>
-                      handleChange(user.id, {
-                        role: e.target.value as UserDto["role"],
-                      })
-                    }
-                    className="border border-gray-300 dark:border-gray-700 rounded-md px-2 py-1 text-xs bg-white dark:bg-gray-900 text-gray-800 dark:text-gray-200"
-                  >
-                    <option value="ADMIN">Admin</option>
-                    <option value="SALES">Sales</option>
-                    <option value="OFFICE">Office</option>
-                    <option value="FINANCE">Finance</option>
-                    <option value="INSTALLER">Installer</option>
-                    <option value="SPECIALIST">Specialist</option>
-                    <option value="UNASSIGNED">Unassigned</option>
-                  </select>
+                  <div className="grid grid-cols-2 gap-1">
+                    {roles.map((role) => (
+                      <label
+                        key={`${user.id}-${role.key}`}
+                        className="inline-flex items-center gap-1 text-xs cursor-pointer text-gray-800 dark:text-gray-200"
+                      >
+                        <input
+                          type="checkbox"
+                          checked={getEffectiveRoles(user).includes(role.key)}
+                          onChange={() => toggleRole(user, role.key)}
+                          className="rounded border-gray-300 text-indigo-600 focus:ring-indigo-500"
+                        />
+                        <span>{role.label}</span>
+                      </label>
+                    ))}
+                  </div>
                 ) : (
                   <span className="font-medium text-gray-800 dark:text-gray-200 text-xs">
-                    {roleLabel(user.role)}
+                    {getEffectiveRoles(user).length
+                      ? getEffectiveRoles(user).map((role) => roleLabel(role)).join(", ")
+                      : "Unassigned"}
                   </span>
                 )}
               </div>

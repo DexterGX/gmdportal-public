@@ -1,5 +1,5 @@
 import Link from "next/link";
-import { Building2, Hammer, UsersRound } from "lucide-react";
+import { Building2, Hammer, KeyRound, UsersRound } from "lucide-react";
 
 const cards = [
   {
@@ -22,6 +22,13 @@ const cards = [
       "Manage installer profiles, installation items, and target pay values for future estimate automation.",
     href: "/settings/cabinet-installation",
     icon: Hammer,
+  },
+  {
+    title: "Program Access",
+    description:
+      "Control which user roles can access each portal program, including multiple-role access.",
+    href: "/settings/program-access",
+    icon: KeyRound,
   },
 ];
 

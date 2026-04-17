@@ -21,15 +21,37 @@ import {
 import { UserCheck } from "lucide-react";
 import type { Role } from "@prisma/client"; // Prisma enum
 
+export const APP_ROLES = [
+  "admin",
+  "sales",
+  "office",
+  "finance",
+  "specialist",
+  "installer",
+  "unassigned",
+] as const;
+
 // App-facing roles (lowercase, string union)
-export type AppRole =
-  | "admin"
-  | "sales"
-  | "office"
-  | "finance"
-  | "specialist"
-  | "installer"
-  | "unassigned";
+export type AppRole = (typeof APP_ROLES)[number];
+
+export const ASSIGNABLE_APP_ROLES: AppRole[] = [
+  "admin",
+  "sales",
+  "office",
+  "finance",
+  "specialist",
+  "installer",
+];
+
+const APP_ROLE_PRIORITY: AppRole[] = [
+  "admin",
+  "sales",
+  "office",
+  "finance",
+  "specialist",
+  "installer",
+  "unassigned",
+];
 
 // Map Prisma Role enum (ADMIN, SALES, ...) → AppRole string
 export function mapDbRoleToAppRole(dbRole: Role | null | undefined): AppRole {
@@ -54,6 +76,32 @@ export function mapDbRoleToAppRole(dbRole: Role | null | undefined): AppRole {
     default:
       return "unassigned";
   }
+}
+
+export function mapDbRolesToAppRoles(dbRoles: Role[] | null | undefined): AppRole[] {
+  if (!Array.isArray(dbRoles) || dbRoles.length === 0) {
+    return [];
+  }
+
+  const mapped = dbRoles
+    .map((value) => mapDbRoleToAppRole(value))
+    .filter((value) => value !== "unassigned");
+
+  return Array.from(new Set(mapped));
+}
+
+export function getPrimaryAppRoleFromRoles(roles: AppRole[]): AppRole {
+  if (!roles.length) {
+    return "unassigned";
+  }
+
+  for (const role of APP_ROLE_PRIORITY) {
+    if (roles.includes(role)) {
+      return role;
+    }
+  }
+
+  return "unassigned";
 }
 
 export type ProgramId =
@@ -200,6 +248,11 @@ export const programs: ProgramConfig[] = [
         icon: Table2,
         name: "Cabinet Installation",
         path: "/settings/cabinet-installation",
+      },
+      {
+        icon: Settings2,
+        name: "Program Access",
+        path: "/settings/program-access",
       },
     ],
     othersItems: [],
@@ -382,4 +435,15 @@ export function userCanAccessProgram(
   if (!isActive) return false;
   if (!program.allowedRoles || program.allowedRoles.length === 0) return true;
   return program.allowedRoles.includes(role);
+}
+
+export function getDefaultAllowedRolesForProgram(
+  programId: ProgramId,
+): AppRole[] | undefined {
+  const program = programs.find((item) => item.id === programId);
+  if (!program?.allowedRoles) {
+    return undefined;
+  }
+
+  return [...program.allowedRoles];
 }
