@@ -1,10 +1,13 @@
 import Link from "next/link";
 import { Lock } from "lucide-react";
-import { programs, userCanAccessProgram } from "@/lib/programsConfig";
+import { programs } from "@/lib/programsConfig";
 import { getCurrentUserWithRole } from "@/lib/authHelpers";
+import { getAccessibleProgramIds } from "@/lib/programAccess";
 
 export default async function DashboardPage() {
-  const { appRole, isActive } = await getCurrentUserWithRole();
+  const { appRoles, isActive } = await getCurrentUserWithRole();
+  const accessibleProgramIds = await getAccessibleProgramIds(appRoles, isActive);
+  const accessSet = new Set(accessibleProgramIds);
 
   // show all programs EXCEPT the "main" program itself, sorted alphabetically
   // with no-access programs moved to the end (also alphabetically sorted)
@@ -12,7 +15,7 @@ export default async function DashboardPage() {
     .filter((p) => p.id !== "main")
     .map((p) => ({
       program: p,
-      hasAccess: userCanAccessProgram(p, appRole, isActive),
+      hasAccess: accessSet.has(p.id),
     }))
     .sort((a, b) => {
       if (a.hasAccess !== b.hasAccess) return a.hasAccess ? -1 : 1;
@@ -31,7 +34,7 @@ export default async function DashboardPage() {
 
       <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
         {visiblePrograms.map((program) => {
-          const hasAccess = userCanAccessProgram(program, appRole, isActive);
+          const hasAccess = accessSet.has(program.id);
           const cardClasses = hasAccess
             ? "bg-white dark:bg-gray-900"
             : "bg-gray-100 dark:bg-gray-800 opacity-80";

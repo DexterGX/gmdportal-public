@@ -20,6 +20,7 @@ model User {
   resetToken       String?       @unique
   resetTokenExpiry DateTime?
   role             Role          @default(UNASSIGNED)
+  roles            String[]      @default([])
   active           Boolean       @default(false)
   accounts         Account[]
   approvedQuotes   ClosetQuote[] @relation("ApprovedQuotes")
@@ -275,6 +276,26 @@ model CompanyDocumentSettings {
   logoUrl     String   @default("/logo.svg")
   createdAt   DateTime @default(now())
   updatedAt   DateTime @updatedAt
+}
+
+model ProgramAccessSetting {
+  id           String   @id @default(cuid())
+  programId    String   @unique
+  allowedRoles String[] @default([])
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+}
+
+model SystemRoleSetting {
+  id        String   @id @default(cuid())
+  key       String   @unique
+  label     String
+  isBuiltIn Boolean  @default(false)
+  isActive  Boolean  @default(true)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([isActive])
 }
 
 model CabinetProviderSettings {

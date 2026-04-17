@@ -1,8 +1,12 @@
 import { getServerSession } from "next-auth";
 import { authOptions } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
-import type { AppRole } from "./programsConfig";
-import { mapDbRoleToAppRole } from "./programsConfig";
+import { APP_ROLES, type AppRole } from "./programsConfig";
+import {
+  getPrimaryAppRoleFromRoles,
+  mapDbRoleToAppRole,
+} from "./programsConfig";
+import { normalizeRoleKey } from "@/lib/systemRoles";
 
 export async function getCurrentUserRole(): Promise<AppRole> {
   const { appRole, isActive } = await getCurrentUserWithRole();
@@ -17,7 +21,12 @@ export async function getCurrentUserWithRole() {
   const session = await getServerSession(authOptions);
 
   if (!session?.user?.email) {
-    return { user: null, appRole: "unassigned" as AppRole, isActive: false };
+    return {
+      user: null,
+      appRole: "unassigned" as AppRole,
+      appRoles: [] as string[],
+      isActive: false,
+    };
   }
 
   const dbUser = await prisma.user.findUnique({
@@ -28,14 +37,33 @@ export async function getCurrentUserWithRole() {
       email: true,
       image: true,
       role: true,
+      roles: true,
       active: true,
     },
   });
 
   if (!dbUser) {
-    return { user: null, appRole: "unassigned" as AppRole, isActive: false };
+    return {
+      user: null,
+      appRole: "unassigned" as AppRole,
+      appRoles: [] as string[],
+      isActive: false,
+    };
   }
 
-  const appRole = mapDbRoleToAppRole(dbUser.role);
-  return { user: dbUser, appRole, isActive: dbUser.active };
+  const multiRoles = Array.from(
+    new Set((dbUser.roles || []).map((value) => normalizeRoleKey(value)).filter(Boolean))
+  );
+  const fallbackRole = mapDbRoleToAppRole(dbUser.role);
+  const appRoles = multiRoles.length
+    ? multiRoles
+    : fallbackRole === "unassigned"
+      ? []
+      : [fallbackRole];
+
+  const knownRoles = appRoles.filter((value): value is AppRole =>
+    APP_ROLES.includes(value as AppRole)
+  );
+  const appRole = getPrimaryAppRoleFromRoles(knownRoles);
+  return { user: dbUser, appRole, appRoles, isActive: dbUser.active };
 }

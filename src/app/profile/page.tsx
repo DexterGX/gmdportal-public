@@ -1,6 +1,7 @@
 import { prisma } from "@/lib/prisma";
 import { getCurrentUserWithRole } from "@/lib/authHelpers";
 import UsersManagementClient from "./UsersManagementClient";
+import { mapDbRoleToAppRole } from "@/lib/programsConfig";
 
 export default async function ProfilePage() {
   const { appRole, isActive } = await getCurrentUserWithRole();
@@ -17,8 +18,26 @@ export default async function ProfilePage() {
       email: true,
       image: true,
       role: true,
+      roles: true,
       active: true,
     },
+  });
+
+  const usersForClient = users.map((user) => {
+    const normalizedRoles = Array.from(
+      new Set(
+        (user.roles || [])
+          .filter((value): value is string => typeof value === "string")
+          .map((value) => value.trim().toLowerCase())
+          .filter(Boolean)
+      )
+    );
+
+    return {
+      ...user,
+      role: mapDbRoleToAppRole(user.role),
+      roles: normalizedRoles,
+    };
   });
 
   const canManage = isAdmin && isActive;
@@ -34,7 +53,7 @@ export default async function ProfilePage() {
       </p>
 
       {/* Client component adds interactivity for admin; read-only for others */}
-      <UsersManagementClient users={users} canManage={canManage} />
+      <UsersManagementClient users={usersForClient} canManage={canManage} />
     </div>
   );
 }

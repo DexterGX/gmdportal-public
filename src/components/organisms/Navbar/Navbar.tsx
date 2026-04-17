@@ -15,15 +15,24 @@ import Image from "next/image";
 import { signOut } from "next-auth/react";
 import { useRouter } from "next/navigation";
 import { useSidebar } from "@/context/SidebarContext";
-import { programs } from "@/lib/programsConfig";
+import { programs, type ProgramId } from "@/lib/programsConfig";
 
-export default function Navbar({ user }: { user: any }) {
+export default function Navbar({
+  user,
+  accessibleProgramIds,
+}: {
+  user: any;
+  accessibleProgramIds?: ProgramId[];
+}) {
   const [darkMode, setDarkMode] = useState(false);
   const [menuOpen, setMenuOpen] = useState(false);
   const [searchTerm, setSearchTerm] = useState("");
   const [searchFocused, setSearchFocused] = useState(false);
   const { toggleSidebar, toggleMobileSidebar, isMobile } = useSidebar();
   const router = useRouter();
+  const allowedProgramSet = accessibleProgramIds
+    ? new Set(accessibleProgramIds)
+    : null;
 
   // Filter programs based on search term (exclude main dashboard)
   const filteredPrograms =
@@ -31,6 +40,7 @@ export default function Navbar({ user }: { user: any }) {
       ? []
       : programs
           .filter((p) => p.id !== "main")
+          .filter((p) => (allowedProgramSet ? allowedProgramSet.has(p.id) : true))
           .filter(
             (p) =>
               p.name.toLowerCase().includes(searchTerm.toLowerCase()) ||

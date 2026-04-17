@@ -5,7 +5,7 @@ import AppSidebar from "@/components/organisms/Sidebar/Sidebar";
 import NavbarClient from "@/components/organisms/Navbar/NavbarClient";
 import { SidebarProvider } from "@/context/SidebarContext";
 import { getCurrentUserWithRole } from "@/lib/authHelpers";
-import { programs, userCanAccessProgram } from "@/lib/programsConfig";
+import { canAccessProgramId, getAccessibleProgramIds } from "@/lib/programAccess";
 import type { Metadata } from "next";
 
 export const metadata: Metadata = {
@@ -23,18 +23,18 @@ export default async function CustomersV2Layout({
     redirect("/api/auth/signin?callbackUrl=/customers-v2");
   }
 
-  const { appRole, isActive } = await getCurrentUserWithRole();
+  const { appRole, appRoles, isActive } = await getCurrentUserWithRole();
 
   if (!isActive) {
     redirect("/auth/status?reason=inactive");
   }
 
-  if (appRole === "unassigned") {
+  if (appRoles.length === 0) {
     redirect("/auth/status?reason=unassigned");
   }
 
-  const program = programs.find((p) => p.id === "customersV2")!;
-  const hasAccess = userCanAccessProgram(program, appRole, isActive);
+  const hasAccess = await canAccessProgramId("customersV2", appRoles, isActive);
+  const accessibleProgramIds = await getAccessibleProgramIds(appRoles, isActive);
 
   if (!hasAccess) {
     redirect("/dashboard");
@@ -47,7 +47,7 @@ export default async function CustomersV2Layout({
       <div className="min-h-screen flex bg-gray-50 dark:bg-gray-900 w-full">
         <AppSidebar userRole={appRole} />
         <div className="flex-1 flex flex-col min-w-0">
-          <NavbarClient user={user} />
+          <NavbarClient user={user} accessibleProgramIds={accessibleProgramIds} />
           <main className="p-6 overflow-auto min-w-0 bg-gray-50 dark:bg-gray-900">
             {children}
           </main>

@@ -9,7 +9,10 @@ import { prisma } from "./prisma";
 export async function getInstallers() {
   return prisma.user.findMany({
     where: {
-      role: "INSTALLER",
+      OR: [
+        { roles: { has: "installer" } },
+        { role: "INSTALLER" },
+      ],
       active: true,
     },
     select: {
@@ -17,6 +20,7 @@ export async function getInstallers() {
       name: true,
       email: true,
       role: true,
+      roles: true,
       active: true,
     },
     orderBy: {
@@ -31,9 +35,14 @@ export async function getInstallers() {
 export async function getSalesAssignableUsers() {
   return prisma.user.findMany({
     where: {
-      role: {
-        in: ["ADMIN", "SALES"],
-      },
+      OR: [
+        { roles: { hasSome: ["admin", "sales"] } },
+        {
+          role: {
+            in: ["ADMIN", "SALES"],
+          },
+        },
+      ],
       active: true,
     },
     select: {
@@ -41,6 +50,7 @@ export async function getSalesAssignableUsers() {
       name: true,
       email: true,
       role: true,
+      roles: true,
       active: true,
     },
     orderBy: {

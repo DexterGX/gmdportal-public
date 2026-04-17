@@ -6,6 +6,7 @@ import AppSidebar from "@/components/organisms/Sidebar/Sidebar";
 import NavbarClient from "@/components/organisms/Navbar/NavbarClient";
 import { SidebarProvider } from "@/context/SidebarContext";
 import { getCurrentUserWithRole } from "@/lib/authHelpers";
+import { getAccessibleProgramIds } from "@/lib/programAccess";
 
 export default async function ProfileLayout({
   children,
@@ -18,17 +19,18 @@ export default async function ProfileLayout({
   }
 
   // Check if user is inactive or unassigned
-  const { appRole, isActive } = await getCurrentUserWithRole();
+  const { appRole, appRoles, isActive } = await getCurrentUserWithRole();
 
   if (!isActive) {
     redirect("/auth/status?reason=inactive");
   }
 
-  if (appRole === "unassigned") {
+  if (appRoles.length === 0) {
     redirect("/auth/status?reason=unassigned");
   }
 
   // All logged-in active users can view profiles
+  const accessibleProgramIds = await getAccessibleProgramIds(appRoles, isActive);
   const user = session?.user ?? null;
 
   return (
@@ -36,7 +38,7 @@ export default async function ProfileLayout({
       <div className="min-h-screen flex bg-gray-50 dark:bg-gray-900 w-full">
         <AppSidebar />
         <div className="flex-1 flex flex-col min-w-0">
-          <NavbarClient user={user} />
+          <NavbarClient user={user} accessibleProgramIds={accessibleProgramIds} />
           <main className="p-6 overflow-auto min-w-0 bg-gray-50 dark:bg-gray-900">
             {children}
           </main>
