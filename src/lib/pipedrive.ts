@@ -1,22 +1,24 @@
 /**
- * Pipedrive API Integration
+ * Pipedrive API v2 Integration
  *
- * This module provides helpers for syncing deals and contacts from Pipedrive.
- * Data is synced to the local Customer database as PROSPECTS.
+ * Syncs deals, persons and organizations from Pipedrive.
  *
- * Setup required:
- * 1. Get your Pipedrive API token from Settings > Personal Preferences > API
- * 2. Add these environment variables to .env.local:
- *    - PIPEDRIVE_API_TOKEN
- *    - PIPEDRIVE_COMPANY_DOMAIN (e.g., "yourcompany" for yourcompany.pipedrive.com)
+ * Key behaviours:
+ * - A Pipedrive Person → Customer (type = CLIENT)
+ * - A Pipedrive Organization → Customer (type = CONTRACTOR, pipedriveId = "org_<id>")
+ * - When a person belongs to an org, referredByOrgPipedriveId / referredByOrgName
+ *   are set on the CLIENT record so the relationship is preserved without changing type.
+ * - Each Pipedrive Deal → Job with rich detail fields (type, QB URL, CompanyCam, address…)
  *
- * Docs: https://developers.pipedrive.com/docs/api/v1
+ * Environment variables required:
+ *   PIPEDRIVE_API_TOKEN
+ *   PIPEDRIVE_COMPANY_DOMAIN  (e.g. "gmdesign")
  */
 
 import { prisma } from "./prisma";
 import { CustomerType } from "@prisma/client";
 
-const PIPEDRIVE_API_VERSION = "v1";
+const PIPEDRIVE_API_VERSION = "v2";
 
 interface PipedriveConfig {
   apiToken: string;
@@ -24,7 +26,7 @@ interface PipedriveConfig {
 }
 
 /**
- * Get Pipedrive configuration from environment
+ * Get Pipedrive configuration from environment variables.
  */
 function getConfig(): PipedriveConfig {
   const apiToken = process.env.PIPEDRIVE_API_TOKEN;
@@ -32,7 +34,7 @@ function getConfig(): PipedriveConfig {
 
   if (!apiToken || !companyDomain) {
     throw new Error(
-      "Missing Pipedrive configuration. Set PIPEDRIVE_API_TOKEN and PIPEDRIVE_COMPANY_DOMAIN in .env.local",
+      "Missing Pipedrive configuration. Set PIPEDRIVE_API_TOKEN and PIPEDRIVE_COMPANY_DOMAIN.",
     );
   }
 
@@ -40,7 +42,7 @@ function getConfig(): PipedriveConfig {
 }
 
 /**
- * Get Pipedrive API base URL
+ * Get Pipedrive API v2 base URL.
  */
 function getApiBase(): string {
   const { companyDomain } = getConfig();
@@ -48,7 +50,7 @@ function getApiBase(): string {
 }
 
 /**
- * Make an authenticated request to Pipedrive API
+ * Make an authenticated request to Pipedrive API v2.
  */
 async function pipedriveRequest<T>(
   endpoint: string,
@@ -57,7 +59,6 @@ async function pipedriveRequest<T>(
   const { apiToken } = getConfig();
   const baseUrl = getApiBase();
 
-  // Add api_token to query params
   const url = new URL(`${baseUrl}${endpoint}`);
   url.searchParams.set("api_token", apiToken);
 
@@ -84,163 +85,135 @@ async function pipedriveRequest<T>(
 }
 
 /**
- * Pipedrive Person (Contact) structure
- */
-export interface PipedrivePerson {
-  id: number;
-  name: string;
-  first_name?: string;
-  last_name?: string;
-  email?: Array<{ value: string; primary: boolean }>;
-  phone?: Array<{ value: string; primary: boolean }>;
-  org_id?:
-    | {
-        name: string;
-        value: number;
-      }
-    | number
-    | null;
-  owner_id?: {
-    id: number;
-    name: string;
-    email: string;
-  };
-  add_time?: string;
-  update_time?: string;
-  visible_to?: string;
-  active_flag?: boolean;
-}
-
-/**
- * Pipedrive Deal structure
+ * Pipedrive Deal — v2 shape.
+ * person_id and org_id are plain numbers (not nested objects).
  */
 export interface PipedriveDeal {
   id: number;
   title: string;
   value: number;
   currency: string;
-  status: string; // "open", "won", "lost", "deleted"
+  status: string; // "open" | "won" | "lost" | "deleted"
   stage_id: number;
-  stage_order_nr?: number;
-  person_id?:
-    | {
-        name: string;
-        email?: Array<{ value: string; primary: boolean }>;
-        phone?: Array<{ value: string; primary: boolean }>;
-        value: number;
-      }
-    | number
-    | null;
-  org_id?:
-    | {
-        name: string;
-        value: number;
-      }
-    | number
-    | null;
+  pipeline_id?: number;
+  person_id: number | null;
+  org_id: number | null;
+  creator_user_id?: number | null;
+  owner_id?: number | null;
   add_time: string;
   update_time: string;
   close_time?: string | null;
   won_time?: string | null;
   lost_time?: string | null;
   expected_close_date?: string | null;
-  owner_name?: string;
-  cc_email?: string;
-  notes_count?: number;
-  visible_to?: string;
-  org_name?: string;
-  person_name?: string;
-}
-
-interface PipedriveListResponse<T> {
-  success: boolean;
-  data: T[];
-  additional_data?: {
-    pagination: {
-      start: number;
-      limit: number;
-      more_items_in_collection: boolean;
-      next_start?: number;
-    };
-  };
+  /** Custom fields keyed by hash */
+  custom_fields?: Record<string, any>;
 }
 
 /**
- * Fetch all deals from Pipedrive with pagination
+ * Pipedrive Person — v2 shape.
+ */
+export interface PipedrivePerson {
+  id: number;
+  name: string;
+  first_name?: string;
+  last_name?: string;
+  /** v2 field name */
+  emails?: Array<{ value: string; primary: boolean; label?: string }>;
+  /** v1 fallback field name */
+  email?: Array<{ value: string; primary: boolean; label?: string }>;
+  /** v2 field name */
+  phones?: Array<{ value: string; primary: boolean; label?: string }>;
+  /** v1 fallback field name */
+  phone?: Array<{ value: string; primary: boolean; label?: string }>;
+  org_id?: number | null;
+  owner_id?: number | null;
+  add_time?: string;
+  update_time?: string;
+  active_flag?: boolean;
+  custom_fields?: Record<string, any>;
+}
+
+/**
+ * Pipedrive Organization — v2 shape.
+ */
+export interface PipedriveOrganization {
+  id: number;
+  name: string;
+  address?: {
+    value?: string;
+    formatted_address?: string;
+    street_number?: string;
+    route?: string;
+    sublocality?: string;
+    locality?: string;
+    admin_area_level_1?: string;
+    admin_area_level_2?: string;
+    country?: string;
+    postal_code?: string;
+  } | null;
+  owner_id?: number | null;
+  custom_fields?: Record<string, any>;
+}
+
+// ---------------------------------------------------------------------------
+// Known custom field keys for this account
+// ---------------------------------------------------------------------------
+
+/** Deal custom field hashes */
+export const DEAL_FIELDS = {
+  ADDRESS: "b91459b6b4eceb9a2cfeba8ee74e8f7c0404b0c3",
+  JOB_TYPE: "5c6630f4269b882982e009612f54d3f8df41b3ac",
+  QB_URL: "f4b7116c419c71096d14238730d36e67a9bc74d0",
+  QB_ID: "c130b9af766767050e8889211d87ed00f460e5dd",
+  CC_ID: "0e421ad1de6e38926f88e6f8a8402a8f72ad141e",
+  CC_URL: "dad64e0237ea11f6a866eb8d42f6a0e0679c1a42",
+} as const;
+
+// ---------------------------------------------------------------------------
+// Pagination
+// ---------------------------------------------------------------------------
+
+interface PipedriveV2ListResponse<T> {
+  success: boolean;
+  data: T[] | null;
+  additional_data?: { next_cursor?: string | null; total_count?: number };
+}
+
+// ---------------------------------------------------------------------------
+// Fetch functions
+// ---------------------------------------------------------------------------
+
+/**
+ * Fetch all deals from Pipedrive using cursor-based pagination (v2).
  */
 export async function fetchAllDeals(
   status: "all_not_deleted" | "open" | "won" | "lost" = "all_not_deleted",
 ): Promise<PipedriveDeal[]> {
   const allDeals: PipedriveDeal[] = [];
-  let start = 0;
-  const limit = 100; // Max 500, but 100 is safer
+  let cursor: string | null = null;
+  const limit = 100;
 
   while (true) {
-    const params = new URLSearchParams({
-      start: start.toString(),
-      limit: limit.toString(),
-      status,
-    });
+    const params = new URLSearchParams({ limit: limit.toString(), status });
+    if (cursor) params.set("cursor", cursor);
 
     const response = await pipedriveRequest<
-      PipedriveListResponse<PipedriveDeal>
+      PipedriveV2ListResponse<PipedriveDeal>
     >(`/deals?${params.toString()}`);
 
-    if (response.data && response.data.length > 0) {
-      allDeals.push(...response.data);
-    }
+    if (response.data?.length) allDeals.push(...response.data);
 
-    // Check if there are more items
-    if (
-      !response.additional_data?.pagination?.more_items_in_collection ||
-      !response.additional_data?.pagination?.next_start
-    ) {
-      break;
-    }
-
-    start = response.additional_data.pagination.next_start;
+    const nextCursor = response.additional_data?.next_cursor;
+    if (!nextCursor) break;
+    cursor = nextCursor;
   }
 
   return allDeals;
 }
 
 /**
- * Fetch all persons (contacts) from Pipedrive with pagination
- */
-export async function fetchAllPersons(): Promise<PipedrivePerson[]> {
-  const allPersons: PipedrivePerson[] = [];
-  let start = 0;
-  const limit = 100;
-
-  while (true) {
-    const params = new URLSearchParams({
-      start: start.toString(),
-      limit: limit.toString(),
-    });
-
-    const response = await pipedriveRequest<
-      PipedriveListResponse<PipedrivePerson>
-    >(`/persons?${params.toString()}`);
-
-    if (response.data && response.data.length > 0) {
-      allPersons.push(...response.data);
-    }
-
-    if (
-      !response.additional_data?.pagination?.more_items_in_collection ||
-      !response.additional_data?.pagination?.next_start
-    ) {
-      break;
-    }
-
-    start = response.additional_data.pagination.next_start;
-  }
-
-  return allPersons;
-}
-
-/**
- * Fetch a specific person by ID
+ * Fetch a single person by ID (v2).
  */
 export async function fetchPerson(
   personId: number,
@@ -252,31 +225,31 @@ export async function fetchPerson(
     }>(`/persons/${personId}`);
     return response.data;
   } catch (error) {
-    console.error(`Failed to fetch person ${personId}:`, error);
+    console.error(`[Pipedrive] Failed to fetch person ${personId}:`, error);
     return null;
   }
 }
 
 /**
- * Fetch a specific organization by ID
+ * Fetch a single organization by ID, including custom_fields (v2).
  */
 export async function fetchOrganization(
   orgId: number,
-): Promise<{ id: number; name: string } | null> {
+): Promise<PipedriveOrganization | null> {
   try {
     const response = await pipedriveRequest<{
       success: boolean;
-      data: { id: number; name: string; address?: string };
+      data: PipedriveOrganization;
     }>(`/organizations/${orgId}`);
     return response.data;
   } catch (error) {
-    console.error(`Failed to fetch organization ${orgId}:`, error);
+    console.error(`[Pipedrive] Failed to fetch organization ${orgId}:`, error);
     return null;
   }
 }
 
 /**
- * Fetch a specific user by ID
+ * Fetch a Pipedrive user by ID (for sales person / owner resolution).
  */
 export async function fetchUser(
   userId: number,
@@ -288,16 +261,16 @@ export async function fetchUser(
     }>(`/users/${userId}`);
     return response.data;
   } catch (error) {
-    console.error(`Failed to fetch user ${userId}:`, error);
+    console.error(`[Pipedrive] Failed to fetch user ${userId}:`, error);
     return null;
   }
 }
 
 /**
- * Helper to extract primary email from Pipedrive email array
+ * Extract primary email from v1 (email[]) or v2 (emails[]) array.
  */
-function getPrimaryEmail(
-  emails?: Array<{ value: string; primary: boolean }>,
+export function getPrimaryEmail(
+  emails?: Array<{ value: string; primary: boolean; label?: string }>,
 ): string | undefined {
   if (!emails || emails.length === 0) return undefined;
   const primary = emails.find((e) => e.primary);
@@ -305,10 +278,10 @@ function getPrimaryEmail(
 }
 
 /**
- * Helper to extract primary phone from Pipedrive phone array
+ * Extract primary phone from v1 (phone[]) or v2 (phones[]) array.
  */
-function getPrimaryPhone(
-  phones?: Array<{ value: string; primary: boolean }>,
+export function getPrimaryPhone(
+  phones?: Array<{ value: string; primary: boolean; label?: string }>,
 ): string | undefined {
   if (!phones || phones.length === 0) return undefined;
   const primary = phones.find((p) => p.primary);
@@ -316,156 +289,174 @@ function getPrimaryPhone(
 }
 
 /**
- * Helper to get organization name from various Pipedrive structures
+ * Convert a Pipedrive address object to a QB-style billAddr JSON blob.
  */
-function getOrgName(
-  org_id?: { name: string; value: number } | number | null,
-  org_name?: string,
-): string | undefined {
-  if (org_name) return org_name;
-  if (org_id && typeof org_id === "object" && "name" in org_id) {
-    return org_id.name;
-  }
-  return undefined;
-}
-
-/**
- * Map Pipedrive Deal to Customer database record
- */
-export function mapPipedriveDealToCustomer(deal: PipedriveDeal) {
-  const personId =
-    typeof deal.person_id === "object" && deal.person_id
-      ? deal.person_id.value
-      : deal.person_id;
-  const orgId =
-    typeof deal.org_id === "object" && deal.org_id
-      ? deal.org_id.value
-      : deal.org_id;
-
-  // Try to get email and phone from person_id if it's an object with details
-  const email =
-    typeof deal.person_id === "object" && deal.person_id
-      ? getPrimaryEmail(deal.person_id.email)
-      : undefined;
-  const phone =
-    typeof deal.person_id === "object" && deal.person_id
-      ? getPrimaryPhone(deal.person_id.phone)
-      : undefined;
-
-  const companyName = getOrgName(deal.org_id, deal.org_name);
-  const displayName =
-    deal.person_name || deal.title || companyName || `Deal #${deal.id}`;
-
-  // Determine customer type based on organization:
-  // - If org_id is filled (regardless of name) → CONTRACTOR
-  // - If org_id is empty → CLIENT
-  const customerType = orgId ? CustomerType.CONTRACTOR : CustomerType.CLIENT;
-
+export function buildBillAddr(
+  addrField: Record<string, any> | null | undefined,
+): Record<string, string> | null {
+  if (!addrField?.formatted_address) return null;
   return {
-    pipedriveId: deal.id.toString(),
-    type: customerType,
-    displayName,
-    companyName,
-    email,
-    phone,
-    pipedriveData: deal,
-    active: deal.status === "open" || deal.status === "won",
+    Line1:
+      addrField.street_number && addrField.route
+        ? `${addrField.street_number} ${addrField.route}`
+        : addrField.route || "",
+    City: addrField.locality || "",
+    CountrySubDivisionCode: addrField.admin_area_level_1 || "",
+    PostalCode: addrField.postal_code || "",
+    Country: addrField.country || "United States",
   };
 }
 
-/**
- * Map Pipedrive Person to Customer database record
- */
-export function mapPipedrivePersonToCustomer(person: PipedrivePerson) {
-  const email = getPrimaryEmail(person.email);
-  const phone = getPrimaryPhone(person.phone);
-  const companyName = getOrgName(person.org_id);
+// ---------------------------------------------------------------------------
+// Mapping functions
+// ---------------------------------------------------------------------------
 
+/**
+ * Map a Pipedrive Person (+ optional enrichment data) to a Customer DB record.
+ *
+ * Type rules:
+ *  - Person with or without org → CLIENT
+ *  - When org is present: referredByOrgPipedriveId / referredByOrgName are set
+ *    so sales can see "referred by Beyond Closets" without losing the CLIENT type.
+ *  - Organizations are tracked separately as CONTRACTOR records.
+ */
+export function mapPipedrivePersonToCustomer(
+  person: PipedrivePerson,
+  orgData?: PipedriveOrganization | null,
+  ownerName?: string,
+) {
+  const email = getPrimaryEmail(person.emails || person.email);
+  const phone = getPrimaryPhone(person.phones || person.phone);
+  const companyName = orgData?.name;
   return {
     pipedriveId: person.id.toString(),
-    type: CustomerType.PROSPECT,
+    type: CustomerType.CLIENT,
     displayName: person.name,
-    companyName,
+    companyName: companyName || undefined,
     givenName: person.first_name,
     familyName: person.last_name,
-    email,
-    phone,
-    pipedriveData: person,
+    email: email || undefined,
+    phone: phone || undefined,
+    salesPerson: ownerName || undefined,
+    referredByOrgPipedriveId: orgData ? orgData.id.toString() : undefined,
+    referredByOrgName: orgData?.name || undefined,
+    pipedriveData: person as any,
     active: person.active_flag ?? true,
   };
 }
 
 /**
- * Sync deals from Pipedrive to local database
- * Returns stats about created/updated records
+ * Map a Pipedrive Organization to a Customer DB record (type = CONTRACTOR).
+ * pipedriveId is prefixed with "org_" to avoid collisions with person IDs.
  */
-export async function syncDealsToDatabase(
-  deals: PipedriveDeal[],
-  onProgress?: (current: number, total: number) => void,
-): Promise<{
-  created: number;
-  updated: number;
-  errors: number;
-}> {
-  let created = 0;
-  let updated = 0;
-  let errors = 0;
+export function mapPipedriveOrgToCustomer(
+  org: PipedriveOrganization,
+  ownerName?: string,
+) {
+  const addrField = typeof org.address === "object" ? org.address : null;
+  const billAddr = buildBillAddr(addrField);
+  const cf = org.custom_fields || {};
+  const qbId = cf["4e3f199ddb1d628f6e416a70cbe5b774e9e2196d"]
+    ? String(cf["4e3f199ddb1d628f6e416a70cbe5b774e9e2196d"])
+    : undefined;
 
-  for (let i = 0; i < deals.length; i++) {
-    const deal = deals[i];
-
-    try {
-      const customerData = mapPipedriveDealToCustomer(deal);
-
-      const existing = await prisma.customer.findUnique({
-        where: { pipedriveId: customerData.pipedriveId },
-      });
-
-      if (existing) {
-        await prisma.customer.update({
-          where: { pipedriveId: customerData.pipedriveId },
-          data: {
-            ...customerData,
-            pipedriveData: JSON.parse(
-              JSON.stringify(customerData.pipedriveData),
-            ),
-            updatedAt: new Date(),
-          },
-        });
-        updated++;
-      } else {
-        await prisma.customer.create({
-          data: {
-            ...customerData,
-            pipedriveData: JSON.parse(
-              JSON.stringify(customerData.pipedriveData),
-            ),
-          },
-        });
-        created++;
-      }
-    } catch (error) {
-      console.error(`Error syncing deal ${deal.id}:`, error);
-      errors++;
-    }
-
-    if (onProgress) {
-      onProgress(i + 1, deals.length);
-    }
-  }
-
-  return { created, updated, errors };
+  return {
+    pipedriveId: `org_${org.id}`,
+    type: CustomerType.CONTRACTOR,
+    displayName: org.name,
+    companyName: org.name,
+    salesPerson: ownerName || undefined,
+    billAddr: billAddr || undefined,
+    shipAddr: billAddr || undefined,
+    quickbooksId: qbId,
+    pipedriveData: org as any,
+    active: true,
+  };
 }
 
 /**
- * Test Pipedrive API connection
+ * Map a Pipedrive Deal to a Job DB record.
+ * Extracts all known custom field values (address, type, QB URL, CompanyCam…).
+ */
+export function mapPipedriveDealToJob(deal: PipedriveDeal, customerId: string) {
+  const cf = deal.custom_fields || {};
+
+  const addrField = cf[DEAL_FIELDS.ADDRESS];
+  const propertyAddress = addrField?.formatted_address || null;
+
+  const jobType =
+    typeof cf[DEAL_FIELDS.JOB_TYPE] === "string"
+      ? (cf[DEAL_FIELDS.JOB_TYPE] as string)
+      : null;
+  const quickbooksUrl =
+    typeof cf[DEAL_FIELDS.QB_URL] === "string"
+      ? (cf[DEAL_FIELDS.QB_URL] as string)
+      : null;
+  const companyCamIdRaw = cf[DEAL_FIELDS.CC_ID];
+  const companyCamId = companyCamIdRaw ? String(companyCamIdRaw) : null;
+  const companyCamUrl =
+    typeof cf[DEAL_FIELDS.CC_URL] === "string"
+      ? (cf[DEAL_FIELDS.CC_URL] as string)
+      : null;
+
+  const wonOrClose = deal.won_time || deal.close_time;
+  const closeDate = wonOrClose ? new Date(wonOrClose) : null;
+  const expectedCloseDate = deal.expected_close_date
+    ? new Date(deal.expected_close_date)
+    : null;
+
+  const status =
+    deal.status === "won"
+      ? "COMPLETE"
+      : deal.status === "lost"
+        ? "CANCELLED"
+        : "ONGOING";
+
+  return {
+    pipedriveId: deal.id.toString(),
+    customerId,
+    jobName: deal.title,
+    dealTitle: deal.title,
+    value: deal.value,
+    status,
+    stageId: deal.stage_id || null,
+    closeDate,
+    expectedCloseDate,
+    jobType,
+    quickbooksUrl,
+    companyCamId,
+    companyCamUrl,
+    propertyAddress,
+  };
+}
+
+/**
+ * @deprecated  Use mapPipedrivePersonToCustomer instead.
+ * Kept temporarily for the old sync/webhook routes during migration.
+ */
+export function mapPipedriveDealToCustomer(deal: PipedriveDeal) {
+  const displayName = deal.title || `Deal #${deal.id}`;
+  return {
+    pipedriveId: deal.id.toString(),
+    type: CustomerType.CLIENT,
+    displayName,
+    companyName: undefined as string | undefined,
+    email: undefined as string | undefined,
+    phone: undefined as string | undefined,
+    pipedriveData: deal as any,
+    active: deal.status === "open" || deal.status === "won",
+  };
+}
+
+/**
+ * Test Pipedrive API connectivity.
  */
 export async function testConnection(): Promise<boolean> {
   try {
     await pipedriveRequest("/users/me");
     return true;
   } catch (error) {
-    console.error("Pipedrive connection test failed:", error);
+    console.error("[Pipedrive] Connection test failed:", error);
     return false;
   }
 }

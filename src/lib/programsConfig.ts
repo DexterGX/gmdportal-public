@@ -18,6 +18,7 @@ import {
   Users,
   Package,
 } from "lucide-react";
+import { UserCheck } from "lucide-react";
 import type { Role } from "@prisma/client"; // Prisma enum
 
 // App-facing roles (lowercase, string union)
@@ -65,7 +66,8 @@ export type ProgramId =
   | "closetJobs"
   | "customers"
   | "accessories"
-  | "samplesRequest";
+  | "samplesRequest"
+  | "customersV2";
 
 export interface ProgramConfig {
   id: ProgramId;
@@ -285,6 +287,28 @@ export const programs: ProgramConfig[] = [
         icon: PlugInIcon,
         name: "QuickBooks Sync",
         path: "/customers/sync",
+        adminOnly: true,
+      },
+    ],
+    othersItems: [],
+  },
+  {
+    id: "customersV2",
+    name: "Customers",
+    basePath: "/customers-v2",
+    description: "Unified client & contractor directory powered by Pipedrive.",
+    allowedRoles: ["admin", "sales"],
+    navItems: [
+      { icon: UserCheck, name: "All Customers", path: "/customers-v2" },
+      {
+        icon: Users,
+        name: "Contractors & Designers",
+        path: "/customers-v2?type=CONTRACTOR",
+      },
+      {
+        icon: PlugInIcon,
+        name: "Pipedrive Sync",
+        path: "/customers-v2/sync",
         adminOnly: true,
       },
     ],
