@@ -421,6 +421,7 @@ enum SlabFinish {
   RIVERWASHED
   SLATE
   ULTRASOFT
+  SOFT_TOUCH
 }
 
 enum ClosetAreaType {
