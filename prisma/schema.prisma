@@ -467,33 +467,36 @@ model Customer {
   pipedriveId        String?      @unique
   companyCamId       String?
   syncedToQB         Boolean      @default(false)
-  displayName        String
-  companyName        String?
-  givenName          String?
-  familyName         String?
-  email              String?
-  phone              String?
-  mobile             String?
-  billAddr           Json?
-  shipAddr           Json?
-  salesPerson        String?
-  balance            Decimal?     @db.Decimal(12, 2)
-  lastSyncedAt       DateTime?
-  quickbooksData     Json?
-  pipedriveData      Json?
-  notes              String?
-  active             Boolean      @default(true)
-  createdAt          DateTime     @default(now())
-  updatedAt          DateTime     @updatedAt
-  closetJobs         ClosetJob[]
-  jobs               Job[]
-  sampleRequests     SampleRequest[]
+    displayName                String
+    companyName                String?
+    givenName                  String?
+    familyName                 String?
+    email                      String?
+    phone                      String?
+    mobile                     String?
+    billAddr                   Json?
+    shipAddr                   Json?
+    salesPerson                String?
+    balance                    Decimal?     @db.Decimal(12, 2)
+    lastSyncedAt               DateTime?
+    quickbooksData             Json?
+    pipedriveData              Json?
+    notes                      String?
+    active                     Boolean      @default(true)
+    referredByOrgPipedriveId   String?      // Pipedrive org ID of contractor/designer who referred this client
+    referredByOrgName          String?      // Display name of the referring contractor/designer
+    createdAt                  DateTime     @default(now())
+    updatedAt                  DateTime     @updatedAt
+    closetJobs                 ClosetJob[]
+    jobs                       Job[]
+    sampleRequests             SampleRequest[]
 
-  @@index([quickbooksId])
-  @@index([pipedriveId])
-  @@index([displayName])
-  @@index([email])
-  @@index([type])
+    @@index([quickbooksId])
+    @@index([pipedriveId])
+    @@index([displayName])
+    @@index([email])
+    @@index([type])
+    @@index([referredByOrgPipedriveId])
 }
 
 model Job {
@@ -507,20 +510,29 @@ model Job {
   status            JobStatus @default(ONGOING)
   value             Decimal?  @db.Decimal(12, 2)
   notes             String?
-  createdAt         DateTime  @default(now())
-  updatedAt         DateTime  @updatedAt
-  lastSyncedAt      DateTime?
-  customer          Customer  @relation(fields: [customerId], references: [id], onDelete: Cascade)
-  closetJob         ClosetJob?
-  artifacts         JobArtifact[]
-  accessoryTrackers AccessoryTracker[]
-  sampleRequests    SampleRequest[]
+    jobType           String?             // Service type e.g. "Closets", "Countertops"
+    companyCamUrl     String?             // CompanyCam project URL
+    quickbooksUrl     String?             // QuickBooks customer/job URL
+    stageId           Int?                // Pipedrive pipeline stage ID
+    closeDate         DateTime?           @db.Timestamptz(6) // Actual won/close date
+    expectedCloseDate DateTime?           @db.Date           // Expected close date
+    propertyAddress   String?             // Project property address from Pipedrive deal
+    dealTitle         String?             // Original Pipedrive deal title
+    createdAt         DateTime            @default(now())
+    updatedAt         DateTime            @updatedAt
+    lastSyncedAt      DateTime?
+    customer          Customer            @relation(fields: [customerId], references: [id], onDelete: Cascade)
+    closetJob         ClosetJob?
+    artifacts         JobArtifact[]
+    accessoryTrackers AccessoryTracker[]
+    sampleRequests    SampleRequest[]
 
-  @@index([customerId])
-  @@index([quickbooksJobId])
-  @@index([pipedriveId])
-  @@index([status])
-  @@index([jobNumber])
+    @@index([customerId])
+    @@index([quickbooksJobId])
+    @@index([pipedriveId])
+    @@index([status])
+    @@index([jobNumber])
+    @@index([jobType])
 }
 
 model JobArtifact {

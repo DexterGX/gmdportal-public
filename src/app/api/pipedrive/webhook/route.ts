@@ -1,379 +1,234 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import {
-  mapPipedriveDealToCustomer,
   PipedriveDeal,
   fetchPerson,
   fetchOrganization,
   fetchUser,
+  mapPipedrivePersonToCustomer,
+  mapPipedriveOrgToCustomer,
+  mapPipedriveDealToJob,
+  buildBillAddr,
+  DEAL_FIELDS,
 } from "@/lib/pipedrive";
 
-/**
- * Pipedrive Webhook Handler
- *
- * Receives notifications when deals change in Pipedrive.
- * Automatically syncs the changed deal to the local database as a PROSPECT.
- *
- * Setup:
- * 1. In Pipedrive Settings > Webhooks, create a new webhook
- * 2. Set URL to: https://yourdomain.com/api/pipedrive/webhook
- * 3. Subscribe to these events:
- *    - added.deal
- *    - updated.deal
- *    - deleted.deal
- * 4. Optional: Add PIPEDRIVE_WEBHOOK_SECRET to .env.local for security
- *
- * Docs: https://pipedrive.readme.io/docs/webhooks-overview
- */
-
-interface PipedriveWebhookPayload {
-  v: number;
-  matches_filters: {
-    current: number[];
-    previous: number[];
-  };
-  meta: {
-    action:
-      | "added"
-      | "updated"
-      | "deleted"
-      | "delete"
-      | "merged"
-      | "change"
-      | "create";
-    entity: "deal" | "person" | "organization";
-    entity_id: string;
-    company_id: string;
-    user_id: string;
-    host: string;
-    timestamp: number;
-    timestamp_micro: number;
-    permitted_user_ids: number[];
-    trans_pending: boolean;
-    is_bulk_update: boolean;
-    pipedrive_service_name: boolean;
-    webhook_id: string;
-  };
-  current: PipedriveDeal | null;
-  previous: PipedriveDeal | null;
-  event: string; // "added.deal", "updated.deal", "deleted.deal"
-}
-
-/**
- * Verify Pipedrive webhook (optional but recommended)
- */
 function verifyPipedriveWebhook(
   request: NextRequest,
   secret?: string,
 ): boolean {
-  if (!secret) {
-    // If no secret configured, allow all webhooks
-    return true;
-  }
-
+  if (!secret) return true;
   const signature = request.headers.get("x-pipedrive-signature");
-  // Implement signature verification if Pipedrive provides it
-  // For now, we'll use a simple secret check
   return signature === secret;
 }
 
-/**
- * POST handler for Pipedrive webhooks
- */
+function getNumericId(value: unknown): number | null {
+  if (typeof value === "number") return value;
+  if (value && typeof value === "object") {
+    const v = (value as { value?: unknown; id?: unknown }).value;
+    if (typeof v === "number") return v;
+    const id = (value as { value?: unknown; id?: unknown }).id;
+    if (typeof id === "number") return id;
+  }
+  return null;
+}
+
 export async function POST(request: NextRequest) {
   try {
     const webhookSecret = process.env.PIPEDRIVE_WEBHOOK_SECRET;
 
-    // Optional signature verification
     if (webhookSecret && !verifyPipedriveWebhook(request, webhookSecret)) {
-      console.error("Invalid Pipedrive webhook signature");
       return NextResponse.json({ error: "Invalid signature" }, { status: 401 });
     }
 
     const payload: any = await request.json();
+    const meta = payload?.meta;
+    const data = payload?.current ?? payload?.data;
 
-    console.log(
-      "[Pipedrive Webhook] Full payload:",
-      JSON.stringify(payload, null, 2),
-    );
-
-    console.log(
-      `[Pipedrive Webhook] Received webhook for ${payload.meta?.entity} - ${payload.meta?.action}`,
-    );
-
-    const { data, previous, meta } = payload;
-
-    // Only process deal events
     if (!meta || meta.entity !== "deal") {
-      console.log(
-        `[Pipedrive Webhook] Skipping non-deal event: ${
-          meta?.entity || "unknown"
-        }`,
-      );
       return NextResponse.json({ success: true, message: "Not a deal event" });
     }
 
-    try {
-      if (meta.action === "deleted" || meta.action === "delete") {
-        console.log(
-          `[Pipedrive Webhook] Processing delete for Deal ID ${meta.entity_id}`,
-        );
-        // Mark customer as inactive
-        await prisma.customer.updateMany({
-          where: { pipedriveId: meta.entity_id.toString() },
-          data: { active: false },
-        });
-        console.log(
-          `[Pipedrive Webhook] Marked deal ${meta.entity_id} as inactive`,
-        );
-      } else if (
-        meta.action === "added" ||
-        meta.action === "updated" ||
-        meta.action === "change" ||
-        meta.action === "create"
-      ) {
-        console.log(
-          `[Pipedrive Webhook] Processing ${meta.action} - Deal ${data.id}: ${data.title}`,
-        );
-        console.log(
-          `[Pipedrive Webhook] Owner ID from payload:`,
-          data.owner_id,
-        );
-        console.log(
-          `[Pipedrive Webhook] Creator User ID:`,
-          data.creator_user_id,
-        );
+    if (meta.action === "deleted" || meta.action === "delete") {
+      const dealId = String(meta.entity_id);
+      await prisma.job.updateMany({
+        where: { pipedriveId: dealId },
+        data: {
+          status: "CANCELLED",
+          lastSyncedAt: new Date(),
+          updatedAt: new Date(),
+        },
+      });
+      return NextResponse.json({
+        success: true,
+        message: `Cancelled job ${dealId}`,
+      });
+    }
 
-        // Fetch enriched person and organization data from Pipedrive API
-        let personData = null;
-        let orgData = null;
-        let ownerData = null;
+    if (!data || typeof data !== "object") {
+      return NextResponse.json({ success: true, message: "No payload data" });
+    }
 
-        if (data.person_id) {
-          const personId =
-            typeof data.person_id === "object"
-              ? data.person_id.value
-              : data.person_id;
-          console.log(
-            `[Pipedrive Webhook] Fetching person data for ID ${personId}`,
-          );
-          personData = await fetchPerson(personId);
-        }
+    const personId = getNumericId(data.person_id);
+    const orgId = getNumericId(data.org_id);
+    const ownerId =
+      getNumericId(data.owner_id) ?? getNumericId(data.creator_user_id);
 
-        if (data.org_id) {
-          const orgId =
-            typeof data.org_id === "object" ? data.org_id.value : data.org_id;
-          console.log(
-            `[Pipedrive Webhook] Fetching organization data for ID ${orgId}`,
-          );
-          orgData = await fetchOrganization(orgId);
-        }
+    const [personData, orgData, ownerData] = await Promise.all([
+      personId ? fetchPerson(personId) : Promise.resolve(null),
+      orgId ? fetchOrganization(orgId) : Promise.resolve(null),
+      ownerId ? fetchUser(ownerId) : Promise.resolve(null),
+    ]);
 
-        // Get owner ID - it's usually just a number in the webhook
-        const ownerId = data.owner_id || data.creator_user_id;
-        if (ownerId) {
-          const ownerIdNum =
-            typeof ownerId === "object" ? ownerId.value || ownerId.id : ownerId;
-          console.log(
-            `[Pipedrive Webhook] Fetching owner/sales person data for ID ${ownerIdNum}`,
-          );
-          ownerData = await fetchUser(ownerIdNum);
-          console.log(`[Pipedrive Webhook] Owner data fetched:`, ownerData);
-        } else {
-          console.log(`[Pipedrive Webhook] No owner_id found in webhook data`);
-        }
+    if (orgData) {
+      const orgCustomerData = mapPipedriveOrgToCustomer(
+        orgData,
+        ownerData?.name,
+      );
+      await prisma.customer.upsert({
+        where: { pipedriveId: orgCustomerData.pipedriveId },
+        update: {
+          displayName: orgCustomerData.displayName,
+          companyName: orgCustomerData.companyName,
+          salesPerson: orgCustomerData.salesPerson,
+          billAddr: orgCustomerData.billAddr,
+          shipAddr: orgCustomerData.shipAddr,
+          quickbooksId: orgCustomerData.quickbooksId,
+          pipedriveData: JSON.parse(
+            JSON.stringify(orgCustomerData.pipedriveData),
+          ),
+          active: true,
+          updatedAt: new Date(),
+        },
+        create: {
+          ...orgCustomerData,
+          pipedriveData: JSON.parse(
+            JSON.stringify(orgCustomerData.pipedriveData),
+          ),
+        },
+      });
+    }
 
-        // Extract address from custom_fields (b91459b6b4eceb9a2cfeba8ee74e8f7c0404b0c3 is the address field)
-        let addressData = null;
-        if (
-          data.custom_fields &&
-          data.custom_fields["b91459b6b4eceb9a2cfeba8ee74e8f7c0404b0c3"]
-        ) {
-          const addrField =
-            data.custom_fields["b91459b6b4eceb9a2cfeba8ee74e8f7c0404b0c3"];
-          if (addrField.formatted_address) {
-            addressData = {
-              Line1:
-                addrField.route && addrField.street_number
-                  ? `${addrField.street_number} ${addrField.route}`
-                  : addrField.route || "",
-              City: addrField.locality || "",
-              CountrySubDivisionCode: addrField.admin_area_level_1 || "",
-              PostalCode: addrField.postal_code || "",
-              Country: addrField.country || "United States",
-            };
-            console.log(`[Pipedrive Webhook] Extracted address:`, addressData);
-          }
-        }
+    const customerPipedriveId = personId
+      ? String(personId)
+      : `deal_${String(data.id)}`;
+    const addressData = buildBillAddr(
+      data.custom_fields?.[DEAL_FIELDS.ADDRESS],
+    );
 
-        // Map Pipedrive webhook data to PipedriveDeal format with enriched data
-        const dealData: PipedriveDeal = {
-          id: data.id,
-          title: data.title,
-          value: data.value,
-          currency: data.currency,
-          status: data.status,
-          stage_id: data.stage_id,
-          person_id: personData
-            ? {
-                value: personData.id,
-                name: personData.name,
-                email: personData.email,
-                phone: personData.phone,
-              }
-            : data.person_id,
-          org_id: orgData
-            ? {
-                value: orgData.id,
-                name: orgData.name,
-              }
-            : data.org_id,
-          add_time: data.add_time,
-          update_time: data.update_time,
-          close_time: data.close_time,
-          won_time: data.won_time,
-          lost_time: data.lost_time,
-          expected_close_date: data.expected_close_date,
+    const customerData = personData
+      ? mapPipedrivePersonToCustomer(personData, orgData, ownerData?.name)
+      : {
+          pipedriveId: customerPipedriveId,
+          type: "CLIENT" as const,
+          displayName: data.title || `Deal #${String(data.id)}`,
+          companyName: orgData?.name,
+          salesPerson: ownerData?.name,
+          referredByOrgPipedriveId: orgData ? String(orgData.id) : undefined,
+          referredByOrgName: orgData?.name,
+          pipedriveData: data,
+          active: data.status === "open" || data.status === "won",
         };
 
-        // Get person_id for customer lookup
-        const personId =
-          personData?.id?.toString() ||
-          (typeof data.person_id === "object"
-            ? data.person_id.value?.toString()
-            : data.person_id?.toString());
+    (customerData as any).pipedriveId = customerPipedriveId;
 
-        // Sync the deal
-        console.log(
-          `[Pipedrive Webhook] Mapping deal data for ${dealData.title}`,
-        );
-        const customerData = mapPipedriveDealToCustomer(dealData);
+    const customerCreatedAt = data.add_time
+      ? new Date(data.add_time)
+      : new Date();
+    const customerUpdatedAt = data.update_time
+      ? new Date(data.update_time)
+      : new Date();
 
-        // Use person_id as the customer identifier (not deal_id)
-        if (personId) {
-          customerData.pipedriveId = personId;
-        }
+    const customer = await prisma.customer.upsert({
+      where: { pipedriveId: customerPipedriveId },
+      update: {
+        ...customerData,
+        billAddr: addressData || undefined,
+        shipAddr: addressData || undefined,
+        pipedriveData: JSON.parse(
+          JSON.stringify((customerData as any).pipedriveData),
+        ),
+        updatedAt: customerUpdatedAt,
+      },
+      create: {
+        ...customerData,
+        billAddr: addressData || undefined,
+        shipAddr: addressData || undefined,
+        pipedriveData: JSON.parse(
+          JSON.stringify((customerData as any).pipedriveData),
+        ),
+        createdAt: customerCreatedAt,
+        updatedAt: customerUpdatedAt,
+      },
+    });
 
-        console.log(`[Pipedrive Webhook] Customer data:`, {
-          pipedriveId: customerData.pipedriveId,
-          displayName: customerData.displayName,
-          type: customerData.type,
-          email: customerData.email,
-          phone: customerData.phone,
-        });
+    const dealData: PipedriveDeal = {
+      id: Number(data.id),
+      title: String(data.title || `Deal #${String(data.id)}`),
+      value: Number(data.value || 0),
+      currency: String(data.currency || "USD"),
+      status: String(data.status || "open"),
+      stage_id: Number(data.stage_id || 0),
+      pipeline_id: data.pipeline_id ? Number(data.pipeline_id) : undefined,
+      person_id: personId,
+      org_id: orgId,
+      creator_user_id: ownerId,
+      owner_id: ownerId,
+      add_time: String(data.add_time || new Date().toISOString()),
+      update_time: String(data.update_time || new Date().toISOString()),
+      close_time: data.close_time || null,
+      won_time: data.won_time || null,
+      lost_time: data.lost_time || null,
+      expected_close_date: data.expected_close_date || null,
+      custom_fields: data.custom_fields || {},
+    };
 
-        // Add address if extracted from custom fields
-        if (addressData) {
-          (customerData as any).billAddr = addressData;
-          (customerData as any).shipAddr = addressData;
-        }
+    const jobData = mapPipedriveDealToJob(dealData, customer.id);
+    const dealCreatedAt = data.add_time ? new Date(data.add_time) : new Date();
+    const dealUpdatedAt = data.update_time
+      ? new Date(data.update_time)
+      : new Date();
 
-        // Add sales person if available
-        if (ownerData) {
-          (customerData as any).salesPerson = ownerData.name;
-        }
+    await prisma.job.upsert({
+      where: { pipedriveId: jobData.pipedriveId },
+      update: {
+        customerId: customer.id,
+        jobName: jobData.jobName,
+        dealTitle: jobData.dealTitle,
+        value: jobData.value,
+        status: jobData.status as any,
+        stageId: jobData.stageId,
+        closeDate: jobData.closeDate,
+        expectedCloseDate: jobData.expectedCloseDate,
+        jobType: jobData.jobType,
+        quickbooksUrl: jobData.quickbooksUrl,
+        companyCamId: jobData.companyCamId,
+        companyCamUrl: jobData.companyCamUrl,
+        propertyAddress: jobData.propertyAddress,
+        updatedAt: dealUpdatedAt,
+        lastSyncedAt: new Date(),
+      },
+      create: {
+        customerId: customer.id,
+        pipedriveId: jobData.pipedriveId,
+        jobName: jobData.jobName,
+        dealTitle: jobData.dealTitle,
+        value: jobData.value,
+        status: jobData.status as any,
+        stageId: jobData.stageId,
+        closeDate: jobData.closeDate,
+        expectedCloseDate: jobData.expectedCloseDate,
+        jobType: jobData.jobType,
+        quickbooksUrl: jobData.quickbooksUrl,
+        companyCamId: jobData.companyCamId,
+        companyCamUrl: jobData.companyCamUrl,
+        propertyAddress: jobData.propertyAddress,
+        createdAt: dealCreatedAt,
+        updatedAt: dealUpdatedAt,
+        lastSyncedAt: new Date(),
+      },
+    });
 
-        // Use Pipedrive timestamps for accurate dates
-        const customerCreatedAt = data.add_time
-          ? new Date(data.add_time)
-          : new Date();
-        const customerUpdatedAt = data.update_time
-          ? new Date(data.update_time)
-          : new Date();
-
-        // Use upsert to handle race conditions from multiple webhooks
-        const customer = await prisma.customer.upsert({
-          where: { pipedriveId: customerData.pipedriveId },
-          update: {
-            ...customerData,
-            pipedriveData: JSON.parse(
-              JSON.stringify(customerData.pipedriveData),
-            ),
-            billAddr: addressData || (customerData as any).billAddr,
-            shipAddr: addressData || (customerData as any).shipAddr,
-            salesPerson: ownerData?.name || (customerData as any).salesPerson,
-            updatedAt: customerUpdatedAt,
-          },
-          create: {
-            ...customerData,
-            pipedriveData: JSON.parse(
-              JSON.stringify(customerData.pipedriveData),
-            ),
-            billAddr: addressData || undefined,
-            shipAddr: addressData || undefined,
-            salesPerson: ownerData?.name,
-            createdAt: customerCreatedAt,
-            updatedAt: customerUpdatedAt,
-          },
-        });
-
-        console.log(
-          `[Pipedrive Webhook] ✓ Synced customer ${customer.id} (person ${customerData.pipedriveId})`,
-        );
-
-        // Create/update Job record for this specific deal
-        const dealCreatedAt = data.add_time
-          ? new Date(data.add_time)
-          : new Date();
-        const dealUpdatedAt = data.update_time
-          ? new Date(data.update_time)
-          : new Date();
-
-        await prisma.job.upsert({
-          where: {
-            pipedriveId: data.id.toString(),
-          },
-          update: {
-            jobName: data.title,
-            value: data.value,
-            status:
-              data.status === "won"
-                ? "COMPLETE"
-                : data.status === "lost"
-                  ? "CANCELLED"
-                  : "ONGOING",
-            updatedAt: dealUpdatedAt,
-            lastSyncedAt: new Date(),
-          },
-          create: {
-            customerId: customer.id,
-            jobName: data.title,
-            pipedriveId: data.id.toString(),
-            value: data.value,
-            status:
-              data.status === "won"
-                ? "COMPLETE"
-                : data.status === "lost"
-                  ? "CANCELLED"
-                  : "ONGOING",
-            createdAt: dealCreatedAt,
-            updatedAt: dealUpdatedAt,
-            lastSyncedAt: new Date(),
-          },
-        });
-
-        console.log(
-          `[Pipedrive Webhook] ✓ Synced job ${data.id}: ${data.title}`,
-        );
-      }
-
-      return NextResponse.json({ success: true });
-    } catch (error: any) {
-      console.error(
-        `[Pipedrive Webhook] ✗ Failed to process ${meta.action} for deal ${meta.entity_id}:`,
-        error,
-      );
-      console.error(
-        `[Pipedrive Webhook] Error details:`,
-        error.message,
-        error.stack,
-      );
-      // Return 200 to prevent Pipedrive from retrying
-      return NextResponse.json(
-        { success: false, error: error.message || "Processing failed" },
-        { status: 200 },
-      );
-    }
+    return NextResponse.json({ success: true });
   } catch (error: any) {
     console.error("Pipedrive webhook error:", error);
     return NextResponse.json(
@@ -383,9 +238,6 @@ export async function POST(request: NextRequest) {
   }
 }
 
-/**
- * GET handler for webhook verification
- */
-export async function GET(request: NextRequest) {
+export async function GET() {
   return NextResponse.json({ status: "ok" });
 }

@@ -5,27 +5,41 @@ import { getCurrentUserWithRole } from "@/lib/authHelpers";
 import { prisma } from "@/lib/prisma";
 import {
   fetchAllDeals,
-  mapPipedriveDealToCustomer,
   testConnection,
   fetchPerson,
   fetchOrganization,
   fetchUser,
+  mapPipedrivePersonToCustomer,
+  mapPipedriveOrgToCustomer,
+  mapPipedriveDealToJob,
+  buildBillAddr,
+  DEAL_FIELDS,
 } from "@/lib/pipedrive";
 
-/**
- * Pipedrive Deal Sync
- *
- * This endpoint syncs deals from Pipedrive to the local database as PROSPECTS.
- * Only deals are synced (not persons directly, though person data comes with deals).
- *
- * Process:
- * 1. Fetches all deals from Pipedrive
- * 2. Creates/updates Customer records with type=PROSPECT
- * 3. Stores full Pipedrive data in pipedriveData JSON field
- */
-export async function POST(request: NextRequest) {
+type SyncProgress = {
+  stage: "fetching" | "processing" | "complete" | "error" | "cancelled";
+  message: string;
+  processed?: number;
+  total?: number;
+  created?: number;
+  updated?: number;
+  errors?: number;
+  jobId?: string;
+};
+
+function getNumericId(value: unknown): number | null {
+  if (typeof value === "number") return value;
+  if (value && typeof value === "object") {
+    const v = (value as { value?: unknown; id?: unknown }).value;
+    if (typeof v === "number") return v;
+    const id = (value as { value?: unknown; id?: unknown }).id;
+    if (typeof id === "number") return id;
+  }
+  return null;
+}
+
+export async function POST(_request: NextRequest) {
   try {
-    // Auth check - admin only
     const session = await getServerSession(authOptions);
     if (!session?.user) {
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
@@ -36,7 +50,6 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: "Forbidden" }, { status: 403 });
     }
 
-    // Test Pipedrive connection first
     const connectionOk = await testConnection();
     if (!connectionOk) {
       return NextResponse.json(
@@ -47,21 +60,18 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    // Create a TransformStream for streaming progress updates
     const encoder = new TextEncoder();
     const stream = new TransformStream();
     const writer = stream.writable.getWriter();
 
-    // Helper to send progress updates
-    const sendProgress = async (data: any) => {
+    const sendProgress = async (data: SyncProgress) => {
       await writer.write(encoder.encode(`data: ${JSON.stringify(data)}\n\n`));
     };
 
-    // Start the sync process in the background
     (async () => {
       let syncJob: { id: string } | undefined;
+
       try {
-        // Create sync job record
         syncJob = await prisma.syncJob.create({
           data: {
             type: "pipedrive_sync",
@@ -75,14 +85,21 @@ export async function POST(request: NextRequest) {
           jobId: syncJob.id,
         });
 
-        // Fetch ALL deals from Pipedrive (only open/won, not lost/deleted)
         const deals = await fetchAllDeals("all_not_deleted");
 
-        // Update total records
         await prisma.syncJob.update({
           where: { id: syncJob.id },
           data: { totalRecords: deals.length },
         });
+
+        const dealsByPerson = new Map<string, typeof deals>();
+        for (const deal of deals) {
+          const personId = getNumericId(deal.person_id);
+          const personKey = personId ? personId.toString() : `deal_${deal.id}`;
+          const existing = dealsByPerson.get(personKey) ?? [];
+          existing.push(deal);
+          dealsByPerson.set(personKey, existing);
+        }
 
         await sendProgress({
           stage: "processing",
@@ -94,75 +111,43 @@ export async function POST(request: NextRequest) {
         let created = 0;
         let updated = 0;
         let errors = 0;
-        let processed = 0;
+        let processedDeals = 0;
 
-        // Group deals by person_id to avoid duplicates
-        const dealsByPerson = new Map<string, any[]>();
-
-        for (const deal of deals) {
-          const personId = deal.person_id
-            ? typeof deal.person_id === "object"
-              ? deal.person_id.value?.toString()
-              : deal.person_id.toString()
-            : `deal_${deal.id}`; // Fallback for deals without person
-
-          if (!dealsByPerson.has(personId)) {
-            dealsByPerson.set(personId, []);
-          }
-          dealsByPerson.get(personId)!.push(deal);
-        }
-
-        console.log(
-          `[Pipedrive Sync] Grouped ${deals.length} deals into ${dealsByPerson.size} unique customers`,
-        );
-
-        // Get all existing Pipedrive IDs from database
         const existingCustomers = await prisma.customer.findMany({
           where: {
             pipedriveId: {
-              in: Array.from(dealsByPerson.keys()).filter(Boolean),
+              in: Array.from(dealsByPerson.keys()),
             },
           },
-          select: {
-            id: true,
-            pipedriveId: true,
-          },
+          select: { pipedriveId: true },
         });
 
         const existingPipedriveIds = new Set(
-          existingCustomers.map((c) => c.pipedriveId),
-        );
-        const existingMap = new Map(
-          existingCustomers.map((c) => [c.pipedriveId, c.id]),
+          existingCustomers
+            .map((c) => c.pipedriveId)
+            .filter(Boolean) as string[],
         );
 
-        // Process in batches for better performance
-        const batchSize = 20; // Reduced batch size due to API calls
         const personEntries = Array.from(dealsByPerson.entries());
-        const batches = [];
-        for (let i = 0; i < personEntries.length; i += batchSize) {
-          batches.push(personEntries.slice(i, i + batchSize));
-        }
+        const batchSize = 20;
 
-        // Check for cancellation
         const checkCancellation = async () => {
           if (!syncJob) return false;
           const job = await prisma.syncJob.findUnique({
             where: { id: syncJob.id },
             select: { cancelRequested: true },
           });
-          return job?.cancelRequested || false;
+          return Boolean(job?.cancelRequested);
         };
 
-        for (let batchIndex = 0; batchIndex < batches.length; batchIndex++) {
-          // Check if cancellation was requested
+        for (let start = 0; start < personEntries.length; start += batchSize) {
           if (await checkCancellation()) {
             await prisma.syncJob.update({
               where: { id: syncJob.id },
               data: {
                 status: "cancelled",
                 cancelledAt: new Date(),
-                processedRecords: processed,
+                processedRecords: processedDeals,
                 createdRecords: created,
                 updatedRecords: updated,
                 errorCount: errors,
@@ -172,7 +157,7 @@ export async function POST(request: NextRequest) {
             await sendProgress({
               stage: "cancelled",
               message: "Sync cancelled by user",
-              processed,
+              processed: processedDeals,
               total: deals.length,
               created,
               updated,
@@ -183,102 +168,80 @@ export async function POST(request: NextRequest) {
             return;
           }
 
-          const batch = batches[batchIndex];
-          const batchStartTime = Date.now();
+          const batch = personEntries.slice(start, start + batchSize);
 
-          for (const [personId, personDeals] of batch) {
+          for (const [personKey, personDeals] of batch) {
             try {
-              // Use the first deal as the primary source for customer data
               const primaryDeal = personDeals[0];
-
-              // Fetch enriched person, organization, and owner data
-              let personData = null;
-              let orgData = null;
-              let ownerData = null;
-
-              if (primaryDeal.person_id) {
-                const pId =
-                  typeof primaryDeal.person_id === "object"
-                    ? primaryDeal.person_id.value
-                    : primaryDeal.person_id;
-                personData = await fetchPerson(pId);
-              }
-
-              if (primaryDeal.org_id) {
-                const orgId =
-                  typeof primaryDeal.org_id === "object"
-                    ? primaryDeal.org_id.value
-                    : primaryDeal.org_id;
-                orgData = await fetchOrganization(orgId);
-              }
-
+              const personId = getNumericId(primaryDeal.person_id);
+              const orgId = getNumericId(primaryDeal.org_id);
               const ownerId =
-                (primaryDeal as any).owner_id ||
-                (primaryDeal as any).creator_user_id;
-              if (ownerId) {
-                const ownerIdNum =
-                  typeof ownerId === "object"
-                    ? ownerId.value || ownerId.id
-                    : ownerId;
-                ownerData = await fetchUser(ownerIdNum);
+                getNumericId((primaryDeal as any).owner_id) ??
+                getNumericId((primaryDeal as any).creator_user_id);
+
+              const [personData, orgData, ownerData] = await Promise.all([
+                personId ? fetchPerson(personId) : Promise.resolve(null),
+                orgId ? fetchOrganization(orgId) : Promise.resolve(null),
+                ownerId ? fetchUser(ownerId) : Promise.resolve(null),
+              ]);
+
+              if (orgData) {
+                const orgCustomerData = mapPipedriveOrgToCustomer(
+                  orgData,
+                  ownerData?.name,
+                );
+                await prisma.customer.upsert({
+                  where: { pipedriveId: orgCustomerData.pipedriveId },
+                  update: {
+                    displayName: orgCustomerData.displayName,
+                    companyName: orgCustomerData.companyName,
+                    salesPerson: orgCustomerData.salesPerson,
+                    billAddr: orgCustomerData.billAddr,
+                    shipAddr: orgCustomerData.shipAddr,
+                    quickbooksId: orgCustomerData.quickbooksId,
+                    pipedriveData: JSON.parse(
+                      JSON.stringify(orgCustomerData.pipedriveData),
+                    ),
+                    active: true,
+                    updatedAt: new Date(),
+                  },
+                  create: {
+                    ...orgCustomerData,
+                    pipedriveData: JSON.parse(
+                      JSON.stringify(orgCustomerData.pipedriveData),
+                    ),
+                  },
+                });
               }
 
-              // Enrich deal data with fetched information
-              const enrichedDeal = {
-                ...primaryDeal,
-                person_id: personData
-                  ? {
-                      value: personData.id,
-                      name: personData.name,
-                      email: personData.email,
-                      phone: personData.phone,
-                    }
-                  : primaryDeal.person_id,
-                org_id: orgData
-                  ? {
-                      value: orgData.id,
-                      name: orgData.name,
-                    }
-                  : primaryDeal.org_id,
-              };
+              const addressData = buildBillAddr(
+                primaryDeal.custom_fields?.[DEAL_FIELDS.ADDRESS],
+              );
 
-              const customerData = mapPipedriveDealToCustomer(enrichedDeal);
-
-              // Use person_id as the unique identifier instead of deal_id
-              customerData.pipedriveId = personId;
-
-              // Extract address from custom_fields if available
-              if (
-                (primaryDeal as any).custom_fields &&
-                (primaryDeal as any).custom_fields[
-                  "b91459b6b4eceb9a2cfeba8ee74e8f7c0404b0c3"
-                ]
-              ) {
-                const addrField = (primaryDeal as any).custom_fields[
-                  "b91459b6b4eceb9a2cfeba8ee74e8f7c0404b0c3"
-                ];
-                if (addrField.formatted_address) {
-                  const addressData = {
-                    Line1:
-                      addrField.route && addrField.street_number
-                        ? `${addrField.street_number} ${addrField.route}`
-                        : addrField.route || "",
-                    City: addrField.locality || "",
-                    CountrySubDivisionCode: addrField.admin_area_level_1 || "",
-                    PostalCode: addrField.postal_code || "",
-                    Country: addrField.country || "United States",
+              const customerData = personData
+                ? mapPipedrivePersonToCustomer(
+                    personData,
+                    orgData,
+                    ownerData?.name,
+                  )
+                : {
+                    pipedriveId: personKey,
+                    type: "CLIENT" as const,
+                    displayName: primaryDeal.title || `Person #${personKey}`,
+                    companyName: orgData?.name,
+                    salesPerson: ownerData?.name,
+                    referredByOrgPipedriveId: orgData
+                      ? String(orgData.id)
+                      : undefined,
+                    referredByOrgName: orgData?.name,
+                    pipedriveData: primaryDeal as any,
+                    active:
+                      primaryDeal.status === "open" ||
+                      primaryDeal.status === "won",
                   };
-                  (customerData as any).billAddr = addressData;
-                  (customerData as any).shipAddr = addressData;
-                }
-              }
 
-              // Add sales person
-              if (ownerData) {
-                (customerData as any).salesPerson = ownerData.name;
-              }
+              (customerData as any).pipedriveId = personKey;
 
-              // Use Pipedrive timestamps for accurate dates
               const customerCreatedAt = primaryDeal.add_time
                 ? new Date(primaryDeal.add_time)
                 : new Date();
@@ -286,38 +249,39 @@ export async function POST(request: NextRequest) {
                 ? new Date(primaryDeal.update_time)
                 : new Date();
 
-              // Upsert customer (one per person)
               const customer = await prisma.customer.upsert({
-                where: { pipedriveId: personId },
+                where: { pipedriveId: personKey },
                 update: {
                   ...customerData,
+                  billAddr: addressData || undefined,
+                  shipAddr: addressData || undefined,
                   pipedriveData: JSON.parse(
-                    JSON.stringify(customerData.pipedriveData),
+                    JSON.stringify((customerData as any).pipedriveData),
                   ),
                   updatedAt: customerUpdatedAt,
                 },
                 create: {
                   ...customerData,
+                  billAddr: addressData || undefined,
+                  shipAddr: addressData || undefined,
                   pipedriveData: JSON.parse(
-                    JSON.stringify(customerData.pipedriveData),
+                    JSON.stringify((customerData as any).pipedriveData),
                   ),
                   createdAt: customerCreatedAt,
                   updatedAt: customerUpdatedAt,
                 },
               });
 
-              const isNewCustomer = !existingPipedriveIds.has(personId);
-              if (isNewCustomer) {
-                created++;
-                existingPipedriveIds.add(personId);
-              } else {
+              if (existingPipedriveIds.has(personKey)) {
                 updated++;
+              } else {
+                created++;
+                existingPipedriveIds.add(personKey);
               }
 
-              // Create/update Job records for each deal
               for (const deal of personDeals) {
                 try {
-                  // Use Pipedrive's add_time or update_time for accurate dates
+                  const jobData = mapPipedriveDealToJob(deal, customer.id);
                   const dealCreatedAt = deal.add_time
                     ? new Date(deal.add_time)
                     : new Date();
@@ -326,59 +290,67 @@ export async function POST(request: NextRequest) {
                     : new Date();
 
                   await prisma.job.upsert({
-                    where: {
-                      pipedriveId: deal.id.toString(),
-                    },
+                    where: { pipedriveId: jobData.pipedriveId },
                     update: {
-                      jobName: deal.title,
-                      value: deal.value,
-                      status:
-                        deal.status === "won"
-                          ? "COMPLETE"
-                          : deal.status === "lost"
-                            ? "CANCELLED"
-                            : "ONGOING",
+                      customerId: customer.id,
+                      jobName: jobData.jobName,
+                      dealTitle: jobData.dealTitle,
+                      value: jobData.value,
+                      status: jobData.status as any,
+                      stageId: jobData.stageId,
+                      closeDate: jobData.closeDate,
+                      expectedCloseDate: jobData.expectedCloseDate,
+                      jobType: jobData.jobType,
+                      quickbooksUrl: jobData.quickbooksUrl,
+                      companyCamId: jobData.companyCamId,
+                      companyCamUrl: jobData.companyCamUrl,
+                      propertyAddress: jobData.propertyAddress,
                       updatedAt: dealUpdatedAt,
                       lastSyncedAt: new Date(),
                     },
                     create: {
                       customerId: customer.id,
-                      jobName: deal.title,
-                      pipedriveId: deal.id.toString(),
-                      value: deal.value,
-                      status:
-                        deal.status === "won"
-                          ? "COMPLETE"
-                          : deal.status === "lost"
-                            ? "CANCELLED"
-                            : "ONGOING",
+                      pipedriveId: jobData.pipedriveId,
+                      jobName: jobData.jobName,
+                      dealTitle: jobData.dealTitle,
+                      value: jobData.value,
+                      status: jobData.status as any,
+                      stageId: jobData.stageId,
+                      closeDate: jobData.closeDate,
+                      expectedCloseDate: jobData.expectedCloseDate,
+                      jobType: jobData.jobType,
+                      quickbooksUrl: jobData.quickbooksUrl,
+                      companyCamId: jobData.companyCamId,
+                      companyCamUrl: jobData.companyCamUrl,
+                      propertyAddress: jobData.propertyAddress,
                       createdAt: dealCreatedAt,
                       updatedAt: dealUpdatedAt,
                       lastSyncedAt: new Date(),
                     },
                   });
+
+                  processedDeals++;
                 } catch (jobError) {
                   console.error(
-                    `Failed to create/update job for deal ${deal.id}:`,
+                    `[Pipedrive Sync] Failed to upsert job ${deal.id}:`,
                     jobError,
                   );
+                  errors++;
                 }
               }
-
-              processed++;
-            } catch (error) {
-              console.error(`Failed to process person ${personId}:`, error);
+            } catch (personError) {
+              console.error(
+                `[Pipedrive Sync] Failed to process ${personKey}:`,
+                personError,
+              );
               errors++;
             }
           }
 
-          const batchTime = Date.now() - batchStartTime;
-
-          // Update sync job progress
           await prisma.syncJob.update({
             where: { id: syncJob.id },
             data: {
-              processedRecords: processed,
+              processedRecords: processedDeals,
               createdRecords: created,
               updatedRecords: updated,
               errorCount: errors,
@@ -387,29 +359,22 @@ export async function POST(request: NextRequest) {
 
           await sendProgress({
             stage: "processing",
-            message: `Processed batch ${batchIndex + 1}/${batches.length}`,
-            processed,
+            message: `Processed ${processedDeals}/${deals.length} deals...`,
+            processed: processedDeals,
             total: deals.length,
             created,
             updated,
             errors,
-            batchTime,
+            jobId: syncJob.id,
           });
-
-          console.log(
-            `[Pipedrive Sync] Batch ${batchIndex + 1}/${batches.length}: ${
-              batch.length
-            } people in ${batchTime}ms`,
-          );
         }
 
-        // Mark sync job as complete
         await prisma.syncJob.update({
           where: { id: syncJob.id },
           data: {
             status: "completed",
             completedAt: new Date(),
-            processedRecords: processed,
+            processedRecords: processedDeals,
             createdRecords: created,
             updatedRecords: updated,
             errorCount: errors,
@@ -419,11 +384,12 @@ export async function POST(request: NextRequest) {
         await sendProgress({
           stage: "complete",
           message: "Sync completed successfully",
-          processed,
+          processed: processedDeals,
           total: deals.length,
           created,
           updated,
           errors,
+          jobId: syncJob.id,
         });
       } catch (error: any) {
         console.error("Pipedrive sync error:", error);
@@ -441,14 +407,12 @@ export async function POST(request: NextRequest) {
         await sendProgress({
           stage: "error",
           message: error.message || "Sync failed",
-          error: error.message,
         });
       } finally {
         await writer.close();
       }
     })();
 
-    // Return the stream immediately
     return new NextResponse(stream.readable, {
       headers: {
         "Content-Type": "text/event-stream",
@@ -465,9 +429,6 @@ export async function POST(request: NextRequest) {
   }
 }
 
-/**
- * GET endpoint to check sync status or cancel
- */
 export async function GET(request: NextRequest) {
   try {
     const session = await getServerSession(authOptions);
@@ -480,7 +441,6 @@ export async function GET(request: NextRequest) {
     const jobId = searchParams.get("jobId");
 
     if (action === "cancel" && jobId) {
-      // Request cancellation
       const { appRole } = await getCurrentUserWithRole();
       if (appRole !== "admin") {
         return NextResponse.json({ error: "Forbidden" }, { status: 403 });
@@ -497,7 +457,6 @@ export async function GET(request: NextRequest) {
       });
     }
 
-    // Get latest sync job
     const latestJob = await prisma.syncJob.findFirst({
       where: { type: "pipedrive_sync" },
       orderBy: { startedAt: "desc" },
