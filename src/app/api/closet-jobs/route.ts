@@ -2,6 +2,37 @@ import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { getCurrentUserWithRole } from "@/lib/authHelpers";
 
+const LEGACY_AREA_KEYS = [
+  "MASTER",
+  "GUEST",
+  "GARAGE",
+  "KITCHEN",
+  "WALL_UNIT",
+  "LAUNDRY",
+  "OTHER",
+] as const;
+
+function mapToLegacyArea(areas: string[]):
+  | "MASTER"
+  | "GUEST"
+  | "GARAGE"
+  | "KITCHEN"
+  | "WALL_UNIT"
+  | "LAUNDRY"
+  | "OTHER" {
+  const firstKnown = areas.find((item) =>
+    LEGACY_AREA_KEYS.includes(item as (typeof LEGACY_AREA_KEYS)[number])
+  );
+  return (firstKnown as
+    | "MASTER"
+    | "GUEST"
+    | "GARAGE"
+    | "KITCHEN"
+    | "WALL_UNIT"
+    | "LAUNDRY"
+    | "OTHER") || "OTHER";
+}
+
 // GET /api/closet-jobs - List all closet jobs
 export async function GET(request: NextRequest) {
   try {
@@ -61,15 +92,55 @@ export async function POST(request: NextRequest) {
       customerPhone,
       propertyAddress,
       area,
+      areas,
       installerId,
+      salesPersonId,
       notesSales,
     } = body;
 
+    const normalizedAreas = Array.from(
+      new Set(
+        (Array.isArray(areas) ? areas : [area])
+          .map((item) => (typeof item === "string" ? item.trim() : ""))
+          .filter(Boolean)
+      )
+    );
+
     // Validate required fields
-    if (!customerName || !propertyAddress || !area || !installerId) {
+    if (!customerName || !propertyAddress || !installerId) {
       return NextResponse.json(
         { error: "Missing required fields" },
-        { status: 400 },
+        { status: 400 }
+      );
+    }
+
+    if (normalizedAreas.length === 0) {
+      return NextResponse.json(
+        { error: "Missing required fields" },
+        { status: 400 }
+      );
+    }
+
+    const effectiveSalesPersonId = salesPersonId || user.id;
+
+    const assignedSalesPerson = await prisma.user.findFirst({
+      where: {
+        id: effectiveSalesPersonId,
+        active: true,
+        role: {
+          in: ["ADMIN", "SALES"],
+        },
+      },
+      select: {
+        id: true,
+        name: true,
+      },
+    });
+
+    if (!assignedSalesPerson) {
+      return NextResponse.json(
+        { error: "Selected sales person is invalid or inactive" },
+        { status: 400 }
       );
     }
 
@@ -85,20 +156,14 @@ export async function POST(request: NextRequest) {
       });
     }
 
-    // Get sales person's name for initials
-    const salesPerson = await prisma.user.findUnique({
-      where: { id: user.id },
-      select: { name: true },
-    });
-
     // Generate quote number using format
     const now = new Date();
     const format = settings.quoteNumberFormat;
 
     // Extract initials from sales person name
     let initials = "XX";
-    if (salesPerson?.name) {
-      const nameParts = salesPerson.name.trim().split(/\s+/);
+    if (assignedSalesPerson?.name) {
+      const nameParts = assignedSalesPerson.name.trim().split(/\s+/);
       if (nameParts.length >= 2) {
         initials = `${nameParts[0][0]}${
           nameParts[nameParts.length - 1][0]
@@ -147,10 +212,11 @@ export async function POST(request: NextRequest) {
         customerName,
         customerPhone,
         propertyAddress,
-        area,
+        area: mapToLegacyArea(normalizedAreas),
+        areas: normalizedAreas,
         installerId,
-        salesPersonId: user.id,
-        notesSales,
+        salesPersonId: assignedSalesPerson.id,
+        notesSales: notesSales?.trim() || null,
         status: "QUOTE",
         quoteStartedAt: new Date(),
       },

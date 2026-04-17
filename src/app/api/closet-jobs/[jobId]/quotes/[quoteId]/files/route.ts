@@ -7,6 +7,7 @@ import { supabaseAdmin } from "@/lib/supabase/server";
 
 const BUCKET_NAME = "closet-quotes";
 const MAX_FILE_SIZE = 10 * 1024 * 1024; // 10MB
+const MAX_FILES_PER_QUOTE = 30;
 const ALLOWED_TYPES = [
   "image/jpeg",
   "image/png",
@@ -35,7 +36,12 @@ export async function POST(
     // Verify quote exists
     const quote = await prisma.closetQuote.findUnique({
       where: { id: quoteId },
-      include: { closetJob: true },
+      include: {
+        closetJob: true,
+        files: {
+          select: { id: true },
+        },
+      },
     });
 
     if (!quote || quote.closetJobId !== jobId) {
@@ -54,10 +60,16 @@ export async function POST(
       return NextResponse.json({ error: "No files provided" }, { status: 400 });
     }
 
-    const uploadedFiles = [];
+    if (quote.files.length + files.length > MAX_FILES_PER_QUOTE) {
+      return NextResponse.json(
+        {
+          error: `This quote can have up to ${MAX_FILES_PER_QUOTE} images. You already have ${quote.files.length}.`,
+        },
+        { status: 400 }
+      );
+    }
 
     for (const file of files) {
-      // Validate file
       if (!ALLOWED_TYPES.includes(file.type)) {
         return NextResponse.json(
           {
@@ -75,46 +87,68 @@ export async function POST(
           { status: 400 }
         );
       }
+    }
 
-      // Generate unique file path
-      const timestamp = Date.now();
-      const sanitizedName = file.name.replace(/[^a-zA-Z0-9.-]/g, "_");
-      const filePath = `closet-jobs/${jobId}/quotes/${quoteId}/${timestamp}-${sanitizedName}`;
+    const uploadedFiles = [];
+    const uploadedFilePaths: string[] = [];
+    const createdDbFileIds: string[] = [];
 
-      // Upload to Supabase Storage
-      const fileBuffer = await file.arrayBuffer();
-      const { data, error } = await supabaseAdmin.storage
-        .from(BUCKET_NAME)
-        .upload(filePath, fileBuffer, {
-          contentType: file.type,
-          upsert: false,
+    try {
+      for (const file of files) {
+        // Generate unique file path
+        const timestamp = Date.now();
+        const sanitizedName = file.name.replace(/[^a-zA-Z0-9.-]/g, "_");
+        const filePath = `closet-jobs/${jobId}/quotes/${quoteId}/${timestamp}-${sanitizedName}`;
+
+        // Upload to Supabase Storage
+        const fileBuffer = await file.arrayBuffer();
+        const { error } = await supabaseAdmin.storage
+          .from(BUCKET_NAME)
+          .upload(filePath, fileBuffer, {
+            contentType: file.type,
+            upsert: false,
+          });
+
+        if (error) {
+          throw new Error(`Failed to upload ${file.name}: ${error.message}`);
+        }
+        uploadedFilePaths.push(filePath);
+
+        // Get public URL
+        const { data: urlData } = supabaseAdmin.storage
+          .from(BUCKET_NAME)
+          .getPublicUrl(filePath);
+
+        // Save to database
+        const savedFile = await prisma.closetQuoteFile.create({
+          data: {
+            closetQuoteId: quoteId,
+            fileUrl: urlData.publicUrl,
+            type: "3D_RENDER",
+            caption: file.name,
+            uploadedById: user.id,
+          },
         });
 
-      if (error) {
-        console.error("Supabase upload error:", error);
-        return NextResponse.json(
-          { error: `Failed to upload ${file.name}: ${error.message}` },
-          { status: 500 }
-        );
+        createdDbFileIds.push(savedFile.id);
+        uploadedFiles.push(savedFile);
+      }
+    } catch (uploadError: any) {
+      // Best-effort cleanup to keep upload behavior all-or-nothing.
+      if (createdDbFileIds.length > 0) {
+        await prisma.closetQuoteFile.deleteMany({
+          where: { id: { in: createdDbFileIds } },
+        });
       }
 
-      // Get public URL
-      const { data: urlData } = supabaseAdmin.storage
-        .from(BUCKET_NAME)
-        .getPublicUrl(filePath);
+      if (uploadedFilePaths.length > 0) {
+        await supabaseAdmin.storage.from(BUCKET_NAME).remove(uploadedFilePaths);
+      }
 
-      // Save to database
-      const savedFile = await prisma.closetQuoteFile.create({
-        data: {
-          closetQuoteId: quoteId,
-          fileUrl: urlData.publicUrl,
-          type: "3D_RENDER",
-          caption: file.name,
-          uploadedById: user.id,
-        },
-      });
-
-      uploadedFiles.push(savedFile);
+      return NextResponse.json(
+        { error: uploadError.message || "Failed to upload files" },
+        { status: 500 }
+      );
     }
 
     return NextResponse.json({ files: uploadedFiles }, { status: 201 });

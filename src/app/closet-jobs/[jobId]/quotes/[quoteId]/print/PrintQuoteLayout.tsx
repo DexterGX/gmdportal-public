@@ -4,6 +4,12 @@ import { useEffect } from "react";
 
 interface PrintQuoteLayoutProps {
   autoPrint?: boolean;
+  company: {
+    logoUrl: string;
+    companyName: string;
+    phoneNumber?: string;
+    address?: string;
+  };
   job: {
     quoteNumber: string;
     propertyAddress: string;
@@ -27,6 +33,7 @@ interface PrintQuoteLayoutProps {
 
 export default function PrintQuoteLayout({
   autoPrint = false,
+  company,
   job,
   quote,
   files,
@@ -71,16 +78,19 @@ export default function PrintQuoteLayout({
           {/* Left: Company Logo and Info */}
           <div className="flex-1">
             <div className="mb-3 print:mb-2">
-              {/* Replace with actual logo path */}
-              <div className="w-32 h-16 bg-gray-200 flex items-center justify-center rounded print:w-24 print:h-12">
-                <span className="text-xs text-gray-600">GM Design Logo</span>
-              </div>
+              {/* eslint-disable-next-line @next/next/no-img-element */}
+              <img
+                src={company.logoUrl}
+                alt={`${company.companyName} logo`}
+                className="w-32 h-16 object-contain print:w-24 print:h-12"
+              />
             </div>
             <div className="text-sm space-y-1 print:space-y-0">
-              <p className="font-bold text-lg print:text-base">GM Design</p>
-              <p className="print:text-xs">Custom Closets & Cabinetry</p>
-              <p className="print:text-xs">Miami, FL</p>
-              <p className="print:text-xs">Phone: (305) XXX-XXXX</p>
+              <p className="font-bold text-lg print:text-base">{company.companyName}</p>
+              {company.address && <p className="print:text-xs">{company.address}</p>}
+              {company.phoneNumber && (
+                <p className="print:text-xs">Phone: {company.phoneNumber}</p>
+              )}
             </div>
           </div>
 
@@ -212,7 +222,10 @@ export default function PrintQuoteLayout({
 
         {/* Footer */}
         <div className="mt-12 pt-6 border-t border-gray-300 text-center text-sm text-gray-600 print:mt-6 print:pt-3 print:text-xs">
-          <p>Thank you for considering GM Design for your closet project!</p>
+          <p>
+            Thank you for considering {company.companyName} for your closet
+            project!
+          </p>
           <p className="mt-2 print:mt-1">
             For questions or to proceed with this quote, please contact your
             salesperson.

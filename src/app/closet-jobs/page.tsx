@@ -1,6 +1,6 @@
 import { redirect } from "next/navigation";
 import { getCurrentUserWithRole } from "@/lib/authHelpers";
-import { getInstallers } from "@/lib/users";
+import { getInstallers, getSalesAssignableUsers } from "@/lib/users";
 import ClosetJobsClient from "./ClosetJobsClient";
 
 export default async function ClosetJobsPage() {
@@ -15,14 +15,18 @@ export default async function ClosetJobsPage() {
     redirect("/dashboard");
   }
 
-  // Fetch installers using shared helper
-  const installers = await getInstallers();
+  // Fetch users for assignment selectors
+  const [installers, salesUsers] = await Promise.all([
+    getInstallers(),
+    getSalesAssignableUsers(),
+  ]);
 
   return (
     <ClosetJobsClient
       userRole={appRole}
       userId={user.id}
       installers={installers}
+      salesUsers={salesUsers}
     />
   );
 }

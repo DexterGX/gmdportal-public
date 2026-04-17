@@ -48,10 +48,15 @@ export default async function PrintQuotePage(props: PrintQuotePageProps) {
   });
 
   // Fetch user details for sales person
-  const salesPerson = await prisma.user.findUnique({
-    where: { id: quote.closetJob.salesPersonId },
-    select: { name: true, email: true },
-  });
+  const [salesPerson, companySettings] = await Promise.all([
+    prisma.user.findUnique({
+      where: { id: quote.closetJob.salesPersonId },
+      select: { name: true, email: true },
+    }),
+    prisma.companyDocumentSettings.findFirst({
+      orderBy: { updatedAt: "desc" },
+    }),
+  ]);
 
   // Get area label
   const getAreaLabel = (area: string) => {
@@ -67,11 +72,47 @@ export default async function PrintQuotePage(props: PrintQuotePageProps) {
     return labels[area] || area;
   };
 
+  const getAreasLabel = (areas?: string[], fallbackArea?: string) => {
+    const normalized = (areas || []).filter(Boolean);
+    if (normalized.length === 0) {
+      return fallbackArea ? getAreaLabel(fallbackArea) : "Other";
+    }
+
+    return normalized.map((item) => getAreaLabel(item)).join(", ");
+  };
+
+  const getAreasFromNotes = (notes?: string | null) => {
+    if (!notes) {
+      return [];
+    }
+
+    const line = notes
+      .split("\n")
+      .find((item) => item.trim().toLowerCase().startsWith("areas:"));
+
+    if (!line) {
+      return [];
+    }
+
+    return line
+      .split(":")
+      .slice(1)
+      .join(":")
+      .split(",")
+      .map((item) => item.trim())
+      .filter(Boolean);
+  };
+
   // Create DTOs without installerCost
   const jobDTO = {
     quoteNumber: quote.closetJob.quoteNumber,
     propertyAddress: quote.closetJob.propertyAddress,
-    areaLabel: getAreaLabel(quote.closetJob.area),
+    areaLabel: getAreasLabel(
+      quote.closetJob.areas?.length
+        ? quote.closetJob.areas
+        : getAreasFromNotes(quote.closetJob.notesSales),
+      quote.closetJob.area
+    ),
     customerName: quote.closetJob.customerName,
     salesPersonName: salesPerson?.name || "GM Design",
     salesPersonEmail: salesPerson?.email || "",
@@ -106,6 +147,12 @@ export default async function PrintQuotePage(props: PrintQuotePageProps) {
       job={jobDTO}
       quote={quoteDTO}
       files={filesDTO}
+      company={{
+        logoUrl: companySettings?.logoUrl || "/logo.svg",
+        companyName: companySettings?.companyName || "GM Design",
+        phoneNumber: companySettings?.phoneNumber || "",
+        address: companySettings?.address || "",
+      }}
     />
   );
 }

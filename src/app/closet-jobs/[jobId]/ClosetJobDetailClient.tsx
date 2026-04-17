@@ -10,6 +10,7 @@ interface ClosetJobDetail {
   customerPhone?: string | null;
   propertyAddress: string;
   area: string;
+  areas?: string[];
   status: string;
   createdAt: string;
   notesSales?: string | null;
@@ -70,6 +71,37 @@ export default function ClosetJobDetailClient({
     return labels[area] || area;
   };
 
+  const getAreasLabel = (areas?: string[], fallbackArea?: string) => {
+    const normalized = (areas || []).filter(Boolean);
+    if (normalized.length === 0) {
+      return fallbackArea ? getAreaLabel(fallbackArea) : "Other";
+    }
+
+    return normalized.map((item) => getAreaLabel(item)).join(", ");
+  };
+
+  const getAreasFromNotes = (notes?: string | null) => {
+    if (!notes) {
+      return [];
+    }
+
+    const line = notes
+      .split("\n")
+      .find((item) => item.trim().toLowerCase().startsWith("areas:"));
+
+    if (!line) {
+      return [];
+    }
+
+    return line
+      .split(":")
+      .slice(1)
+      .join(":")
+      .split(",")
+      .map((item) => item.trim())
+      .filter(Boolean);
+  };
+
   const getStatusBadge = (status: string) => {
     const styles: Record<string, string> = {
       QUOTE: "bg-blue-100 text-blue-800",
@@ -105,8 +137,8 @@ export default function ClosetJobDetailClient({
         >
           ← Back to Jobs
         </Link>
-        <div className="flex justify-between items-center">
-          <h1 className="text-3xl font-bold">{job.quoteNumber}</h1>
+        <div className="flex flex-col gap-3 sm:flex-row sm:justify-between sm:items-center">
+          <h1 className="text-2xl sm:text-3xl font-bold break-words">{job.quoteNumber}</h1>
           {getStatusBadge(job.status)}
         </div>
       </div>
@@ -114,7 +146,7 @@ export default function ClosetJobDetailClient({
       {/* Job Information */}
       <div className="bg-white rounded-lg shadow p-6 mb-6">
         <h2 className="text-xl font-semibold mb-4">Job Information</h2>
-        <div className="grid grid-cols-2 gap-4">
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
           <div>
             <p className="text-sm text-gray-500">Customer</p>
             <p className="font-medium">{job.customerName}</p>
@@ -124,11 +156,16 @@ export default function ClosetJobDetailClient({
           </div>
           <div>
             <p className="text-sm text-gray-500">Property Address</p>
-            <p className="font-medium">{job.propertyAddress}</p>
+            <p className="font-medium break-words">{job.propertyAddress}</p>
           </div>
           <div>
             <p className="text-sm text-gray-500">Area</p>
-            <p className="font-medium">{getAreaLabel(job.area)}</p>
+            <p className="font-medium">
+              {getAreasLabel(
+                job.areas?.length ? job.areas : getAreasFromNotes(job.notesSales),
+                job.area
+              )}
+            </p>
           </div>
           <div>
             <p className="text-sm text-gray-500">Created</p>
@@ -161,14 +198,14 @@ export default function ClosetJobDetailClient({
 
       {/* Quotes Section */}
       <div className="bg-white rounded-lg shadow p-6">
-        <div className="flex justify-between items-center mb-4">
+        <div className="flex flex-col gap-3 sm:flex-row sm:justify-between sm:items-center mb-4">
           <h2 className="text-xl font-semibold">
             Quotes ({job.quotes.length})
           </h2>
           {canCreateQuote && (
             <Link
               href={`/closet-jobs/${job.id}/new-quote`}
-              className="px-4 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700"
+              className="px-4 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700 text-center"
             >
               Submit New Quote
             </Link>
@@ -186,9 +223,9 @@ export default function ClosetJobDetailClient({
                 key={quote.id}
                 className="border border-gray-200 rounded-lg p-4 hover:shadow-md transition-shadow"
               >
-                <div className="flex justify-between items-start mb-3">
+                <div className="flex flex-col gap-2 sm:flex-row sm:justify-between sm:items-start mb-3">
                   <div>
-                    <h3 className="font-semibold text-lg">{quote.quoteCode}</h3>
+                    <h3 className="font-semibold text-lg break-words">{quote.quoteCode}</h3>
                     <p className="text-sm text-gray-600">
                       Color: {quote.color}
                     </p>
@@ -201,7 +238,7 @@ export default function ClosetJobDetailClient({
                   {getStatusBadge(quote.status)}
                 </div>
 
-                <div className="grid grid-cols-3 gap-4 mb-3">
+                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4 mb-3">
                   {/* ADMIN sees installer cost, GM factor, and final price */}
                   {userRole === "admin" && (
                     <>
@@ -277,7 +314,7 @@ export default function ClosetJobDetailClient({
                     <p className="text-xs text-gray-500 mb-2">
                       3D Renders ({quote.files.length})
                     </p>
-                    <div className="grid grid-cols-4 gap-2">
+                    <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-2">
                       {quote.files.slice(0, 4).map((file) => (
                         <a
                           key={file.id}
@@ -297,7 +334,7 @@ export default function ClosetJobDetailClient({
                   </div>
                 )}
 
-                <div className="flex space-x-2">
+                <div className="flex flex-wrap gap-2">
                   {canReviewQuotes && (
                     <Link
                       href={`/closet-jobs/${job.id}/quotes/${quote.id}`}

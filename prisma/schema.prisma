@@ -207,6 +207,7 @@ model ClosetJob {
   installerId     String
   propertyAddress String
   area            ClosetAreaType
+  areas           String[]        @default([])
   status          ClosetJobStatus @default(QUOTE)
   createdAt       DateTime        @default(now())
   quoteStartedAt  DateTime        @default(now())

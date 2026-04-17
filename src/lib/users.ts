@@ -24,3 +24,27 @@ export async function getInstallers() {
     },
   });
 }
+
+/**
+ * Shared helper to fetch all active users that can be assigned as sales person.
+ */
+export async function getSalesAssignableUsers() {
+  return prisma.user.findMany({
+    where: {
+      role: {
+        in: ["ADMIN", "SALES"],
+      },
+      active: true,
+    },
+    select: {
+      id: true,
+      name: true,
+      email: true,
+      role: true,
+      active: true,
+    },
+    orderBy: {
+      name: "asc",
+    },
+  });
+}
