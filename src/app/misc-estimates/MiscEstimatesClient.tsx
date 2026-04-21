@@ -239,7 +239,9 @@ export default function MiscEstimatesClient({
   }
 
   useEffect(() => {
-    const estimateId = searchParams.get("estimateId")?.trim();
+    const rawEstimateId = searchParams.get("estimateId");
+    if (!rawEstimateId) return;
+    const estimateId = rawEstimateId.trim();
     if (!estimateId) return;
 
     async function loadEstimate() {
