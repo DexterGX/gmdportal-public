@@ -498,7 +498,14 @@ export async function GET(request: NextRequest) {
         meta,
         companyInfo,
       );
-      const pdfBlob = new Blob([pdfBytes], { type: "application/pdf" });
+      const pdfBytesCopy = Uint8Array.from(pdfBytes);
+      const pdfArrayBuffer = pdfBytesCopy.buffer.slice(
+        pdfBytesCopy.byteOffset,
+        pdfBytesCopy.byteOffset + pdfBytesCopy.byteLength,
+      );
+      const pdfBlob = new Blob([pdfArrayBuffer], {
+        type: "application/pdf",
+      });
       return new NextResponse(pdfBlob, {
         status: 200,
         headers: {
