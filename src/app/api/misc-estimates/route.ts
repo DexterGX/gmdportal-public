@@ -498,7 +498,8 @@ export async function GET(request: NextRequest) {
         meta,
         companyInfo,
       );
-      return new NextResponse(pdfBytes, {
+      const pdfBlob = new Blob([pdfBytes], { type: "application/pdf" });
+      return new NextResponse(pdfBlob, {
         status: 200,
         headers: {
           "Content-Type": "application/pdf",
