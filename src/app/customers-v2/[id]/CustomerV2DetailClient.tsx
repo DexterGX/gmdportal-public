@@ -463,10 +463,15 @@ export default function CustomerV2DetailClient({
           </div>
           <div className="divide-y divide-gray-200 dark:divide-gray-700">
             {customer.jobs.map((job) => (
-              <div
+              <Link
                 key={job.id}
+                href={
+                  searchParams.toString()
+                    ? `/customers-v2/${customer.id}/jobs/${job.id}?${searchParams.toString()}`
+                    : `/customers-v2/${customer.id}/jobs/${job.id}`
+                }
                 id={`job-${job.id}`}
-                className="p-4 hover:bg-gray-50 dark:hover:bg-gray-900/30 transition-colors"
+                className="block p-4 hover:bg-gray-50 dark:hover:bg-gray-900/30 transition-colors"
               >
                 <div className="flex items-start justify-between gap-3 flex-wrap">
                   <div className="flex-1 min-w-0">
@@ -476,7 +481,7 @@ export default function CustomerV2DetailClient({
                         <Hash className="w-3 h-3" />
                         {job.jobNumber}
                       </span>
-                      <span className="font-medium text-gray-900 dark:text-gray-100 truncate">
+                      <span className="font-medium text-gray-900 dark:text-gray-100 truncate hover:text-teal-600 dark:hover:text-teal-400">
                         {job.jobName}
                       </span>
                       {job.jobType && (
@@ -491,14 +496,21 @@ export default function CustomerV2DetailClient({
                     {job.propertyAddress && (
                       <div className="flex items-center gap-1 mt-1 text-xs text-gray-500 dark:text-gray-400">
                         <MapPin className="w-3 h-3 flex-shrink-0" />
-                        <a
-                          href={`https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(job.propertyAddress)}`}
-                          target="_blank"
-                          rel="noopener noreferrer"
-                          className="hover:text-teal-600 dark:hover:text-teal-400 hover:underline"
+                        <button
+                          type="button"
+                          onClick={(event) => {
+                            event.preventDefault();
+                            event.stopPropagation();
+                            window.open(
+                              `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(job.propertyAddress!)}`,
+                              "_blank",
+                              "noopener,noreferrer",
+                            );
+                          }}
+                          className="hover:text-teal-600 dark:hover:text-teal-400 hover:underline text-left"
                         >
                           {job.propertyAddress}
-                        </a>
+                        </button>
                       </div>
                     )}
 
@@ -532,40 +544,61 @@ export default function CustomerV2DetailClient({
                     {/* External links */}
                     <div className="flex flex-wrap gap-3 mt-2">
                       {job.quickbooksUrl && (
-                        <a
-                          href={job.quickbooksUrl}
-                          target="_blank"
-                          rel="noopener noreferrer"
+                        <button
+                          type="button"
+                          onClick={(event) => {
+                            event.preventDefault();
+                            event.stopPropagation();
+                            window.open(
+                              job.quickbooksUrl!,
+                              "_blank",
+                              "noopener,noreferrer",
+                            );
+                          }}
                           className="inline-flex items-center gap-1 text-xs text-green-600 dark:text-green-400 hover:underline"
                         >
                           <BookOpen className="w-3 h-3" />
                           QuickBooks
                           <ExternalLink className="w-3 h-3" />
-                        </a>
+                        </button>
                       )}
                       {!job.quickbooksUrl && job.quickbooksJobId && (
-                        <a
-                          href={`https://qbo.intuit.com/app/customerdetail?nameId=${job.quickbooksJobId}`}
-                          target="_blank"
-                          rel="noopener noreferrer"
+                        <button
+                          type="button"
+                          onClick={(event) => {
+                            event.preventDefault();
+                            event.stopPropagation();
+                            window.open(
+                              `https://qbo.intuit.com/app/customerdetail?nameId=${job.quickbooksJobId}`,
+                              "_blank",
+                              "noopener,noreferrer",
+                            );
+                          }}
                           className="inline-flex items-center gap-1 text-xs text-green-600 dark:text-green-400 hover:underline"
                         >
                           <BookOpen className="w-3 h-3" />
                           QuickBooks
                           <ExternalLink className="w-3 h-3" />
-                        </a>
+                        </button>
                       )}
                       {job.companyCamUrl && (
-                        <a
-                          href={job.companyCamUrl}
-                          target="_blank"
-                          rel="noopener noreferrer"
+                        <button
+                          type="button"
+                          onClick={(event) => {
+                            event.preventDefault();
+                            event.stopPropagation();
+                            window.open(
+                              job.companyCamUrl!,
+                              "_blank",
+                              "noopener,noreferrer",
+                            );
+                          }}
                           className="inline-flex items-center gap-1 text-xs text-blue-600 dark:text-blue-400 hover:underline"
                         >
                           <Camera className="w-3 h-3" />
                           CompanyCam
                           <ExternalLink className="w-3 h-3" />
-                        </a>
+                        </button>
                       )}
                     </div>
 
@@ -585,7 +618,7 @@ export default function CustomerV2DetailClient({
                     {formatJobStatusLabel(job.status)}
                   </span>
                 </div>
-              </div>
+              </Link>
             ))}
           </div>
         </div>

@@ -17,6 +17,7 @@ import {
   Shirt,
   Users,
   Package,
+  FileText,
 } from "lucide-react";
 import { UserCheck } from "lucide-react";
 import type { Role } from "@prisma/client"; // Prisma enum
@@ -78,7 +79,9 @@ export function mapDbRoleToAppRole(dbRole: Role | null | undefined): AppRole {
   }
 }
 
-export function mapDbRolesToAppRoles(dbRoles: Role[] | null | undefined): AppRole[] {
+export function mapDbRolesToAppRoles(
+  dbRoles: Role[] | null | undefined,
+): AppRole[] {
   if (!Array.isArray(dbRoles) || dbRoles.length === 0) {
     return [];
   }
@@ -115,7 +118,8 @@ export type ProgramId =
   | "customers"
   | "accessories"
   | "samplesRequest"
-  | "customersV2";
+  | "customersV2"
+  | "miscEstimates";
 
 export interface ProgramConfig {
   id: ProgramId;
@@ -376,6 +380,27 @@ export const programs: ProgramConfig[] = [
     navItems: [
       { icon: Package, name: "Accessories", path: "/accessories" },
       { icon: ListIcon, name: "History Log", path: "/accessories/history" },
+    ],
+    othersItems: [],
+  },
+  {
+    id: "miscEstimates",
+    name: "Miscellaneous Estimate",
+    basePath: "/misc-estimates",
+    description:
+      "Build and save miscellaneous estimates linked to client jobs.",
+    allowedRoles: ["admin", "sales", "office"],
+    navItems: [
+      {
+        icon: FileText,
+        name: "New Estimate",
+        path: "/misc-estimates",
+      },
+      {
+        icon: FileText,
+        name: "Saved Estimates",
+        path: "/misc-estimates/saved",
+      },
     ],
     othersItems: [],
   },

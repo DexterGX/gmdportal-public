@@ -52,7 +52,11 @@ export async function getCurrentUserWithRole() {
   }
 
   const multiRoles = Array.from(
-    new Set((dbUser.roles || []).map((value) => normalizeRoleKey(value)).filter(Boolean))
+    new Set(
+      ((dbUser.roles as string[]) || [])
+        .map((value: string) => normalizeRoleKey(value))
+        .filter(Boolean),
+    ),
   );
   const fallbackRole = mapDbRoleToAppRole(dbUser.role);
   const appRoles = multiRoles.length
@@ -62,8 +66,13 @@ export async function getCurrentUserWithRole() {
       : [fallbackRole];
 
   const knownRoles = appRoles.filter((value): value is AppRole =>
-    APP_ROLES.includes(value as AppRole)
+    APP_ROLES.includes(value as AppRole),
   );
   const appRole = getPrimaryAppRoleFromRoles(knownRoles);
-  return { user: dbUser, appRole, appRoles, isActive: dbUser.active };
+  return {
+    user: dbUser,
+    appRole,
+    appRoles: appRoles as string[],
+    isActive: dbUser.active,
+  };
 }
