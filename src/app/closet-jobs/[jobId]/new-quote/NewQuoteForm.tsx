@@ -62,11 +62,11 @@ export default function NewQuoteForm({
     const files = Array.from(e.target.files || []);
 
     const invalidTypeFiles = files.filter(
-      (file) => !ALLOWED_IMAGE_TYPES.includes(file.type)
+      (file) => !ALLOWED_IMAGE_TYPES.includes(file.type),
     );
     if (invalidTypeFiles.length > 0) {
       alert(
-        "Some files were skipped because they are not supported. Allowed formats: JPG, JPEG, PNG, WebP, GIF."
+        "Some files were skipped because they are not supported. Allowed formats: JPG, JPEG, PNG, WebP, GIF.",
       );
     }
 
@@ -77,7 +77,7 @@ export default function NewQuoteForm({
 
     const validFiles = files.filter(
       (file) =>
-        ALLOWED_IMAGE_TYPES.includes(file.type) && file.size <= MAX_FILE_SIZE
+        ALLOWED_IMAGE_TYPES.includes(file.type) && file.size <= MAX_FILE_SIZE,
     );
 
     const availableSlots = MAX_IMAGES - selectedFiles.length;
@@ -90,7 +90,7 @@ export default function NewQuoteForm({
     const filesToAdd = validFiles.slice(0, availableSlots);
     if (validFiles.length > filesToAdd.length) {
       alert(
-        `Only ${MAX_IMAGES} images are allowed. Extra images were not added.`
+        `Only ${MAX_IMAGES} images are allowed. Extra images were not added.`,
       );
     }
 
@@ -118,6 +118,85 @@ export default function NewQuoteForm({
     setSelectedFiles(newFiles);
   };
 
+  const parseErrorMessage = async (
+    response: Response,
+    fallback: string,
+  ): Promise<string> => {
+    const raw = await response.text();
+
+    if (!raw) return fallback;
+
+    try {
+      const parsed = JSON.parse(raw) as { error?: string; message?: string };
+      return parsed.error || parsed.message || fallback;
+    } catch {
+      // Handles non-JSON responses (e.g., 413/proxy HTML) gracefully.
+      return raw.length > 180 ? `${raw.slice(0, 180)}...` : raw;
+    }
+  };
+
+  // Compress an image to max 1920px wide at 85% JPEG quality before uploading.
+  // Keeps each file well under Vercel's ~4.5 MB body limit.
+  const compressImage = (file: File): Promise<File> => {
+    return new Promise((resolve) => {
+      // GIFs can't be re-encoded through canvas; pass through unchanged.
+      if (file.type === "image/gif") {
+        resolve(file);
+        return;
+      }
+
+      const img = new window.Image();
+      const objectUrl = URL.createObjectURL(file);
+
+      img.onload = () => {
+        const MAX_WIDTH = 1920;
+        let { width, height } = img;
+
+        if (width > MAX_WIDTH) {
+          height = Math.round((height * MAX_WIDTH) / width);
+          width = MAX_WIDTH;
+        }
+
+        const canvas = document.createElement("canvas");
+        canvas.width = width;
+        canvas.height = height;
+        const ctx = canvas.getContext("2d");
+
+        if (!ctx) {
+          URL.revokeObjectURL(objectUrl);
+          resolve(file);
+          return;
+        }
+
+        ctx.drawImage(img, 0, 0, width, height);
+        URL.revokeObjectURL(objectUrl);
+
+        canvas.toBlob(
+          (blob) => {
+            if (!blob) {
+              resolve(file);
+              return;
+            }
+            // Use .jpg extension regardless of original name for clarity.
+            const baseName = file.name.replace(/\.[^.]+$/, "");
+            resolve(
+              new File([blob], `${baseName}.jpg`, { type: "image/jpeg" }),
+            );
+          },
+          "image/jpeg",
+          0.85,
+        );
+      };
+
+      img.onerror = () => {
+        URL.revokeObjectURL(objectUrl);
+        resolve(file); // fall back to original on error
+      };
+
+      img.src = objectUrl;
+    });
+  };
+
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setSubmitting(true);
@@ -128,6 +207,8 @@ export default function NewQuoteForm({
       return;
     }
 
+    let createdQuoteId: string | null = null;
+
     try {
       // Step 1: Create the quote
       const quoteResponse = await fetch(`/api/closet-jobs/${job.id}/quotes`, {
@@ -137,40 +218,41 @@ export default function NewQuoteForm({
       });
 
       if (!quoteResponse.ok) {
-        const error = await quoteResponse.json();
-        throw new Error(error.error || "Failed to create quote");
+        const message = await parseErrorMessage(
+          quoteResponse,
+          "Failed to create quote",
+        );
+        throw new Error(message);
       }
 
-      const { id: quoteId } = await quoteResponse.json();
+      const quoteJson = (await quoteResponse.json()) as { id?: string };
+      if (!quoteJson?.id) {
+        throw new Error("Quote created but response is missing quote id");
+      }
+      createdQuoteId = quoteJson.id;
 
-      // Step 2: Upload files if any selected
-      if (selectedFiles.length > 0) {
+      // Step 2: Compress and upload files one at a time to stay under
+      // Vercel's ~4.5 MB body limit per request.
+      for (const { file } of selectedFiles) {
+        const compressed = await compressImage(file);
+
         const uploadData = new FormData();
-        selectedFiles.forEach(({ file }) => {
-          uploadData.append("files", file);
-        });
+        uploadData.append("files", compressed);
 
         const filesResponse = await fetch(
-          `/api/closet-jobs/${job.id}/quotes/${quoteId}/files`,
+          `/api/closet-jobs/${job.id}/quotes/${createdQuoteId}/files`,
           {
             method: "POST",
             body: uploadData,
-          }
+          },
         );
 
         if (!filesResponse.ok) {
-          const error = await filesResponse.json();
-          console.error("File upload error, rolling back quote:", error);
-
-          // Enforce all-or-nothing behavior: if image upload fails, delete the quote.
-          await fetch(`/api/closet-jobs/${job.id}/quotes/${quoteId}`, {
-            method: "DELETE",
-          });
-
-          throw new Error(
-            error.error ||
-              "Image upload failed, so the quote was not submitted."
+          const message = await parseErrorMessage(
+            filesResponse,
+            "Image upload failed",
           );
+          throw new Error(message);
         }
       }
 
@@ -180,8 +262,21 @@ export default function NewQuoteForm({
       // Navigate to job detail
       router.push(`/closet-jobs/${job.id}`);
     } catch (error: any) {
+      // All-or-nothing: if quote was created and anything failed afterward, roll it back.
+      if (createdQuoteId) {
+        try {
+          await fetch(`/api/closet-jobs/${job.id}/quotes/${createdQuoteId}`, {
+            method: "DELETE",
+          });
+        } catch (rollbackError) {
+          console.error("Rollback failed after submit error:", rollbackError);
+        }
+      }
+
       console.error("Error submitting quote:", error);
-      alert(`Failed to submit quote: ${error.message}`);
+      alert(
+        `Failed to submit quote: ${error?.message || "Unknown error"}${createdQuoteId ? " (quote was rolled back)" : ""}`,
+      );
       setSubmitting(false);
     }
   };
@@ -301,7 +396,7 @@ export default function NewQuoteForm({
               <input
                 ref={fileInputRef}
                 type="file"
-                 accept=".jpg,.jpeg,.png,.webp,.gif,image/jpeg,image/png,image/webp,image/gif"
+                accept=".jpg,.jpeg,.png,.webp,.gif,image/jpeg,image/png,image/webp,image/gif"
                 multiple
                 onChange={handleFileSelect}
                 className="hidden"
