@@ -330,6 +330,74 @@ body,
     border-radius: 0 !important;
   }
 
+  /* Misc estimates print document rules */
+  .misc-estimate-print {
+    color: #000 !important;
+    font-size: 10pt !important;
+    -webkit-print-color-adjust: exact !important;
+    print-color-adjust: exact !important;
+  }
+
+  .misc-estimate-print,
+  .misc-estimate-print * {
+    color: #000 !important;
+    border-color: #000 !important;
+  }
+
+  .misc-estimate-print h1 {
+    font-size: 16pt !important;
+    margin-bottom: 1.5mm !important;
+  }
+
+  .misc-estimate-print p {
+    margin: 0 0 1mm 0 !important;
+    line-height: 1.2 !important;
+  }
+
+  .misc-estimate-print input,
+  .misc-estimate-print select,
+  .misc-estimate-print textarea {
+    border: 1px solid #c5c5c5 !important;
+    background: #fff !important;
+    color: #000 !important;
+    padding: 1.5mm 2mm !important;
+    font-size: 9pt !important;
+  }
+
+  .misc-estimate-print .misc-print-block {
+    break-inside: avoid;
+    page-break-inside: avoid;
+    margin-bottom: 1.2mm !important;
+    box-shadow: none !important;
+  }
+
+  .misc-estimate-print table {
+    width: 100% !important;
+    table-layout: fixed !important;
+    font-size: 8.5pt !important;
+  }
+
+  .misc-estimate-print th,
+  .misc-estimate-print td {
+    white-space: normal !important;
+    word-break: break-word;
+    vertical-align: middle;
+  }
+
+  .misc-estimate-print th {
+    background: #d1d5db !important;
+    font-weight: 700 !important;
+  }
+
+  .misc-estimate-print .misc-print-hide {
+    display: none !important;
+  }
+
+  .misc-estimate-print .misc-print-flow {
+    break-inside: auto !important;
+    page-break-inside: auto !important;
+  }
+
   /* Ensure readable text */
   h1,
   h2,
