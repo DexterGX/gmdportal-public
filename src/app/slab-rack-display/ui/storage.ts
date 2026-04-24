@@ -483,6 +483,7 @@ export const exitSlab = (
     type: "exit",
     ...buildHistorySnapshot(slab),
     fromRack: slab.rackId.toUpperCase(),
+    toRack: "EXIT",
     exitNote: exitNote?.trim() ? exitNote.trim() : undefined,
     userName,
     timestamp: new Date().toLocaleString(),

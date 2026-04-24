@@ -80,6 +80,9 @@ export default function SlabActions({
   const [fromRackId, setFromRackId] = useState<string>("");
   const [moveRackId, setMoveRackId] = useState<string>("");
   const [exitNote, setExitNote] = useState("");
+  const [exitSlabIdSearch, setExitSlabIdSearch] = useState("");
+  const [exitScannerIdSearch, setExitScannerIdSearch] = useState("");
+  const [activeExitSearchField, setActiveExitSearchField] = useState<"slabId" | "scannerId" | null>(null);
   const [clientSuggestions, setClientSuggestions] = useState<string[]>([]);
   const [slabSuggestions, setSlabSuggestions] = useState<string[]>([]);
   const [slabSearchTerm, setSlabSearchTerm] = useState("");
@@ -441,15 +444,33 @@ export default function SlabActions({
       ) {
         setShowSlabDropdown(false);
       }
+      setActiveExitSearchField(null);
     };
     document.addEventListener("mousedown", handleClickOutside);
     return () => document.removeEventListener("mousedown", handleClickOutside);
   }, []);
 
   const slabOptions = useMemo(() => {
-    const filtered = fromRackId
-      ? state.slabs.filter((slab) => slab.rackId === fromRackId)
-      : state.slabs;
+    // When searching by ID/scanner, show all slabs; otherwise filter by rack if selected
+    let filtered = state.slabs;
+    if (fromRackId && !exitSlabIdSearch.trim() && !exitScannerIdSearch.trim()) {
+      filtered = state.slabs.filter((slab) => slab.rackId === fromRackId);
+    }
+
+    // Apply exit search filters if in exit action
+    if (action === "exit") {
+      if (exitSlabIdSearch.trim()) {
+        filtered = filtered.filter((slab) =>
+          slab.id.toLowerCase().includes(exitSlabIdSearch.toLowerCase())
+        );
+      }
+      if (exitScannerIdSearch.trim()) {
+        filtered = filtered.filter((slab) =>
+          slab.scannerId.toLowerCase().includes(exitScannerIdSearch.toLowerCase())
+        );
+      }
+    }
+
     return filtered.map((slab) => {
       const { clientName } = splitClientName(slab.clientName);
       return {
@@ -457,7 +478,22 @@ export default function SlabActions({
         label: `${slab.name} (${clientName}) - ${slab.rackId.toUpperCase()}`,
       };
     });
-  }, [state.slabs, fromRackId]);
+  }, [state.slabs, fromRackId, action, exitSlabIdSearch, exitScannerIdSearch]);
+
+  const handleExitSlabSelect = (slabId: string) => {
+    if (!slabId) return;
+    const foundSlab = state.slabs.find((s) => s.id === slabId);
+    if (foundSlab) {
+      setFromRackId(foundSlab.rackId);
+      // Force the slab selection immediately after rack is set
+      setTimeout(() => {
+        setSelectedSlabId(foundSlab.id);
+      }, 0);
+      setExitSlabIdSearch("");
+      setExitScannerIdSearch("");
+      setActiveExitSearchField(null);
+    }
+  };
 
   const resetForm = () => {
     setClientSearchTerm("");
@@ -499,6 +535,9 @@ export default function SlabActions({
     setFromRackId("");
     setMoveRackId("");
     setExitNote("");
+    setExitSlabIdSearch("");
+    setExitScannerIdSearch("");
+    setActiveExitSearchField(null);
     setConfirmOpen(false);
     setConfirmMessage("");
     setConfirmPlan([]);
@@ -771,6 +810,12 @@ export default function SlabActions({
   const handleExit = () => {
     if (!fromRackId || !selectedSlabId) {
       const message = "Select a rack and slab before exiting.";
+      setActionError(message);
+      pushNotification("error", message);
+      return;
+    }
+    if (!exitNote.trim()) {
+      const message = "Exit notes are required.";
       setActionError(message);
       pushNotification("error", message);
       return;
@@ -2060,6 +2105,70 @@ export default function SlabActions({
             {action === "exit" && (
               <div className="mt-4 space-y-4">
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                  <div className="relative">
+                    <label className="text-xs font-medium text-gray-500">
+                      Search by Slab ID
+                    </label>
+                    <input
+                      type="text"
+                      value={exitSlabIdSearch}
+                      onChange={(event) => setExitSlabIdSearch(event.target.value)}
+                      onFocus={() => setActiveExitSearchField("slabId")}
+                      onBlur={() => setTimeout(() => setActiveExitSearchField(null), 150)}
+                      placeholder="e.g. slab-1001"
+                      className="mt-1 w-full rounded-lg border border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-800 px-3 py-2 text-sm"
+                    />
+                    {activeExitSearchField === "slabId" && exitSlabIdSearch.trim() && slabOptions.length > 0 && (
+                      <div className="absolute top-full left-0 right-0 mt-1 z-10 rounded-lg border border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-800 shadow-lg max-h-48 overflow-y-auto">
+                        {slabOptions.map((slab) => (
+                          <button
+                            key={slab.id}
+                            type="button"
+                            onMouseDown={(e) => {
+                              e.preventDefault();
+                              handleExitSlabSelect(slab.id);
+                            }}
+                            className="w-full text-left px-3 py-2 text-sm text-gray-900 dark:text-gray-100 hover:bg-gray-100 dark:hover:bg-gray-700 first:rounded-t-lg last:rounded-b-lg"
+                          >
+                            {slab.label}
+                          </button>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+                  <div className="relative">
+                    <label className="text-xs font-medium text-gray-500">
+                      Search by Scanner ID
+                    </label>
+                    <input
+                      type="text"
+                      value={exitScannerIdSearch}
+                      onChange={(event) => setExitScannerIdSearch(event.target.value)}
+                      onFocus={() => setActiveExitSearchField("scannerId")}
+                      onBlur={() => setTimeout(() => setActiveExitSearchField(null), 150)}
+                      placeholder="e.g. scanner-123"
+                      className="mt-1 w-full rounded-lg border border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-800 px-3 py-2 text-sm"
+                    />
+                    {activeExitSearchField === "scannerId" && exitScannerIdSearch.trim() && slabOptions.length > 0 && (
+                      <div className="absolute top-full left-0 right-0 mt-1 z-10 rounded-lg border border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-800 shadow-lg max-h-48 overflow-y-auto">
+                        {slabOptions.map((slab) => (
+                          <button
+                            key={slab.id}
+                            type="button"
+                            onMouseDown={(e) => {
+                              e.preventDefault();
+                              handleExitSlabSelect(slab.id);
+                            }}
+                            className="w-full text-left px-3 py-2 text-sm text-gray-900 dark:text-gray-100 hover:bg-gray-100 dark:hover:bg-gray-700 first:rounded-t-lg last:rounded-b-lg"
+                          >
+                            {slab.label}
+                          </button>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+                </div>
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                   <div>
                     <label className="text-xs font-medium text-gray-500">
                       Rack
@@ -2084,9 +2193,8 @@ export default function SlabActions({
                     <select
                       value={selectedSlabId}
                       onChange={(event) =>
-                        setSelectedSlabId(event.target.value)
+                        handleExitSlabSelect(event.target.value)
                       }
-                      disabled={!fromRackId}
                       className="mt-1 w-full rounded-lg border border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-800 px-3 py-2 text-sm"
                     >
                       <option value="">Select slab</option>
@@ -2100,7 +2208,7 @@ export default function SlabActions({
                 </div>
                 <div>
                   <label className="text-xs font-medium text-gray-500">
-                    Exit notes
+                    Exit notes <span className="text-red-600">*</span>
                   </label>
                   <textarea
                     value={exitNote}
