@@ -17,6 +17,11 @@ type CreatePromoEntry = {
   isPriceTbd?: boolean;
 };
 
+type SlabTypeRow = {
+  id: string;
+  type: string;
+};
+
 const isOfficeOrAdmin = (role: string) => role === "admin" || role === "office";
 
 const ensureTable = async () => {
@@ -262,13 +267,13 @@ export async function POST(request: Request) {
   }
 
   const slabIds = normalized.map((entry) => entry.slabBaySlabId);
-  const slabRows = await sql`
+  const slabRows = await sql<SlabTypeRow[]>`
     SELECT "id", "type"
     FROM "SlabBaySlab"
     WHERE "id" IN ${sql(slabIds)}
   `;
   const slabTypeById = new Map(
-    (slabRows as Array<{ id: string; type: string }>).map((row) => [
+    slabRows.map((row) => [
       row.id,
       row.type,
     ]),
