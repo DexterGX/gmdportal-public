@@ -14,27 +14,79 @@ const buildSlabViewUrl = (scannerId: string) =>
 
 type SlabRow = {
   id: string;
-  scannerId: string;
+  scannerId: string | null;
   name: string;
   type: string;
-  thickness: string;
-  size: string;
+  thickness: string | null;
+  size: string | null;
   clientName: string;
   brand: string | null;
   finish: string | null;
   notes: string | null;
   jobId: string | null;
-  rackId: string;
-  createdAt: Date;
+  rackId: string | null;
+  createdAt: Date | string;
+};
+
+type JobCustomerLookup = {
+  jobPipedriveId: string | null;
+  customerDisplayName: string | null;
+  customerPipedriveId: string | null;
 };
 
 async function getSlab(slabId: string): Promise<SlabRow | null> {
-  const rows = await sql<SlabRow[]>`
+  const liveRows = await sql<SlabRow[]>`
     SELECT *
     FROM "SlabBaySlab"
     WHERE "id" = ${slabId} OR "scannerId" = ${slabId}
     LIMIT 1
   `;
+
+  if (liveRows[0]) {
+    return liveRows[0];
+  }
+
+  const historyRows = await sql<SlabRow[]>`
+    SELECT
+      h."slabId" AS "id",
+      h."slabScannerId" AS "scannerId",
+      h."slabName" AS "name",
+      h."slabType" AS "type",
+      h."slabThickness" AS "thickness",
+      h."slabSize" AS "size",
+      h."clientName" AS "clientName",
+      h."brand" AS "brand",
+      h."finish" AS "finish",
+      COALESCE(h."slabNotes", h."exitNote", h."entryNote") AS "notes",
+      h."jobId" AS "jobId",
+      CASE
+        WHEN h."type" = 'exit' THEN 'EXIT'
+        ELSE COALESCE(h."toRack", h."fromRack")
+      END AS "rackId",
+      COALESCE(h."slabCreatedAt", h."timestamp") AS "createdAt"
+    FROM "SlabBayHistory" h
+    WHERE h."slabId" = ${slabId} OR h."slabScannerId" = ${slabId}
+    ORDER BY h."timestamp" DESC
+    LIMIT 1
+  `;
+
+  return historyRows[0] ?? null;
+}
+
+async function getJobCustomerLookup(jobId: string | null): Promise<JobCustomerLookup | null> {
+  if (!jobId) return null;
+
+  const rows = await sql<JobCustomerLookup[]>`
+    SELECT
+      j."pipedriveId" AS "jobPipedriveId",
+      c."displayName" AS "customerDisplayName",
+      c."pipedriveId" AS "customerPipedriveId"
+    FROM "Job" j
+    LEFT JOIN "Customer" c ON c."id" = j."customerId"
+    WHERE j."id" = ${jobId}
+    LIMIT 1
+  `;
+
   return rows[0] ?? null;
 }
 
@@ -68,11 +120,22 @@ export default async function SlabPublicPage({
 
   if (!slab) notFound();
 
+  const jobCustomer = await getJobCustomerLookup(slab.jobId);
+
   const sepIdx = slab.clientName.indexOf("||");
   const displayClient =
     sepIdx !== -1 ? slab.clientName.slice(0, sepIdx) : slab.clientName;
   const originalClient =
     sepIdx !== -1 ? slab.clientName.slice(sepIdx + 2) : null;
+
+  const clientLabel = jobCustomer?.customerDisplayName || displayClient || "-";
+  const clientWithId = jobCustomer?.customerPipedriveId
+    ? `#${jobCustomer.customerPipedriveId} - ${clientLabel}`
+    : clientLabel;
+
+  const jobWithId = jobCustomer?.jobPipedriveId
+    ? `#${jobCustomer.jobPipedriveId}`
+    : slab.jobId || "-";
 
   const createdAt = new Date(slab.createdAt);
   const dateStr = Number.isNaN(createdAt.getTime())
@@ -84,16 +147,16 @@ export default async function SlabPublicPage({
     { label: "Slab Name", value: slab.name },
     { label: "Provider", value: slab.brand || "-" },
     { label: "Finish", value: slab.finish || "-" },
-    { label: "Thickness", value: slab.thickness },
-    { label: "Size", value: slab.size },
-    { label: "Client", value: displayClient || "-" },
+    { label: "Thickness", value: slab.thickness || "-" },
+    { label: "Size", value: slab.size || "-" },
+    { label: "Client", value: clientWithId },
     ...(originalClient
       ? [{ label: "Original Client", value: originalClient }]
       : []),
     { label: "Slab Type", value: TYPE_LABEL[slab.type] ?? slab.type },
-    { label: "Job ID", value: slab.jobId || "-" },
+    { label: "Job ID", value: jobWithId },
     { label: "Notes", value: slab.notes || "-" },
-    { label: "Rack", value: slab.rackId.toUpperCase() },
+    { label: "Rack", value: slab.rackId ? slab.rackId.toUpperCase() : "-" },
     { label: "Date Added", value: dateStr },
   ];
 
@@ -120,7 +183,7 @@ export default async function SlabPublicPage({
           <h1 className="text-2xl font-bold text-gray-900">{slab.name}</h1>
           <p className="text-sm text-gray-500 mt-1">
             {TYPE_LABEL[slab.type] ?? slab.type} &middot; Rack{" "}
-            {slab.rackId.toUpperCase()}
+            {slab.rackId ? slab.rackId.toUpperCase() : "-"}
           </p>
         </div>
 

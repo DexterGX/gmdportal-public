@@ -14,6 +14,7 @@ import {
 type HistorySortKey =
   | "date"
   | "action"
+  | "slabId"
   | "slab"
   | "scannerId"
   | "batch"
@@ -228,6 +229,8 @@ export default function HistoryClient({ userName }: { userName: string }) {
             formatType(b.type),
             sortDirection,
           );
+        case "slabId":
+          return compareValues(a.slabId, b.slabId, sortDirection);
         case "slab":
           return compareValues(a.slabName, b.slabName, sortDirection);
         case "scannerId":
@@ -562,7 +565,7 @@ export default function HistoryClient({ userName }: { userName: string }) {
             <table className="min-w-full text-sm print-history-table">
               <thead>
                 <tr className="hidden print:table-row print-spacer-row">
-                  <th colSpan={14} aria-hidden="true" />
+                  <th colSpan={15} aria-hidden="true" />
                 </tr>
                 <tr className="text-left text-xs uppercase tracking-wide text-gray-400">
                   <th className="py-2 pr-4">
@@ -581,6 +584,15 @@ export default function HistoryClient({ userName }: { userName: string }) {
                       className="font-inherit uppercase tracking-wide hover:text-gray-600 dark:hover:text-gray-200"
                     >
                       {renderSortLabel("action", "Action")}
+                    </button>
+                  </th>
+                  <th className="py-2 pr-4">
+                    <button
+                      type="button"
+                      onClick={() => handleSort("slabId")}
+                      className="font-inherit uppercase tracking-wide hover:text-gray-600 dark:hover:text-gray-200"
+                    >
+                      {renderSortLabel("slabId", "Slab ID")}
                     </button>
                   </th>
                   <th className="py-2 pr-4">
@@ -735,6 +747,16 @@ export default function HistoryClient({ userName }: { userName: string }) {
                       )}
                     </td>
                     <td className="py-3 pr-4 text-gray-600 dark:text-gray-300">
+                      <a
+                        href={`/slab/${encodeURIComponent(entry.slabId)}`}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="text-teal-600 hover:text-teal-700 hover:underline"
+                      >
+                        {entry.slabId}
+                      </a>
+                    </td>
+                    <td className="py-3 pr-4 text-gray-600 dark:text-gray-300">
                       {entry.slabName}
                     </td>
                     <td className="py-3 pr-4 text-gray-600 dark:text-gray-300">
@@ -785,7 +807,11 @@ export default function HistoryClient({ userName }: { userName: string }) {
                       {entry.fromRack ? `${entry.fromRack}` : "-"}
                     </td>
                     <td className="py-3 pr-4 text-gray-600 dark:text-gray-300">
-                      {entry.toRack ? `${entry.toRack}` : "-"}
+                      {entry.type === "exit"
+                        ? "EXIT"
+                        : entry.toRack
+                          ? `${entry.toRack}`
+                          : "-"}
                     </td>
                     <td className="py-3 pr-4 text-gray-600 dark:text-gray-300">
                       {entry.jobId || "-"}
@@ -825,7 +851,7 @@ export default function HistoryClient({ userName }: { userName: string }) {
                 {displayRows.length === 0 && (
                   <tr>
                     <td
-                      colSpan={14}
+                      colSpan={15}
                       className="py-6 text-center text-gray-500 dark:text-gray-400"
                     >
                       No history entries yet.

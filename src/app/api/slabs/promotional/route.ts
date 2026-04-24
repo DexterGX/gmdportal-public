@@ -11,17 +11,57 @@ const sql = postgres(connectionString, {
   onnotice: () => {},
 });
 
+type CreatePromoEntry = {
+  slabBaySlabId: string;
+  price?: number;
+  isPriceTbd?: boolean;
+};
+
+const isOfficeOrAdmin = (role: string) => role === "admin" || role === "office";
+
 const ensureTable = async () => {
   await sql`
     CREATE TABLE IF NOT EXISTS "PromotionalSlab" (
       "id" TEXT PRIMARY KEY,
       "slabBaySlabId" TEXT NOT NULL UNIQUE,
       "price" NUMERIC NOT NULL DEFAULT 0,
+      "isPriceTbd" BOOLEAN NOT NULL DEFAULT FALSE,
       "status" TEXT NOT NULL DEFAULT 'AVAILABLE',
       "soldToClientName" TEXT,
+      "holdUntil" TIMESTAMPTZ,
+      "holdByUserId" TEXT,
+      "holdByUserName" TEXT,
+      "holdCustomerId" TEXT,
+      "holdCustomerName" TEXT,
+      "holdJobId" TEXT,
+      "holdJobName" TEXT,
+      "soldByUserId" TEXT,
+      "soldByUserName" TEXT,
+      "soldCustomerId" TEXT,
+      "soldCustomerName" TEXT,
+      "soldJobId" TEXT,
+      "soldJobName" TEXT,
       "addedAt" TIMESTAMPTZ NOT NULL DEFAULT NOW(),
       "updatedAt" TIMESTAMPTZ NOT NULL DEFAULT NOW()
     )
+  `;
+
+  await sql`
+    ALTER TABLE "PromotionalSlab"
+    ADD COLUMN IF NOT EXISTS "isPriceTbd" BOOLEAN NOT NULL DEFAULT FALSE,
+    ADD COLUMN IF NOT EXISTS "holdUntil" TIMESTAMPTZ,
+    ADD COLUMN IF NOT EXISTS "holdByUserId" TEXT,
+    ADD COLUMN IF NOT EXISTS "holdByUserName" TEXT,
+    ADD COLUMN IF NOT EXISTS "holdCustomerId" TEXT,
+    ADD COLUMN IF NOT EXISTS "holdCustomerName" TEXT,
+    ADD COLUMN IF NOT EXISTS "holdJobId" TEXT,
+    ADD COLUMN IF NOT EXISTS "holdJobName" TEXT,
+    ADD COLUMN IF NOT EXISTS "soldByUserId" TEXT,
+    ADD COLUMN IF NOT EXISTS "soldByUserName" TEXT,
+    ADD COLUMN IF NOT EXISTS "soldCustomerId" TEXT,
+    ADD COLUMN IF NOT EXISTS "soldCustomerName" TEXT,
+    ADD COLUMN IF NOT EXISTS "soldJobId" TEXT,
+    ADD COLUMN IF NOT EXISTS "soldJobName" TEXT
   `;
 };
 
@@ -43,6 +83,22 @@ export async function GET(request: Request) {
   }
 
   await ensureOnce();
+  const { user, appRole } = await getCurrentUserWithRole();
+
+  await sql`
+    UPDATE "PromotionalSlab"
+    SET
+      "status" = 'AVAILABLE',
+      "holdUntil" = NULL,
+      "holdByUserId" = NULL,
+      "holdByUserName" = NULL,
+      "holdCustomerId" = NULL,
+      "holdCustomerName" = NULL,
+      "holdJobId" = NULL,
+      "holdJobName" = NULL,
+      "updatedAt" = NOW()
+    WHERE "status" = 'ON_HOLD' AND "holdUntil" IS NOT NULL AND "holdUntil" <= NOW()
+  `;
 
   const { searchParams } = new URL(request.url);
   const search = searchParams.get("search")?.trim().toLowerCase() ?? "";
@@ -60,8 +116,22 @@ export async function GET(request: Request) {
       ps."id",
       ps."slabBaySlabId",
       ps."price",
+      ps."isPriceTbd",
       ps."status",
       ps."soldToClientName",
+      ps."holdUntil",
+      ps."holdByUserId",
+      ps."holdByUserName",
+      ps."holdCustomerId",
+      ps."holdCustomerName",
+      ps."holdJobId",
+      ps."holdJobName",
+      ps."soldByUserId",
+      ps."soldByUserName",
+      ps."soldCustomerId",
+      ps."soldCustomerName",
+      ps."soldJobId",
+      ps."soldJobName",
       ps."addedAt",
       ps."updatedAt",
       sb."scannerId",
@@ -116,7 +186,23 @@ export async function GET(request: Request) {
     result = result.filter((r) => statuses.includes(String(r.status ?? "")));
   }
 
-  return NextResponse.json(result);
+  const payload = result.map((row) => {
+    const status = String(row.status ?? "AVAILABLE");
+    const holdByUserId = row.holdByUserId ? String(row.holdByUserId) : null;
+    const canReleaseHold =
+      status !== "ON_HOLD" ||
+      Boolean(user && holdByUserId && user.id === holdByUserId) ||
+      isOfficeOrAdmin(appRole);
+
+    return {
+      ...row,
+      price: Number(row.price ?? 0),
+      isPriceTbd: Boolean(row.isPriceTbd),
+      canReleaseHold,
+    };
+  });
+
+  return NextResponse.json(payload);
 }
 
 export async function POST(request: Request) {
@@ -133,24 +219,104 @@ export async function POST(request: Request) {
   await ensureOnce();
 
   const body = await request.json();
-  const { slabBaySlabId, price } = body as {
-    slabBaySlabId: string;
-    price: number;
-  };
+  const entries: CreatePromoEntry[] = Array.isArray(body?.entries)
+    ? (body.entries as CreatePromoEntry[])
+    : [
+        {
+          slabBaySlabId: String(body?.slabBaySlabId ?? ""),
+          price: body?.price,
+          isPriceTbd: Boolean(body?.isPriceTbd),
+        },
+      ];
 
-  if (!slabBaySlabId || price == null) {
-    return NextResponse.json({ error: "Missing fields" }, { status: 400 });
+  if (!entries.length) {
+    return NextResponse.json({ error: "No slabs provided" }, { status: 400 });
   }
 
-  const id = `promo-${Date.now()}-${Math.floor(Math.random() * 10000)}`;
+  const normalized = entries.map((entry) => {
+    const slabBaySlabId = String(entry.slabBaySlabId ?? "").trim();
+    const isPriceTbd = Boolean(entry.isPriceTbd);
+    const price =
+      typeof entry.price === "number" && Number.isFinite(entry.price)
+        ? entry.price
+        : null;
+    return { slabBaySlabId, isPriceTbd, price };
+  });
 
-  const [row] = await sql`
-    INSERT INTO "PromotionalSlab" ("id", "slabBaySlabId", "price", "status")
-    VALUES (${id}, ${slabBaySlabId}, ${price}, 'AVAILABLE')
-    ON CONFLICT ("slabBaySlabId") DO UPDATE
-      SET "price" = EXCLUDED."price", "updatedAt" = NOW()
-    RETURNING *
+  for (const entry of normalized) {
+    if (!entry.slabBaySlabId) {
+      return NextResponse.json(
+        { error: "Each slab requires slabBaySlabId" },
+        { status: 400 },
+      );
+    }
+    if (!entry.isPriceTbd && (entry.price == null || entry.price < 0)) {
+      return NextResponse.json(
+        {
+          error:
+            "Each slab must include a valid non-negative price or be marked as TBD",
+        },
+        { status: 400 },
+      );
+    }
+  }
+
+  const slabIds = normalized.map((entry) => entry.slabBaySlabId);
+  const slabRows = await sql`
+    SELECT "id", "type"
+    FROM "SlabBaySlab"
+    WHERE "id" IN ${sql(slabIds)}
   `;
+  const slabTypeById = new Map(
+    (slabRows as Array<{ id: string; type: string }>).map((row) => [
+      row.id,
+      row.type,
+    ]),
+  );
 
-  return NextResponse.json(row, { status: 201 });
+  for (const entry of normalized) {
+    const slabType = slabTypeById.get(entry.slabBaySlabId);
+    if (!slabType || !["GMD", "REMNANT"].includes(slabType)) {
+      return NextResponse.json(
+        {
+          error: `Slab ${entry.slabBaySlabId} must exist in Slab Bay and be GMD/REMNANT`,
+        },
+        { status: 400 },
+      );
+    }
+  }
+
+  const created = await sql.begin(async (tx) => {
+    const rows: Array<Record<string, unknown>> = [];
+    for (const entry of normalized) {
+      const id = `promo-${crypto.randomUUID()}`;
+      const priceValue = entry.isPriceTbd ? 0 : (entry.price ?? 0);
+      const [row] = await tx`
+        INSERT INTO "PromotionalSlab" (
+          "id",
+          "slabBaySlabId",
+          "price",
+          "isPriceTbd",
+          "status"
+        )
+        VALUES (${id}, ${entry.slabBaySlabId}, ${priceValue}, ${entry.isPriceTbd}, 'AVAILABLE')
+        ON CONFLICT ("slabBaySlabId") DO UPDATE
+          SET
+            "price" = EXCLUDED."price",
+            "isPriceTbd" = EXCLUDED."isPriceTbd",
+            "updatedAt" = NOW()
+        RETURNING *
+      `;
+      rows.push(row as Record<string, unknown>);
+    }
+    return rows;
+  });
+
+  return NextResponse.json(
+    {
+      count: created.length,
+      rows: created,
+    },
+    { status: 201 },
+  );
 }

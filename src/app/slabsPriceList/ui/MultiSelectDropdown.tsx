@@ -65,17 +65,17 @@ export default function MultiSelectDropdown({
   };
 
   return (
-    <div ref={containerRef} className="relative">
+    <div ref={containerRef} className="relative w-full">
       <button
         type="button"
         onClick={() => setIsOpen(!isOpen)}
-        className={`flex items-center gap-2 px-3 py-2 border rounded-lg text-sm transition-colors ${
+        className={`flex w-full items-center justify-between gap-2 px-3 py-2 border rounded-lg text-sm transition-colors ${
           selectedValues.length > 0
             ? "border-blue-500 bg-blue-50 dark:bg-blue-900/20 text-blue-700 dark:text-blue-300"
             : "border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-900 text-gray-700 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-800"
         }`}
       >
-        <span>{getButtonLabel()}</span>
+        <span className="truncate">{getButtonLabel()}</span>
         <ChevronDown
           className={`w-4 h-4 transition-transform ${
             isOpen ? "rotate-180" : ""
@@ -84,7 +84,7 @@ export default function MultiSelectDropdown({
       </button>
 
       {isOpen && (
-        <div className="absolute z-50 mt-2 w-64 bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-xl shadow-lg overflow-hidden">
+        <div className="absolute z-50 mt-2 min-w-full w-64 bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-xl shadow-lg overflow-hidden">
           <div className="max-h-64 overflow-y-auto p-2">
             {options.map((option) => (
               <label

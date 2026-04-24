@@ -50,6 +50,29 @@ const accessoryStatusColors: Record<string, string> = {
   CANCELLED: "bg-red-100 dark:bg-red-900/30 text-red-700 dark:text-red-300",
 };
 
+const promoStatusColors: Record<string, string> = {
+  AVAILABLE:
+    "bg-emerald-100 dark:bg-emerald-900/30 text-emerald-700 dark:text-emerald-300",
+  ON_HOLD:
+    "bg-yellow-100 dark:bg-yellow-900/30 text-yellow-800 dark:text-yellow-300",
+  SOLD: "bg-red-100 dark:bg-red-900/30 text-red-700 dark:text-red-300",
+};
+
+type LinkedPromotionalSlab = {
+  id: string;
+  slabBaySlabId: string;
+  status: string;
+  price: unknown;
+  isPriceTbd: boolean | null;
+  holdUntil: Date | string | null;
+  updatedAt: Date | string | null;
+  name: string | null;
+  type: string | null;
+  thickness: string | null;
+  size: string | null;
+  rackId: string | null;
+};
+
 export default async function CustomerV2JobDetailPage({
   params,
   searchParams,
@@ -130,6 +153,39 @@ export default async function CustomerV2JobDetailPage({
     ...q,
     finalPrice: (q.finalPrice as any)?.toNumber?.() ?? 0,
   }));
+
+  let linkedPromotionalSlabs: LinkedPromotionalSlab[] = [];
+  try {
+    const rows = await prisma.$queryRawUnsafe<LinkedPromotionalSlab[]>(
+      `
+      SELECT
+        ps."id",
+        ps."slabBaySlabId",
+        ps."status",
+        ps."price",
+        ps."isPriceTbd",
+        ps."holdUntil",
+        ps."updatedAt",
+        sb."name",
+        sb."type",
+        sb."thickness",
+        sb."size",
+        sb."rackId"
+      FROM "PromotionalSlab" ps
+      LEFT JOIN "SlabBaySlab" sb ON sb."id" = ps."slabBaySlabId"
+      WHERE
+        (ps."holdCustomerId" = $1 AND ps."holdJobId" = $2)
+        OR
+        (ps."soldCustomerId" = $1 AND ps."soldJobId" = $2)
+      ORDER BY ps."updatedAt" DESC
+      `,
+      id,
+      jobId,
+    );
+    linkedPromotionalSlabs = Array.isArray(rows) ? rows : [];
+  } catch {
+    linkedPromotionalSlabs = [];
+  }
 
   return (
     <div className="space-y-6">
@@ -286,6 +342,63 @@ export default async function CustomerV2JobDetailPage({
                     )}
                   </div>
                 ))}
+              </div>
+            )}
+          </div>
+
+          <div className="p-6">
+            <h3 className="text-sm font-semibold text-gray-700 dark:text-gray-300 mb-3">
+              Promotional Slabs (On Hold / Sold)
+            </h3>
+            {linkedPromotionalSlabs.length === 0 && (
+              <p className="text-sm text-gray-500 dark:text-gray-400">
+                No promotional slabs linked to this job yet.
+              </p>
+            )}
+            {linkedPromotionalSlabs.length > 0 && (
+              <div className="space-y-2">
+                {linkedPromotionalSlabs.map((slab) => {
+                  const priceNum = (slab.price as any)?.toNumber?.() ?? Number(slab.price ?? 0);
+                  return (
+                    <div
+                      key={slab.id}
+                      className="flex items-start justify-between gap-2 bg-gray-50 dark:bg-gray-900/40 rounded px-3 py-2"
+                    >
+                      <div>
+                        <p className="text-sm text-gray-900 dark:text-gray-100">
+                          <a
+                            href={`/slab/${encodeURIComponent(slab.slabBaySlabId)}`}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            className="text-teal-600 dark:text-teal-400 hover:underline"
+                          >
+                            {slab.name || "Unnamed slab"} ({slab.slabBaySlabId})
+                          </a>
+                        </p>
+                        <p className="text-xs text-gray-500 dark:text-gray-400">
+                          {(slab.type ?? "-") + " | " + (slab.thickness ?? "-") + " | " + (slab.size ?? "-")}
+                          {slab.rackId ? ` | Rack ${slab.rackId}` : ""}
+                        </p>
+                        <p className="text-xs text-gray-500 dark:text-gray-400">
+                          Price: {slab.isPriceTbd ? "TBD" : fmtCurrency(priceNum)}
+                          {slab.status === "ON_HOLD" ? ` | Release: ${fmtDate(slab.holdUntil)}` : ""}
+                        </p>
+                      </div>
+                      <div className="text-right">
+                        <span
+                          className={`inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium ${
+                            promoStatusColors[slab.status] ?? "bg-gray-100 text-gray-600"
+                          }`}
+                        >
+                          {slab.status.replace(/_/g, " ")}
+                        </span>
+                        <p className="mt-1 text-xs text-gray-500 dark:text-gray-400">
+                          Updated {fmtDate(slab.updatedAt)}
+                        </p>
+                      </div>
+                    </div>
+                  );
+                })}
               </div>
             )}
           </div>

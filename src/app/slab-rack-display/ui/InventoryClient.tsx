@@ -883,7 +883,14 @@ export default function InventoryClient({ userName }: { userName: string }) {
                     className="border-t border-gray-100 dark:border-gray-800"
                   >
                     <td className="py-3 pr-4 text-gray-600 dark:text-gray-300">
-                      {slab.id}
+                      <a
+                        href={`/slab/${encodeURIComponent(slab.id)}`}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="text-teal-600 hover:text-teal-700 hover:underline"
+                      >
+                        {slab.id}
+                      </a>
                     </td>
                     <td className="py-3 pr-4 text-gray-700 dark:text-gray-300">
                       {slab.scannerId ? (
