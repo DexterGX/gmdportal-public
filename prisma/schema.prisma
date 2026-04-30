@@ -1,4 +1,3 @@
-// Prisma schema
 generator client {
   provider = "prisma-client-js"
 }
@@ -10,31 +9,31 @@ datasource db {
 }
 
 model User {
-  id               String        @id @default(cuid())
-  name             String?
-  email            String?       @unique
-  emailVerified    DateTime?
-  image            String?
-  username         String?       @unique
-  passwordHash     String?
-  resetToken       String?       @unique
-  resetTokenExpiry DateTime?
-  role             Role          @default(UNASSIGNED)
-  roles            String[]      @default([])
-  active           Boolean       @default(false)
-  accounts         Account[]
-  approvedQuotes   ClosetQuote[] @relation("ApprovedQuotes")
-  installerQuotes  ClosetQuote[] @relation("InstallerQuotes")
-  submittedQuotes  ClosetQuote[] @relation("SubmittedQuotes")
-  sessions         Session[]
-  accessoryTrackersCreated AccessoryTracker[] @relation("AccessoryTrackerCreatedBy")
-  accessoryTrackersUpdated AccessoryTracker[] @relation("AccessoryTrackerUpdatedBy")
-  accessoryItemsCreated    AccessoryItem[]    @relation("AccessoryItemCreatedBy")
-  accessoryItemsUpdated    AccessoryItem[]    @relation("AccessoryItemUpdatedBy")
-  accessoryItemsAssigned   AccessoryItem[]    @relation("AccessoryItemAssignedTo")
-  accessoryItemEventsChanged   AccessoryItemEvent[]   @relation("AccessoryItemEventChangedBy")
-  sampleRequestsRequested      SampleRequest[]        @relation("SampleRequestRequestedBy")
-  sampleRequestHistoryChanged  SampleRequestHistory[] @relation("SampleRequestHistoryChangedBy")
+  id                          String                 @id @default(cuid())
+  name                        String?
+  email                       String?                @unique
+  emailVerified               DateTime?
+  image                       String?
+  username                    String?                @unique
+  passwordHash                String?
+  resetToken                  String?                @unique
+  resetTokenExpiry            DateTime?
+  role                        Role                   @default(UNASSIGNED)
+  active                      Boolean                @default(false)
+  roles                       String[]               @default([])
+  accessoryItemsAssigned      AccessoryItem[]        @relation("AccessoryItemAssignedTo")
+  accessoryItemsCreated       AccessoryItem[]        @relation("AccessoryItemCreatedBy")
+  accessoryItemsUpdated       AccessoryItem[]        @relation("AccessoryItemUpdatedBy")
+  accessoryItemEventsChanged  AccessoryItemEvent[]   @relation("AccessoryItemEventChangedBy")
+  accessoryTrackersCreated    AccessoryTracker[]     @relation("AccessoryTrackerCreatedBy")
+  accessoryTrackersUpdated    AccessoryTracker[]     @relation("AccessoryTrackerUpdatedBy")
+  accounts                    Account[]
+  approvedQuotes              ClosetQuote[]          @relation("ApprovedQuotes")
+  installerQuotes             ClosetQuote[]          @relation("InstallerQuotes")
+  submittedQuotes             ClosetQuote[]          @relation("SubmittedQuotes")
+  sampleRequestsRequested     SampleRequest[]        @relation("SampleRequestRequestedBy")
+  sampleRequestHistoryChanged SampleRequestHistory[] @relation("SampleRequestHistoryChangedBy")
+  sessions                    Session[]
 }
 
 model Account {
@@ -147,72 +146,71 @@ model SlabBayRack {
   slabs                SlabBaySlab[]
 }
 
-
 model SlabBaySlab {
-  id         String   @id
+  id         String      @id
   scannerId  String
   name       String
   type       String
   thickness  String
   size       String
   clientName String
-  brand      String?
-  finish     String?
-  notes      String?
-  jobId      String?
+  rackId     String
+  createdAt  DateTime    @default(now())
   batchId    String?
   batchIndex Int?
   batchSize  Int?
-  rackId     String
-  createdAt  DateTime @default(now())
+  brand      String?
+  finish     String?
+  jobId      String?
+  notes      String?
   rack       SlabBayRack @relation(fields: [rackId], references: [id])
 }
 
 model SlabBayHistory {
-  id            String   @id
-  type          String
-  slabId        String
-  slabScannerId String?
-  batchId       String?
-  batchIndex    Int?
-  batchSize     Int?
-  slabName      String
-  slabType      String
-  slabThickness String?
-  slabSize      String?
-  slabNotes     String?
-  slabCreatedAt String?
-  clientName    String
-  brand         String?
-  finish        String?
-  jobId         String?
-  entryNote     String?
-  fromRack      String?
-  toRack        String?
-  exitNote      String?
+  id                     String  @id
+  type                   String
+  slabId                 String
+  slabScannerId          String?
+  slabName               String
+  slabType               String
+  clientName             String
+  fromRack               String?
+  toRack                 String?
+  exitNote               String?
+  userName               String
+  timestamp              String
+  batchId                String?
+  batchIndex             Int?
+  batchSize              Int?
+  brand                  String?
+  entryNote              String?
+  finish                 String?
+  jobId                  String?
   recoveredFromHistoryId String?
-  userName      String
-  timestamp     String
+  slabCreatedAt          String?
+  slabNotes              String?
+  slabSize               String?
+  slabThickness          String?
 }
 
 model ClosetJob {
   id              String          @id @default(uuid())
   quoteNumber     String          @unique
-  jobId           String?         @unique
-  job             Job?            @relation(fields: [jobId], references: [id])
-  customerId      String?
-  customer        Customer?       @relation(fields: [customerId], references: [id])
   customerName    String
   customerPhone   String?
   salesPersonId   String
   installerId     String
   propertyAddress String
   area            ClosetAreaType
-  areas           String[]        @default([])
   status          ClosetJobStatus @default(QUOTE)
   createdAt       DateTime        @default(now())
   quoteStartedAt  DateTime        @default(now())
   notesSales      String?
+  customerId      String?
+  jobId           String?         @unique
+  areas           String[]        @default([])
+  customer        Customer?       @relation(fields: [customerId], references: [id])
+  job             Job?            @relation(fields: [jobId], references: [id])
   quotes          ClosetQuote[]
 }
 
@@ -300,48 +298,46 @@ model SystemRoleSetting {
 
 model CabinetProviderSettings {
   id           String   @id @default(cuid())
-  actualName   String
+  actualName   String   @unique
   displayName  String
   contactName  String?
   contactPhone String?
   contactEmail String?
   address      String?
-  notes        String?
   isActive     Boolean  @default(true)
   createdAt    DateTime @default(now())
   updatedAt    DateTime @updatedAt
+  notes        String?
 
-  @@unique([actualName])
   @@index([displayName])
   @@index([isActive])
 }
 
 model CabinetInstallerProfile {
   id         String                       @id @default(cuid())
-  name       String
+  name       String                       @unique
   code       String?                      @unique
   notes      String?
-  costTierId String?
   isActive   Boolean                      @default(true)
   createdAt  DateTime                     @default(now())
   updatedAt  DateTime                     @updatedAt
+  costTierId String?
   costTier   CabinetInstallationCostTier? @relation(fields: [costTierId], references: [id])
 
-  @@unique([name])
   @@index([isActive])
   @@index([costTierId])
 }
 
 model CabinetInstallationItem {
-  id                  String                       @id @default(cuid())
-  code                String?                      @unique
+  id                  String                        @id @default(cuid())
+  code                String?                       @unique
   description         String
   category            String?
-  defaultWillingToPay Decimal                      @db.Decimal(10, 2)
-  salePrice           Decimal                      @default(0) @db.Decimal(10, 2)
-  isActive            Boolean                      @default(true)
-  createdAt           DateTime                     @default(now())
-  updatedAt           DateTime                     @updatedAt
+  defaultWillingToPay Decimal                       @db.Decimal(10, 2)
+  isActive            Boolean                       @default(true)
+  createdAt           DateTime                      @default(now())
+  updatedAt           DateTime                      @updatedAt
+  salePrice           Decimal                       @default(0) @db.Decimal(10, 2)
   costs               CabinetInstallationItemCost[]
 
   @@index([description])
@@ -350,33 +346,332 @@ model CabinetInstallationItem {
 }
 
 model CabinetInstallationCostTier {
-  id        String                       @id @default(cuid())
-  key       String                       @unique
+  id        String                        @id @default(cuid())
+  key       String                        @unique
   name      String
-  isActive  Boolean                      @default(true)
-  sortOrder Int                          @default(0)
-  createdAt DateTime                     @default(now())
-  updatedAt DateTime                     @updatedAt
-  profiles  CabinetInstallerProfile[]
+  isActive  Boolean                       @default(true)
+  sortOrder Int                           @default(0)
+  createdAt DateTime                      @default(now())
+  updatedAt DateTime                      @updatedAt
   costs     CabinetInstallationItemCost[]
+  profiles  CabinetInstallerProfile[]
 
   @@index([isActive])
   @@index([sortOrder])
 }
 
 model CabinetInstallationItemCost {
-  id         String                       @id @default(cuid())
+  id         String                      @id @default(cuid())
   itemId     String
   costTierId String
-  cost       Decimal                      @db.Decimal(10, 2)
-  createdAt  DateTime                     @default(now())
-  updatedAt  DateTime                     @updatedAt
-  item       CabinetInstallationItem      @relation(fields: [itemId], references: [id], onDelete: Cascade)
-  costTier   CabinetInstallationCostTier  @relation(fields: [costTierId], references: [id], onDelete: Cascade)
+  cost       Decimal                     @db.Decimal(10, 2)
+  createdAt  DateTime                    @default(now())
+  updatedAt  DateTime                    @updatedAt
+  costTier   CabinetInstallationCostTier @relation(fields: [costTierId], references: [id], onDelete: Cascade)
+  item       CabinetInstallationItem     @relation(fields: [itemId], references: [id], onDelete: Cascade)
 
   @@unique([itemId, costTierId])
   @@index([itemId])
   @@index([costTierId])
+}
+
+model Customer {
+  id                       String          @id @default(uuid())
+  quickbooksId             String?         @unique
+  displayName              String
+  companyName              String?
+  givenName                String?
+  familyName               String?
+  email                    String?
+  phone                    String?
+  mobile                   String?
+  billAddr                 Json?
+  shipAddr                 Json?
+  balance                  Decimal?        @db.Decimal(12, 2)
+  lastSyncedAt             DateTime?
+  quickbooksData           Json?
+  notes                    String?
+  active                   Boolean         @default(true)
+  createdAt                DateTime        @default(now())
+  updatedAt                DateTime        @updatedAt
+  companyCamId             String?
+  pipedriveData            Json?
+  pipedriveId              String?         @unique
+  syncedToQB               Boolean         @default(false)
+  type                     CustomerType    @default(PROSPECT)
+  salesPerson              String?
+  referredByOrgPipedriveId String?
+  referredByOrgName        String?
+  closetJobs               ClosetJob[]
+  jobs                     Job[]
+  sampleRequests           SampleRequest[]
+
+  @@index([quickbooksId])
+  @@index([pipedriveId])
+  @@index([displayName])
+  @@index([email])
+  @@index([type])
+  @@index([referredByOrgPipedriveId])
+}
+
+model Job {
+  id                String             @id @default(uuid())
+  customerId        String
+  jobName           String
+  quickbooksJobId   String?            @unique
+  pipedriveId       String?            @unique
+  companyCamId      String?
+  status            JobStatus          @default(ONGOING)
+  value             Decimal?           @db.Decimal(12, 2)
+  notes             String?
+  createdAt         DateTime           @default(now())
+  updatedAt         DateTime           @updatedAt
+  lastSyncedAt      DateTime?
+  jobNumber         Int                @unique @default(autoincrement())
+  jobType           String?
+  companyCamUrl     String?
+  quickbooksUrl     String?
+  stageId           Int?
+  closeDate         DateTime?          @db.Timestamptz(6)
+  expectedCloseDate DateTime?          @db.Date
+  propertyAddress   String?
+  dealTitle         String?
+  accessoryTrackers AccessoryTracker[]
+  closetJob         ClosetJob?
+  customer          Customer           @relation(fields: [customerId], references: [id], onDelete: Cascade)
+  artifacts         JobArtifact[]
+  sampleRequests    SampleRequest[]
+
+  @@index([customerId])
+  @@index([quickbooksJobId])
+  @@index([pipedriveId])
+  @@index([status])
+  @@index([jobNumber])
+  @@index([jobType])
+}
+
+model JobArtifact {
+  id              String   @id @default(uuid())
+  jobId           String
+  sourceApp       String
+  type            String
+  title           String
+  url             String?
+  fileStorageKey  String?
+  fileName        String?
+  mimeType        String?
+  fileSize        Int?
+  metadata        Json?
+  createdByUserId String?
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+  job             Job      @relation(fields: [jobId], references: [id], onDelete: Cascade)
+
+  @@index([jobId])
+  @@index([sourceApp])
+  @@index([type])
+}
+
+model SampleRequestProvider {
+  id            String            @id @default(cuid())
+  name          String
+  sampleType    SampleRequestType
+  contactName   String?
+  contactPhone  String?
+  contactEmail  String?
+  contactMethod String?
+  notes         String?
+  isActive      Boolean           @default(true)
+  createdAt     DateTime          @default(now())
+  updatedAt     DateTime          @updatedAt
+
+  @@unique([name, sampleType])
+  @@index([sampleType])
+  @@index([isActive])
+}
+
+model SampleRequest {
+  id                String                 @id @default(cuid())
+  status            SampleRequestStatus    @default(REQUESTED)
+  sampleType        SampleRequestType
+  brand             String
+  colorName         String
+  quantity          Int                    @default(1)
+  notes             String?
+  jobId             String?
+  customerId        String?
+  jobName           String?
+  requestedByUserId String?
+  createdAt         DateTime               @default(now())
+  updatedAt         DateTime               @updatedAt
+  customer          Customer?              @relation(fields: [customerId], references: [id])
+  job               Job?                   @relation(fields: [jobId], references: [id])
+  requestedByUser   User?                  @relation("SampleRequestRequestedBy", fields: [requestedByUserId], references: [id])
+  history           SampleRequestHistory[]
+
+  @@index([jobId])
+  @@index([customerId])
+  @@index([status])
+  @@index([sampleType])
+}
+
+model SampleRequestHistory {
+  id              String               @id @default(cuid())
+  requestId       String
+  fromStatus      SampleRequestStatus?
+  toStatus        SampleRequestStatus?
+  message         String?
+  changedByUserId String?
+  createdAt       DateTime             @default(now())
+  changedByUser   User?                @relation("SampleRequestHistoryChangedBy", fields: [changedByUserId], references: [id])
+  request         SampleRequest        @relation(fields: [requestId], references: [id], onDelete: Cascade)
+
+  @@index([requestId])
+  @@index([createdAt])
+}
+
+model QuickBooksTokens {
+  id           String   @id @default(cuid())
+  accessToken  String
+  refreshToken String
+  expiresAt    DateTime
+  realmId      String
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+}
+
+model SyncJob {
+  id               String    @id @default(cuid())
+  type             String    @default("customer_sync")
+  status           String    @default("running")
+  startedAt        DateTime  @default(now())
+  completedAt      DateTime?
+  cancelledAt      DateTime?
+  totalRecords     Int?
+  processedRecords Int       @default(0)
+  createdRecords   Int       @default(0)
+  updatedRecords   Int       @default(0)
+  errorCount       Int       @default(0)
+  errorMessage     String?
+  cancelRequested  Boolean   @default(false)
+  createdAt        DateTime  @default(now())
+  updatedAt        DateTime  @updatedAt
+}
+
+model AccessoryTracker {
+  id                  String               @id @default(cuid())
+  jobId               String
+  invoiceCreatedAt    DateTime?
+  remeasureApprovedAt DateTime?
+  department          AccessoryDepartment?
+  notes               String?
+  createdByUserId     String?
+  updatedByUserId     String?
+  createdAt           DateTime             @default(now())
+  updatedAt           DateTime             @updatedAt
+  invoiceNumber       String?
+  isArchived          Boolean              @default(false)
+  items               AccessoryItem[]
+  createdByUser       User?                @relation("AccessoryTrackerCreatedBy", fields: [createdByUserId], references: [id])
+  job                 Job                  @relation(fields: [jobId], references: [id], onDelete: Cascade)
+  updatedByUser       User?                @relation("AccessoryTrackerUpdatedBy", fields: [updatedByUserId], references: [id])
+
+  @@index([jobId])
+}
+
+model AccessoryItem {
+  id                  String               @id @default(cuid())
+  trackerId           String
+  category            AccessoryCategory
+  name                String
+  quantity            Int                  @default(1)
+  sku                 String?
+  vendor              String?
+  linkUrl             String?
+  cost                Decimal?             @db.Decimal(10, 2)
+  retail              Decimal?             @db.Decimal(10, 2)
+  status              AccessoryItemStatus  @default(READY_TO_ORDER)
+  priority            AccessoryPriority    @default(NORMAL)
+  orderedAt           DateTime?
+  etaAt               DateTime?
+  deliveredAt         DateTime?
+  checkedInAt         DateTime?
+  installedAt         DateTime?
+  assignedToUserId    String?
+  lastStatusChangedAt DateTime?
+  createdByUserId     String?
+  updatedByUserId     String?
+  createdAt           DateTime             @default(now())
+  updatedAt           DateTime             @updatedAt
+  isArchived          Boolean              @default(false)
+  assignedToUser      User?                @relation("AccessoryItemAssignedTo", fields: [assignedToUserId], references: [id])
+  createdByUser       User?                @relation("AccessoryItemCreatedBy", fields: [createdByUserId], references: [id])
+  tracker             AccessoryTracker     @relation(fields: [trackerId], references: [id], onDelete: Cascade)
+  updatedByUser       User?                @relation("AccessoryItemUpdatedBy", fields: [updatedByUserId], references: [id])
+  events              AccessoryItemEvent[]
+
+  @@index([trackerId])
+  @@index([status])
+  @@index([assignedToUserId])
+}
+
+model AccessoryItemEvent {
+  id              String               @id @default(cuid())
+  itemId          String
+  type            AccessoryEventType
+  fromStatus      AccessoryItemStatus?
+  toStatus        AccessoryItemStatus?
+  message         String?
+  changedByUserId String?
+  createdAt       DateTime             @default(now())
+  changedByUser   User?                @relation("AccessoryItemEventChangedBy", fields: [changedByUserId], references: [id])
+  item            AccessoryItem        @relation(fields: [itemId], references: [id], onDelete: Cascade)
+
+  @@index([itemId])
+  @@index([createdAt])
+}
+
+/// This model contains row level security and requires additional setup for migrations. Visit https://pris.ly/d/row-level-security for more info.
+model PromotionalSlab {
+  id               String    @id
+  slabBaySlabId    String    @unique
+  price            Decimal   @default(0) @db.Decimal
+  isPriceTbd       Boolean   @default(false)
+  status           String    @default("AVAILABLE")
+  soldToClientName String?
+  holdUntil        DateTime? @db.Timestamptz(6)
+  holdByUserId     String?
+  holdByUserName   String?
+  holdCustomerId   String?
+  holdCustomerName String?
+  holdJobId        String?
+  holdJobName      String?
+  soldByUserId     String?
+  soldByUserName   String?
+  soldCustomerId   String?
+  soldCustomerName String?
+  soldJobId        String?
+  soldJobName      String?
+  addedAt          DateTime  @default(now()) @db.Timestamptz(6)
+  updatedAt        DateTime  @default(now()) @db.Timestamptz(6)
+}
+
+/// This model contains row level security and requires additional setup for migrations. Visit https://pris.ly/d/row-level-security for more info.
+model SlabBayExpectedDelivery {
+  id                 String   @id
+  clientName         String
+  originalClientName String?
+  slabName           String
+  brand              String
+  thickness          String
+  finish             String?
+  quantity           Int
+  slabType           String
+  jobId              String?
+  notes              String?
+  extraNotesJson     String   @default("[]")
+  createdAt          DateTime @default(now()) @db.Timestamptz(6)
+  createdBy          String
 }
 
 enum Role {
@@ -482,162 +777,6 @@ enum SampleRequestType {
   COUNTERTOP
 }
 
-// Customer Management - QuickBooks & Pipedrive Integration
-model Customer {
-  id                 String       @id @default(uuid())
-  type               CustomerType @default(PROSPECT)
-  quickbooksId       String?      @unique
-  pipedriveId        String?      @unique
-  companyCamId       String?
-  syncedToQB         Boolean      @default(false)
-    displayName                String
-    companyName                String?
-    givenName                  String?
-    familyName                 String?
-    email                      String?
-    phone                      String?
-    mobile                     String?
-    billAddr                   Json?
-    shipAddr                   Json?
-    salesPerson                String?
-    balance                    Decimal?     @db.Decimal(12, 2)
-    lastSyncedAt               DateTime?
-    quickbooksData             Json?
-    pipedriveData              Json?
-    notes                      String?
-    active                     Boolean      @default(true)
-    referredByOrgPipedriveId   String?      // Pipedrive org ID of contractor/designer who referred this client
-    referredByOrgName          String?      // Display name of the referring contractor/designer
-    createdAt                  DateTime     @default(now())
-    updatedAt                  DateTime     @updatedAt
-    closetJobs                 ClosetJob[]
-    jobs                       Job[]
-    sampleRequests             SampleRequest[]
-
-    @@index([quickbooksId])
-    @@index([pipedriveId])
-    @@index([displayName])
-    @@index([email])
-    @@index([type])
-    @@index([referredByOrgPipedriveId])
-}
-
-model Job {
-  id                String    @id @default(uuid())
-  jobNumber         Int       @unique @default(autoincrement())
-  customerId        String
-  jobName           String
-  quickbooksJobId   String?   @unique
-  pipedriveId       String?   @unique
-  companyCamId      String?
-  status            JobStatus @default(ONGOING)
-  value             Decimal?  @db.Decimal(12, 2)
-  notes             String?
-    jobType           String?             // Service type e.g. "Closets", "Countertops"
-    companyCamUrl     String?             // CompanyCam project URL
-    quickbooksUrl     String?             // QuickBooks customer/job URL
-    stageId           Int?                // Pipedrive pipeline stage ID
-    closeDate         DateTime?           @db.Timestamptz(6) // Actual won/close date
-    expectedCloseDate DateTime?           @db.Date           // Expected close date
-    propertyAddress   String?             // Project property address from Pipedrive deal
-    dealTitle         String?             // Original Pipedrive deal title
-    createdAt         DateTime            @default(now())
-    updatedAt         DateTime            @updatedAt
-    lastSyncedAt      DateTime?
-    customer          Customer            @relation(fields: [customerId], references: [id], onDelete: Cascade)
-    closetJob         ClosetJob?
-    artifacts         JobArtifact[]
-    accessoryTrackers AccessoryTracker[]
-    sampleRequests    SampleRequest[]
-
-    @@index([customerId])
-    @@index([quickbooksJobId])
-    @@index([pipedriveId])
-    @@index([status])
-    @@index([jobNumber])
-    @@index([jobType])
-}
-
-model JobArtifact {
-  id              String   @id @default(uuid())
-  jobId           String
-  sourceApp       String   // "CABINET_ESTIMATES", "SLABS", "CLOSET", "FILES", etc.
-  type            String   // "LINK", "FILE", "NOTE", "SNAPSHOT"
-  title           String
-  url             String?  // Deep link to internal page or external resource
-  fileStorageKey  String?  // For FILE type: storage key/path
-  fileName        String?  // Original filename
-  mimeType        String?  // File MIME type
-  fileSize        Int?     // File size in bytes
-  metadata        Json?    // Optional structured data snapshot
-  createdByUserId String?
-  createdAt       DateTime @default(now())
-  updatedAt       DateTime @updatedAt
-  job             Job      @relation(fields: [jobId], references: [id], onDelete: Cascade)
-
-  @@index([jobId])
-  @@index([sourceApp])
-  @@index([type])
-}
-
-model SampleRequestProvider {
-  id            String            @id @default(cuid())
-  name          String
-  sampleType    SampleRequestType
-  contactName   String?
-  contactPhone  String?
-  contactEmail  String?
-  contactMethod String?
-  notes         String?
-  isActive      Boolean           @default(true)
-  createdAt     DateTime          @default(now())
-  updatedAt     DateTime          @updatedAt
-
-  @@unique([name, sampleType])
-  @@index([sampleType])
-  @@index([isActive])
-}
-
-model SampleRequest {
-  id                 String               @id @default(cuid())
-  status             SampleRequestStatus  @default(REQUESTED)
-  sampleType         SampleRequestType
-  brand              String
-  colorName          String
-  quantity           Int                  @default(1)
-  notes              String?
-  jobId              String?
-  job                Job?                 @relation(fields: [jobId], references: [id])
-  customerId         String?
-  customer           Customer?            @relation(fields: [customerId], references: [id])
-  jobName            String?
-  requestedByUserId  String?
-  requestedByUser    User?                @relation("SampleRequestRequestedBy", fields: [requestedByUserId], references: [id])
-  createdAt          DateTime             @default(now())
-  updatedAt          DateTime             @updatedAt
-  history            SampleRequestHistory[]
-
-  @@index([jobId])
-  @@index([customerId])
-  @@index([status])
-  @@index([sampleType])
-}
-
-model SampleRequestHistory {
-  id               String               @id @default(cuid())
-  requestId        String
-  request          SampleRequest        @relation(fields: [requestId], references: [id], onDelete: Cascade)
-  fromStatus       SampleRequestStatus?
-  toStatus         SampleRequestStatus?
-  message          String?
-  changedByUserId  String?
-  changedByUser    User?                @relation("SampleRequestHistoryChangedBy", fields: [changedByUserId], references: [id])
-  createdAt        DateTime             @default(now())
-
-  @@index([requestId])
-  @@index([createdAt])
-}
-
 enum CustomerType {
   PROSPECT
   CLIENT
@@ -651,108 +790,6 @@ enum JobStatus {
   CANCELLED
 }
 
-model QuickBooksTokens {
-  id            String   @id @default(cuid())
-  accessToken   String
-  refreshToken  String
-  expiresAt     DateTime
-  realmId       String
-  createdAt     DateTime @default(now())
-  updatedAt     DateTime @updatedAt
-}
-
-model SyncJob {
-  id            String   @id @default(cuid())
-  type          String   @default("customer_sync")
-  status        String   @default("running") // running, completed, cancelled, failed
-  startedAt     DateTime @default(now())
-  completedAt   DateTime?
-  cancelledAt   DateTime?
-  totalRecords  Int?
-  processedRecords Int   @default(0)
-  createdRecords   Int   @default(0)
-  updatedRecords   Int   @default(0)
-  errorCount       Int   @default(0)
-  errorMessage     String?
-  cancelRequested  Boolean @default(false)
-  createdAt     DateTime @default(now())
-  updatedAt     DateTime @updatedAt
-}
-
-// Accessories Tracker - Track accessory purchases for cabinet/countertop jobs
-model AccessoryTracker {
-  id                   String           @id @default(cuid())
-  jobId                String
-  job                  Job              @relation(fields: [jobId], references: [id], onDelete: Cascade)
-  invoiceNumber        String?
-  invoiceCreatedAt     DateTime?
-  remeasureApprovedAt  DateTime?
-  department           AccessoryDepartment?
-  notes                String?
-  isArchived           Boolean          @default(false)
-  createdByUserId      String?
-  updatedByUserId      String?
-  createdByUser        User?            @relation("AccessoryTrackerCreatedBy", fields: [createdByUserId], references: [id])
-  updatedByUser        User?            @relation("AccessoryTrackerUpdatedBy", fields: [updatedByUserId], references: [id])
-  createdAt            DateTime         @default(now())
-  updatedAt            DateTime         @updatedAt
-  items                AccessoryItem[]
-
-  @@index([jobId])
-}
-
-model AccessoryItem {
-  id                  String              @id @default(cuid())
-  trackerId           String
-  tracker             AccessoryTracker    @relation(fields: [trackerId], references: [id], onDelete: Cascade)
-  category            AccessoryCategory
-  name                String
-  quantity            Int                 @default(1)
-  sku                 String?
-  vendor              String?
-  linkUrl             String?
-  cost                Decimal?            @db.Decimal(10, 2)
-  retail              Decimal?            @db.Decimal(10, 2)
-  status              AccessoryItemStatus @default(READY_TO_ORDER)
-  priority            AccessoryPriority   @default(NORMAL)
-  isArchived          Boolean             @default(false)
-  orderedAt           DateTime?
-  etaAt               DateTime?
-  deliveredAt         DateTime?
-  checkedInAt         DateTime?
-  installedAt         DateTime?
-  assignedToUserId    String?
-  lastStatusChangedAt DateTime?
-  createdByUserId     String?
-  updatedByUserId     String?
-  assignedToUser       User?              @relation("AccessoryItemAssignedTo", fields: [assignedToUserId], references: [id])
-  createdByUser        User?              @relation("AccessoryItemCreatedBy", fields: [createdByUserId], references: [id])
-  updatedByUser        User?              @relation("AccessoryItemUpdatedBy", fields: [updatedByUserId], references: [id])
-  createdAt           DateTime            @default(now())
-  updatedAt           DateTime            @updatedAt
-  events              AccessoryItemEvent[]
-
-  @@index([trackerId])
-  @@index([status])
-  @@index([assignedToUserId])
-}
-
-model AccessoryItemEvent {
-  id              String    @id @default(cuid())
-  itemId          String
-  item            AccessoryItem @relation(fields: [itemId], references: [id], onDelete: Cascade)
-  type            AccessoryEventType
-  fromStatus      AccessoryItemStatus?
-  toStatus        AccessoryItemStatus?
-  message         String?
-  changedByUserId String?
-  changedByUser   User?     @relation("AccessoryItemEventChangedBy", fields: [changedByUserId], references: [id])
-  createdAt       DateTime  @default(now())
-
-  @@index([itemId])
-  @@index([createdAt])
-}
-
 enum AccessoryDepartment {
   CABINETS
   COUNTERTOPS
@@ -760,7 +797,6 @@ enum AccessoryDepartment {
 }
 
 enum AccessoryCategory {
-  INSERT_ITEM
   HANDLE
   PULLOUT
   TRIM
@@ -770,6 +806,7 @@ enum AccessoryCategory {
   APPLIANCE
   LIGHTING
   OTHER
+  INSERT_ITEM
 }
 
 enum AccessoryItemStatus {
