@@ -444,6 +444,8 @@ enum SlabFinish {
   SLATE
   ULTRASOFT
   SOFT_TOUCH
+  GLOSSY
+  BOOKMATCH
 }
 
 enum ClosetAreaType {
