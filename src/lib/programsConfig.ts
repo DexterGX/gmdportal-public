@@ -119,7 +119,8 @@ export type ProgramId =
   | "accessories"
   | "samplesRequest"
   | "customersV2"
-  | "miscEstimates";
+  | "miscEstimates"
+  | "paymentTerms";
 
 export interface ProgramConfig {
   id: ProgramId;
@@ -418,6 +419,21 @@ export const programs: ProgramConfig[] = [
         name: "Settings",
         path: "/samples-request/settings",
         adminOnly: true,
+      },
+    ],
+    othersItems: [],
+  },
+  {
+    id: "paymentTerms",
+    name: "Payment Terms",
+    basePath: "/payment-terms",
+    description: "Create payment term documents for client agreements.",
+    allowedRoles: ["admin", "sales", "office", "finance"],
+    navItems: [
+      {
+        icon: FileText,
+        name: "New Payment Term",
+        path: "/payment-terms",
       },
     ],
     othersItems: [],
