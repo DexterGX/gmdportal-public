@@ -256,13 +256,14 @@ export default function PaymentTermClient({
     const artifactId = rawArtifactId?.trim();
 
     if (!artifactId) return;
+    const artifactIdValue = artifactId;
 
     async function loadFromArtifact() {
       setSaveError(null);
       setSaveMessage(null);
       try {
         const response = await fetch(
-          `/api/payment-terms?id=${encodeURIComponent(artifactId)}`,
+          `/api/payment-terms?id=${encodeURIComponent(artifactIdValue)}`,
         );
         const json = await response.json();
         if (!response.ok) {
