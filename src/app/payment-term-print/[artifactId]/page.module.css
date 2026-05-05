@@ -1,0 +1,309 @@
+.screen {
+  min-height: 100vh;
+  background: #eceff3;
+  padding: 18px;
+}
+
+.sheet {
+  width: 816px;
+  min-height: 1056px;
+  margin: 0 auto;
+  background: #fff;
+  border: 1px solid #1f2937;
+  box-shadow: 0 8px 28px rgba(15, 23, 42, 0.12);
+  padding: 26px;
+  font-family: "Segoe UI", Tahoma, Geneva, Verdana, sans-serif;
+  color: #0f172a;
+  line-height: 1.38;
+}
+
+.header {
+  display: flex;
+  justify-content: space-between;
+  gap: 14px;
+  align-items: stretch;
+}
+
+.brand {
+  display: flex;
+  gap: 16px;
+  font-size: 12px;
+  flex: 1;
+}
+
+.logo {
+  width: 300px;
+  height: 122px;
+  object-fit: contain;
+}
+
+.companyInfo {
+  padding-top: 4px;
+}
+
+.name {
+  font-size: 19px;
+  font-weight: 700;
+  margin-bottom: 8px;
+}
+
+.contactRow {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  margin-top: 4px;
+  font-size: 12px;
+}
+
+.contactIcon {
+  width: 13px;
+  height: 13px;
+  margin-top: 2px;
+  flex: 0 0 auto;
+}
+
+.rev {
+  border: 1px solid #0f172a;
+  min-width: 98px;
+  text-align: center;
+  font-size: 10px;
+  padding: 6px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  justify-content: center;
+  align-items: center;
+  flex-shrink: 0;
+}
+
+.revRow {
+  width: 100%;
+}
+
+.revLabel {
+  font-size: 9px;
+  letter-spacing: 0.02em;
+}
+
+.revValue {
+  font-size: 20px;
+  font-weight: 700;
+  line-height: 1.1;
+}
+
+.title {
+  text-align: center;
+  font-size: 32px;
+  letter-spacing: 0.08em;
+  margin: 18px 0 14px;
+}
+
+.block {
+  border: 1px solid #111827;
+  padding: 10px;
+  margin-top: 10px;
+  font-size: 12px;
+}
+
+.block h2 {
+  margin: 0 0 10px;
+  font-size: 13px;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
+.grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 7px 14px;
+}
+
+.grid span,
+.row span:first-child {
+  font-weight: 600;
+}
+
+.row {
+  display: flex;
+  justify-content: space-between;
+  border-bottom: 1px solid #d1d5db;
+  padding: 6px 0;
+}
+
+.row:last-child {
+  border-bottom: 0;
+}
+
+.chargesList {
+  margin: 0 0 8px;
+  padding-left: 20px;
+}
+
+.chargesList li {
+  margin: 4px 0;
+}
+
+.emptyCharges {
+  color: #374151;
+  margin-bottom: 8px;
+}
+
+.table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 11px;
+  table-layout: fixed;
+}
+
+.table th,
+.table td {
+  border: 1px solid #111827;
+  padding: 6px;
+  text-align: left;
+  vertical-align: top;
+  word-break: break-word;
+}
+
+.table th {
+  background: #f3f4f6;
+  font-weight: 700;
+}
+
+/* Balance distribution – 8 equal columns */
+.balanceTable {
+  width: 100%;
+  border-collapse: collapse;
+  table-layout: fixed;
+}
+
+.balanceTable th,
+.balanceTable td {
+  width: 12.5%;
+  border: 1px solid #111827;
+  text-align: center;
+  vertical-align: middle;
+  overflow: hidden;
+}
+
+.balanceTable th {
+  background: #f3f4f6;
+  font-weight: 700;
+  font-size: 8.5px;
+  padding: 4px 2px;
+  white-space: normal;
+  word-break: break-word;
+  line-height: 1.2;
+}
+
+.balanceTable td {
+  padding: 5px 2px;
+  font-size: 9.5px;
+  white-space: nowrap;
+}
+
+.pageBottom {
+  margin-top: auto;
+  padding-top: 24px;
+}
+
+.signatures {
+  margin-top: 54px;
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 36px;
+  font-size: 12px;
+}
+
+.signatures > div {
+  border-top: 1px solid #111827;
+  padding-top: 8px;
+  text-align: center;
+}
+
+.termsBox {
+  border: 1px solid #111827;
+  margin-top: 14px;
+  padding: 10px 14px;
+  font-size: 9px;
+  line-height: 1.5;
+  text-align: center;
+}
+
+.termsBox p {
+  margin: 0 0 4px;
+}
+
+.termsBox p:last-child {
+  margin-bottom: 0;
+}
+
+.termsNote {
+  font-style: italic;
+  margin-left: 12px;
+}
+
+@page {
+  size: Letter portrait;
+  margin: 8mm;
+}
+
+@media print {
+  .screen {
+    background: #fff;
+    min-height: 0;
+    padding: 0;
+  }
+
+  .sheet {
+    width: auto;
+    min-height: 0;
+    border: 0;
+    margin: 0;
+    padding: 0;
+    box-shadow: none;
+  }
+
+  .logo {
+    width: 300px !important;
+    height: 122px !important;
+    max-width: none !important;
+  }
+
+  .header,
+  .block,
+  .signatures,
+  .table,
+  .table tr {
+    break-inside: avoid;
+    page-break-inside: avoid;
+  }
+
+  .title {
+    margin: 12px 0 8px;
+  }
+
+  .block {
+    margin-top: 6px;
+    padding: 7px;
+  }
+
+  .row {
+    padding: 3px 0;
+  }
+
+  .chargesList li {
+    margin: 2px 0;
+  }
+  .signatures {
+    margin-top: 16px;
+  }
+
+  .pageBottom {
+    position: fixed;
+    bottom: 8mm;
+    left: 8mm;
+    right: 8mm;
+    margin-top: 0;
+    padding-top: 0;
+  }
+}

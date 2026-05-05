@@ -270,6 +270,8 @@ model CompanyDocumentSettings {
   id          String   @id @default(cuid())
   companyName String   @default("GM Design")
   phoneNumber String?  @default("(305) XXX-XXXX")
+  email       String?
+  website     String?
   address     String?
   logoUrl     String   @default("/logo.svg")
   createdAt   DateTime @default(now())

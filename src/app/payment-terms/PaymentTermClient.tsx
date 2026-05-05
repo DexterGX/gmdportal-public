@@ -1,7 +1,9 @@
 "use client";
 
+import { useSearchParams } from "next/navigation";
+import Link from "next/link";
 import { useEffect, useMemo, useRef, useState } from "react";
-import { FileText, Plus, Trash2 } from "lucide-react";
+import { FileText, Plus, Printer, Save, Trash2 } from "lucide-react";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -136,6 +138,8 @@ export default function PaymentTermClient({
   appRole = "sales",
 }: Props) {
   const isAdmin = appRole === "admin";
+  const searchParams = useSearchParams();
+  const isViewMode = searchParams.get("mode") === "view";
   // Client / job search
   const [clientSearch, setClientSearch] = useState("");
   const [clientResults, setClientResults] = useState<ClientOption[]>([]);
@@ -157,6 +161,13 @@ export default function PaymentTermClient({
   const [date, setDate] = useState(new Date().toISOString().slice(0, 10));
   const [revNum, setRevNum] = useState("1");
   const [clientDeposit, setClientDeposit] = useState("");
+  const [saveLoading, setSaveLoading] = useState(false);
+  const [saveMessage, setSaveMessage] = useState<string | null>(null);
+  const [saveError, setSaveError] = useState<string | null>(null);
+  const [savedArtifactId, setSavedArtifactId] = useState<string | null>(null);
+  const [paymentTermNumber, setPaymentTermNumber] = useState<string>("");
+  const [sourceArtifactId, setSourceArtifactId] = useState<string | null>(null);
+  const [showInCustomerFiles, setShowInCustomerFiles] = useState(true);
 
   // Invoices
   const [invoices, setInvoices] = useState<Invoice[]>(() => {
@@ -238,6 +249,118 @@ export default function PaymentTermClient({
     () => selectedClient?.jobs.find((j) => j.id === selectedJobId) ?? null,
     [selectedClient, selectedJobId],
   );
+
+  useEffect(() => {
+    const rawArtifactId = searchParams.get("artifactId");
+    const mode = (searchParams.get("mode") || "").toLowerCase();
+    const artifactId = rawArtifactId?.trim();
+
+    if (!artifactId) return;
+
+    async function loadFromArtifact() {
+      setSaveError(null);
+      setSaveMessage(null);
+      try {
+        const response = await fetch(
+          `/api/payment-terms?id=${encodeURIComponent(artifactId)}`,
+        );
+        const json = await response.json();
+        if (!response.ok) {
+          throw new Error(json?.error || "Failed to load payment term");
+        }
+
+        const meta = (json?.metadata ?? {}) as any;
+
+        const loadedClient: ClientOption = {
+          id: String(meta.customerId || ""),
+          displayName: String(meta.customerName || "-"),
+          pipedriveId:
+            typeof meta.customerPipedriveId === "string"
+              ? meta.customerPipedriveId
+              : null,
+          contractor:
+            typeof meta.contractor === "string" ? meta.contractor : null,
+          customerAddress:
+            typeof meta.customerAddress === "string"
+              ? meta.customerAddress
+              : null,
+          jobs: [
+            {
+              id: String(meta.jobId || ""),
+              dealId: typeof meta.dealId === "string" ? meta.dealId : null,
+              dealName:
+                typeof meta.dealName === "string" ? meta.dealName : null,
+              address: typeof meta.address === "string" ? meta.address : null,
+              status:
+                typeof meta.jobStatus === "string" ? meta.jobStatus : "LOADED",
+            },
+          ].filter((j) => Boolean(j.id)),
+        };
+
+        if (loadedClient.id) {
+          setSelectedClient(loadedClient);
+          setClientSearch(loadedClient.displayName);
+          setSelectedJobId(loadedClient.jobs[0]?.id || "");
+        }
+
+        setSalesRep(
+          typeof meta.salesRep === "string" ? meta.salesRep : initialSalesRep,
+        );
+        setDate(
+          typeof meta.date === "string"
+            ? meta.date
+            : new Date().toISOString().slice(0, 10),
+        );
+
+        const rawRev = Number(String(meta.revNum || "1"));
+        const nextRev = Number.isFinite(rawRev) ? rawRev + 1 : 2;
+        setRevNum(
+          mode === "edit" ? String(nextRev) : String(meta.revNum || "1"),
+        );
+
+        const loadedInvoices = Array.isArray(meta.invoices)
+          ? meta.invoices
+          : [];
+        setInvoices(
+          loadedInvoices.length > 0
+            ? loadedInvoices.map((inv: any) => ({
+                id: String(inv.id || uid()),
+                num: String(inv.num || ""),
+                amount: String(inv.amount || ""),
+                type: inv.type === "countertop" ? "countertop" : "cabinet",
+              }))
+            : [{ id: uid(), num: "", amount: "", type: "cabinet" }],
+        );
+
+        const loadedLineItems =
+          meta.lineItemsByInvoice && typeof meta.lineItemsByInvoice === "object"
+            ? meta.lineItemsByInvoice
+            : {};
+        setLineItemsByInvoice(loadedLineItems);
+
+        const loadedClientDeposit = Number(meta?.totals?.clientDeposit);
+        setClientDeposit(
+          Number.isFinite(loadedClientDeposit) ? fmt(loadedClientDeposit) : "",
+        );
+
+        const visibility = meta?.showInCustomerFiles;
+        setShowInCustomerFiles(visibility !== false);
+
+        setPaymentTermNumber(String(meta.paymentTermNumber || ""));
+        setSavedArtifactId(String(json?.id || ""));
+        setSourceArtifactId(String(json?.id || artifactId));
+        setSaveMessage(
+          mode === "edit"
+            ? `Loaded ${meta.paymentTermNumber || "payment term"} for new revision.`
+            : `Loaded ${meta.paymentTermNumber || "payment term"}.`,
+        );
+      } catch (error: any) {
+        setSaveError(error?.message || "Failed to load payment term");
+      }
+    }
+
+    void loadFromArtifact();
+  }, [initialSalesRep, searchParams]);
 
   // ── Invoice management ────────────────────────────────────────────────────
 
@@ -453,7 +576,10 @@ export default function PaymentTermClient({
 
   const effectiveDeposit = useMemo(() => {
     const typed = parseAmt(clientDeposit);
-    return typed > computed.grandDeposit ? typed : computed.grandDeposit;
+    if (clientDeposit.trim().length === 0) {
+      return computed.grandDeposit;
+    }
+    return typed;
   }, [clientDeposit, computed.grandDeposit]);
 
   const effectiveBalance = computed.totalInvoiceAmount - effectiveDeposit;
@@ -462,740 +588,957 @@ export default function PaymentTermClient({
     clientDeposit.trim().length > 0 &&
     typedClientDeposit < computed.grandDeposit;
 
+  const adjustedInvoiceBreakdown = useMemo(() => {
+    const count = computed.perInvoice.length;
+    if (count === 0) return [];
+
+    const diffCents = Math.round(
+      (effectiveDeposit - computed.grandDeposit) * 100,
+    );
+    const baseCents = Math.trunc(diffCents / count);
+    const remainderCents = diffCents - baseCents * count;
+    const remainderSign =
+      remainderCents === 0 ? 0 : remainderCents > 0 ? 1 : -1;
+    const remainderAbs = Math.abs(remainderCents);
+
+    return computed.perInvoice.map((inv, index) => {
+      const extraCents = baseCents + (index < remainderAbs ? remainderSign : 0);
+      const extra = extraCents / 100;
+      const adjustedDeposit = inv.deposit + extra;
+      const adjustedBalance = inv.total - adjustedDeposit;
+
+      return {
+        ...inv,
+        adjustedDeposit,
+        adjustedBalance,
+      };
+    });
+  }, [computed.perInvoice, computed.grandDeposit, effectiveDeposit]);
+
+  async function savePaymentTerm() {
+    setSaveError(null);
+    setSaveMessage(null);
+
+    if (!selectedClient) {
+      setSaveError("Please select a client first.");
+      return;
+    }
+
+    if (!selectedJob) {
+      setSaveError("Please select a deal/job first.");
+      return;
+    }
+
+    setSaveLoading(true);
+    try {
+      const payload = {
+        customerId: selectedClient.id,
+        customerName: selectedClient.displayName,
+        customerPipedriveId: selectedClient.pipedriveId,
+        customerAddress: selectedClient.customerAddress,
+        contractor: selectedClient.contractor,
+        jobId: selectedJob.id,
+        dealId: selectedJob.dealId,
+        dealName: selectedJob.dealName,
+        jobStatus: selectedJob.status,
+        address: selectedJob.address,
+        salesRep,
+        date,
+        revNum,
+        invoices,
+        lineItemsByInvoice,
+        totals: {
+          invoiceTotal: computed.totalInvoiceAmount,
+          minimumDeposit: computed.grandDeposit,
+          clientDeposit: effectiveDeposit,
+          remainingBalance: effectiveBalance,
+          byType: computed.byType,
+        },
+        adjustedInvoiceBreakdown,
+        showInCustomerFiles,
+        sourceArtifactId,
+        savedAt: new Date().toISOString(),
+      };
+
+      const response = await fetch("/api/payment-terms", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(payload),
+      });
+      const json = await response.json();
+      if (!response.ok) {
+        throw new Error(json?.error || "Failed to save payment term");
+      }
+
+      setSavedArtifactId(String(json.id || ""));
+      setPaymentTermNumber(String(json.paymentTermNumber || ""));
+      setSaveMessage("Payment term saved successfully.");
+    } catch (error: any) {
+      setSaveError(error?.message || "Failed to save payment term");
+    } finally {
+      setSaveLoading(false);
+    }
+  }
+
+  function openCurrentPrint() {
+    window.print();
+  }
+
+  function openClientPrint() {
+    if (!savedArtifactId) {
+      setSaveError("Save first to generate print documents.");
+      return;
+    }
+    window.open(`/payment-term-print/${savedArtifactId}?autoprint=1`, "_blank");
+  }
+
   // ── Render ────────────────────────────────────────────────────────────────
 
   return (
-    <div className="max-w-[1500px] mx-auto space-y-6 pb-12">
+    <div className="pt-builder max-w-[1500px] mx-auto space-y-6 pb-12">
       {/* ── Page title ── */}
-      <div className="flex items-center gap-3">
-        <div className="p-2 bg-blue-600 rounded-lg">
-          <FileText className="w-5 h-5 text-white" />
+      <div className="flex flex-wrap items-start justify-between gap-3">
+        <div className="flex items-center gap-3 min-w-0">
+          <div className="p-2 bg-blue-600 rounded-lg flex-shrink-0">
+            <FileText className="w-5 h-5 text-white" />
+          </div>
+          <div className="min-w-0">
+            <h1 className="text-xl sm:text-2xl font-bold text-gray-900 dark:text-gray-100">
+              {isViewMode ? "View Payment Term" : "New Payment Term"}
+            </h1>
+            <p className="text-sm text-gray-500 dark:text-gray-400">
+              {isViewMode
+                ? "Viewing saved payment term — read only"
+                : "Create a payment term document linked to a client and job"}
+            </p>
+            {paymentTermNumber && (
+              <p className="text-xs text-blue-600 dark:text-blue-400 mt-1 font-medium">
+                {isViewMode
+                  ? `#${paymentTermNumber}`
+                  : `Saved as #${paymentTermNumber}`}
+              </p>
+            )}
+          </div>
         </div>
-        <div>
-          <h1 className="text-2xl font-bold text-gray-900 dark:text-gray-100">
-            New Payment Term
-          </h1>
-          <p className="text-sm text-gray-500 dark:text-gray-400">
-            Create a payment term document linked to a client and job
-          </p>
+
+        <div className="flex flex-wrap items-center gap-2">
+          {isViewMode ? (
+            <Link
+              href={`/payment-terms?artifactId=${encodeURIComponent(searchParams.get("artifactId") ?? "")}&mode=edit`}
+              className="inline-flex items-center gap-2 px-3 py-2 rounded-lg bg-teal-600 text-white text-sm font-medium hover:bg-teal-700"
+            >
+              <FileText className="w-4 h-4" />
+              Edit as New Revision
+            </Link>
+          ) : (
+            <button
+              type="button"
+              onClick={savePaymentTerm}
+              disabled={saveLoading}
+              className="inline-flex items-center gap-2 px-3 py-2 rounded-lg bg-teal-600 text-white text-sm font-medium hover:bg-teal-700 disabled:opacity-60"
+            >
+              {saveLoading ? (
+                "Saving..."
+              ) : (
+                <>
+                  <Save className="w-4 h-4" />
+                  Save
+                </>
+              )}
+            </button>
+          )}
+          <button
+            type="button"
+            onClick={openCurrentPrint}
+            className="inline-flex items-center gap-2 px-3 py-2 rounded-lg border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-800 text-sm font-medium text-gray-700 dark:text-gray-100 hover:bg-gray-50 dark:hover:bg-gray-700"
+          >
+            <Printer className="w-4 h-4" />
+            Current Layout
+          </button>
+          <button
+            type="button"
+            onClick={openClientPrint}
+            disabled={!savedArtifactId}
+            className="inline-flex items-center gap-2 px-3 py-2 rounded-lg border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-800 text-sm font-medium text-gray-700 dark:text-gray-100 hover:bg-gray-50 dark:hover:bg-gray-700 disabled:opacity-50"
+          >
+            <Printer className="w-4 h-4" />
+            Client Layout
+          </button>
         </div>
       </div>
+
+      {saveError && (
+        <div className="rounded-lg border border-red-300 bg-red-50 px-4 py-2 text-sm text-red-700 dark:border-red-800 dark:bg-red-950/40 dark:text-red-300">
+          {saveError}
+        </div>
+      )}
+      {saveMessage && (
+        <div className="rounded-lg border border-green-300 bg-green-50 px-4 py-2 text-sm text-green-700 dark:border-green-800 dark:bg-green-950/40 dark:text-green-300">
+          {saveMessage}
+        </div>
+      )}
 
       {/* ── Client & Job info ── */}
-      <div className="bg-white dark:bg-gray-800 rounded-xl shadow-sm border border-gray-200 dark:border-gray-700 p-5">
-        <h2 className="text-xs font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wider mb-4">
-          Client &amp; Job Information
-        </h2>
+      <fieldset disabled={isViewMode} className="contents">
+        <div className="bg-white dark:bg-gray-800 rounded-xl shadow-sm border border-gray-200 dark:border-gray-700 p-5">
+          <h2 className="text-xs font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wider mb-4">
+            Client &amp; Job Information
+          </h2>
 
-        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
-          {/* Customer search */}
-          <div className="sm:col-span-2 relative">
-            <label className="block text-xs font-medium text-gray-600 dark:text-gray-400 mb-1">
-              Customer Name
-            </label>
-            <input
-              ref={clientInputRef}
-              type="text"
-              className="w-full border border-gray-300 dark:border-gray-600 rounded-lg px-3 py-2 text-sm bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100 focus:outline-none focus:ring-2 focus:ring-blue-500"
-              placeholder="Search by name, email, or deal…"
-              value={clientSearch}
-              onChange={(e) => searchClients(e.target.value)}
-              autoComplete="off"
-            />
-            {loadingSearch && (
-              <div className="absolute right-3 top-8 w-4 h-4 border-2 border-blue-500 border-t-transparent rounded-full animate-spin" />
-            )}
-            {/* Dropdown portal */}
-            {clientResults.length > 0 && dropdownRect && (
-              <ul
-                className="fixed z-50 bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-lg shadow-xl overflow-y-auto max-h-64"
-                style={{
-                  top: dropdownRect.top + 4,
-                  left: dropdownRect.left,
-                  width: dropdownRect.width,
-                }}
-              >
-                {clientResults.map((c) => (
-                  <li
-                    key={c.id}
-                    className="px-4 py-3 hover:bg-blue-50 dark:hover:bg-blue-900/20 cursor-pointer border-b border-gray-100 dark:border-gray-700 last:border-0"
-                    onMouseDown={() => pickClient(c)}
-                  >
-                    <div className="font-medium text-sm text-gray-900 dark:text-gray-100">
-                      {c.displayName}
-                    </div>
-                    {c.contractor && (
-                      <div className="text-xs text-gray-500 mt-0.5">
-                        {c.contractor}
-                      </div>
-                    )}
-                    {c.jobs.length > 0 && (
-                      <div className="text-xs text-blue-500 mt-0.5">
-                        {c.jobs.length} job{c.jobs.length !== 1 ? "s" : ""}
-                      </div>
-                    )}
-                  </li>
-                ))}
-              </ul>
-            )}
-          </div>
-
-          {/* Job / Deal */}
-          <div>
-            <label className="block text-xs font-medium text-gray-600 dark:text-gray-400 mb-1">
-              Job / Deal
-            </label>
-            {selectedClient && selectedClient.jobs.length > 0 ? (
-              <select
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+            {/* Customer search */}
+            <div className="sm:col-span-2 relative">
+              <label className="block text-xs font-medium text-gray-600 dark:text-gray-400 mb-1">
+                Customer Name
+              </label>
+              <input
+                ref={clientInputRef}
+                type="text"
                 className="w-full border border-gray-300 dark:border-gray-600 rounded-lg px-3 py-2 text-sm bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100 focus:outline-none focus:ring-2 focus:ring-blue-500"
-                value={selectedJobId}
-                onChange={(e) => setSelectedJobId(e.target.value)}
-              >
-                {selectedClient.jobs.map((j) => (
-                  <option key={j.id} value={j.id}>
-                    {j.dealName || j.dealId || j.id}
-                  </option>
-                ))}
-              </select>
-            ) : (
+                placeholder="Search by name, email, or deal…"
+                value={clientSearch}
+                onChange={(e) => searchClients(e.target.value)}
+                autoComplete="off"
+              />
+              {loadingSearch && (
+                <div className="absolute right-3 top-8 w-4 h-4 border-2 border-blue-500 border-t-transparent rounded-full animate-spin" />
+              )}
+              {/* Dropdown portal */}
+              {clientResults.length > 0 && dropdownRect && (
+                <ul
+                  className="fixed z-50 bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-lg shadow-xl overflow-y-auto max-h-64"
+                  style={{
+                    top: dropdownRect.top + 4,
+                    left: dropdownRect.left,
+                    width: dropdownRect.width,
+                  }}
+                >
+                  {clientResults.map((c) => (
+                    <li
+                      key={c.id}
+                      className="px-4 py-3 hover:bg-blue-50 dark:hover:bg-blue-900/20 cursor-pointer border-b border-gray-100 dark:border-gray-700 last:border-0"
+                      onMouseDown={() => pickClient(c)}
+                    >
+                      <div className="font-medium text-sm text-gray-900 dark:text-gray-100">
+                        {c.displayName}
+                      </div>
+                      {c.contractor && (
+                        <div className="text-xs text-gray-500 mt-0.5">
+                          {c.contractor}
+                        </div>
+                      )}
+                      {c.jobs.length > 0 && (
+                        <div className="text-xs text-blue-500 mt-0.5">
+                          {c.jobs.length} job{c.jobs.length !== 1 ? "s" : ""}
+                        </div>
+                      )}
+                    </li>
+                  ))}
+                </ul>
+              )}
+            </div>
+
+            {/* Job / Deal */}
+            <div>
+              <label className="block text-xs font-medium text-gray-600 dark:text-gray-400 mb-1">
+                Job / Deal
+              </label>
+              {selectedClient && selectedClient.jobs.length > 0 ? (
+                <select
+                  className="w-full border border-gray-300 dark:border-gray-600 rounded-lg px-3 py-2 text-sm bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100 focus:outline-none focus:ring-2 focus:ring-blue-500"
+                  value={selectedJobId}
+                  onChange={(e) => setSelectedJobId(e.target.value)}
+                >
+                  {selectedClient.jobs.map((j) => (
+                    <option key={j.id} value={j.id}>
+                      {j.dealName || j.dealId || j.id}
+                    </option>
+                  ))}
+                </select>
+              ) : (
+                <input
+                  type="text"
+                  className="w-full border border-gray-200 dark:border-gray-700 rounded-lg px-3 py-2 text-sm bg-gray-50 dark:bg-gray-700/40 text-gray-400 cursor-not-allowed"
+                  placeholder="Select a customer first"
+                  disabled
+                />
+              )}
+            </div>
+
+            {/* Sales Rep */}
+            <div>
+              <label className="block text-xs font-medium text-gray-600 dark:text-gray-400 mb-1">
+                Sales Rep
+              </label>
               <input
                 type="text"
-                className="w-full border border-gray-200 dark:border-gray-700 rounded-lg px-3 py-2 text-sm bg-gray-50 dark:bg-gray-700/40 text-gray-400 cursor-not-allowed"
-                placeholder="Select a customer first"
-                disabled
+                className="w-full border border-gray-300 dark:border-gray-600 rounded-lg px-3 py-2 text-sm bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100 focus:outline-none focus:ring-2 focus:ring-blue-500"
+                value={salesRep}
+                onChange={(e) => setSalesRep(e.target.value)}
               />
+            </div>
+
+            {/* Date */}
+            <div>
+              <label className="block text-xs font-medium text-gray-600 dark:text-gray-400 mb-1">
+                Date
+              </label>
+              <input
+                type="date"
+                className="w-full border border-gray-300 dark:border-gray-600 rounded-lg px-3 py-2 text-sm bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100 focus:outline-none focus:ring-2 focus:ring-blue-500"
+                value={date}
+                onChange={(e) => setDate(e.target.value)}
+              />
+            </div>
+
+            {/* Rev # */}
+            <div>
+              <label className="block text-xs font-medium text-gray-600 dark:text-gray-400 mb-1">
+                Rev #
+              </label>
+              <input
+                type="number"
+                min="1"
+                className="w-full border border-gray-300 dark:border-gray-600 rounded-lg px-3 py-2 text-sm bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100 focus:outline-none focus:ring-2 focus:ring-blue-500"
+                value={revNum}
+                onChange={(e) => setRevNum(e.target.value)}
+              />
+            </div>
+
+            <div className="sm:col-span-2 lg:col-span-4 rounded-lg border border-blue-200 dark:border-blue-900 bg-blue-50/50 dark:bg-blue-900/10 p-3">
+              <label className="flex items-center gap-2 text-sm text-gray-700 dark:text-gray-200">
+                <input
+                  type="checkbox"
+                  className="rounded border-gray-300 text-blue-600 focus:ring-blue-500"
+                  checked={showInCustomerFiles}
+                  onChange={(e) => setShowInCustomerFiles(e.target.checked)}
+                />
+                Show this revision in Customer Files (associated job artifacts)
+              </label>
+              <p className="mt-1 text-xs text-gray-500 dark:text-gray-400">
+                Turn this on for the revision the team should see in Customers.
+                Older payment term revisions stay saved but can remain hidden.
+              </p>
+            </div>
+
+            {/* Selected job info */}
+            {selectedJob && (
+              <div className="sm:col-span-2 lg:col-span-4 flex flex-wrap gap-4 items-center pt-1 text-sm text-gray-600 dark:text-gray-400">
+                {selectedJob.dealId && (
+                  <span>
+                    Job ID:{" "}
+                    <strong className="text-gray-900 dark:text-gray-100">
+                      {selectedJob.dealId}
+                    </strong>
+                  </span>
+                )}
+                {selectedJob.address && (
+                  <span>
+                    Address:{" "}
+                    <strong className="text-gray-900 dark:text-gray-100">
+                      {selectedJob.address}
+                    </strong>
+                  </span>
+                )}
+                {selectedJob.status && (
+                  <span className="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-300">
+                    {selectedJob.status}
+                  </span>
+                )}
+                <button
+                  onClick={clearClient}
+                  className="ml-auto text-xs text-gray-400 hover:text-red-500 underline"
+                >
+                  Clear
+                </button>
+              </div>
             )}
           </div>
-
-          {/* Sales Rep */}
-          <div>
-            <label className="block text-xs font-medium text-gray-600 dark:text-gray-400 mb-1">
-              Sales Rep
-            </label>
-            <input
-              type="text"
-              className="w-full border border-gray-300 dark:border-gray-600 rounded-lg px-3 py-2 text-sm bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100 focus:outline-none focus:ring-2 focus:ring-blue-500"
-              value={salesRep}
-              onChange={(e) => setSalesRep(e.target.value)}
-            />
-          </div>
-
-          {/* Date */}
-          <div>
-            <label className="block text-xs font-medium text-gray-600 dark:text-gray-400 mb-1">
-              Date
-            </label>
-            <input
-              type="date"
-              className="w-full border border-gray-300 dark:border-gray-600 rounded-lg px-3 py-2 text-sm bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100 focus:outline-none focus:ring-2 focus:ring-blue-500"
-              value={date}
-              onChange={(e) => setDate(e.target.value)}
-            />
-          </div>
-
-          {/* Rev # */}
-          <div>
-            <label className="block text-xs font-medium text-gray-600 dark:text-gray-400 mb-1">
-              Rev #
-            </label>
-            <input
-              type="number"
-              min="1"
-              className="w-full border border-gray-300 dark:border-gray-600 rounded-lg px-3 py-2 text-sm bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100 focus:outline-none focus:ring-2 focus:ring-blue-500"
-              value={revNum}
-              onChange={(e) => setRevNum(e.target.value)}
-            />
-          </div>
-
-          {/* Selected job info */}
-          {selectedJob && (
-            <div className="sm:col-span-2 lg:col-span-4 flex flex-wrap gap-4 items-center pt-1 text-sm text-gray-600 dark:text-gray-400">
-              {selectedJob.dealId && (
-                <span>
-                  Job ID:{" "}
-                  <strong className="text-gray-900 dark:text-gray-100">
-                    {selectedJob.dealId}
-                  </strong>
-                </span>
-              )}
-              {selectedJob.address && (
-                <span>
-                  Address:{" "}
-                  <strong className="text-gray-900 dark:text-gray-100">
-                    {selectedJob.address}
-                  </strong>
-                </span>
-              )}
-              {selectedJob.status && (
-                <span className="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-300">
-                  {selectedJob.status}
-                </span>
-              )}
-              <button
-                onClick={clearClient}
-                className="ml-auto text-xs text-gray-400 hover:text-red-500 underline"
-              >
-                Clear
-              </button>
-            </div>
-          )}
         </div>
-      </div>
 
-      {/* ── Main two-column layout ── */}
-      <div className="grid grid-cols-1 xl:grid-cols-12 gap-6">
-        {/* ── LEFT: Invoices + per-invoice line items ── */}
-        <div className="xl:col-span-7 space-y-6">
-          {/* Invoices + Distribution attached to each invoice */}
-          <div className="bg-white dark:bg-gray-800 rounded-xl shadow-sm border border-gray-200 dark:border-gray-700 p-5">
-            <div className="flex items-center justify-between mb-4">
-              <h2 className="text-xs font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wider">
-                Invoices
-              </h2>
-              <button
-                onClick={addInvoice}
-                disabled={invoices.length >= MAX_INVOICES}
-                className="flex items-center gap-1.5 text-xs font-medium text-blue-600 hover:text-blue-700 disabled:text-gray-400 disabled:cursor-not-allowed transition-colors"
-              >
-                <Plus className="w-3.5 h-3.5" />
-                Add Invoice
-                {invoices.length >= MAX_INVOICES && (
-                  <span className="text-gray-400">(max {MAX_INVOICES})</span>
-                )}
-              </button>
-            </div>
+        {/* ── Main two-column layout ── */}
+        <div className="pt-builder-grid grid grid-cols-1 xl:grid-cols-12 gap-6">
+          {/* ── LEFT: Invoices + per-invoice line items ── */}
+          <div className="xl:col-span-7 space-y-6">
+            {/* Invoices + Distribution attached to each invoice */}
+            <div className="bg-white dark:bg-gray-800 rounded-xl shadow-sm border border-gray-200 dark:border-gray-700 p-5">
+              <div className="flex items-center justify-between mb-4">
+                <h2 className="text-xs font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wider">
+                  Invoices
+                </h2>
+                <button
+                  onClick={addInvoice}
+                  disabled={invoices.length >= MAX_INVOICES}
+                  className="flex items-center gap-1.5 text-xs font-medium text-blue-600 hover:text-blue-700 disabled:text-gray-400 disabled:cursor-not-allowed transition-colors"
+                >
+                  <Plus className="w-3.5 h-3.5" />
+                  Add Invoice
+                  {invoices.length >= MAX_INVOICES && (
+                    <span className="text-gray-400">(max {MAX_INVOICES})</span>
+                  )}
+                </button>
+              </div>
 
-            <div className="space-y-5">
-              {invoices.map((inv, index) => {
-                const sectionMeta = SECTION_META[inv.type];
-                const defs = defsForType(inv.type);
-                const stateMap =
-                  lineItemsByInvoice[inv.id] ?? initLineItems(inv.type);
-                const invoiceComputed = computed.perInvoice.find(
-                  (i) => i.id === inv.id,
-                );
-                const distributionTotal = invoiceComputed?.total ?? 0;
+              <div className="space-y-5">
+                {invoices.map((inv, index) => {
+                  const sectionMeta = SECTION_META[inv.type];
+                  const defs = defsForType(inv.type);
+                  const stateMap =
+                    lineItemsByInvoice[inv.id] ?? initLineItems(inv.type);
+                  const invoiceComputed = computed.perInvoice.find(
+                    (i) => i.id === inv.id,
+                  );
+                  const distributionTotal = invoiceComputed?.total ?? 0;
 
-                return (
-                  <div
-                    key={inv.id}
-                    className="rounded-xl border border-gray-200 dark:border-gray-700 overflow-hidden"
-                  >
-                    <div className="bg-gray-50 dark:bg-gray-700/30 border-b border-gray-200 dark:border-gray-700 p-4">
-                      <div className="grid grid-cols-1 md:grid-cols-12 gap-3">
-                        <div className="md:col-span-1 flex items-end">
-                          <span className="text-xs font-semibold text-gray-400">
-                            #{index + 1}
-                          </span>
-                        </div>
-
-                        <div className="md:col-span-4">
-                          <label className="block text-xs font-medium text-gray-500 mb-1">
-                            Invoice #
-                          </label>
-                          <input
-                            type="text"
-                            className="w-full border border-gray-300 dark:border-gray-600 rounded-md px-2.5 py-1.5 text-sm bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100 focus:outline-none focus:ring-2 focus:ring-blue-500"
-                            placeholder="12345"
-                            value={inv.num}
-                            onChange={(e) =>
-                              updateInvoice(inv.id, { num: e.target.value })
-                            }
-                          />
-                        </div>
-
-                        <div className="md:col-span-3">
-                          <label className="block text-xs font-medium text-gray-500 mb-1">
-                            Amount ($)
-                          </label>
-                          <div className="relative">
-                            <span className="absolute left-2.5 top-1/2 -translate-y-1/2 text-gray-400 text-sm pointer-events-none">
-                              $
+                  return (
+                    <div
+                      key={inv.id}
+                      className="rounded-xl border border-gray-200 dark:border-gray-700"
+                    >
+                      <div className="rounded-t-xl bg-gray-50 dark:bg-gray-700/30 border-b border-gray-200 dark:border-gray-700 p-4">
+                        <div className="grid grid-cols-1 md:grid-cols-12 gap-3">
+                          <div className="md:col-span-1 flex items-end">
+                            <span className="text-xs font-semibold text-gray-400">
+                              #{index + 1}
                             </span>
+                          </div>
+
+                          <div className="md:col-span-4">
+                            <label className="block text-xs font-medium text-gray-500 mb-1">
+                              Invoice #
+                            </label>
                             <input
                               type="text"
-                              inputMode="decimal"
-                              className="w-full border border-gray-300 dark:border-gray-600 rounded-md pl-6 pr-2.5 py-1.5 text-sm bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100 focus:outline-none focus:ring-2 focus:ring-blue-500"
-                              placeholder="0.00"
-                              value={inv.amount}
+                              className="w-full border border-gray-300 dark:border-gray-600 rounded-md px-2.5 py-1.5 text-sm bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100 focus:outline-none focus:ring-2 focus:ring-blue-500"
+                              placeholder="12345"
+                              value={inv.num}
                               onChange={(e) =>
-                                updateInvoice(inv.id, {
-                                  amount: cleanMoneyInput(e.target.value),
-                                })
-                              }
-                              onBlur={(e) =>
-                                updateInvoice(inv.id, {
-                                  amount: normalizeMoneyOnBlur(e.target.value),
-                                })
+                                updateInvoice(inv.id, { num: e.target.value })
                               }
                             />
                           </div>
-                        </div>
 
-                        <div className="md:col-span-3">
-                          <label className="block text-xs font-medium text-gray-500 mb-1">
-                            Type
-                          </label>
-                          <select
-                            className="w-full border border-gray-300 dark:border-gray-600 rounded-md px-2.5 py-1.5 text-sm bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100 focus:outline-none focus:ring-2 focus:ring-blue-500"
-                            value={inv.type}
-                            onChange={(e) =>
-                              updateInvoice(inv.id, {
-                                type: e.target.value as InvoiceType,
-                              })
-                            }
-                          >
-                            <option value="cabinet">Cabinet</option>
-                            <option value="countertop">Countertop</option>
-                          </select>
-                        </div>
+                          <div className="md:col-span-3">
+                            <label className="block text-xs font-medium text-gray-500 mb-1">
+                              Amount ($)
+                            </label>
+                            <div className="relative">
+                              <span className="absolute left-2.5 top-1/2 -translate-y-1/2 text-gray-400 text-sm pointer-events-none">
+                                $
+                              </span>
+                              <input
+                                type="text"
+                                inputMode="decimal"
+                                className="w-full border border-gray-300 dark:border-gray-600 rounded-md pl-6 pr-2.5 py-1.5 text-sm bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100 focus:outline-none focus:ring-2 focus:ring-blue-500"
+                                placeholder="0.00"
+                                value={inv.amount}
+                                onChange={(e) =>
+                                  updateInvoice(inv.id, {
+                                    amount: cleanMoneyInput(e.target.value),
+                                  })
+                                }
+                                onBlur={(e) =>
+                                  updateInvoice(inv.id, {
+                                    amount: normalizeMoneyOnBlur(
+                                      e.target.value,
+                                    ),
+                                  })
+                                }
+                              />
+                            </div>
+                          </div>
 
-                        <div className="md:col-span-1 flex items-end justify-end">
-                          <button
-                            onClick={() => removeInvoice(inv.id)}
-                            disabled={invoices.length <= 1}
-                            className="p-1.5 rounded-md text-gray-400 hover:text-red-500 hover:bg-red-50 dark:hover:bg-red-900/20 disabled:opacity-30 disabled:cursor-not-allowed transition-colors"
-                            title="Remove invoice"
-                          >
-                            <Trash2 className="w-3.5 h-3.5" />
-                          </button>
+                          <div className="md:col-span-3">
+                            <label className="block text-xs font-medium text-gray-500 mb-1">
+                              Type
+                            </label>
+                            <select
+                              className="w-full border border-gray-300 dark:border-gray-600 rounded-md px-2.5 py-1.5 text-sm bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100 focus:outline-none focus:ring-2 focus:ring-blue-500"
+                              value={inv.type}
+                              onChange={(e) =>
+                                updateInvoice(inv.id, {
+                                  type: e.target.value as InvoiceType,
+                                })
+                              }
+                            >
+                              <option value="cabinet">Cabinet</option>
+                              <option value="countertop">Countertop</option>
+                            </select>
+                          </div>
+
+                          <div className="md:col-span-1 flex items-end justify-end">
+                            <button
+                              onClick={() => removeInvoice(inv.id)}
+                              disabled={invoices.length <= 1}
+                              className="p-1.5 rounded-md text-gray-400 hover:text-red-500 hover:bg-red-50 dark:hover:bg-red-900/20 disabled:opacity-30 disabled:cursor-not-allowed transition-colors"
+                              title="Remove invoice"
+                            >
+                              <Trash2 className="w-3.5 h-3.5" />
+                            </button>
+                          </div>
                         </div>
                       </div>
-                    </div>
 
-                    <div className="overflow-x-auto">
-                      <table className="w-full text-sm">
-                        <thead>
-                          <tr>
-                            <th
-                              colSpan={3}
-                              className={`py-2 px-3 text-xs font-bold uppercase tracking-wider text-left ${sectionMeta.headerCls}`}
-                            >
-                              ■ {sectionMeta.label} Distribution
-                            </th>
-                          </tr>
-                          <tr className="border-b border-gray-200 dark:border-gray-700">
-                            <th className="text-left py-2 px-3 text-xs font-medium text-gray-500">
-                              Line Item
-                            </th>
-                            <th className="text-left py-2 px-3 text-xs font-medium text-gray-500 min-w-[130px]">
-                              Amount ($)
-                            </th>
-                            <th className="text-left py-2 px-3 text-xs font-medium text-gray-500 min-w-[120px]">
-                              Deposit %
-                            </th>
-                          </tr>
-                        </thead>
-                        <tbody>
-                          {defs.map((def) => {
-                            const state = stateMap[def.key] ?? {
-                              amount: "",
-                              depositPct: def.defaultPct,
-                              noInstallation: false,
-                            };
-
-                            const isNoInstallationRow =
-                              inv.type === "cabinet" &&
-                              def.key === "cab_installation" &&
-                              Boolean(state.noInstallation);
-
-                            const isAutoRemainingCabinet =
-                              inv.type === "cabinet" &&
-                              def.key === "cab_cabinet";
-
-                            const noInstallationEnabled =
-                              inv.type === "cabinet" &&
-                              Boolean(
-                                stateMap["cab_installation"]?.noInstallation,
-                              );
-
-                            const amountValue = isAutoRemainingCabinet
-                              ? fmt(
-                                  parseAmt(inv.amount) -
-                                    (parseAmt(
-                                      stateMap["cab_removal"]?.amount ?? "",
-                                    ) +
-                                      (stateMap["cab_installation"]
-                                        ?.noInstallation
-                                        ? 0
-                                        : parseAmt(
-                                            stateMap["cab_installation"]
-                                              ?.amount ?? "",
-                                          )) +
-                                      parseAmt(
-                                        stateMap["cab_others"]?.amount ?? "",
-                                      )),
-                                )
-                              : isNoInstallationRow
-                                ? "0"
-                                : state.amount;
-                            const isAutoRemainingMisc =
-                              inv.type === "countertop" &&
-                              def.key === "ct_misc";
-
-                            const finalAmountValue = isAutoRemainingMisc
-                              ? fmt(
-                                  parseAmt(inv.amount) -
-                                    (parseAmt(
-                                      stateMap["ct_slab"]?.amount ?? "",
-                                    ) +
-                                      parseAmt(
-                                        stateMap["ct_labor"]?.amount ?? "",
-                                      ) +
-                                      parseAmt(
-                                        stateMap["ct_tile"]?.amount ?? "",
-                                      ) +
-                                      parseAmt(
-                                        stateMap["ct_reconection"]?.amount ??
-                                          "",
-                                      )),
-                                )
-                              : amountValue;
-
-                            const depositPctValue =
-                              isAutoRemainingCabinet && noInstallationEnabled
-                                ? 100
-                                : state.depositPct;
-
-                            return (
-                              <tr
-                                key={`${inv.id}-${def.key}`}
-                                className={`border-b border-gray-100 dark:border-gray-700/50 ${sectionMeta.rowCls}`}
+                      <div className="overflow-x-auto rounded-b-xl">
+                        <table className="w-full text-sm">
+                          <thead>
+                            <tr>
+                              <th
+                                colSpan={3}
+                                className={`py-2 px-3 text-xs font-bold uppercase tracking-wider text-left ${sectionMeta.headerCls}`}
                               >
-                                <td className="py-2 px-3 text-gray-700 dark:text-gray-300">
-                                  {def.accent ? (
-                                    <span className="font-medium text-orange-600 dark:text-orange-400">
-                                      {def.label}
-                                    </span>
-                                  ) : (
-                                    def.label
-                                  )}
-                                </td>
-                                <td className="py-2 px-3">
-                                  <div className="relative">
-                                    <span className="absolute left-2.5 top-1/2 -translate-y-1/2 text-gray-400 text-xs pointer-events-none">
-                                      $
-                                    </span>
-                                    <input
-                                      type="text"
-                                      inputMode="decimal"
-                                      className="w-full border border-gray-300 dark:border-gray-600 rounded-md pl-6 pr-2 py-1.5 text-sm bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100 focus:outline-none focus:ring-2 focus:ring-blue-500"
-                                      placeholder="0.00"
-                                      value={finalAmountValue}
-                                      disabled={
-                                        isNoInstallationRow ||
-                                        isAutoRemainingCabinet ||
-                                        isAutoRemainingMisc
-                                      }
-                                      onChange={(e) =>
-                                        updateLineItem(inv.id, def.key, {
-                                          amount: cleanMoneyInput(
-                                            e.target.value,
-                                          ),
-                                        })
-                                      }
-                                      onBlur={(e) =>
-                                        updateLineItem(inv.id, def.key, {
-                                          amount: normalizeMoneyOnBlur(
-                                            e.target.value,
-                                          ),
-                                        })
-                                      }
-                                    />
-                                  </div>
-                                </td>
-                                <td className="py-2 px-3">
-                                  <div className="flex items-center gap-3">
-                                    <div className="relative w-16">
+                                ■ {sectionMeta.label} Distribution
+                              </th>
+                            </tr>
+                            <tr className="border-b border-gray-200 dark:border-gray-700">
+                              <th className="text-left py-2 px-3 text-xs font-medium text-gray-500">
+                                Line Item
+                              </th>
+                              <th className="text-left py-2 px-3 text-xs font-medium text-gray-500 min-w-[130px]">
+                                Amount ($)
+                              </th>
+                              <th className="text-left py-2 px-3 text-xs font-medium text-gray-500 min-w-[120px]">
+                                Deposit %
+                              </th>
+                            </tr>
+                          </thead>
+                          <tbody>
+                            {defs.map((def) => {
+                              const state = stateMap[def.key] ?? {
+                                amount: "",
+                                depositPct: def.defaultPct,
+                                noInstallation: false,
+                              };
+
+                              const isNoInstallationRow =
+                                inv.type === "cabinet" &&
+                                def.key === "cab_installation" &&
+                                Boolean(state.noInstallation);
+
+                              const isAutoRemainingCabinet =
+                                inv.type === "cabinet" &&
+                                def.key === "cab_cabinet";
+
+                              const noInstallationEnabled =
+                                inv.type === "cabinet" &&
+                                Boolean(
+                                  stateMap["cab_installation"]?.noInstallation,
+                                );
+
+                              const isCabOthers =
+                                inv.type === "cabinet" &&
+                                def.key === "cab_others";
+
+                              const amountValue = isAutoRemainingCabinet
+                                ? fmt(
+                                    parseAmt(inv.amount) -
+                                      (parseAmt(
+                                        stateMap["cab_removal"]?.amount ?? "",
+                                      ) +
+                                        (stateMap["cab_installation"]
+                                          ?.noInstallation
+                                          ? 0
+                                          : parseAmt(
+                                              stateMap["cab_installation"]
+                                                ?.amount ?? "",
+                                            )) +
+                                        parseAmt(
+                                          stateMap["cab_others"]?.amount ?? "",
+                                        )),
+                                  )
+                                : isNoInstallationRow
+                                  ? "0"
+                                  : state.amount;
+                              const isAutoRemainingMisc =
+                                inv.type === "countertop" &&
+                                def.key === "ct_misc";
+
+                              const finalAmountValue = isAutoRemainingMisc
+                                ? fmt(
+                                    parseAmt(inv.amount) -
+                                      (parseAmt(
+                                        stateMap["ct_slab"]?.amount ?? "",
+                                      ) +
+                                        parseAmt(
+                                          stateMap["ct_labor"]?.amount ?? "",
+                                        ) +
+                                        parseAmt(
+                                          stateMap["ct_tile"]?.amount ?? "",
+                                        ) +
+                                        parseAmt(
+                                          stateMap["ct_reconection"]?.amount ??
+                                            "",
+                                        )),
+                                  )
+                                : amountValue;
+
+                              const depositPctValue =
+                                isAutoRemainingCabinet && noInstallationEnabled
+                                  ? 100
+                                  : isCabOthers && noInstallationEnabled
+                                    ? 100
+                                    : state.depositPct;
+
+                              return (
+                                <tr
+                                  key={`${inv.id}-${def.key}`}
+                                  className={`border-b border-gray-100 dark:border-gray-700/50 ${sectionMeta.rowCls}`}
+                                >
+                                  <td className="py-2 px-3 text-gray-700 dark:text-gray-300">
+                                    {def.accent ? (
+                                      <span className="font-medium text-orange-600 dark:text-orange-400">
+                                        {def.label}
+                                      </span>
+                                    ) : (
+                                      def.label
+                                    )}
+                                  </td>
+                                  <td className="py-2 px-3">
+                                    <div className="relative">
+                                      <span className="absolute left-2.5 top-1/2 -translate-y-1/2 text-gray-400 text-xs pointer-events-none">
+                                        $
+                                      </span>
                                       <input
-                                        type="number"
-                                        min="0"
-                                        max="100"
-                                        step="1"
-                                        className="w-full [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none border border-gray-300 dark:border-gray-600 rounded-md pl-2 pr-5 py-1.5 text-sm bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100 focus:outline-none focus:ring-2 focus:ring-blue-500 disabled:bg-gray-100 disabled:dark:bg-gray-700/40 disabled:text-gray-400 disabled:cursor-not-allowed"
-                                        value={depositPctValue}
+                                        type="text"
+                                        inputMode="decimal"
+                                        className="w-full border border-gray-300 dark:border-gray-600 rounded-md pl-6 pr-2 py-1.5 text-sm bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100 focus:outline-none focus:ring-2 focus:ring-blue-500"
+                                        placeholder="0.00"
+                                        value={finalAmountValue}
                                         disabled={
-                                          !isAdmin ||
-                                          (isAutoRemainingCabinet &&
-                                            noInstallationEnabled)
+                                          isNoInstallationRow ||
+                                          isAutoRemainingCabinet ||
+                                          isAutoRemainingMisc
                                         }
                                         onChange={(e) =>
                                           updateLineItem(inv.id, def.key, {
-                                            depositPct: Number(e.target.value),
+                                            amount: cleanMoneyInput(
+                                              e.target.value,
+                                            ),
+                                          })
+                                        }
+                                        onBlur={(e) =>
+                                          updateLineItem(inv.id, def.key, {
+                                            amount: normalizeMoneyOnBlur(
+                                              e.target.value,
+                                            ),
                                           })
                                         }
                                       />
-                                      <span className="absolute right-1.5 top-1/2 -translate-y-1/2 text-gray-400 text-xs pointer-events-none">
-                                        %
-                                      </span>
                                     </div>
+                                  </td>
+                                  <td className="py-2 px-3">
+                                    <div className="flex items-center gap-3">
+                                      <div className="relative w-16">
+                                        <input
+                                          type="number"
+                                          min="0"
+                                          max="100"
+                                          step="1"
+                                          className="w-full [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none border border-gray-300 dark:border-gray-600 rounded-md pl-2 pr-5 py-1.5 text-sm bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100 focus:outline-none focus:ring-2 focus:ring-blue-500 disabled:bg-gray-100 disabled:dark:bg-gray-700/40 disabled:text-gray-400 disabled:cursor-not-allowed"
+                                          value={depositPctValue}
+                                          disabled={
+                                            !isAdmin ||
+                                            (noInstallationEnabled &&
+                                              (isAutoRemainingCabinet ||
+                                                isCabOthers))
+                                          }
+                                          onChange={(e) =>
+                                            updateLineItem(inv.id, def.key, {
+                                              depositPct: Number(
+                                                e.target.value,
+                                              ),
+                                            })
+                                          }
+                                        />
+                                        <span className="absolute right-1.5 top-1/2 -translate-y-1/2 text-gray-400 text-xs pointer-events-none">
+                                          %
+                                        </span>
+                                      </div>
 
-                                    {inv.type === "cabinet" &&
-                                      def.key === "cab_installation" && (
-                                        <label className="inline-flex items-center gap-2 text-xs text-gray-600 dark:text-gray-300 whitespace-nowrap">
-                                          <input
-                                            type="checkbox"
-                                            className="rounded border-gray-300 text-blue-600 focus:ring-blue-500"
-                                            checked={Boolean(
-                                              state.noInstallation,
-                                            )}
-                                            onChange={(e) => {
-                                              const checked = e.target.checked;
-                                              updateLineItem(inv.id, def.key, {
-                                                noInstallation: checked,
-                                                amount: checked
-                                                  ? "0"
-                                                  : state.amount,
-                                              });
-                                              updateLineItem(
-                                                inv.id,
-                                                "cab_cabinet",
-                                                {
-                                                  depositPct: checked
-                                                    ? 100
-                                                    : 70,
-                                                },
-                                              );
-                                            }}
-                                          />
-                                          No installation
-                                        </label>
-                                      )}
-                                  </div>
-                                </td>
-                              </tr>
-                            );
-                          })}
-                        </tbody>
-                        <tfoot>
-                          <tr
-                            className={`border-t border-gray-200 dark:border-gray-700 ${sectionMeta.subCls}`}
-                          >
-                            <td className="py-2 px-3 text-xs font-semibold text-gray-700 dark:text-gray-300">
-                              Distribution Total
-                            </td>
-                            <td className="py-2 px-3 text-sm font-bold text-gray-900 dark:text-gray-100">
-                              ${fmt(distributionTotal)}
-                            </td>
-                            <td className="py-2 px-3 text-xs text-gray-500 dark:text-gray-400"></td>
-                          </tr>
-                        </tfoot>
-                      </table>
+                                      {inv.type === "cabinet" &&
+                                        def.key === "cab_installation" && (
+                                          <label className="inline-flex items-center gap-2 text-xs text-gray-600 dark:text-gray-300 whitespace-nowrap">
+                                            <input
+                                              type="checkbox"
+                                              className="rounded border-gray-300 text-blue-600 focus:ring-blue-500"
+                                              checked={Boolean(
+                                                state.noInstallation,
+                                              )}
+                                              onChange={(e) => {
+                                                const checked =
+                                                  e.target.checked;
+                                                updateLineItem(
+                                                  inv.id,
+                                                  def.key,
+                                                  {
+                                                    noInstallation: checked,
+                                                    amount: checked
+                                                      ? "0"
+                                                      : state.amount,
+                                                  },
+                                                );
+                                                updateLineItem(
+                                                  inv.id,
+                                                  "cab_cabinet",
+                                                  {
+                                                    depositPct: checked
+                                                      ? 100
+                                                      : 70,
+                                                  },
+                                                );
+                                                updateLineItem(
+                                                  inv.id,
+                                                  "cab_others",
+                                                  {
+                                                    depositPct: checked
+                                                      ? 100
+                                                      : 50,
+                                                  },
+                                                );
+                                              }}
+                                            />
+                                            No installation
+                                          </label>
+                                        )}
+                                    </div>
+                                  </td>
+                                </tr>
+                              );
+                            })}
+                          </tbody>
+                          <tfoot>
+                            <tr
+                              className={`border-t border-gray-200 dark:border-gray-700 ${sectionMeta.subCls}`}
+                            >
+                              <td className="py-2 px-3 text-xs font-semibold text-gray-700 dark:text-gray-300">
+                                Distribution Total
+                              </td>
+                              <td className="py-2 px-3 text-sm font-bold text-gray-900 dark:text-gray-100">
+                                ${fmt(distributionTotal)}
+                              </td>
+                              <td className="py-2 px-3 text-xs text-gray-500 dark:text-gray-400"></td>
+                            </tr>
+                          </tfoot>
+                        </table>
+                      </div>
                     </div>
+                  );
+                })}
+
+                <div className="rounded-md border border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-700/20 px-3 py-2 text-sm font-medium text-gray-700 dark:text-gray-300 flex justify-between">
+                  <span>Total of Invoices</span>
+                  <span>${fmt(computed.totalInvoiceAmount)}</span>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          {/* ── RIGHT: Payment Term Summary ── */}
+          <div className="xl:col-span-5">
+            <div className="bg-white dark:bg-gray-800 rounded-xl shadow-sm border border-gray-200 dark:border-gray-700 p-5 sticky top-6">
+              <h2 className="text-xs font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wider mb-5">
+                Payment Term — Rules
+              </h2>
+
+              {/* Per-type breakdown */}
+              {(["cabinet", "countertop"] as InvoiceType[]).map((section) => {
+                const meta = SECTION_META[section];
+                const sec = computed.byType[section];
+
+                return (
+                  <div key={section} className="mb-6">
+                    {/* Section header */}
+                    <div
+                      className={`px-3 py-2 text-xs font-bold uppercase tracking-wider rounded-t-md ${meta.headerCls}`}
+                    >
+                      ■ {meta.label}
+                    </div>
+
+                    <table className="w-full text-xs border border-gray-200 dark:border-gray-700 border-t-0 rounded-b-md overflow-hidden">
+                      <thead>
+                        <tr className="bg-gray-100 dark:bg-gray-700 border-b border-gray-200 dark:border-gray-600">
+                          <th className="text-left py-1.5 px-3 font-medium text-gray-600 dark:text-gray-400">
+                            Metric
+                          </th>
+                          <th className="text-right py-1.5 px-2 font-medium text-gray-600 dark:text-gray-400">
+                            Total
+                          </th>
+                          <th className="text-right py-1.5 px-2 font-medium text-green-700 dark:text-green-400">
+                            Deposit
+                          </th>
+                          <th className="text-right py-1.5 px-3 font-medium text-gray-600 dark:text-gray-400">
+                            Balance
+                          </th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        <tr className="border-b border-gray-100 dark:border-gray-700/50">
+                          <td className="py-1.5 px-3 text-gray-700 dark:text-gray-300">
+                            All {meta.label} Lines
+                          </td>
+                          <td className="py-1.5 px-2 text-right text-gray-700 dark:text-gray-300">
+                            ${fmt(sec.total)}
+                          </td>
+                          <td className="py-1.5 px-2 text-right font-semibold text-green-700 dark:text-green-400">
+                            ${fmt(sec.deposit)}
+                          </td>
+                          <td className="py-1.5 px-3 text-right text-gray-700 dark:text-gray-300">
+                            ${fmt(sec.balance)}
+                          </td>
+                        </tr>
+                      </tbody>
+                      <tfoot>
+                        <tr
+                          className={`border-t-2 border-gray-300 dark:border-gray-600 ${meta.subCls} dark:bg-transparent`}
+                        >
+                          <td className="py-2 px-3 font-semibold text-gray-700 dark:text-gray-300">
+                            Subtotal
+                          </td>
+                          <td className="py-2 px-2 text-right font-semibold text-gray-900 dark:text-gray-100">
+                            ${fmt(sec.total)}
+                          </td>
+                          <td className="py-2 px-2 text-right font-bold text-green-700 dark:text-green-400">
+                            ${fmt(sec.deposit)}
+                          </td>
+                          <td className="py-2 px-3 text-right font-semibold text-gray-700 dark:text-gray-300">
+                            ${fmt(sec.balance)}
+                          </td>
+                        </tr>
+                      </tfoot>
+                    </table>
                   </div>
                 );
               })}
 
-              <div className="rounded-md border border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-700/20 px-3 py-2 text-sm font-medium text-gray-700 dark:text-gray-300 flex justify-between">
-                <span>Total of Invoices</span>
-                <span>${fmt(computed.totalInvoiceAmount)}</span>
+              {/* Grand totals */}
+              <div className="rounded-xl border-2 border-blue-200 dark:border-blue-800 bg-blue-50 dark:bg-blue-900/20 p-4 space-y-3">
+                <div className="flex justify-between items-center">
+                  <span className="text-sm font-medium text-gray-700 dark:text-gray-300">
+                    Total
+                  </span>
+                  <span className="text-lg font-bold text-gray-900 dark:text-gray-100">
+                    ${fmt(computed.totalInvoiceAmount)}
+                  </span>
+                </div>
+                <div className="border-t border-blue-200 dark:border-blue-700 pt-3 flex justify-between items-center">
+                  <span className="text-sm font-medium text-gray-700 dark:text-gray-300">
+                    Minimum Deposit
+                  </span>
+                  <span className="text-lg font-bold text-green-700 dark:text-green-400">
+                    ${fmt(computed.grandDeposit)}
+                  </span>
+                </div>
+                <div className="flex justify-between items-center">
+                  <span className="text-sm font-medium text-gray-700 dark:text-gray-300">
+                    Remaining Balance
+                  </span>
+                  <span className="text-lg font-bold text-orange-600 dark:text-orange-400">
+                    ${fmt(effectiveBalance)}
+                  </span>
+                </div>
               </div>
-            </div>
-          </div>
-        </div>
 
-        {/* ── RIGHT: Payment Term Summary ── */}
-        <div className="xl:col-span-5">
-          <div className="bg-white dark:bg-gray-800 rounded-xl shadow-sm border border-gray-200 dark:border-gray-700 p-5 sticky top-6">
-            <h2 className="text-xs font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wider mb-5">
-              Payment Term — Rules
-            </h2>
+              {/* Client deposit override */}
+              <div className="rounded-xl border border-blue-200 dark:border-blue-700 bg-blue-50/50 dark:bg-blue-900/10 p-4 space-y-2">
+                <div className="flex items-center justify-between">
+                  <label className="text-xs font-semibold text-gray-600 dark:text-gray-400 uppercase tracking-wider">
+                    Client Deposit
+                  </label>
+                  {typedClientDeposit > computed.grandDeposit && (
+                    <span className="text-xs text-green-600 dark:text-green-400 font-medium">
+                      +${fmt(typedClientDeposit - computed.grandDeposit)} above
+                      minimum
+                    </span>
+                  )}
+                </div>
+                <div className="relative">
+                  <span className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400 pointer-events-none text-sm">
+                    $
+                  </span>
+                  <input
+                    type="text"
+                    inputMode="decimal"
+                    placeholder={fmt(computed.grandDeposit)}
+                    className={`w-full border rounded-lg pl-7 pr-3 py-2 text-sm font-medium bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100 focus:outline-none focus:ring-2 ${hasBelowMinClientDeposit ? "border-red-400 dark:border-red-600 focus:ring-red-500" : "border-blue-300 dark:border-blue-700 focus:ring-blue-500"}`}
+                    value={clientDeposit}
+                    onChange={(e) =>
+                      setClientDeposit(cleanMoneyInput(e.target.value))
+                    }
+                    onBlur={(e) =>
+                      setClientDeposit(normalizeMoneyOnBlur(e.target.value))
+                    }
+                  />
+                </div>
+                {hasBelowMinClientDeposit && (
+                  <p className="text-xs text-red-600 dark:text-red-400 font-medium">
+                    Client deposit is below minimum required ($
+                    {fmt(computed.grandDeposit)}).
+                  </p>
+                )}
+                <p className="text-xs text-gray-400 dark:text-gray-500">
+                  Min: ${fmt(computed.grandDeposit)} — leave blank to use
+                  minimum
+                </p>
+              </div>
 
-            {/* Per-type breakdown */}
-            {(["cabinet", "countertop"] as InvoiceType[]).map((section) => {
-              const meta = SECTION_META[section];
-              const sec = computed.byType[section];
-
-              return (
-                <div key={section} className="mb-6">
-                  {/* Section header */}
-                  <div
-                    className={`px-3 py-2 text-xs font-bold uppercase tracking-wider rounded-t-md ${meta.headerCls}`}
-                  >
-                    ■ {meta.label}
-                  </div>
-
-                  <table className="w-full text-xs border border-gray-200 dark:border-gray-700 border-t-0 rounded-b-md overflow-hidden">
+              <div className="mt-6 border-t border-gray-200 dark:border-gray-700 pt-4">
+                <h3 className="text-xs font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wider mb-3">
+                  Per Invoice Breakdown
+                </h3>
+                <div className="overflow-x-auto -mx-1">
+                  <table className="w-full text-xs min-w-[320px]">
                     <thead>
-                      <tr className="bg-gray-100 dark:bg-gray-700 border-b border-gray-200 dark:border-gray-600">
-                        <th className="text-left py-1.5 px-3 font-medium text-gray-600 dark:text-gray-400">
-                          Metric
+                      <tr className="bg-gray-100 dark:bg-gray-700">
+                        <th className="text-left py-1.5 px-3 font-medium text-gray-600 dark:text-gray-400 rounded-tl">
+                          Invoice
+                        </th>
+                        <th className="text-left py-1.5 px-2 font-medium text-gray-600 dark:text-gray-400">
+                          Type
                         </th>
                         <th className="text-right py-1.5 px-2 font-medium text-gray-600 dark:text-gray-400">
-                          Total
+                          Amount
                         </th>
                         <th className="text-right py-1.5 px-2 font-medium text-green-700 dark:text-green-400">
                           Deposit
                         </th>
-                        <th className="text-right py-1.5 px-3 font-medium text-gray-600 dark:text-gray-400">
+                        <th className="text-right py-1.5 px-3 font-medium text-orange-600 dark:text-orange-400 rounded-tr">
                           Balance
                         </th>
                       </tr>
                     </thead>
                     <tbody>
-                      <tr className="border-b border-gray-100 dark:border-gray-700/50">
-                        <td className="py-1.5 px-3 text-gray-700 dark:text-gray-300">
-                          All {meta.label} Lines
-                        </td>
-                        <td className="py-1.5 px-2 text-right text-gray-700 dark:text-gray-300">
-                          ${fmt(sec.total)}
-                        </td>
-                        <td className="py-1.5 px-2 text-right font-semibold text-green-700 dark:text-green-400">
-                          ${fmt(sec.deposit)}
-                        </td>
-                        <td className="py-1.5 px-3 text-right text-gray-700 dark:text-gray-300">
-                          ${fmt(sec.balance)}
-                        </td>
-                      </tr>
+                      {adjustedInvoiceBreakdown.map((inv, index) => (
+                        <tr
+                          key={inv.id}
+                          className="border-b border-gray-100 dark:border-gray-700/50"
+                        >
+                          <td className="py-1.5 px-3 text-gray-700 dark:text-gray-300 font-medium">
+                            {inv.invoiceNumber
+                              ? `#${inv.invoiceNumber}`
+                              : `Invoice ${index + 1}`}
+                          </td>
+                          <td className="py-1.5 px-2 text-gray-600 dark:text-gray-400 capitalize">
+                            {inv.type}
+                          </td>
+                          <td className="py-1.5 px-2 text-right text-gray-700 dark:text-gray-300">
+                            ${fmt(inv.total)}
+                          </td>
+                          <td className="py-1.5 px-2 text-right font-semibold text-green-700 dark:text-green-400">
+                            ${fmt(inv.adjustedDeposit)}
+                          </td>
+                          <td className="py-1.5 px-3 text-right font-semibold text-orange-600 dark:text-orange-400">
+                            ${fmt(inv.adjustedBalance)}
+                          </td>
+                        </tr>
+                      ))}
                     </tbody>
-                    <tfoot>
-                      <tr
-                        className={`border-t-2 border-gray-300 dark:border-gray-600 ${meta.subCls} dark:bg-transparent`}
-                      >
-                        <td className="py-2 px-3 font-semibold text-gray-700 dark:text-gray-300">
-                          Subtotal
-                        </td>
-                        <td className="py-2 px-2 text-right font-semibold text-gray-900 dark:text-gray-100">
-                          ${fmt(sec.total)}
-                        </td>
-                        <td className="py-2 px-2 text-right font-bold text-green-700 dark:text-green-400">
-                          ${fmt(sec.deposit)}
-                        </td>
-                        <td className="py-2 px-3 text-right font-semibold text-gray-700 dark:text-gray-300">
-                          ${fmt(sec.balance)}
-                        </td>
-                      </tr>
-                    </tfoot>
                   </table>
                 </div>
-              );
-            })}
-
-            {/* Grand totals */}
-            <div className="rounded-xl border-2 border-blue-200 dark:border-blue-800 bg-blue-50 dark:bg-blue-900/20 p-4 space-y-3">
-              <div className="flex justify-between items-center">
-                <span className="text-sm font-medium text-gray-700 dark:text-gray-300">
-                  Total
-                </span>
-                <span className="text-lg font-bold text-gray-900 dark:text-gray-100">
-                  ${fmt(computed.totalInvoiceAmount)}
-                </span>
               </div>
-              <div className="border-t border-blue-200 dark:border-blue-700 pt-3 flex justify-between items-center">
-                <span className="text-sm font-medium text-gray-700 dark:text-gray-300">
-                  Minimum Deposit
-                </span>
-                <span className="text-lg font-bold text-green-700 dark:text-green-400">
-                  ${fmt(computed.grandDeposit)}
-                </span>
-              </div>
-              <div className="flex justify-between items-center">
-                <span className="text-sm font-medium text-gray-700 dark:text-gray-300">
-                  Remaining Balance
-                </span>
-                <span className="text-lg font-bold text-orange-600 dark:text-orange-400">
-                  ${fmt(effectiveBalance)}
-                </span>
-              </div>
-            </div>
-
-            {/* Client deposit override */}
-            <div className="rounded-xl border border-blue-200 dark:border-blue-700 bg-blue-50/50 dark:bg-blue-900/10 p-4 space-y-2">
-              <div className="flex items-center justify-between">
-                <label className="text-xs font-semibold text-gray-600 dark:text-gray-400 uppercase tracking-wider">
-                  Client Deposit
-                </label>
-                {typedClientDeposit > computed.grandDeposit && (
-                  <span className="text-xs text-green-600 dark:text-green-400 font-medium">
-                    +${fmt(typedClientDeposit - computed.grandDeposit)} above
-                    minimum
-                  </span>
-                )}
-              </div>
-              <div className="relative">
-                <span className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400 pointer-events-none text-sm">
-                  $
-                </span>
-                <input
-                  type="text"
-                  inputMode="decimal"
-                  placeholder={fmt(computed.grandDeposit)}
-                  className={`w-full border rounded-lg pl-7 pr-3 py-2 text-sm font-medium bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100 focus:outline-none focus:ring-2 ${hasBelowMinClientDeposit ? "border-red-400 dark:border-red-600 focus:ring-red-500" : "border-blue-300 dark:border-blue-700 focus:ring-blue-500"}`}
-                  value={clientDeposit}
-                  onChange={(e) =>
-                    setClientDeposit(cleanMoneyInput(e.target.value))
-                  }
-                  onBlur={(e) =>
-                    setClientDeposit(normalizeMoneyOnBlur(e.target.value))
-                  }
-                />
-              </div>
-              {hasBelowMinClientDeposit && (
-                <p className="text-xs text-red-600 dark:text-red-400 font-medium">
-                  Client deposit is below minimum required ($
-                  {fmt(computed.grandDeposit)}).
-                </p>
-              )}
-              <p className="text-xs text-gray-400 dark:text-gray-500">
-                Min: ${fmt(computed.grandDeposit)} — leave blank to use minimum
-              </p>
-            </div>
-
-            <div className="mt-6 border-t border-gray-200 dark:border-gray-700 pt-4">
-              <h3 className="text-xs font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wider mb-3">
-                Per Invoice Breakdown
-              </h3>
-              <table className="w-full text-xs">
-                <thead>
-                  <tr className="bg-gray-100 dark:bg-gray-700">
-                    <th className="text-left py-1.5 px-3 font-medium text-gray-600 dark:text-gray-400 rounded-tl">
-                      Invoice
-                    </th>
-                    <th className="text-left py-1.5 px-2 font-medium text-gray-600 dark:text-gray-400">
-                      Type
-                    </th>
-                    <th className="text-right py-1.5 px-2 font-medium text-gray-600 dark:text-gray-400">
-                      Amount
-                    </th>
-                    <th className="text-right py-1.5 px-2 font-medium text-green-700 dark:text-green-400">
-                      Deposit
-                    </th>
-                    <th className="text-right py-1.5 px-3 font-medium text-orange-600 dark:text-orange-400 rounded-tr">
-                      Balance
-                    </th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {computed.perInvoice.map((inv, index) => (
-                    <tr
-                      key={inv.id}
-                      className="border-b border-gray-100 dark:border-gray-700/50"
-                    >
-                      <td className="py-1.5 px-3 text-gray-700 dark:text-gray-300 font-medium">
-                        {inv.invoiceNumber
-                          ? `#${inv.invoiceNumber}`
-                          : `Invoice ${index + 1}`}
-                      </td>
-                      <td className="py-1.5 px-2 text-gray-600 dark:text-gray-400 capitalize">
-                        {inv.type}
-                      </td>
-                      <td className="py-1.5 px-2 text-right text-gray-700 dark:text-gray-300">
-                        ${fmt(inv.total)}
-                      </td>
-                      <td className="py-1.5 px-2 text-right font-semibold text-green-700 dark:text-green-400">
-                        ${fmt(inv.deposit)}
-                      </td>
-                      <td className="py-1.5 px-3 text-right font-semibold text-orange-600 dark:text-orange-400">
-                        ${fmt(inv.balance)}
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
             </div>
           </div>
         </div>
-      </div>
+      </fieldset>
     </div>
   );
 }
