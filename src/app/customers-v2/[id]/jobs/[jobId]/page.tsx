@@ -144,6 +144,19 @@ export default async function CustomerV2JobDetailPage({
   const selectedArtifactId =
     typeof query.artifactId === "string" ? query.artifactId : null;
 
+  const visibleArtifacts = job.artifacts.filter((artifact) => {
+    if (artifact.sourceApp !== "PAYMENT_TERM") {
+      return true;
+    }
+
+    const meta =
+      artifact.metadata && typeof artifact.metadata === "object"
+        ? (artifact.metadata as Record<string, unknown>)
+        : {};
+
+    return meta.showInCustomerFiles === true;
+  });
+
   const totalAccessories = job.accessoryTrackers.reduce(
     (sum, tracker) => sum + tracker.items.length,
     0,
@@ -358,7 +371,9 @@ export default async function CustomerV2JobDetailPage({
             {linkedPromotionalSlabs.length > 0 && (
               <div className="space-y-2">
                 {linkedPromotionalSlabs.map((slab) => {
-                  const priceNum = (slab.price as any)?.toNumber?.() ?? Number(slab.price ?? 0);
+                  const priceNum =
+                    (slab.price as any)?.toNumber?.() ??
+                    Number(slab.price ?? 0);
                   return (
                     <div
                       key={slab.id}
@@ -376,18 +391,26 @@ export default async function CustomerV2JobDetailPage({
                           </a>
                         </p>
                         <p className="text-xs text-gray-500 dark:text-gray-400">
-                          {(slab.type ?? "-") + " | " + (slab.thickness ?? "-") + " | " + (slab.size ?? "-")}
+                          {(slab.type ?? "-") +
+                            " | " +
+                            (slab.thickness ?? "-") +
+                            " | " +
+                            (slab.size ?? "-")}
                           {slab.rackId ? ` | Rack ${slab.rackId}` : ""}
                         </p>
                         <p className="text-xs text-gray-500 dark:text-gray-400">
-                          Price: {slab.isPriceTbd ? "TBD" : fmtCurrency(priceNum)}
-                          {slab.status === "ON_HOLD" ? ` | Release: ${fmtDate(slab.holdUntil)}` : ""}
+                          Price:{" "}
+                          {slab.isPriceTbd ? "TBD" : fmtCurrency(priceNum)}
+                          {slab.status === "ON_HOLD"
+                            ? ` | Release: ${fmtDate(slab.holdUntil)}`
+                            : ""}
                         </p>
                       </div>
                       <div className="text-right">
                         <span
                           className={`inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium ${
-                            promoStatusColors[slab.status] ?? "bg-gray-100 text-gray-600"
+                            promoStatusColors[slab.status] ??
+                            "bg-gray-100 text-gray-600"
                           }`}
                         >
                           {slab.status.replace(/_/g, " ")}
@@ -440,14 +463,14 @@ export default async function CustomerV2JobDetailPage({
             <h3 className="text-sm font-semibold text-gray-700 dark:text-gray-300 mb-3">
               Job Artifacts
             </h3>
-            {job.artifacts.length === 0 && (
+            {visibleArtifacts.length === 0 && (
               <p className="text-sm text-gray-500 dark:text-gray-400">
                 No artifacts attached to this job yet.
               </p>
             )}
-            {job.artifacts.length > 0 && (
+            {visibleArtifacts.length > 0 && (
               <div className="space-y-2">
-                {job.artifacts.map((artifact) => (
+                {visibleArtifacts.map((artifact) => (
                   <div
                     key={artifact.id}
                     className={`flex items-center justify-between gap-2 rounded px-3 py-2 ${
@@ -482,6 +505,15 @@ export default async function CustomerV2JobDetailPage({
                         className="text-xs text-teal-600 dark:text-teal-400 hover:underline"
                       >
                         Download Estimate
+                      </a>
+                    ) : artifact.sourceApp === "PAYMENT_TERM" ? (
+                      <a
+                        href={`/payment-term-print/${encodeURIComponent(artifact.id)}?autoprint=1`}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="text-xs text-teal-600 dark:text-teal-400 hover:underline"
+                      >
+                        Open Payment Term
                       </a>
                     ) : (
                       <FileText className="w-4 h-4 text-gray-400" />

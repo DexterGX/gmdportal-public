@@ -435,6 +435,11 @@ export const programs: ProgramConfig[] = [
         name: "New Payment Term",
         path: "/payment-terms",
       },
+      {
+        icon: ListIcon,
+        name: "Saved Payment Terms",
+        path: "/payment-terms/saved",
+      },
     ],
     othersItems: [],
   },

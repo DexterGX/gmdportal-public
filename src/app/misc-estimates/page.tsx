@@ -23,6 +23,8 @@ export default async function MiscEstimatesPage() {
       initialCompanyInfo={{
         companyName: companySettings?.companyName ?? "GM Design",
         phoneNumber: companySettings?.phoneNumber ?? null,
+        email: companySettings?.email ?? null,
+        website: companySettings?.website ?? null,
         address: companySettings?.address ?? null,
         logoUrl: companySettings?.logoUrl ?? "/logo.svg",
       }}

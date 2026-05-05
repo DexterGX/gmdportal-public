@@ -8,6 +8,8 @@ import { Check, Plus, Printer, RotateCcw, Save, X } from "lucide-react";
 type CompanyInfo = {
   companyName: string;
   phoneNumber: string | null;
+  email: string | null;
+  website: string | null;
   address: string | null;
   logoUrl: string;
 };
@@ -488,6 +490,16 @@ export default function MiscEstimatesClient({
                 {initialCompanyInfo.phoneNumber && (
                   <p className="text-sm text-gray-600 dark:text-gray-300">
                     {initialCompanyInfo.phoneNumber}
+                  </p>
+                )}
+                {initialCompanyInfo.email && (
+                  <p className="text-sm text-gray-600 dark:text-gray-300">
+                    {initialCompanyInfo.email}
+                  </p>
+                )}
+                {initialCompanyInfo.website && (
+                  <p className="text-sm text-gray-600 dark:text-gray-300">
+                    {initialCompanyInfo.website}
                   </p>
                 )}
                 {initialCompanyInfo.address && (

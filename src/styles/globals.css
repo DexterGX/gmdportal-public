@@ -330,6 +330,69 @@ body,
     border-radius: 0 !important;
   }
 
+  /* Payment Term Builder — preserve two-column layout and colours in print */
+  .pt-builder {
+    max-width: none !important;
+    -webkit-print-color-adjust: exact !important;
+    print-color-adjust: exact !important;
+  }
+
+  /* Cascade print-color-adjust to all descendants so backgrounds print */
+  .pt-builder * {
+    -webkit-print-color-adjust: exact !important;
+    print-color-adjust: exact !important;
+  }
+
+  .pt-builder-grid {
+    display: grid !important;
+    grid-template-columns: 7fr 5fr !important;
+    gap: 16px !important;
+  }
+
+  /* Override global th background stripping — .pt-builder th (0,1,1) beats th (0,0,1) */
+  .pt-builder th {
+    background-color: revert !important;
+    color: revert !important;
+    font-size: 9pt !important;
+    width: auto !important;
+    white-space: normal !important;
+  }
+
+  .pt-builder td {
+    color: revert !important;
+    width: auto !important;
+    white-space: normal !important;
+    font-size: 9pt !important;
+  }
+
+  /* Override global nth-child column widths inside builder */
+  .pt-builder th:nth-child(1),
+  .pt-builder td:nth-child(1),
+  .pt-builder th:nth-child(2),
+  .pt-builder td:nth-child(2),
+  .pt-builder th:nth-child(3),
+  .pt-builder td:nth-child(3),
+  .pt-builder th:nth-child(4),
+  .pt-builder td:nth-child(4),
+  .pt-builder th:nth-child(5),
+  .pt-builder td:nth-child(5),
+  .pt-builder th:nth-child(6),
+  .pt-builder td:nth-child(6),
+  .pt-builder th:nth-child(7),
+  .pt-builder td:nth-child(7),
+  .pt-builder th:nth-child(8),
+  .pt-builder td:nth-child(8),
+  .pt-builder th:nth-child(9),
+  .pt-builder td:nth-child(9),
+  .pt-builder th:nth-child(10),
+  .pt-builder td:nth-child(10),
+  .pt-builder th:nth-child(11),
+  .pt-builder td:nth-child(11) {
+    width: auto !important;
+  }
+
+  /* ─── end Payment Term Builder ─── */
+
   /* Misc estimates print document rules */
   .misc-estimate-print {
     color: #000 !important;

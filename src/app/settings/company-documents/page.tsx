@@ -24,6 +24,8 @@ export default async function CompanyDocumentsSettingsPage() {
       data: {
         companyName: "GM Design",
         phoneNumber: "(305) XXX-XXXX",
+        email: null,
+        website: null,
         logoUrl: "/logo.svg",
       },
     });
@@ -35,6 +37,8 @@ export default async function CompanyDocumentsSettingsPage() {
         id: settings.id,
         companyName: settings.companyName,
         phoneNumber: settings.phoneNumber,
+        email: settings.email,
+        website: settings.website,
         address: settings.address,
         logoUrl: settings.logoUrl,
         updatedAt: settings.updatedAt.toISOString(),

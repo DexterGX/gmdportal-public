@@ -7,6 +7,8 @@ type CompanyDocumentSettings = {
   id: string;
   companyName: string;
   phoneNumber: string | null;
+  email: string | null;
+  website: string | null;
   address: string | null;
   logoUrl: string;
   updatedAt: string;
@@ -36,6 +38,8 @@ export default function CompanyDocumentSettingsClient({
         body: JSON.stringify({
           companyName: settings.companyName,
           phoneNumber: settings.phoneNumber,
+          email: settings.email,
+          website: settings.website,
           address: settings.address,
           logoUrl: settings.logoUrl,
         }),
@@ -180,6 +184,40 @@ export default function CompanyDocumentSettingsClient({
                 }
                 className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-900"
                 placeholder="(305) 123-4567"
+              />
+            </div>
+
+            <div>
+              <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
+                Email
+              </label>
+              <input
+                value={settings.email || ""}
+                onChange={(e) =>
+                  setSettings((prev) => ({
+                    ...prev,
+                    email: e.target.value || null,
+                  }))
+                }
+                className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-900"
+                placeholder="info@gmdesign.com"
+              />
+            </div>
+
+            <div>
+              <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
+                Website
+              </label>
+              <input
+                value={settings.website || ""}
+                onChange={(e) =>
+                  setSettings((prev) => ({
+                    ...prev,
+                    website: e.target.value || null,
+                  }))
+                }
+                className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-900"
+                placeholder="www.gmdesign.com"
               />
             </div>
 

@@ -33,6 +33,8 @@ async function getOrCreateSettings() {
       companyName: "GM Design",
       phoneNumber: "(305) XXX-XXXX",
       logoUrl: "/logo.svg",
+      email: null,
+      website: null,
     },
   });
 }
@@ -48,6 +50,8 @@ export async function GET() {
       id: settings.id,
       companyName: settings.companyName,
       phoneNumber: settings.phoneNumber,
+      email: settings.email,
+      website: settings.website,
       address: settings.address,
       logoUrl: settings.logoUrl,
       updatedAt: settings.updatedAt,
@@ -69,11 +73,15 @@ export async function PATCH(request: NextRequest) {
     const {
       companyName,
       phoneNumber,
+      email,
+      website,
       address,
       logoUrl,
     }: {
       companyName?: string;
       phoneNumber?: string | null;
+      email?: string | null;
+      website?: string | null;
       address?: string | null;
       logoUrl?: string;
     } = body;
@@ -96,6 +104,12 @@ export async function PATCH(request: NextRequest) {
         ...(phoneNumber !== undefined
           ? { phoneNumber: phoneNumber ? String(phoneNumber).trim() : null }
           : {}),
+        ...(email !== undefined
+          ? { email: email ? String(email).trim() : null }
+          : {}),
+        ...(website !== undefined
+          ? { website: website ? String(website).trim() : null }
+          : {}),
         ...(address !== undefined
           ? { address: address ? String(address).trim() : null }
           : {}),
@@ -107,6 +121,8 @@ export async function PATCH(request: NextRequest) {
       id: updated.id,
       companyName: updated.companyName,
       phoneNumber: updated.phoneNumber,
+      email: updated.email,
+      website: updated.website,
       address: updated.address,
       logoUrl: updated.logoUrl,
       updatedAt: updated.updatedAt,
