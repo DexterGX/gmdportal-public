@@ -3,7 +3,7 @@
 import { useSearchParams } from "next/navigation";
 import Link from "next/link";
 import { useEffect, useMemo, useRef, useState } from "react";
-import { FileText, Plus, Printer, Save, Trash2 } from "lucide-react";
+import { FileText, Plus, Printer, Save, Trash2, X } from "lucide-react";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -46,6 +46,37 @@ type LineItemState = {
   noInstallation?: boolean;
 };
 
+type SinkSelection = "no-sink" | "gmd-sink" | "client-sink";
+type GmdSinkType = "fabricated" | "kitchen-bathroom";
+type FabricatedSinkStyle = "slanted" | "integrated";
+type EdgeThickness = "2cm" | "3cm" | "2cm-build-up" | "3cm-build-up";
+type EdgeProfile =
+  | "flat-polished"
+  | "beveled-1-4"
+  | "beveled-1-2"
+  | "beveled-3-4"
+  | "half-bullnose"
+  | "full-bullnose"
+  | "mitered"
+  | "waterfall";
+
+type CountertopAgreementSpec = {
+  id: string;
+  title: string;
+  sinkSelection: SinkSelection;
+  gmdSinkType: GmdSinkType;
+  fabricatedSinkStyle: FabricatedSinkStyle;
+  kitchenBathroomModel: string;
+  edgeThickness: EdgeThickness;
+  edgeProfile: EdgeProfile;
+};
+
+type AgreementFormTemplateLite = {
+  key: string;
+  title: string;
+  isActive: boolean;
+};
+
 // ─── Constants ────────────────────────────────────────────────────────────────
 
 const CABINET_LINE_DEFS: LineItemDef[] = [
@@ -82,6 +113,19 @@ const SECTION_META: Record<
 };
 
 const MAX_INVOICES = 8;
+
+function makeCountertopAgreementSpec(): CountertopAgreementSpec {
+  return {
+    id: uid(),
+    title: "",
+    sinkSelection: "no-sink",
+    gmdSinkType: "fabricated",
+    fabricatedSinkStyle: "slanted",
+    kitchenBathroomModel: "",
+    edgeThickness: "2cm",
+    edgeProfile: "flat-polished",
+  };
+}
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────
 
@@ -168,6 +212,32 @@ export default function PaymentTermClient({
   const [paymentTermNumber, setPaymentTermNumber] = useState<string>("");
   const [sourceArtifactId, setSourceArtifactId] = useState<string | null>(null);
   const [showInCustomerFiles, setShowInCustomerFiles] = useState(true);
+  const [showPrintDocModal, setShowPrintDocModal] = useState(false);
+  const [agreementTemplates, setAgreementTemplates] = useState<
+    AgreementFormTemplateLite[]
+  >([
+    { key: "payment_term", title: "Payment Term", isActive: true },
+    {
+      key: "cabinet_agreement",
+      title: "Cabinet Agreement",
+      isActive: true,
+    },
+    {
+      key: "countertop_agreement",
+      title: "Countertop Agreement",
+      isActive: true,
+    },
+    { key: "repair_agreement", title: "Repair Agreement", isActive: true },
+  ]);
+  const [printDocs, setPrintDocs] = useState({
+    paymentTerm: true,
+    cabinetAgreement: false,
+    countertopAgreement: false,
+    repairAgreement: false,
+  });
+  const [countertopAgreementSpecs, setCountertopAgreementSpecs] = useState<
+    CountertopAgreementSpec[]
+  >([makeCountertopAgreementSpec()]);
 
   // Invoices
   const [invoices, setInvoices] = useState<Invoice[]>(() => {
@@ -362,6 +432,41 @@ export default function PaymentTermClient({
 
     void loadFromArtifact();
   }, [initialSalesRep, searchParams]);
+
+  useEffect(() => {
+    let isCancelled = false;
+
+    async function loadAgreementTemplates() {
+      try {
+        const response = await fetch("/api/settings/agreement-forms", {
+          cache: "no-store",
+        });
+        const data = await response.json();
+        if (!response.ok || !Array.isArray(data?.templates) || isCancelled) {
+          return;
+        }
+
+        const next = data.templates.map((row: any) => ({
+          key: String(row?.key || ""),
+          title: String(row?.title || ""),
+          isActive: Boolean(row?.isActive),
+        }));
+
+        setAgreementTemplates([
+          { key: "payment_term", title: "Payment Term", isActive: true },
+          ...next,
+        ]);
+      } catch {
+        // Keep the local fallback list if the API request fails.
+      }
+    }
+
+    void loadAgreementTemplates();
+
+    return () => {
+      isCancelled = true;
+    };
+  }, []);
 
   // ── Invoice management ────────────────────────────────────────────────────
 
@@ -616,6 +721,105 @@ export default function PaymentTermClient({
     });
   }, [computed.perInvoice, computed.grandDeposit, effectiveDeposit]);
 
+  const hasCountertopInvoice = useMemo(
+    () => invoices.some((inv) => inv.type === "countertop"),
+    [invoices],
+  );
+
+  function openPrintDocModal() {
+    setShowPrintDocModal(true);
+  }
+
+  function closePrintDocModal() {
+    setShowPrintDocModal(false);
+  }
+
+  function updateCountertopSpec(
+    id: string,
+    patch: Partial<CountertopAgreementSpec>,
+  ) {
+    setCountertopAgreementSpecs((prev) =>
+      prev.map((spec) => (spec.id === id ? { ...spec, ...patch } : spec)),
+    );
+  }
+
+  function addCountertopSpec() {
+    setCountertopAgreementSpecs((prev) => [
+      ...prev,
+      makeCountertopAgreementSpec(),
+    ]);
+  }
+
+  function removeCountertopSpec(id: string) {
+    setCountertopAgreementSpecs((prev) => {
+      if (prev.length <= 1) return prev;
+      return prev.filter((spec) => spec.id !== id);
+    });
+  }
+
+  async function printSelectedDocs() {
+    if (
+      !printDocs.paymentTerm &&
+      !printDocs.cabinetAgreement &&
+      !printDocs.countertopAgreement &&
+      !printDocs.repairAgreement
+    ) {
+      setSaveError("Select at least one document to print.");
+      return;
+    }
+
+    closePrintDocModal();
+
+    const selectedDocs = [
+      printDocs.paymentTerm ? "payment_term" : null,
+      printDocs.cabinetAgreement ? "cabinet_agreement" : null,
+      printDocs.countertopAgreement ? "countertop_agreement" : null,
+      printDocs.repairAgreement ? "repair_agreement" : null,
+    ].filter(Boolean) as Array<
+      | "payment_term"
+      | "cabinet_agreement"
+      | "countertop_agreement"
+      | "repair_agreement"
+    >;
+
+    if (selectedDocs.length > 1) {
+      if (!savedArtifactId) {
+        setSaveError("Save first to generate print documents.");
+        return;
+      }
+
+      const params = new URLSearchParams({
+        docs: selectedDocs.join(","),
+      });
+
+      if (selectedDocs.includes("countertop_agreement")) {
+        params.set("specs", JSON.stringify(countertopAgreementSpecs));
+      }
+
+      window.open(
+        `/batch-print/${savedArtifactId}?${params.toString()}`,
+        "_blank",
+      );
+      return;
+    }
+
+    if (printDocs.paymentTerm) {
+      openClientPrint();
+    }
+
+    if (printDocs.cabinetAgreement) {
+      openAgreementPrint("cabinet_agreement");
+    }
+
+    if (printDocs.countertopAgreement) {
+      openAgreementPrint("countertop_agreement");
+    }
+
+    if (printDocs.repairAgreement) {
+      openAgreementPrint("repair_agreement");
+    }
+  }
+
   async function savePaymentTerm() {
     setSaveError(null);
     setSaveMessage(null);
@@ -666,14 +870,6 @@ export default function PaymentTermClient({
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(payload),
       });
-      const json = await response.json();
-      if (!response.ok) {
-        throw new Error(json?.error || "Failed to save payment term");
-      }
-
-      setSavedArtifactId(String(json.id || ""));
-      setPaymentTermNumber(String(json.paymentTermNumber || ""));
-      setSaveMessage("Payment term saved successfully.");
     } catch (error: any) {
       setSaveError(error?.message || "Failed to save payment term");
     } finally {
@@ -691,6 +887,32 @@ export default function PaymentTermClient({
       return;
     }
     window.open(`/payment-term-print/${savedArtifactId}?autoprint=1`, "_blank");
+  }
+
+  function openAgreementPrint(
+    agreementKey:
+      | "cabinet_agreement"
+      | "countertop_agreement"
+      | "repair_agreement",
+  ) {
+    if (!savedArtifactId) {
+      setSaveError("Save first to generate print documents.");
+      return;
+    }
+
+    const params = new URLSearchParams({
+      key: agreementKey,
+      autoprint: "1",
+    });
+
+    if (agreementKey === "countertop_agreement") {
+      params.set("specs", JSON.stringify(countertopAgreementSpecs));
+    }
+
+    window.open(
+      `/agreement-print/${savedArtifactId}?${params.toString()}`,
+      "_blank",
+    );
   }
 
   // ── Render ────────────────────────────────────────────────────────────────
@@ -758,12 +980,12 @@ export default function PaymentTermClient({
           </button>
           <button
             type="button"
-            onClick={openClientPrint}
+            onClick={openPrintDocModal}
             disabled={!savedArtifactId}
             className="inline-flex items-center gap-2 px-3 py-2 rounded-lg border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-800 text-sm font-medium text-gray-700 dark:text-gray-100 hover:bg-gray-50 dark:hover:bg-gray-700 disabled:opacity-50"
           >
             <Printer className="w-4 h-4" />
-            Client Layout
+            Print Doc
           </button>
         </div>
       </div>
@@ -1540,6 +1762,336 @@ export default function PaymentTermClient({
           </div>
         </div>
       </fieldset>
+
+      {showPrintDocModal && (
+        <div className="fixed inset-0 z-50 overflow-y-auto">
+          <div
+            className="fixed inset-0 bg-black/40"
+            onClick={closePrintDocModal}
+          />
+          <div className="relative min-h-full flex items-center justify-center p-4">
+            <div className="w-full max-w-3xl rounded-xl border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800 shadow-xl">
+              <div className="flex items-center justify-between px-5 py-4 border-b border-gray-200 dark:border-gray-700">
+                <h3 className="text-lg font-semibold text-gray-900 dark:text-gray-100">
+                  Print Options
+                </h3>
+                <button
+                  type="button"
+                  onClick={closePrintDocModal}
+                  className="p-1.5 rounded-md text-gray-500 hover:bg-gray-100 dark:hover:bg-gray-700"
+                >
+                  <X className="w-4 h-4" />
+                </button>
+              </div>
+
+              <div className="p-5 space-y-5 max-h-[75vh] overflow-y-auto">
+                <section className="rounded-lg border border-gray-200 dark:border-gray-700 p-4">
+                  <h4 className="text-sm font-semibold text-gray-900 dark:text-gray-100 mb-3">
+                    Terms and Agreements
+                  </h4>
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 text-sm">
+                    {agreementTemplates
+                      .filter((tpl) => tpl.isActive)
+                      .map((tpl) => {
+                        const checked =
+                          tpl.key === "payment_term"
+                            ? printDocs.paymentTerm
+                            : tpl.key === "cabinet_agreement"
+                              ? printDocs.cabinetAgreement
+                              : tpl.key === "countertop_agreement"
+                                ? printDocs.countertopAgreement
+                                : tpl.key === "repair_agreement"
+                                  ? printDocs.repairAgreement
+                                  : false;
+
+                        return (
+                          <label
+                            key={tpl.key}
+                            className="inline-flex items-center gap-2 text-gray-700 dark:text-gray-300"
+                          >
+                            <input
+                              type="checkbox"
+                              className="rounded border-gray-300"
+                              checked={checked}
+                              onChange={(e) =>
+                                setPrintDocs((prev) => {
+                                  if (tpl.key === "payment_term") {
+                                    return {
+                                      ...prev,
+                                      paymentTerm: e.target.checked,
+                                    };
+                                  }
+                                  if (tpl.key === "cabinet_agreement") {
+                                    return {
+                                      ...prev,
+                                      cabinetAgreement: e.target.checked,
+                                    };
+                                  }
+                                  if (tpl.key === "countertop_agreement") {
+                                    return {
+                                      ...prev,
+                                      countertopAgreement: e.target.checked,
+                                    };
+                                  }
+                                  if (tpl.key === "repair_agreement") {
+                                    return {
+                                      ...prev,
+                                      repairAgreement: e.target.checked,
+                                    };
+                                  }
+                                  return prev;
+                                })
+                              }
+                            />
+                            {tpl.title}
+                          </label>
+                        );
+                      })}
+                  </div>
+                </section>
+
+                {hasCountertopInvoice && (
+                  <section className="rounded-lg border border-gray-200 dark:border-gray-700 p-4 space-y-4">
+                    <h4 className="text-sm font-semibold text-gray-900 dark:text-gray-100">
+                      Additional Countertop Agreement
+                    </h4>
+
+                    {countertopAgreementSpecs.map((spec, idx) => (
+                      <div
+                        key={spec.id}
+                        className="rounded-lg border border-gray-200 dark:border-gray-700 p-4 space-y-4"
+                      >
+                        <div className="flex items-center justify-between gap-2">
+                          <div className="text-xs font-semibold uppercase tracking-wider text-gray-500 dark:text-gray-400">
+                            {spec.title.trim() || `Area #${idx + 1}`}
+                          </div>
+                          <button
+                            type="button"
+                            onClick={() => removeCountertopSpec(spec.id)}
+                            disabled={countertopAgreementSpecs.length <= 1}
+                            className="inline-flex items-center gap-1 px-2 py-1 rounded border border-gray-300 dark:border-gray-600 text-xs font-medium text-gray-700 dark:text-gray-200 hover:bg-gray-50 dark:hover:bg-gray-700 disabled:opacity-40 disabled:cursor-not-allowed"
+                          >
+                            <Trash2 className="w-3.5 h-3.5" />
+                            Delete
+                          </button>
+                        </div>
+
+                        <div>
+                          <label className="block text-xs font-medium text-gray-600 dark:text-gray-400 mb-1">
+                            Area Title
+                          </label>
+                          <input
+                            type="text"
+                            className="w-full border border-gray-300 dark:border-gray-600 rounded-md px-2.5 py-2 text-sm bg-white dark:bg-gray-700"
+                            placeholder={`Area #${idx + 1}`}
+                            value={spec.title}
+                            onChange={(e) =>
+                              updateCountertopSpec(spec.id, {
+                                title: e.target.value,
+                              })
+                            }
+                          />
+                        </div>
+
+                        <div className="space-y-3">
+                          <h5 className="text-xs font-semibold uppercase tracking-wider text-gray-500 dark:text-gray-400">
+                            Sinks
+                          </h5>
+                          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                            <div>
+                              <label className="block text-xs font-medium text-gray-600 dark:text-gray-400 mb-1">
+                                Sink Selection
+                              </label>
+                              <select
+                                className="w-full border border-gray-300 dark:border-gray-600 rounded-md px-2.5 py-2 text-sm bg-white dark:bg-gray-700"
+                                value={spec.sinkSelection}
+                                onChange={(e) =>
+                                  updateCountertopSpec(spec.id, {
+                                    sinkSelection: e.target
+                                      .value as SinkSelection,
+                                  })
+                                }
+                              >
+                                <option value="no-sink">No Sink</option>
+                                <option value="gmd-sink">GMD Sink</option>
+                                <option value="client-sink">Client Sink</option>
+                              </select>
+                            </div>
+
+                            {spec.sinkSelection === "gmd-sink" && (
+                              <>
+                                <div>
+                                  <label className="block text-xs font-medium text-gray-600 dark:text-gray-400 mb-1">
+                                    GMD Sink Type
+                                  </label>
+                                  <select
+                                    className="w-full border border-gray-300 dark:border-gray-600 rounded-md px-2.5 py-2 text-sm bg-white dark:bg-gray-700"
+                                    value={spec.gmdSinkType}
+                                    onChange={(e) =>
+                                      updateCountertopSpec(spec.id, {
+                                        gmdSinkType: e.target
+                                          .value as GmdSinkType,
+                                      })
+                                    }
+                                  >
+                                    <option value="fabricated">
+                                      Fabricated Sink
+                                    </option>
+                                    <option value="kitchen-bathroom">
+                                      Kitchen/Bathroom Sink
+                                    </option>
+                                  </select>
+                                </div>
+
+                                {spec.gmdSinkType === "fabricated" && (
+                                  <div>
+                                    <label className="block text-xs font-medium text-gray-600 dark:text-gray-400 mb-1">
+                                      Fabricated Style
+                                    </label>
+                                    <select
+                                      className="w-full border border-gray-300 dark:border-gray-600 rounded-md px-2.5 py-2 text-sm bg-white dark:bg-gray-700"
+                                      value={spec.fabricatedSinkStyle}
+                                      onChange={(e) =>
+                                        updateCountertopSpec(spec.id, {
+                                          fabricatedSinkStyle: e.target
+                                            .value as FabricatedSinkStyle,
+                                        })
+                                      }
+                                    >
+                                      <option value="slanted">Slanted</option>
+                                      <option value="integrated">
+                                        Integrated
+                                      </option>
+                                    </select>
+                                  </div>
+                                )}
+
+                                {spec.gmdSinkType === "kitchen-bathroom" && (
+                                  <div className="sm:col-span-2">
+                                    <label className="block text-xs font-medium text-gray-600 dark:text-gray-400 mb-1">
+                                      Kitchen/Bathroom Model
+                                    </label>
+                                    <input
+                                      type="text"
+                                      className="w-full border border-gray-300 dark:border-gray-600 rounded-md px-2.5 py-2 text-sm bg-white dark:bg-gray-700"
+                                      placeholder="Type specific model"
+                                      value={spec.kitchenBathroomModel}
+                                      onChange={(e) =>
+                                        updateCountertopSpec(spec.id, {
+                                          kitchenBathroomModel: e.target.value,
+                                        })
+                                      }
+                                    />
+                                  </div>
+                                )}
+                              </>
+                            )}
+                          </div>
+                        </div>
+
+                        <div className="space-y-3">
+                          <h5 className="text-xs font-semibold uppercase tracking-wider text-gray-500 dark:text-gray-400">
+                            Countertop Edge
+                          </h5>
+                          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                            <div>
+                              <label className="block text-xs font-medium text-gray-600 dark:text-gray-400 mb-1">
+                                Thickness
+                              </label>
+                              <select
+                                className="w-full border border-gray-300 dark:border-gray-600 rounded-md px-2.5 py-2 text-sm bg-white dark:bg-gray-700"
+                                value={spec.edgeThickness}
+                                onChange={(e) =>
+                                  updateCountertopSpec(spec.id, {
+                                    edgeThickness: e.target
+                                      .value as EdgeThickness,
+                                  })
+                                }
+                              >
+                                <option value="2cm">2CM</option>
+                                <option value="3cm">3CM</option>
+                                <option value="2cm-build-up">
+                                  2CM Build-UP
+                                </option>
+                                <option value="3cm-build-up">
+                                  3CM Build-UP
+                                </option>
+                              </select>
+                            </div>
+
+                            <div>
+                              <label className="block text-xs font-medium text-gray-600 dark:text-gray-400 mb-1">
+                                Edge Profile
+                              </label>
+                              <select
+                                className="w-full border border-gray-300 dark:border-gray-600 rounded-md px-2.5 py-2 text-sm bg-white dark:bg-gray-700"
+                                value={spec.edgeProfile}
+                                onChange={(e) =>
+                                  updateCountertopSpec(spec.id, {
+                                    edgeProfile: e.target.value as EdgeProfile,
+                                  })
+                                }
+                              >
+                                <option value="flat-polished">
+                                  Flat Polished
+                                </option>
+                                <option value="beveled-1-4">Beveled 1/4</option>
+                                <option value="beveled-1-2">Beveled 1/2</option>
+                                {(spec.edgeThickness === "3cm" ||
+                                  spec.edgeThickness === "2cm-build-up" ||
+                                  spec.edgeThickness === "3cm-build-up") && (
+                                  <option value="beveled-3-4">
+                                    Beveled 3/4
+                                  </option>
+                                )}
+                                <option value="half-bullnose">
+                                  Half Bullnose
+                                </option>
+                                <option value="full-bullnose">
+                                  Full Bullnose
+                                </option>
+                                <option value="mitered">Mitered</option>
+                                <option value="waterfall">Waterfall</option>
+                              </select>
+                            </div>
+                          </div>
+                        </div>
+                      </div>
+                    ))}
+
+                    <button
+                      type="button"
+                      onClick={addCountertopSpec}
+                      className="inline-flex items-center gap-1.5 px-3 py-2 rounded-md border border-gray-300 dark:border-gray-600 text-sm font-medium text-gray-700 dark:text-gray-200 hover:bg-gray-50 dark:hover:bg-gray-700"
+                    >
+                      <Plus className="w-4 h-4" />
+                      Add +
+                    </button>
+                  </section>
+                )}
+              </div>
+
+              <div className="px-5 py-4 border-t border-gray-200 dark:border-gray-700 flex flex-wrap justify-end gap-2">
+                <button
+                  type="button"
+                  onClick={closePrintDocModal}
+                  className="px-3 py-2 rounded-md border border-gray-300 dark:border-gray-600 text-sm font-medium text-gray-700 dark:text-gray-200 hover:bg-gray-50 dark:hover:bg-gray-700"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="button"
+                  onClick={printSelectedDocs}
+                  className="inline-flex items-center gap-2 px-3 py-2 rounded-md bg-teal-600 text-white text-sm font-medium hover:bg-teal-700"
+                >
+                  <Printer className="w-4 h-4" />
+                  Print Selected
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

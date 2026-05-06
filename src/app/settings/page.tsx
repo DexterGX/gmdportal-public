@@ -1,5 +1,11 @@
 import Link from "next/link";
-import { Building2, Hammer, KeyRound, UsersRound } from "lucide-react";
+import {
+  Building2,
+  FileSignature,
+  Hammer,
+  KeyRound,
+  UsersRound,
+} from "lucide-react";
 
 const cards = [
   {
@@ -29,6 +35,13 @@ const cards = [
       "Control which user roles can access each portal program, including multiple-role access.",
     href: "/settings/program-access",
     icon: KeyRound,
+  },
+  {
+    title: "Agreement Forms",
+    description:
+      "Edit agreement templates for Payment Terms and future e-sign document workflows.",
+    href: "/settings/agreement-forms",
+    icon: FileSignature,
   },
 ];
 
