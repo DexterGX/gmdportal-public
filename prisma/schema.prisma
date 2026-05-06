@@ -278,6 +278,19 @@ model CompanyDocumentSettings {
   updatedAt   DateTime @updatedAt
 }
 
+model AgreementFormTemplate {
+  id        String   @id @default(cuid())
+  key       String   @unique
+  title     String
+  content   String
+  isActive  Boolean  @default(true)
+  sortOrder Int      @default(0)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([sortOrder])
+}
+
 model ProgramAccessSetting {
   id           String   @id @default(cuid())
   programId    String   @unique

@@ -1,0 +1,215 @@
+.screen {
+  min-height: 100vh;
+  background: #eceff3;
+  padding: 18px;
+}
+
+.sheet {
+  width: 816px;
+  min-height: 1056px;
+  margin: 0 auto;
+  background: #fff;
+  border: 1px solid #1f2937;
+  box-shadow: 0 8px 28px rgba(15, 23, 42, 0.12);
+  padding: 16px;
+  font-family: "Segoe UI", Tahoma, Geneva, Verdana, sans-serif;
+  color: #0f172a;
+}
+
+.header {
+  display: flex;
+  justify-content: space-between;
+  align-items: stretch;
+  gap: 14px;
+  border: 1px solid #111827;
+  padding: 8px 10px;
+}
+
+.brand {
+  display: flex;
+  gap: 14px;
+  flex: 1;
+  align-items: center;
+}
+
+.logo {
+  width: 152px;
+  height: 62px;
+  object-fit: contain;
+  flex-shrink: 0;
+}
+
+.companyInfo {
+  font-size: 10px;
+  line-height: 1.3;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+}
+
+.companyName {
+  font-size: 15px;
+  font-weight: 700;
+  margin-bottom: 3px;
+}
+
+.contactRow {
+  display: flex;
+  align-items: flex-start;
+  gap: 5px;
+  margin-top: 1px;
+}
+
+.contactIcon {
+  width: 9px;
+  height: 9px;
+  margin-top: 1px;
+  flex: 0 0 auto;
+}
+
+.clientBlock {
+  border-left: 1px solid #111827;
+  padding: 2px 0 2px 10px;
+  font-size: 12px;
+  line-height: 1.7;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  flex-shrink: 0;
+  min-width: 250px;
+}
+
+.clientBlock span {
+  font-weight: 700;
+}
+
+.centeredTitle {
+  margin: 6px 0 6px;
+  text-align: center;
+  font-size: 20px;
+  letter-spacing: 0.03em;
+  font-weight: 700;
+  text-transform: uppercase;
+}
+
+.contentBlock {
+  margin-top: 4px;
+  padding: 8px 0 6px;
+}
+
+.legalColumnsGrid {
+  column-count: 2;
+  column-gap: 20px;
+  font-size: 9px;
+  line-height: 1.32;
+  text-align: justify;
+}
+
+.legalParagraph {
+  margin: 0 0 6px;
+  break-inside: avoid;
+  orphans: 3;
+  widows: 3;
+}
+
+.specCard {
+  border: 1px solid #d1d5db;
+  padding: 8px;
+  font-size: 10px;
+  line-height: 1.35;
+}
+
+.specTitle {
+  font-weight: 700;
+  margin-bottom: 4px;
+}
+
+.signatures {
+  margin-top: 10px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  align-items: flex-end;
+}
+
+.signatureLine {
+  display: inline-block;
+  min-width: 240px;
+  border-bottom: 1px solid #111827;
+  height: 14px;
+}
+
+.signatureLabel {
+  font-size: 10px;
+  font-weight: 600;
+}
+
+.signatureItem {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.initialsFooter {
+  display: none;
+}
+
+@page {
+  size: Letter portrait;
+  margin: 0.35in;
+}
+
+@media print {
+  .screen {
+    background: #fff;
+    padding: 0;
+    margin: 0;
+    min-height: auto;
+    -webkit-print-color-adjust: exact;
+    print-color-adjust: exact;
+  }
+
+  .sheet {
+    width: 100%;
+    min-height: auto;
+    border: 0;
+    box-shadow: none;
+    margin: 0;
+    padding: 0 0 12mm 0;
+    page-break-after: auto;
+    -webkit-print-color-adjust: exact;
+    print-color-adjust: exact;
+  }
+
+  .header {
+    page-break-inside: avoid;
+    page-break-after: avoid;
+    -webkit-print-color-adjust: exact;
+    print-color-adjust: exact;
+  }
+
+  .centeredTitle {
+    margin: 5px 0 4px;
+    page-break-inside: avoid;
+  }
+
+  .contentBlock {
+    margin-top: 3px;
+    page-break-inside: avoid;
+    padding-bottom: 16mm;
+    -webkit-print-color-adjust: exact;
+    print-color-adjust: exact;
+  }
+
+  .legalColumnsGrid {
+    -webkit-print-color-adjust: exact;
+    print-color-adjust: exact;
+    column-gap: 32px;
+    column-fill: auto;
+  }
+
+  .clientBlock {
+    -webkit-print-color-adjust: exact;
+    print-color-adjust: exact;
+  }
+}
