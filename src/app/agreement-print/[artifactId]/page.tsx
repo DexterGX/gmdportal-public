@@ -39,6 +39,8 @@ const AGREEMENT_TITLES: Record<AgreementKey, string> = {
   repair_agreement: "Repair Agreement",
 };
 
+const BLANK_LINE_TOKEN = "__BLANK_LINE__";
+
 function parseSpecs(
   raw: string | string[] | undefined,
 ): CountertopAgreementSpec[] {
@@ -63,10 +65,139 @@ function formatEnumValue(value: string | undefined) {
 
 function splitAgreementParagraphs(content: string): string[] {
   const normalized = content.replace(/\r\n/g, "\n");
-  return normalized
-    .split(/\n\s*\n/)
+  const lines = normalized.split("\n").map((line) => {
+    const trimmedEnd = line.replace(/\s+$/g, "");
+    return trimmedEnd.length === 0 ? BLANK_LINE_TOKEN : trimmedEnd;
+  });
+
+  // Drop leading/trailing blank runs and limit consecutive blank lines.
+  const trimmed = [...lines];
+  while (trimmed[0] === BLANK_LINE_TOKEN) {
+    trimmed.shift();
+  }
+  while (trimmed[trimmed.length - 1] === BLANK_LINE_TOKEN) {
+    trimmed.pop();
+  }
+
+  const compact: string[] = [];
+  let blankRun = 0;
+  for (const line of trimmed) {
+    if (line === BLANK_LINE_TOKEN) {
+      blankRun += 1;
+      if (blankRun <= 3) {
+        compact.push(line);
+      }
+    } else {
+      blankRun = 0;
+      compact.push(line);
+    }
+  }
+
+  return compact;
+}
+
+const FIRST_PAGE_CHAR_BUDGET = 6200;
+const NEXT_PAGE_CHAR_BUDGET = 7800;
+const LONG_PARAGRAPH_CHUNK = 1600;
+const BLANK_LINE_CHAR_WEIGHT = 120;
+
+function splitLongParagraph(paragraph: string, maxChunk: number): string[] {
+  if (paragraph === BLANK_LINE_TOKEN) {
+    return [BLANK_LINE_TOKEN];
+  }
+
+  if (paragraph.length <= maxChunk) {
+    return [paragraph];
+  }
+
+  const sentenceParts = paragraph
+    .split(/(?<=[.!?])\s+/)
     .map((part) => part.trim())
     .filter(Boolean);
+
+  if (sentenceParts.length <= 1) {
+    const words = paragraph.split(/\s+/).filter(Boolean);
+    const chunks: string[] = [];
+    let current = "";
+
+    for (const word of words) {
+      const candidate = current ? `${current} ${word}` : word;
+      if (candidate.length > maxChunk && current) {
+        chunks.push(current);
+        current = word;
+      } else {
+        current = candidate;
+      }
+    }
+
+    if (current) {
+      chunks.push(current);
+    }
+
+    return chunks;
+  }
+
+  const chunks: string[] = [];
+  let current = "";
+
+  for (const sentence of sentenceParts) {
+    const candidate = current ? `${current} ${sentence}` : sentence;
+    if (candidate.length > maxChunk && current) {
+      chunks.push(current);
+      current = sentence;
+    } else {
+      current = candidate;
+    }
+  }
+
+  if (current) {
+    chunks.push(current);
+  }
+
+  return chunks;
+}
+
+function paginateParagraphs(paragraphs: string[]): string[][] {
+  const normalizedParagraphs = paragraphs.flatMap((paragraph) =>
+    splitLongParagraph(paragraph, LONG_PARAGRAPH_CHUNK),
+  );
+
+  const pages: string[][] = [];
+  let currentPage: string[] = [];
+  let currentChars = 0;
+  let pageBudget = FIRST_PAGE_CHAR_BUDGET;
+
+  for (const paragraph of normalizedParagraphs) {
+    const paragraphChars =
+      paragraph === BLANK_LINE_TOKEN
+        ? BLANK_LINE_CHAR_WEIGHT
+        : paragraph.length;
+
+    if (currentPage.length > 0 && currentChars + paragraphChars > pageBudget) {
+      pages.push(currentPage);
+      currentPage = [];
+      currentChars = 0;
+      pageBudget = NEXT_PAGE_CHAR_BUDGET;
+    }
+
+    currentPage.push(paragraph);
+    currentChars += paragraphChars;
+  }
+
+  if (currentPage.length > 0) {
+    pages.push(currentPage);
+  }
+
+  const nonEmptyPages = pages
+    .map((page) =>
+      page.filter(
+        (paragraph) =>
+          paragraph === BLANK_LINE_TOKEN || paragraph.trim().length > 0,
+      ),
+    )
+    .filter((page) => page.length > 0);
+
+  return nonEmptyPages.length > 0 ? nonEmptyPages : [[""]];
 }
 
 export default async function AgreementPrintPage({
@@ -145,122 +276,123 @@ export default async function AgreementPrintPage({
     companySettings?.companyWebsite || companySettings?.website || "";
   const companyAddress =
     companySettings?.companyAddress || companySettings?.address || "";
+  const specsParagraphs = countertopSpecs.flatMap((spec, index) => {
+    const lines = [
+      `Countertop Area ${index + 1}: ${spec.title?.trim() || `Area #${index + 1}`}`,
+      `Sink Selection: ${formatEnumValue(spec.sinkSelection) || "-"}`,
+      `Sink Type: ${formatEnumValue(spec.gmdSinkType) || "-"}`,
+      `Sink Model: ${formatEnumValue(spec.fabricatedSinkStyle) || spec.kitchenBathroomModel || "-"}`,
+      `Edge Thickness: ${formatEnumValue(spec.edgeThickness) || "-"}`,
+      `Edge Profile: ${formatEnumValue(spec.edgeProfile) || "-"}`,
+    ];
+
+    return lines.join(". ");
+  });
+  const paginatedPages = paginateParagraphs([
+    ...paragraphs,
+    ...specsParagraphs,
+  ]);
 
   return (
     <main className={styles.screen}>
       {shouldAutoPrint ? <AutoPrintClient title={pageTitle} /> : null}
+      <div className={styles.pagesRoot}>
+        {paginatedPages.map((pageParagraphs, pageIndex) => (
+          <section
+            key={`agreement-page-${pageIndex}`}
+            className={`${styles.agreementPage} ${pageIndex === 0 ? styles.agreementPageFirst : styles.agreementPageContinuation}`}
+          >
+            {pageIndex === 0 ? (
+              <div className={styles.headerBlock}>
+                <header className={styles.header}>
+                  <div className={styles.brand}>
+                    <img
+                      src={companySettings?.logoUrl || "/logo.svg"}
+                      alt={companySettings?.companyName || "GM Design"}
+                      className={styles.logo}
+                    />
 
-      <div className={styles.sheet}>
-        <header className={styles.header}>
-          <div className={styles.brand}>
-            <img
-              src={companySettings?.logoUrl || "/logo.svg"}
-              alt={companySettings?.companyName || "GM Design"}
-              className={styles.logo}
-            />
+                    <div className={styles.companyInfo}>
+                      <div className={styles.companyName}>
+                        {companySettings?.companyName || "GM Design"}
+                      </div>
+                      {companyPhone ? (
+                        <div className={styles.contactRow}>
+                          <Phone className={styles.contactIcon} />
+                          <span>{companyPhone}</span>
+                        </div>
+                      ) : null}
+                      {companyEmail ? (
+                        <div className={styles.contactRow}>
+                          <Mail className={styles.contactIcon} />
+                          <span>{companyEmail}</span>
+                        </div>
+                      ) : null}
+                      {companyWebsite ? (
+                        <div className={styles.contactRow}>
+                          <Globe className={styles.contactIcon} />
+                          <span>{companyWebsite}</span>
+                        </div>
+                      ) : null}
+                      {companyAddress ? (
+                        <div className={styles.contactRow}>
+                          <MapPin className={styles.contactIcon} />
+                          <span>{companyAddress}</span>
+                        </div>
+                      ) : null}
+                    </div>
+                  </div>
 
-            <div className={styles.companyInfo}>
-              <div className={styles.companyName}>
-                {companySettings?.companyName || "GM Design"}
+                  <div className={styles.clientBlock}>
+                    <div>
+                      <span>Client:</span> {meta.customerName || "-"}
+                    </div>
+                    <div>
+                      <span>Job:</span> {meta.dealName || "-"}
+                    </div>
+                    <div>
+                      <span>Invoice #:</span>{" "}
+                      {invoiceNumbers.length > 0
+                        ? invoiceNumbers.join(", ")
+                        : "-"}
+                    </div>
+                  </div>
+                </header>
               </div>
-              {companyPhone ? (
-                <div className={styles.contactRow}>
-                  <Phone className={styles.contactIcon} />
-                  <span>{companyPhone}</span>
-                </div>
-              ) : null}
-              {companyEmail ? (
-                <div className={styles.contactRow}>
-                  <Mail className={styles.contactIcon} />
-                  <span>{companyEmail}</span>
-                </div>
-              ) : null}
-              {companyWebsite ? (
-                <div className={styles.contactRow}>
-                  <Globe className={styles.contactIcon} />
-                  <span>{companyWebsite}</span>
-                </div>
-              ) : null}
-              {companyAddress ? (
-                <div className={styles.contactRow}>
-                  <MapPin className={styles.contactIcon} />
-                  <span>{companyAddress}</span>
-                </div>
-              ) : null}
-            </div>
-          </div>
+            ) : null}
 
-          <div className={styles.clientBlock}>
-            <div>
-              <span>Client:</span> {meta.customerName || "-"}
-            </div>
-            <div>
-              <span>Job:</span> {meta.dealName || "-"}
-            </div>
-            <div>
-              <span>Invoice #:</span>{" "}
-              {invoiceNumbers.length > 0 ? invoiceNumbers.join(", ") : "-"}
-            </div>
-          </div>
-        </header>
+            <div
+              className={`${styles.bodyBlock} ${pageIndex === 0 ? styles.bodyBlockFirst : styles.bodyBlockContinuation}`}
+            >
+              {pageIndex === 0 ? (
+                <h1 className={styles.centeredTitle}>{title}</h1>
+              ) : null}
 
-        <h1 className={styles.centeredTitle}>{title}</h1>
-
-        <section className={styles.contentBlock}>
-          <div className={styles.legalColumnsGrid}>
-            {paragraphs.length > 0 ? (
-              paragraphs.map((paragraph, index) => (
-                <p
-                  key={`${agreementKey}-paragraph-${index}`}
-                  className={styles.legalParagraph}
-                >
-                  {paragraph}
-                </p>
-              ))
-            ) : (
-              <p
-                className={styles.legalParagraph}
-              >{`${title} content has not been configured yet.`}</p>
-            )}
-          </div>
-        </section>
-
-        {countertopSpecs.length > 0 ? (
-          <section className={styles.specsBlock}>
-            <h2>Countertop Specifications</h2>
-            <div className={styles.specsList}>
-              {countertopSpecs.map((spec, index) => (
-                <div key={spec.id || index} className={styles.specCard}>
-                  <div className={styles.specTitle}>
-                    {spec.title?.trim() || `Area #${index + 1}`}
-                  </div>
-                  <div>
-                    Sink Selection: {formatEnumValue(spec.sinkSelection) || "-"}
-                  </div>
-                  {spec.sinkSelection === "gmd-sink" ? (
-                    <>
-                      <div>
-                        Sink Type: {formatEnumValue(spec.gmdSinkType) || "-"}
-                      </div>
-                      <div>
-                        Sink Model:{" "}
-                        {formatEnumValue(spec.fabricatedSinkStyle) ||
-                          spec.kitchenBathroomModel ||
-                          "-"}
-                      </div>
-                    </>
-                  ) : null}
-                  <div>
-                    Edge Thickness: {formatEnumValue(spec.edgeThickness) || "-"}
-                  </div>
-                  <div>
-                    Edge Profile: {formatEnumValue(spec.edgeProfile) || "-"}
-                  </div>
+              <section className={styles.contentBlock}>
+                <div className={styles.legalColumnsGrid}>
+                  {pageParagraphs.length > 0 ? (
+                    pageParagraphs.map((paragraph, index) => (
+                      <p
+                        key={`${agreementKey}-page-${pageIndex}-paragraph-${index}`}
+                        className={`${styles.legalParagraph} ${paragraph === BLANK_LINE_TOKEN ? styles.blankLine : ""}`}
+                      >
+                        {paragraph === BLANK_LINE_TOKEN ? "\u00A0" : paragraph}
+                      </p>
+                    ))
+                  ) : (
+                    <p
+                      className={styles.legalParagraph}
+                    >{`${title} content has not been configured yet.`}</p>
+                  )}
                 </div>
-              ))}
+              </section>
+            </div>
+
+            <div className={styles.footerBlock}>
+              Initials: ____________________
             </div>
           </section>
-        ) : null}
+        ))}
       </div>
     </main>
   );
