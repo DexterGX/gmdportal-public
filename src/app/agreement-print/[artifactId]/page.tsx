@@ -2,6 +2,7 @@ import { notFound, redirect } from "next/navigation";
 import { Globe, Mail, MapPin, Phone } from "lucide-react";
 import { prisma } from "@/lib/prisma";
 import { getCurrentUserWithRole } from "@/lib/authHelpers";
+import { normalizeOptionKey } from "@/lib/countertopAgreementOptions";
 import AutoPrintClient from "../../payment-term-print/[artifactId]/AutoPrintClient";
 import styles from "./page.module.css";
 
@@ -24,11 +25,18 @@ type CountertopAgreementSpec = {
 type Meta = {
   customerName?: string;
   dealName?: string | null;
+  countertopAgreementSpecs?: CountertopAgreementSpec[];
   invoices?: Array<{
     id?: string;
     invoiceNumber?: string;
     num?: string;
   }>;
+};
+
+type CountertopImageSetting = {
+  category?: string;
+  optionKey?: string;
+  imageUrl?: string | null;
 };
 
 const prismaAny = prisma as any;
@@ -61,6 +69,29 @@ function formatEnumValue(value: string | undefined) {
   return value
     .replace(/-/g, " ")
     .replace(/\b\w/g, (char) => char.toUpperCase());
+}
+
+function getSinkImageOptionKey(spec: CountertopAgreementSpec): string {
+  const sinkSelection = normalizeOptionKey(spec.sinkSelection);
+  if (sinkSelection === "gmd-sink") {
+    const gmdSinkType = normalizeOptionKey(spec.gmdSinkType);
+    if (gmdSinkType === "fabricated") {
+      const fabricatedStyle = normalizeOptionKey(spec.fabricatedSinkStyle);
+      if (fabricatedStyle === "slanted") {
+        return "gmd-fabricated-sink-slanted";
+      }
+      if (fabricatedStyle === "integrated") {
+        return "gmd-fabricated-sink-integrated";
+      }
+      return "gmd-sink";
+    }
+
+    if (gmdSinkType === "kitchen-bathroom") {
+      return "gmd-kitchen-bathroom-sink";
+    }
+  }
+
+  return sinkSelection;
 }
 
 function splitAgreementParagraphs(content: string): string[] {
@@ -100,6 +131,7 @@ const FIRST_PAGE_CHAR_BUDGET = 6200;
 const NEXT_PAGE_CHAR_BUDGET = 7800;
 const LONG_PARAGRAPH_CHUNK = 1600;
 const BLANK_LINE_CHAR_WEIGHT = 120;
+const DETAILS_SPECS_PER_PAGE = 3;
 
 function splitLongParagraph(paragraph: string, maxChunk: number): string[] {
   if (paragraph === BLANK_LINE_TOKEN) {
@@ -200,6 +232,20 @@ function paginateParagraphs(paragraphs: string[]): string[][] {
   return nonEmptyPages.length > 0 ? nonEmptyPages : [[""]];
 }
 
+function paginateSpecs(
+  specs: CountertopAgreementSpec[],
+  perPage: number,
+): CountertopAgreementSpec[][] {
+  if (specs.length === 0) return [];
+
+  const pages: CountertopAgreementSpec[][] = [];
+  for (let i = 0; i < specs.length; i += perPage) {
+    pages.push(specs.slice(i, i + perPage));
+  }
+
+  return pages;
+}
+
 export default async function AgreementPrintPage({
   params,
   searchParams,
@@ -267,7 +313,38 @@ export default async function AgreementPrintPage({
         .filter(Boolean)
     : [];
   const countertopSpecs =
-    agreementKey === "countertop_agreement" ? parseSpecs(query.specs) : [];
+    agreementKey === "countertop_agreement"
+      ? (() => {
+          const querySpecs = parseSpecs(query.specs);
+          if (querySpecs.length > 0) {
+            return querySpecs;
+          }
+          return Array.isArray(meta.countertopAgreementSpecs)
+            ? meta.countertopAgreementSpecs
+            : [];
+        })()
+      : [];
+  const countertopImageSettings: CountertopImageSetting[] =
+    agreementKey === "countertop_agreement"
+      ? await prismaAny.countertopAgreementImage.findMany({
+          where: { imageUrl: { not: null } },
+          select: {
+            category: true,
+            optionKey: true,
+            imageUrl: true,
+          },
+        })
+      : [];
+  const countertopImageMap = new Map<string, string>();
+  for (const row of countertopImageSettings) {
+    const category = String(row.category || "").trim();
+    const optionKey = normalizeOptionKey(row.optionKey);
+    const imageUrl =
+      typeof row.imageUrl === "string" ? row.imageUrl.trim() : "";
+
+    if (!category || !optionKey || !imageUrl) continue;
+    countertopImageMap.set(`${category}:${optionKey}`, imageUrl);
+  }
   const companyPhone =
     companySettings?.companyPhone || companySettings?.phoneNumber || "";
   const companyEmail =
@@ -276,22 +353,11 @@ export default async function AgreementPrintPage({
     companySettings?.companyWebsite || companySettings?.website || "";
   const companyAddress =
     companySettings?.companyAddress || companySettings?.address || "";
-  const specsParagraphs = countertopSpecs.flatMap((spec, index) => {
-    const lines = [
-      `Countertop Area ${index + 1}: ${spec.title?.trim() || `Area #${index + 1}`}`,
-      `Sink Selection: ${formatEnumValue(spec.sinkSelection) || "-"}`,
-      `Sink Type: ${formatEnumValue(spec.gmdSinkType) || "-"}`,
-      `Sink Model: ${formatEnumValue(spec.fabricatedSinkStyle) || spec.kitchenBathroomModel || "-"}`,
-      `Edge Thickness: ${formatEnumValue(spec.edgeThickness) || "-"}`,
-      `Edge Profile: ${formatEnumValue(spec.edgeProfile) || "-"}`,
-    ];
-
-    return lines.join(". ");
-  });
-  const paginatedPages = paginateParagraphs([
-    ...paragraphs,
-    ...specsParagraphs,
-  ]);
+  const paginatedPages = paginateParagraphs(paragraphs);
+  const countertopDetailsPages =
+    agreementKey === "countertop_agreement"
+      ? paginateSpecs(countertopSpecs, DETAILS_SPECS_PER_PAGE)
+      : [];
 
   return (
     <main className={styles.screen}>
@@ -385,6 +451,156 @@ export default async function AgreementPrintPage({
                     >{`${title} content has not been configured yet.`}</p>
                   )}
                 </div>
+              </section>
+            </div>
+
+            <div className={styles.footerBlock}>
+              Initials: ____________________
+            </div>
+          </section>
+        ))}
+
+        {countertopDetailsPages.map((detailsPageSpecs, detailsPageIndex) => (
+          <section
+            key={`countertop-details-page-${detailsPageIndex}`}
+            className={`${styles.agreementPage} ${styles.agreementPageContinuation} ${styles.countertopDetailsPage}`}
+          >
+            <div
+              className={`${styles.bodyBlock} ${styles.bodyBlockContinuation} ${styles.detailsBodyBlock}`}
+            >
+              <h1 className={styles.centeredTitle}>
+                COUNTERTOP AGREEMENT DETAILS
+              </h1>
+
+              <section
+                className={`${styles.contentBlock} ${styles.detailsContentBlock}`}
+              >
+                {detailsPageSpecs.map((spec, specIndex) => {
+                  const areaNumber =
+                    detailsPageIndex * DETAILS_SPECS_PER_PAGE + specIndex + 1;
+                  const areaTitle = spec.title?.trim() || `Area #${areaNumber}`;
+                  const sinkSelection =
+                    formatEnumValue(spec.sinkSelection) || "-";
+                  const sinkType = formatEnumValue(spec.gmdSinkType) || "-";
+                  const fabricatedStyle =
+                    formatEnumValue(spec.fabricatedSinkStyle) || "-";
+                  const sinkModel = spec.kitchenBathroomModel?.trim() || "-";
+                  const thickness = formatEnumValue(spec.edgeThickness) || "-";
+                  const edgeProfile = formatEnumValue(spec.edgeProfile) || "-";
+                  const sinkImageOptionKey = getSinkImageOptionKey(spec);
+                  const sinkImageUrl = countertopImageMap.get(
+                    `sink:${sinkImageOptionKey}`,
+                  );
+                  const thicknessImageUrl = countertopImageMap.get(
+                    `thickness:${normalizeOptionKey(spec.edgeThickness)}`,
+                  );
+                  const edgeImageUrl = countertopImageMap.get(
+                    `edge:${normalizeOptionKey(spec.edgeProfile)}`,
+                  );
+
+                  return (
+                    <article
+                      key={spec.id || `countertop-area-${areaNumber}`}
+                      className={styles.detailsCard}
+                    >
+                      <h2 className={styles.detailsCardTitle}>
+                        Area #{areaNumber}: {areaTitle}
+                      </h2>
+
+                      <div className={styles.detailsFields}>
+                        <div>
+                          <span className={styles.detailsLabel}>
+                            Area Title:
+                          </span>{" "}
+                          {areaTitle}
+                        </div>
+                        <div>
+                          <span className={styles.detailsLabel}>
+                            Sink Selection:
+                          </span>{" "}
+                          {sinkSelection}
+                        </div>
+                        {normalizeOptionKey(spec.sinkSelection) ===
+                        "gmd-sink" ? (
+                          <>
+                            <div>
+                              <span className={styles.detailsLabel}>
+                                GMD Sink Type:
+                              </span>{" "}
+                              {sinkType}
+                            </div>
+                            {normalizeOptionKey(spec.gmdSinkType) ===
+                            "fabricated" ? (
+                              <div>
+                                <span className={styles.detailsLabel}>
+                                  Fabricated Style:
+                                </span>{" "}
+                                {fabricatedStyle}
+                              </div>
+                            ) : null}
+                            {normalizeOptionKey(spec.gmdSinkType) ===
+                            "kitchen-bathroom" ? (
+                              <div>
+                                <span className={styles.detailsLabel}>
+                                  Kitchen/Bathroom Model:
+                                </span>{" "}
+                                {sinkModel}
+                              </div>
+                            ) : null}
+                          </>
+                        ) : null}
+                        <div>
+                          <span className={styles.detailsLabel}>
+                            Thickness:
+                          </span>{" "}
+                          {thickness}
+                        </div>
+                        <div>
+                          <span className={styles.detailsLabel}>
+                            Edge Profile:
+                          </span>{" "}
+                          {edgeProfile}
+                        </div>
+                      </div>
+
+                      <div className={styles.detailsPlaceholdersGrid}>
+                        <div className={styles.detailsPlaceholderBox}>
+                          {sinkImageUrl ? (
+                            <img
+                              src={sinkImageUrl}
+                              alt={`${sinkSelection} sink`}
+                              className={styles.detailsPlaceholderImage}
+                            />
+                          ) : (
+                            "Sink Image Placeholder"
+                          )}
+                        </div>
+                        <div className={styles.detailsPlaceholderBox}>
+                          {thicknessImageUrl ? (
+                            <img
+                              src={thicknessImageUrl}
+                              alt={`${thickness} thickness`}
+                              className={styles.detailsPlaceholderImage}
+                            />
+                          ) : (
+                            "Thickness Image Placeholder"
+                          )}
+                        </div>
+                        <div className={styles.detailsPlaceholderBox}>
+                          {edgeImageUrl ? (
+                            <img
+                              src={edgeImageUrl}
+                              alt={`${edgeProfile} edge profile`}
+                              className={styles.detailsPlaceholderImage}
+                            />
+                          ) : (
+                            "Edge Profile Image Placeholder"
+                          )}
+                        </div>
+                      </div>
+                    </article>
+                  );
+                })}
               </section>
             </div>
 

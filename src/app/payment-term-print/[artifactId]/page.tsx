@@ -409,7 +409,7 @@ export default async function PaymentTermClientPrintPage({
         </section>
 
         <section className={styles.block}>
-          <h2>PAYMENT CHARGES EXPLANATION</h2>
+          <h2>DEPOSIT BREAKDOWN</h2>
           {depositBullets.length === 0 ? (
             <div className={styles.emptyCharges}>
               No deposit charge lines for this payment term.
@@ -430,7 +430,7 @@ export default async function PaymentTermClientPrintPage({
         </section>
 
         <section className={styles.block}>
-          <h2>BALANCE DISTRIBUTION</h2>
+          <h2>BALANCE DISTRIBUTION (BALANCE PAID UPON COMPLETION)</h2>
           <table className={styles.balanceTable}>
             <colgroup>
               <col style={{ width: "12.5%" }} />

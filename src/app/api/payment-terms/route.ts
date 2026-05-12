@@ -201,6 +201,9 @@ export async function POST(request: NextRequest) {
         body?.lineItemsByInvoice && typeof body.lineItemsByInvoice === "object"
           ? body.lineItemsByInvoice
           : {},
+      countertopAgreementSpecs: Array.isArray(body?.countertopAgreementSpecs)
+        ? body.countertopAgreementSpecs
+        : [],
       totals: {
         invoiceTotal: parseAmount(body?.totals?.invoiceTotal),
         minimumDeposit: parseAmount(body?.totals?.minimumDeposit),
@@ -245,6 +248,73 @@ export async function POST(request: NextRequest) {
   } catch (error: any) {
     return NextResponse.json(
       { error: error?.message || "Failed to save payment term" },
+      { status: 500 },
+    );
+  }
+}
+
+export async function PATCH(request: NextRequest) {
+  try {
+    const email = await requireUserEmail();
+    if (!email) {
+      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+    }
+
+    const body = await request.json();
+    const id = String(body?.id ?? "").trim();
+
+    if (!id) {
+      return NextResponse.json(
+        { error: "Artifact id is required" },
+        { status: 400 },
+      );
+    }
+
+    const artifact = await prisma.jobArtifact.findFirst({
+      where: {
+        id,
+        sourceApp: "PAYMENT_TERM",
+      },
+      select: {
+        id: true,
+        metadata: true,
+      },
+    });
+
+    if (!artifact) {
+      return NextResponse.json(
+        { error: "Payment term not found" },
+        { status: 404 },
+      );
+    }
+
+    const existingMeta =
+      artifact.metadata && typeof artifact.metadata === "object"
+        ? (artifact.metadata as Record<string, unknown>)
+        : {};
+
+    const countertopAgreementSpecs = Array.isArray(
+      body?.countertopAgreementSpecs,
+    )
+      ? body.countertopAgreementSpecs
+      : [];
+
+    await prisma.jobArtifact.update({
+      where: { id: artifact.id },
+      data: {
+        metadata: {
+          ...existingMeta,
+          countertopAgreementSpecs,
+          savedAt: new Date().toISOString(),
+          savedBy: email,
+        },
+      },
+    });
+
+    return NextResponse.json({ ok: true });
+  } catch (error: any) {
+    return NextResponse.json(
+      { error: error?.message || "Failed to update payment term" },
       { status: 500 },
     );
   }

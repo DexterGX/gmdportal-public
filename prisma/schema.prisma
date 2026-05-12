@@ -291,6 +291,19 @@ model AgreementFormTemplate {
   @@index([sortOrder])
 }
 
+model CountertopAgreementImage {
+  id          String   @id @default(cuid())
+  category    String
+  optionKey   String
+  optionLabel String
+  imageUrl    String?
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  @@unique([category, optionKey])
+  @@index([category])
+}
+
 model ProgramAccessSetting {
   id           String   @id @default(cuid())
   programId    String   @unique

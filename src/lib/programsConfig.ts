@@ -18,6 +18,7 @@ import {
   Users,
   Package,
   FileText,
+  ImageIcon,
 } from "lucide-react";
 import { UserCheck } from "lucide-react";
 import type { Role } from "@prisma/client"; // Prisma enum
@@ -439,6 +440,12 @@ export const programs: ProgramConfig[] = [
         icon: ListIcon,
         name: "Saved Payment Terms",
         path: "/payment-terms/saved",
+      },
+      {
+        icon: ImageIcon,
+        name: "Countertop Settings",
+        path: "/payment-terms/settings/countertop",
+        adminOnly: true,
       },
     ],
     othersItems: [],
