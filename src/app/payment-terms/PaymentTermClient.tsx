@@ -213,6 +213,7 @@ export default function PaymentTermClient({
   const [sourceArtifactId, setSourceArtifactId] = useState<string | null>(null);
   const [showInCustomerFiles, setShowInCustomerFiles] = useState(true);
   const [showPrintDocModal, setShowPrintDocModal] = useState(false);
+  const [countertopSpecsSaving, setCountertopSpecsSaving] = useState(false);
   const [agreementTemplates, setAgreementTemplates] = useState<
     AgreementFormTemplateLite[]
   >([
@@ -237,7 +238,7 @@ export default function PaymentTermClient({
   });
   const [countertopAgreementSpecs, setCountertopAgreementSpecs] = useState<
     CountertopAgreementSpec[]
-  >([makeCountertopAgreementSpec()]);
+  >([]);
 
   // Invoices
   const [invoices, setInvoices] = useState<Invoice[]>(() => {
@@ -417,6 +418,48 @@ export default function PaymentTermClient({
         const visibility = meta?.showInCustomerFiles;
         setShowInCustomerFiles(visibility !== false);
 
+        const loadedSpecs = Array.isArray(meta?.countertopAgreementSpecs)
+          ? meta.countertopAgreementSpecs
+          : [];
+        setCountertopAgreementSpecs(
+          loadedSpecs.length > 0
+            ? loadedSpecs.map((spec: any) => ({
+                id: String(spec?.id || uid()),
+                title: String(spec?.title || ""),
+                sinkSelection:
+                  spec?.sinkSelection === "gmd-sink" ||
+                  spec?.sinkSelection === "client-sink"
+                    ? spec.sinkSelection
+                    : "no-sink",
+                gmdSinkType:
+                  spec?.gmdSinkType === "kitchen-bathroom"
+                    ? "kitchen-bathroom"
+                    : "fabricated",
+                fabricatedSinkStyle:
+                  spec?.fabricatedSinkStyle === "integrated"
+                    ? "integrated"
+                    : "slanted",
+                kitchenBathroomModel: String(spec?.kitchenBathroomModel || ""),
+                edgeThickness:
+                  spec?.edgeThickness === "3cm" ||
+                  spec?.edgeThickness === "2cm-build-up" ||
+                  spec?.edgeThickness === "3cm-build-up"
+                    ? spec.edgeThickness
+                    : "2cm",
+                edgeProfile:
+                  spec?.edgeProfile === "beveled-1-4" ||
+                  spec?.edgeProfile === "beveled-1-2" ||
+                  spec?.edgeProfile === "beveled-3-4" ||
+                  spec?.edgeProfile === "half-bullnose" ||
+                  spec?.edgeProfile === "full-bullnose" ||
+                  spec?.edgeProfile === "mitered" ||
+                  spec?.edgeProfile === "waterfall"
+                    ? spec.edgeProfile
+                    : "flat-polished",
+              }))
+            : [],
+        );
+
         setPaymentTermNumber(String(meta.paymentTermNumber || ""));
         setSavedArtifactId(String(json?.id || ""));
         setSourceArtifactId(String(json?.id || artifactId));
@@ -571,14 +614,15 @@ export default function PaymentTermClient({
                   depositPct: def.defaultPct,
                   noInstallation: false,
                 };
-                if (def.key === "cab_installation" && state.noInstallation) {
-                  return sum;
-                }
                 return sum + parseAmt(state.amount);
               },
               0,
             )
           : 0;
+
+      const noInstallationEnabled =
+        invoice.type === "cabinet" &&
+        parseAmt(stateMap["cab_installation"]?.amount ?? "") <= 0;
 
       const lines = defs.map((def) => {
         const state = stateMap[def.key] ?? {
@@ -587,32 +631,32 @@ export default function PaymentTermClient({
           noInstallation: false,
         };
 
-        const isNoInstallationRow =
-          invoice.type === "cabinet" &&
-          def.key === "cab_installation" &&
-          Boolean(state.noInstallation);
+        const isAutoRemainingCabinet =
+          invoice.type === "cabinet" && def.key === "cab_cabinet";
 
-        const amount =
-          invoice.type === "cabinet" && def.key === "cab_cabinet"
-            ? cabinetRemainingAmount
-            : isNoInstallationRow
-              ? 0
-              : invoice.type === "countertop" && def.key === "ct_misc"
-                ? invoiceAmount -
-                  COUNTERTOP_LINE_DEFS.filter(
-                    (d) => d.key !== "ct_misc",
-                  ).reduce((sum, d) => {
-                    const s = stateMap[d.key] ?? {
-                      amount: "",
-                      depositPct: d.defaultPct,
-                    };
-                    return sum + parseAmt(s.amount);
-                  }, 0)
-                : parseAmt(state.amount);
+        const isCabOthers =
+          invoice.type === "cabinet" && def.key === "cab_others";
 
-        const depositPct = isNoInstallationRow
-          ? 100
-          : Math.max(0, Math.min(100, state.depositPct));
+        const amount = isAutoRemainingCabinet
+          ? cabinetRemainingAmount
+          : invoice.type === "countertop" && def.key === "ct_misc"
+            ? invoiceAmount -
+              COUNTERTOP_LINE_DEFS.filter((d) => d.key !== "ct_misc").reduce(
+                (sum, d) => {
+                  const s = stateMap[d.key] ?? {
+                    amount: "",
+                    depositPct: d.defaultPct,
+                  };
+                  return sum + parseAmt(s.amount);
+                },
+                0,
+              )
+            : parseAmt(state.amount);
+
+        const depositPct =
+          (isAutoRemainingCabinet || isCabOthers) && noInstallationEnabled
+            ? 100
+            : Math.max(0, Math.min(100, state.depositPct));
         const deposit = amount * (depositPct / 100);
         const balance = amount - deposit;
         return {
@@ -751,10 +795,55 @@ export default function PaymentTermClient({
   }
 
   function removeCountertopSpec(id: string) {
-    setCountertopAgreementSpecs((prev) => {
-      if (prev.length <= 1) return prev;
-      return prev.filter((spec) => spec.id !== id);
-    });
+    setCountertopAgreementSpecs((prev) =>
+      prev.filter((spec) => spec.id !== id),
+    );
+  }
+
+  async function saveCountertopAgreementSpecs(opts?: { silent?: boolean }) {
+    if (!savedArtifactId) {
+      if (!opts?.silent) {
+        setSaveError(
+          "Save the payment term first, then save countertop specs.",
+        );
+      }
+      return false;
+    }
+
+    setCountertopSpecsSaving(true);
+    if (!opts?.silent) {
+      setSaveError(null);
+      setSaveMessage(null);
+    }
+
+    try {
+      const response = await fetch("/api/payment-terms", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          id: savedArtifactId,
+          countertopAgreementSpecs,
+        }),
+      });
+
+      const json = await response.json().catch(() => ({}));
+      if (!response.ok) {
+        throw new Error(json?.error || "Failed to save countertop specs");
+      }
+
+      if (!opts?.silent) {
+        setSaveMessage("Countertop agreement details saved.");
+      }
+
+      return true;
+    } catch (error: any) {
+      if (!opts?.silent) {
+        setSaveError(error?.message || "Failed to save countertop specs");
+      }
+      return false;
+    } finally {
+      setCountertopSpecsSaving(false);
+    }
   }
 
   async function printSelectedDocs() {
@@ -768,8 +857,6 @@ export default function PaymentTermClient({
       return;
     }
 
-    closePrintDocModal();
-
     const selectedDocs = [
       printDocs.paymentTerm ? "payment_term" : null,
       printDocs.cabinetAgreement ? "cabinet_agreement" : null,
@@ -782,24 +869,62 @@ export default function PaymentTermClient({
       | "repair_agreement"
     >;
 
+    if (hasCountertopInvoice && savedArtifactId) {
+      const saved = await saveCountertopAgreementSpecs({ silent: true });
+      if (!saved) {
+        setSaveError(
+          "Could not save Additional Countertop Agreement. Please click Save next to that section and try again.",
+        );
+        return;
+      }
+    }
+
+    closePrintDocModal();
+
     if (selectedDocs.length > 1) {
       if (!savedArtifactId) {
         setSaveError("Save first to generate print documents.");
         return;
       }
 
-      const params = new URLSearchParams({
-        docs: selectedDocs.join(","),
+      setSaveError(null);
+
+      const printUrls = selectedDocs.map((doc) => {
+        if (doc === "payment_term") {
+          return `/payment-term-print/${savedArtifactId}?autoprint=1`;
+        }
+
+        const params = new URLSearchParams({
+          key: doc,
+          autoprint: "1",
+        });
+
+        if (doc === "countertop_agreement") {
+          params.set("specs", JSON.stringify(countertopAgreementSpecs));
+        }
+
+        return `/agreement-print/${savedArtifactId}?${params.toString()}`;
       });
 
-      if (selectedDocs.includes("countertop_agreement")) {
-        params.set("specs", JSON.stringify(countertopAgreementSpecs));
+      let openedCount = 0;
+      for (const url of printUrls) {
+        const popup = window.open(url, "_blank");
+        if (popup) {
+          openedCount += 1;
+          popup.focus?.();
+        }
       }
 
-      window.open(
-        `/batch-print/${savedArtifactId}?${params.toString()}`,
-        "_blank",
-      );
+      if (openedCount === 0) {
+        setSaveError(
+          "Popup blocker prevented opening the print tabs. Please allow popups for this portal (localhost) and try again.",
+        );
+      } else if (openedCount < printUrls.length) {
+        setSaveError(
+          "Some print tabs could not be opened. Please allow popups for this portal (localhost) and try again.",
+        );
+      }
+
       return;
     }
 
@@ -852,6 +977,7 @@ export default function PaymentTermClient({
         revNum,
         invoices,
         lineItemsByInvoice,
+        countertopAgreementSpecs,
         totals: {
           invoiceTotal: computed.totalInvoiceAmount,
           minimumDeposit: computed.grandDeposit,
@@ -1124,6 +1250,7 @@ export default function PaymentTermClient({
                 min="1"
                 className="w-full border border-gray-300 dark:border-gray-600 rounded-lg px-3 py-2 text-sm bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100 focus:outline-none focus:ring-2 focus:ring-blue-500"
                 value={revNum}
+                disabled={!isAdmin}
                 onChange={(e) => setRevNum(e.target.value)}
               />
             </div>
@@ -1333,20 +1460,15 @@ export default function PaymentTermClient({
                                 noInstallation: false,
                               };
 
-                              const isNoInstallationRow =
-                                inv.type === "cabinet" &&
-                                def.key === "cab_installation" &&
-                                Boolean(state.noInstallation);
-
                               const isAutoRemainingCabinet =
                                 inv.type === "cabinet" &&
                                 def.key === "cab_cabinet";
 
                               const noInstallationEnabled =
                                 inv.type === "cabinet" &&
-                                Boolean(
-                                  stateMap["cab_installation"]?.noInstallation,
-                                );
+                                parseAmt(
+                                  stateMap["cab_installation"]?.amount ?? "",
+                                ) <= 0;
 
                               const isCabOthers =
                                 inv.type === "cabinet" &&
@@ -1358,20 +1480,15 @@ export default function PaymentTermClient({
                                       (parseAmt(
                                         stateMap["cab_removal"]?.amount ?? "",
                                       ) +
-                                        (stateMap["cab_installation"]
-                                          ?.noInstallation
-                                          ? 0
-                                          : parseAmt(
-                                              stateMap["cab_installation"]
-                                                ?.amount ?? "",
-                                            )) +
+                                        parseAmt(
+                                          stateMap["cab_installation"]
+                                            ?.amount ?? "",
+                                        ) +
                                         parseAmt(
                                           stateMap["cab_others"]?.amount ?? "",
                                         )),
                                   )
-                                : isNoInstallationRow
-                                  ? "0"
-                                  : state.amount;
+                                : state.amount;
                               const isAutoRemainingMisc =
                                 inv.type === "countertop" &&
                                 def.key === "ct_misc";
@@ -1428,7 +1545,6 @@ export default function PaymentTermClient({
                                         placeholder="0.00"
                                         value={finalAmountValue}
                                         disabled={
-                                          isNoInstallationRow ||
                                           isAutoRemainingCabinet ||
                                           isAutoRemainingMisc
                                         }
@@ -1477,52 +1593,6 @@ export default function PaymentTermClient({
                                           %
                                         </span>
                                       </div>
-
-                                      {inv.type === "cabinet" &&
-                                        def.key === "cab_installation" && (
-                                          <label className="inline-flex items-center gap-2 text-xs text-gray-600 dark:text-gray-300 whitespace-nowrap">
-                                            <input
-                                              type="checkbox"
-                                              className="rounded border-gray-300 text-blue-600 focus:ring-blue-500"
-                                              checked={Boolean(
-                                                state.noInstallation,
-                                              )}
-                                              onChange={(e) => {
-                                                const checked =
-                                                  e.target.checked;
-                                                updateLineItem(
-                                                  inv.id,
-                                                  def.key,
-                                                  {
-                                                    noInstallation: checked,
-                                                    amount: checked
-                                                      ? "0"
-                                                      : state.amount,
-                                                  },
-                                                );
-                                                updateLineItem(
-                                                  inv.id,
-                                                  "cab_cabinet",
-                                                  {
-                                                    depositPct: checked
-                                                      ? 100
-                                                      : 70,
-                                                  },
-                                                );
-                                                updateLineItem(
-                                                  inv.id,
-                                                  "cab_others",
-                                                  {
-                                                    depositPct: checked
-                                                      ? 100
-                                                      : 50,
-                                                  },
-                                                );
-                                              }}
-                                            />
-                                            No installation
-                                          </label>
-                                        )}
                                     </div>
                                   </td>
                                 </tr>
@@ -1852,9 +1922,20 @@ export default function PaymentTermClient({
 
                 {hasCountertopInvoice && (
                   <section className="rounded-lg border border-gray-200 dark:border-gray-700 p-4 space-y-4">
-                    <h4 className="text-sm font-semibold text-gray-900 dark:text-gray-100">
-                      Additional Countertop Agreement
-                    </h4>
+                    <div className="flex items-center justify-between gap-3">
+                      <h4 className="text-sm font-semibold text-gray-900 dark:text-gray-100">
+                        Additional Countertop Agreement
+                      </h4>
+                      <button
+                        type="button"
+                        onClick={() => void saveCountertopAgreementSpecs()}
+                        disabled={!savedArtifactId || countertopSpecsSaving}
+                        className="inline-flex items-center gap-1.5 px-2.5 py-1.5 rounded-md border border-gray-300 dark:border-gray-600 text-xs font-medium text-gray-700 dark:text-gray-200 hover:bg-gray-50 dark:hover:bg-gray-700 disabled:opacity-50 disabled:cursor-not-allowed"
+                      >
+                        <Save className="w-3.5 h-3.5" />
+                        {countertopSpecsSaving ? "Saving..." : "Save"}
+                      </button>
+                    </div>
 
                     {countertopAgreementSpecs.map((spec, idx) => (
                       <div
@@ -1868,7 +1949,6 @@ export default function PaymentTermClient({
                           <button
                             type="button"
                             onClick={() => removeCountertopSpec(spec.id)}
-                            disabled={countertopAgreementSpecs.length <= 1}
                             className="inline-flex items-center gap-1 px-2 py-1 rounded border border-gray-300 dark:border-gray-600 text-xs font-medium text-gray-700 dark:text-gray-200 hover:bg-gray-50 dark:hover:bg-gray-700 disabled:opacity-40 disabled:cursor-not-allowed"
                           >
                             <Trash2 className="w-3.5 h-3.5" />
@@ -2065,7 +2145,7 @@ export default function PaymentTermClient({
                       className="inline-flex items-center gap-1.5 px-3 py-2 rounded-md border border-gray-300 dark:border-gray-600 text-sm font-medium text-gray-700 dark:text-gray-200 hover:bg-gray-50 dark:hover:bg-gray-700"
                     >
                       <Plus className="w-4 h-4" />
-                      Add +
+                      Add
                     </button>
                   </section>
                 )}
