@@ -9,7 +9,8 @@ import styles from "./page.module.css";
 type AgreementKey =
   | "cabinet_agreement"
   | "countertop_agreement"
-  | "repair_agreement";
+  | "repair_agreement"
+  | "honed_agreement";
 
 type CountertopAgreementSpec = {
   id?: string;
@@ -20,6 +21,7 @@ type CountertopAgreementSpec = {
   kitchenBathroomModel?: string;
   edgeThickness?: string;
   edgeProfile?: string;
+  customEdgeProfile?: string;
 };
 
 type Meta = {
@@ -45,6 +47,7 @@ const AGREEMENT_TITLES: Record<AgreementKey, string> = {
   cabinet_agreement: "Cabinet Agreement",
   countertop_agreement: "Countertop Agreement",
   repair_agreement: "Repair Agreement",
+  honed_agreement: "Honed Agreement",
 };
 
 const BLANK_LINE_TOKEN = "__BLANK_LINE__";
@@ -77,11 +80,17 @@ function getSinkImageOptionKey(spec: CountertopAgreementSpec): string {
     const gmdSinkType = normalizeOptionKey(spec.gmdSinkType);
     if (gmdSinkType === "fabricated") {
       const fabricatedStyle = normalizeOptionKey(spec.fabricatedSinkStyle);
-      if (fabricatedStyle === "slanted") {
-        return "gmd-fabricated-sink-slanted";
+      if (fabricatedStyle === "slanted-mitered") {
+        return "gmd-fabricated-sink-slanted-mitered";
       }
-      if (fabricatedStyle === "integrated") {
-        return "gmd-fabricated-sink-integrated";
+      if (fabricatedStyle === "slanted-undermount") {
+        return "gmd-fabricated-sink-slanted-undermount";
+      }
+      if (fabricatedStyle === "rectangular-mitered") {
+        return "gmd-fabricated-sink-rectangular-mitered";
+      }
+      if (fabricatedStyle === "rectangular-undermount") {
+        return "gmd-fabricated-sink-rectangular-undermount";
       }
       return "gmd-sink";
     }
@@ -271,7 +280,8 @@ export default async function AgreementPrintPage({
   if (
     agreementKey !== "cabinet_agreement" &&
     agreementKey !== "countertop_agreement" &&
-    agreementKey !== "repair_agreement"
+    agreementKey !== "repair_agreement" &&
+    agreementKey !== "honed_agreement"
   ) {
     notFound();
   }
@@ -469,7 +479,7 @@ export default async function AgreementPrintPage({
               className={`${styles.bodyBlock} ${styles.bodyBlockContinuation} ${styles.detailsBodyBlock}`}
             >
               <h1 className={styles.centeredTitle}>
-                COUNTERTOP AGREEMENT DETAILS
+                SINK/EDGE/THICKNESS DOCUMENT
               </h1>
 
               <section
@@ -486,7 +496,10 @@ export default async function AgreementPrintPage({
                     formatEnumValue(spec.fabricatedSinkStyle) || "-";
                   const sinkModel = spec.kitchenBathroomModel?.trim() || "-";
                   const thickness = formatEnumValue(spec.edgeThickness) || "-";
-                  const edgeProfile = formatEnumValue(spec.edgeProfile) || "-";
+                  const edgeProfile =
+                    normalizeOptionKey(spec.edgeProfile) === "custom"
+                      ? spec.customEdgeProfile?.trim() || "Custom"
+                      : formatEnumValue(spec.edgeProfile) || "-";
                   const sinkImageOptionKey = getSinkImageOptionKey(spec);
                   const sinkImageUrl = countertopImageMap.get(
                     `sink:${sinkImageOptionKey}`,
@@ -508,12 +521,6 @@ export default async function AgreementPrintPage({
                       </h2>
 
                       <div className={styles.detailsFields}>
-                        <div>
-                          <span className={styles.detailsLabel}>
-                            Area Title:
-                          </span>{" "}
-                          {areaTitle}
-                        </div>
                         <div>
                           <span className={styles.detailsLabel}>
                             Sink Selection:

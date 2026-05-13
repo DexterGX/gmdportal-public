@@ -8,12 +8,20 @@ export type CountertopImageOption = {
 export const COUNTERTOP_SINK_OPTIONS: CountertopImageOption[] = [
   { optionKey: "no-sink", optionLabel: "No Sink" },
   {
-    optionKey: "gmd-fabricated-sink-slanted",
-    optionLabel: "GMD Fabricated Sink Slanted",
+    optionKey: "gmd-fabricated-sink-slanted-mitered",
+    optionLabel: "GMD Fabricated Sink Slanted Mitered",
   },
   {
-    optionKey: "gmd-fabricated-sink-integrated",
-    optionLabel: "GMD Fabricated Sink Integrated",
+    optionKey: "gmd-fabricated-sink-slanted-undermount",
+    optionLabel: "GMD Fabricated Sink Slanted Undermount",
+  },
+  {
+    optionKey: "gmd-fabricated-sink-rectangular-mitered",
+    optionLabel: "GMD Fabricated Sink Rectangular Mitered",
+  },
+  {
+    optionKey: "gmd-fabricated-sink-rectangular-undermount",
+    optionLabel: "GMD Fabricated Sink Rectangular Undermount",
   },
   {
     optionKey: "gmd-kitchen-bathroom-sink",
@@ -39,6 +47,8 @@ export const COUNTERTOP_EDGE_PROFILE_OPTIONS: CountertopImageOption[] = [
   { optionKey: "full-bullnose", optionLabel: "Full Bullnose" },
   { optionKey: "mitered", optionLabel: "Mitered" },
   { optionKey: "waterfall", optionLabel: "Waterfall" },
+  { optionKey: "ogee", optionLabel: "Ogee" },
+  { optionKey: "custom", optionLabel: "Custom" },
 ];
 
 export const COUNTERTOP_IMAGE_OPTIONS_BY_CATEGORY: Record<

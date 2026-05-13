@@ -6,13 +6,15 @@ type AgreementKey =
   | "payment_term"
   | "cabinet_agreement"
   | "countertop_agreement"
-  | "repair_agreement";
+  | "repair_agreement"
+  | "honed_agreement";
 
 const ALLOWED_DOCS: AgreementKey[] = [
   "payment_term",
   "cabinet_agreement",
   "countertop_agreement",
   "repair_agreement",
+  "honed_agreement",
 ];
 
 function parseDocs(raw: string | string[] | undefined): AgreementKey[] {
