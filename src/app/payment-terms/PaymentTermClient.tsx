@@ -48,7 +48,11 @@ type LineItemState = {
 
 type SinkSelection = "no-sink" | "gmd-sink" | "client-sink";
 type GmdSinkType = "fabricated" | "kitchen-bathroom";
-type FabricatedSinkStyle = "slanted" | "integrated";
+type FabricatedSinkStyle =
+  | "slanted-mitered"
+  | "slanted-undermount"
+  | "rectangular-mitered"
+  | "rectangular-undermount";
 type EdgeThickness = "2cm" | "3cm" | "2cm-build-up" | "3cm-build-up";
 type EdgeProfile =
   | "flat-polished"
@@ -58,7 +62,9 @@ type EdgeProfile =
   | "half-bullnose"
   | "full-bullnose"
   | "mitered"
-  | "waterfall";
+  | "waterfall"
+  | "ogee"
+  | "custom";
 
 type CountertopAgreementSpec = {
   id: string;
@@ -69,6 +75,7 @@ type CountertopAgreementSpec = {
   kitchenBathroomModel: string;
   edgeThickness: EdgeThickness;
   edgeProfile: EdgeProfile;
+  customEdgeProfile?: string;
 };
 
 type AgreementFormTemplateLite = {
@@ -120,7 +127,7 @@ function makeCountertopAgreementSpec(): CountertopAgreementSpec {
     title: "",
     sinkSelection: "no-sink",
     gmdSinkType: "fabricated",
-    fabricatedSinkStyle: "slanted",
+    fabricatedSinkStyle: "slanted-mitered",
     kitchenBathroomModel: "",
     edgeThickness: "2cm",
     edgeProfile: "flat-polished",
@@ -229,12 +236,14 @@ export default function PaymentTermClient({
       isActive: true,
     },
     { key: "repair_agreement", title: "Repair Agreement", isActive: true },
+    { key: "honed_agreement", title: "Honed Agreement", isActive: true },
   ]);
   const [printDocs, setPrintDocs] = useState({
     paymentTerm: true,
     cabinetAgreement: false,
     countertopAgreement: false,
     repairAgreement: false,
+    honedAgreement: false,
   });
   const [countertopAgreementSpecs, setCountertopAgreementSpecs] = useState<
     CountertopAgreementSpec[]
@@ -436,9 +445,11 @@ export default function PaymentTermClient({
                     ? "kitchen-bathroom"
                     : "fabricated",
                 fabricatedSinkStyle:
-                  spec?.fabricatedSinkStyle === "integrated"
-                    ? "integrated"
-                    : "slanted",
+                  spec?.fabricatedSinkStyle === "slanted-undermount" ||
+                  spec?.fabricatedSinkStyle === "rectangular-mitered" ||
+                  spec?.fabricatedSinkStyle === "rectangular-undermount"
+                    ? spec.fabricatedSinkStyle
+                    : "slanted-mitered",
                 kitchenBathroomModel: String(spec?.kitchenBathroomModel || ""),
                 edgeThickness:
                   spec?.edgeThickness === "3cm" ||
@@ -453,9 +464,12 @@ export default function PaymentTermClient({
                   spec?.edgeProfile === "half-bullnose" ||
                   spec?.edgeProfile === "full-bullnose" ||
                   spec?.edgeProfile === "mitered" ||
-                  spec?.edgeProfile === "waterfall"
+                  spec?.edgeProfile === "waterfall" ||
+                  spec?.edgeProfile === "ogee" ||
+                  spec?.edgeProfile === "custom"
                     ? spec.edgeProfile
                     : "flat-polished",
+                customEdgeProfile: String(spec?.customEdgeProfile || ""),
               }))
             : [],
         );
@@ -745,17 +759,62 @@ export default function PaymentTermClient({
     const diffCents = Math.round(
       (effectiveDeposit - computed.grandDeposit) * 100,
     );
+    const adjustedDepositCents = computed.perInvoice.map((inv) =>
+      Math.round(inv.deposit * 100),
+    );
+    const totalCents = computed.perInvoice.map((inv) =>
+      Math.round(inv.total * 100),
+    );
+
+    // Initial even distribution across invoices.
     const baseCents = Math.trunc(diffCents / count);
     const remainderCents = diffCents - baseCents * count;
     const remainderSign =
       remainderCents === 0 ? 0 : remainderCents > 0 ? 1 : -1;
     const remainderAbs = Math.abs(remainderCents);
 
+    for (let i = 0; i < count; i += 1) {
+      adjustedDepositCents[i] +=
+        baseCents + (i < remainderAbs ? remainderSign : 0);
+    }
+
+    // Clamp each invoice so deposits never exceed invoice total or drop below zero.
+    for (let i = 0; i < count; i += 1) {
+      adjustedDepositCents[i] = Math.max(
+        0,
+        Math.min(totalCents[i], adjustedDepositCents[i]),
+      );
+    }
+
+    // Redistribute residual cents created by clamping.
+    const targetTotalDepositCents = Math.round(effectiveDeposit * 100);
+    let residual =
+      targetTotalDepositCents -
+      adjustedDepositCents.reduce((sum, v) => sum + v, 0);
+
+    if (residual > 0) {
+      for (let i = 0; i < count && residual > 0; i += 1) {
+        const capacity = totalCents[i] - adjustedDepositCents[i];
+        if (capacity <= 0) continue;
+        const applied = Math.min(capacity, residual);
+        adjustedDepositCents[i] += applied;
+        residual -= applied;
+      }
+    } else if (residual < 0) {
+      let deficit = Math.abs(residual);
+      for (let i = count - 1; i >= 0 && deficit > 0; i -= 1) {
+        const reducible = adjustedDepositCents[i];
+        if (reducible <= 0) continue;
+        const reduced = Math.min(reducible, deficit);
+        adjustedDepositCents[i] -= reduced;
+        deficit -= reduced;
+      }
+    }
+
     return computed.perInvoice.map((inv, index) => {
-      const extraCents = baseCents + (index < remainderAbs ? remainderSign : 0);
-      const extra = extraCents / 100;
-      const adjustedDeposit = inv.deposit + extra;
-      const adjustedBalance = inv.total - adjustedDeposit;
+      const adjustedDeposit = adjustedDepositCents[index] / 100;
+      const adjustedBalance =
+        (totalCents[index] - adjustedDepositCents[index]) / 100;
 
       return {
         ...inv,
@@ -770,7 +829,17 @@ export default function PaymentTermClient({
     [invoices],
   );
 
+  const hasCabinetInvoice = useMemo(
+    () => invoices.some((inv) => inv.type === "cabinet"),
+    [invoices],
+  );
+
   function openPrintDocModal() {
+    setPrintDocs((prev) => ({
+      ...prev,
+      cabinetAgreement: hasCabinetInvoice,
+      countertopAgreement: hasCountertopInvoice,
+    }));
     setShowPrintDocModal(true);
   }
 
@@ -851,7 +920,8 @@ export default function PaymentTermClient({
       !printDocs.paymentTerm &&
       !printDocs.cabinetAgreement &&
       !printDocs.countertopAgreement &&
-      !printDocs.repairAgreement
+      !printDocs.repairAgreement &&
+      !printDocs.honedAgreement
     ) {
       setSaveError("Select at least one document to print.");
       return;
@@ -862,11 +932,13 @@ export default function PaymentTermClient({
       printDocs.cabinetAgreement ? "cabinet_agreement" : null,
       printDocs.countertopAgreement ? "countertop_agreement" : null,
       printDocs.repairAgreement ? "repair_agreement" : null,
+      printDocs.honedAgreement ? "honed_agreement" : null,
     ].filter(Boolean) as Array<
       | "payment_term"
       | "cabinet_agreement"
       | "countertop_agreement"
       | "repair_agreement"
+      | "honed_agreement"
     >;
 
     if (hasCountertopInvoice && savedArtifactId) {
@@ -942,6 +1014,10 @@ export default function PaymentTermClient({
 
     if (printDocs.repairAgreement) {
       openAgreementPrint("repair_agreement");
+    }
+
+    if (printDocs.honedAgreement) {
+      openAgreementPrint("honed_agreement");
     }
   }
 
@@ -1019,7 +1095,8 @@ export default function PaymentTermClient({
     agreementKey:
       | "cabinet_agreement"
       | "countertop_agreement"
-      | "repair_agreement",
+      | "repair_agreement"
+      | "honed_agreement",
   ) {
     if (!savedArtifactId) {
       setSaveError("Save first to generate print documents.");
@@ -1872,7 +1949,9 @@ export default function PaymentTermClient({
                                 ? printDocs.countertopAgreement
                                 : tpl.key === "repair_agreement"
                                   ? printDocs.repairAgreement
-                                  : false;
+                                  : tpl.key === "honed_agreement"
+                                    ? printDocs.honedAgreement
+                                    : false;
 
                         return (
                           <label
@@ -1909,6 +1988,12 @@ export default function PaymentTermClient({
                                       repairAgreement: e.target.checked,
                                     };
                                   }
+                                  if (tpl.key === "honed_agreement") {
+                                    return {
+                                      ...prev,
+                                      honedAgreement: e.target.checked,
+                                    };
+                                  }
                                   return prev;
                                 })
                               }
@@ -1924,7 +2009,7 @@ export default function PaymentTermClient({
                   <section className="rounded-lg border border-gray-200 dark:border-gray-700 p-4 space-y-4">
                     <div className="flex items-center justify-between gap-3">
                       <h4 className="text-sm font-semibold text-gray-900 dark:text-gray-100">
-                        Additional Countertop Agreement
+                        Sink/Edge/Thickness Document
                       </h4>
                       <button
                         type="button"
@@ -2038,9 +2123,17 @@ export default function PaymentTermClient({
                                         })
                                       }
                                     >
-                                      <option value="slanted">Slanted</option>
-                                      <option value="integrated">
-                                        Integrated
+                                      <option value="slanted-mitered">
+                                        Slanted Mitered
+                                      </option>
+                                      <option value="slanted-undermount">
+                                        Slanted Undermount
+                                      </option>
+                                      <option value="rectangular-mitered">
+                                        Rectangular Mitered
+                                      </option>
+                                      <option value="rectangular-undermount">
+                                        Rectangular Undermount
                                       </option>
                                     </select>
                                   </div>
@@ -2132,8 +2225,28 @@ export default function PaymentTermClient({
                                 </option>
                                 <option value="mitered">Mitered</option>
                                 <option value="waterfall">Waterfall</option>
+                                <option value="ogee">Ogee</option>
+                                <option value="custom">Custom</option>
                               </select>
                             </div>
+                            {spec.edgeProfile === "custom" && (
+                              <div className="sm:col-span-2">
+                                <label className="block text-xs font-medium text-gray-600 dark:text-gray-400 mb-1">
+                                  Custom Edge Profile Description
+                                </label>
+                                <input
+                                  type="text"
+                                  className="w-full border border-gray-300 dark:border-gray-600 rounded-md px-2.5 py-2 text-sm bg-white dark:bg-gray-700"
+                                  placeholder="Describe the custom edge profile"
+                                  value={spec.customEdgeProfile || ""}
+                                  onChange={(e) =>
+                                    updateCountertopSpec(spec.id, {
+                                      customEdgeProfile: e.target.value,
+                                    })
+                                  }
+                                />
+                              </div>
+                            )}
                           </div>
                         </div>
                       </div>

@@ -29,6 +29,13 @@ const DEFAULT_AGREEMENT_FORMS = [
     isActive: true,
     sortOrder: 40,
   },
+  {
+    key: "honed_agreement",
+    title: "Honed Agreement",
+    content: "",
+    isActive: true,
+    sortOrder: 50,
+  },
 ];
 
 export default async function AgreementFormsSettingsPage() {
