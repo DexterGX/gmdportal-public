@@ -33,6 +33,9 @@ const ensureTable = async () => {
       "soldCustomerName" TEXT,
       "soldJobId" TEXT,
       "soldJobName" TEXT,
+      "previousClientName" TEXT,
+      "previousJobId" TEXT,
+      "previousNotes" TEXT,
       "addedAt" TIMESTAMPTZ NOT NULL DEFAULT NOW(),
       "updatedAt" TIMESTAMPTZ NOT NULL DEFAULT NOW()
     )
@@ -53,7 +56,10 @@ const ensureTable = async () => {
     ADD COLUMN IF NOT EXISTS "soldCustomerId" TEXT,
     ADD COLUMN IF NOT EXISTS "soldCustomerName" TEXT,
     ADD COLUMN IF NOT EXISTS "soldJobId" TEXT,
-    ADD COLUMN IF NOT EXISTS "soldJobName" TEXT
+    ADD COLUMN IF NOT EXISTS "soldJobName" TEXT,
+    ADD COLUMN IF NOT EXISTS "previousClientName" TEXT,
+    ADD COLUMN IF NOT EXISTS "previousJobId" TEXT,
+    ADD COLUMN IF NOT EXISTS "previousNotes" TEXT
   `;
 };
 
@@ -95,6 +101,7 @@ export async function PATCH(
     soldCustomerName,
     soldJobId,
     soldJobName,
+    slabNotes,
     holdCustomerId,
     holdCustomerName,
     holdJobId,
@@ -109,6 +116,7 @@ export async function PATCH(
     soldCustomerName?: string;
     soldJobId?: string;
     soldJobName?: string;
+    slabNotes?: string;
     holdCustomerId?: string;
     holdCustomerName?: string;
     holdJobId?: string;
@@ -126,12 +134,22 @@ export async function PATCH(
     return NextResponse.json({ error: "Not found" }, { status: 404 });
   }
 
+  const [currentSlab] = await sql`
+    SELECT "clientName", "jobId", "notes"
+    FROM "SlabBaySlab"
+    WHERE "id" = ${String(current.slabBaySlabId)}
+  `;
+
   const currentStatus = String(current.status);
   const newStatus = status ?? currentStatus;
+  const trimmedSlabNotes =
+    typeof slabNotes === "string" ? slabNotes.trim() : "";
   const nextIsPriceTbd =
     typeof isPriceTbd === "boolean" ? isPriceTbd : Boolean(current.isPriceTbd);
   const parsedPrice =
-    typeof price === "number" && Number.isFinite(price) ? price : Number(current.price);
+    typeof price === "number" && Number.isFinite(price)
+      ? price
+      : Number(current.price);
   if (!nextIsPriceTbd && parsedPrice < 0) {
     return NextResponse.json({ error: "Invalid price" }, { status: 400 });
   }
@@ -142,10 +160,14 @@ export async function PATCH(
   }
 
   if (currentStatus === "ON_HOLD" && newStatus === "AVAILABLE") {
-    const isOwner = current.holdByUserId && String(current.holdByUserId) === user.id;
+    const isOwner =
+      current.holdByUserId && String(current.holdByUserId) === user.id;
     if (!isOwner && !isOfficeOrAdmin(appRole)) {
       return NextResponse.json(
-        { error: "Only admin, office, or the user who placed the hold can release it" },
+        {
+          error:
+            "Only admin, office, or the user who placed the hold can release it",
+        },
         { status: 403 },
       );
     }
@@ -171,11 +193,56 @@ export async function PATCH(
 
   const computedHoldUntil =
     newStatus === "ON_HOLD"
-      ? (holdUntilDate ?? new Date(Date.now() + 7 * 24 * 60 * 60 * 1000)).toISOString()
+      ? (
+          holdUntilDate ?? new Date(Date.now() + 7 * 24 * 60 * 60 * 1000)
+        ).toISOString()
       : null;
   const newSoldTo =
     newStatus === "SOLD"
       ? (soldCustomerName ?? soldToClientName ?? null)
+      : null;
+
+  let slabJobDisplayId: string | null = null;
+  const linkedJobId =
+    newStatus === "SOLD"
+      ? soldJobId
+      : newStatus === "ON_HOLD"
+        ? holdJobId
+        : null;
+  if (linkedJobId) {
+    const [jobRow] = await sql`
+      SELECT "jobNumber"
+      FROM "Job"
+      WHERE "id" = ${linkedJobId}
+      LIMIT 1
+    `;
+    if (jobRow?.jobNumber !== undefined && jobRow?.jobNumber !== null) {
+      slabJobDisplayId = String(jobRow.jobNumber);
+    }
+  }
+
+  const shouldCapturePreviousSlabValues =
+    currentStatus === "AVAILABLE" && newStatus !== "AVAILABLE";
+  const previousClientName = shouldCapturePreviousSlabValues
+    ? currentSlab?.clientName
+      ? String(currentSlab.clientName)
+      : null
+    : current.previousClientName
+      ? String(current.previousClientName)
+      : null;
+  const previousJobId = shouldCapturePreviousSlabValues
+    ? currentSlab?.jobId
+      ? String(currentSlab.jobId)
+      : null
+    : current.previousJobId
+      ? String(current.previousJobId)
+      : null;
+  const previousNotes = shouldCapturePreviousSlabValues
+    ? currentSlab?.notes
+      ? String(currentSlab.notes)
+      : null
+    : current.previousNotes
+      ? String(current.previousNotes)
       : null;
 
   const [updated] = await sql`
@@ -188,16 +255,19 @@ export async function PATCH(
       "holdUntil" = ${computedHoldUntil},
       "holdByUserId" = ${newStatus === "ON_HOLD" ? user.id : null},
       "holdByUserName" = ${newStatus === "ON_HOLD" ? (user.name ?? user.email ?? "Unknown") : null},
-      "holdCustomerId" = ${newStatus === "ON_HOLD" ? holdCustomerId ?? null : null},
-      "holdCustomerName" = ${newStatus === "ON_HOLD" ? holdCustomerName ?? null : null},
-      "holdJobId" = ${newStatus === "ON_HOLD" ? holdJobId ?? null : null},
-      "holdJobName" = ${newStatus === "ON_HOLD" ? holdJobName ?? null : null},
+      "holdCustomerId" = ${newStatus === "ON_HOLD" ? (holdCustomerId ?? null) : null},
+      "holdCustomerName" = ${newStatus === "ON_HOLD" ? (holdCustomerName ?? null) : null},
+      "holdJobId" = ${newStatus === "ON_HOLD" ? (holdJobId ?? null) : null},
+      "holdJobName" = ${newStatus === "ON_HOLD" ? (holdJobName ?? null) : null},
       "soldByUserId" = ${newStatus === "SOLD" ? user.id : null},
       "soldByUserName" = ${newStatus === "SOLD" ? (user.name ?? user.email ?? "Unknown") : null},
-      "soldCustomerId" = ${newStatus === "SOLD" ? soldCustomerId ?? null : null},
-      "soldCustomerName" = ${newStatus === "SOLD" ? soldCustomerName ?? null : null},
-      "soldJobId" = ${newStatus === "SOLD" ? soldJobId ?? null : null},
-      "soldJobName" = ${newStatus === "SOLD" ? soldJobName ?? null : null},
+      "soldCustomerId" = ${newStatus === "SOLD" ? (soldCustomerId ?? null) : null},
+      "soldCustomerName" = ${newStatus === "SOLD" ? (soldCustomerName ?? null) : null},
+      "soldJobId" = ${newStatus === "SOLD" ? (soldJobId ?? null) : null},
+      "soldJobName" = ${newStatus === "SOLD" ? (soldJobName ?? null) : null},
+      "previousClientName" = ${newStatus === "AVAILABLE" ? null : previousClientName},
+      "previousJobId" = ${newStatus === "AVAILABLE" ? null : previousJobId},
+      "previousNotes" = ${newStatus === "AVAILABLE" ? null : previousNotes},
       "updatedAt" = NOW()
     WHERE "id" = ${id}
     RETURNING *
@@ -209,7 +279,8 @@ export async function PATCH(
       UPDATE "SlabBaySlab"
       SET
         "clientName" = ${soldCustomerName ?? soldToClientName ?? ""},
-        "jobId" = ${soldJobId ?? null}
+        "jobId" = ${slabJobDisplayId},
+        "notes" = ${trimmedSlabNotes || (currentSlab?.notes ? String(currentSlab.notes) : null)}
       WHERE "id" = ${String(current.slabBaySlabId)}
     `;
   } else if (newStatus === "ON_HOLD") {
@@ -217,7 +288,16 @@ export async function PATCH(
       UPDATE "SlabBaySlab"
       SET
         "clientName" = ${holdCustomerName ?? ""},
-        "jobId" = ${holdJobId ?? null}
+        "jobId" = ${slabJobDisplayId}
+      WHERE "id" = ${String(current.slabBaySlabId)}
+    `;
+  } else if (newStatus === "AVAILABLE") {
+    await sql`
+      UPDATE "SlabBaySlab"
+      SET
+        "clientName" = ${previousClientName ?? ""},
+        "jobId" = ${previousJobId},
+        "notes" = ${previousNotes}
       WHERE "id" = ${String(current.slabBaySlabId)}
     `;
   }

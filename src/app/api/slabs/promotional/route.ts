@@ -46,6 +46,9 @@ const ensureTable = async () => {
       "soldCustomerName" TEXT,
       "soldJobId" TEXT,
       "soldJobName" TEXT,
+      "previousClientName" TEXT,
+      "previousJobId" TEXT,
+      "previousNotes" TEXT,
       "addedAt" TIMESTAMPTZ NOT NULL DEFAULT NOW(),
       "updatedAt" TIMESTAMPTZ NOT NULL DEFAULT NOW()
     )
@@ -66,7 +69,10 @@ const ensureTable = async () => {
     ADD COLUMN IF NOT EXISTS "soldCustomerId" TEXT,
     ADD COLUMN IF NOT EXISTS "soldCustomerName" TEXT,
     ADD COLUMN IF NOT EXISTS "soldJobId" TEXT,
-    ADD COLUMN IF NOT EXISTS "soldJobName" TEXT
+    ADD COLUMN IF NOT EXISTS "soldJobName" TEXT,
+    ADD COLUMN IF NOT EXISTS "previousClientName" TEXT,
+    ADD COLUMN IF NOT EXISTS "previousJobId" TEXT,
+    ADD COLUMN IF NOT EXISTS "previousNotes" TEXT
   `;
 };
 
@@ -90,7 +96,7 @@ export async function GET(request: Request) {
   await ensureOnce();
   const { user, appRole } = await getCurrentUserWithRole();
 
-  await sql`
+  const expiredHolds = await sql`
     UPDATE "PromotionalSlab"
     SET
       "status" = 'AVAILABLE',
@@ -101,9 +107,29 @@ export async function GET(request: Request) {
       "holdCustomerName" = NULL,
       "holdJobId" = NULL,
       "holdJobName" = NULL,
+      "previousClientName" = NULL,
+      "previousJobId" = NULL,
+      "previousNotes" = NULL,
       "updatedAt" = NOW()
     WHERE "status" = 'ON_HOLD' AND "holdUntil" IS NOT NULL AND "holdUntil" <= NOW()
+    RETURNING "slabBaySlabId", "previousClientName", "previousJobId", "previousNotes"
   `;
+
+  for (const row of expiredHolds as Array<Record<string, unknown>>) {
+    const slabBaySlabId = String(row.slabBaySlabId ?? "").trim();
+    if (!slabBaySlabId) {
+      continue;
+    }
+
+    await sql`
+      UPDATE "SlabBaySlab"
+      SET
+        "clientName" = ${row.previousClientName ? String(row.previousClientName) : ""},
+        "jobId" = ${row.previousJobId ? String(row.previousJobId) : null},
+        "notes" = ${row.previousNotes ? String(row.previousNotes) : null}
+      WHERE "id" = ${slabBaySlabId}
+    `;
+  }
 
   const { searchParams } = new URL(request.url);
   const search = searchParams.get("search")?.trim().toLowerCase() ?? "";
@@ -272,12 +298,7 @@ export async function POST(request: Request) {
     FROM "SlabBaySlab"
     WHERE "id" IN ${sql(slabIds)}
   `;
-  const slabTypeById = new Map(
-    slabRows.map((row) => [
-      row.id,
-      row.type,
-    ]),
-  );
+  const slabTypeById = new Map(slabRows.map((row) => [row.id, row.type]));
 
   for (const entry of normalized) {
     const slabType = slabTypeById.get(entry.slabBaySlabId);

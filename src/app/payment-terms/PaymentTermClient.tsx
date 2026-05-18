@@ -335,7 +335,36 @@ export default function PaymentTermClient({
     const mode = (searchParams.get("mode") || "").toLowerCase();
     const artifactId = rawArtifactId?.trim();
 
-    if (!artifactId) return;
+    if (!artifactId) {
+      // Reset form to new state when there's no artifactId
+      clearClient();
+      setSalesRep(initialSalesRep);
+      setDate(new Date().toISOString().slice(0, 10));
+      setRevNum("1");
+      setClientDeposit("");
+      setSavedArtifactId(null);
+      setPaymentTermNumber("");
+      setSourceArtifactId(null);
+      setShowInCustomerFiles(true);
+      setSaveMessage(null);
+      setSaveError(null);
+      const firstInvoiceId = uid();
+      setInvoices([
+        { id: firstInvoiceId, num: "", amount: "", type: "cabinet" },
+      ]);
+      setLineItemsByInvoice({
+        [firstInvoiceId]: initLineItems("cabinet"),
+      });
+      setCountertopAgreementSpecs([]);
+      setPrintDocs({
+        paymentTerm: true,
+        cabinetAgreement: false,
+        countertopAgreement: false,
+        repairAgreement: false,
+        honedAgreement: false,
+      });
+      return;
+    }
     const artifactIdValue = artifactId;
 
     async function loadFromArtifact() {
@@ -979,7 +1008,14 @@ export default function PaymentTermClient({
       });
 
       let openedCount = 0;
-      for (const url of printUrls) {
+      for (let i = 0; i < printUrls.length; i += 1) {
+        const url = printUrls[i];
+        const doc = selectedDocs[i];
+
+        if (doc && doc !== "payment_term") {
+          recordPrintedAgreement(doc);
+        }
+
         const popup = window.open(url, "_blank");
         if (popup) {
           openedCount += 1;
@@ -1072,6 +1108,23 @@ export default function PaymentTermClient({
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(payload),
       });
+
+      const json = await response.json().catch(() => ({}));
+      if (!response.ok) {
+        throw new Error(json?.error || "Failed to save payment term");
+      }
+
+      const newArtifactId = typeof json?.id === "string" ? json.id.trim() : "";
+      if (!newArtifactId) {
+        throw new Error("Save succeeded but no artifact id was returned.");
+      }
+
+      setSavedArtifactId(newArtifactId);
+      setSourceArtifactId(newArtifactId);
+      setPaymentTermNumber(String(json?.paymentTermNumber || ""));
+      setSaveMessage(
+        `Saved as #${String(json?.paymentTermNumber || "payment term")}.`,
+      );
     } catch (error: any) {
       setSaveError(error?.message || "Failed to save payment term");
     } finally {
@@ -1081,6 +1134,30 @@ export default function PaymentTermClient({
 
   function openCurrentPrint() {
     window.print();
+  }
+
+  function recordPrintedAgreement(
+    agreementKey:
+      | "cabinet_agreement"
+      | "countertop_agreement"
+      | "repair_agreement"
+      | "honed_agreement",
+  ) {
+    if (!savedArtifactId) {
+      return;
+    }
+
+    void fetch("/api/payment-terms/printed-docs", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        paymentTermArtifactId: savedArtifactId,
+        agreementKey,
+      }),
+      keepalive: true,
+    }).catch(() => {
+      // Best-effort tracking only; printing should never fail if this call fails.
+    });
   }
 
   function openClientPrint() {
@@ -1111,6 +1188,8 @@ export default function PaymentTermClient({
     if (agreementKey === "countertop_agreement") {
       params.set("specs", JSON.stringify(countertopAgreementSpecs));
     }
+
+    recordPrintedAgreement(agreementKey);
 
     window.open(
       `/agreement-print/${savedArtifactId}?${params.toString()}`,

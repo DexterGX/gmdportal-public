@@ -426,42 +426,9 @@ export default async function CustomerV2JobDetailPage({
             )}
           </div>
 
-          <div className="p-6">
-            <h3 className="text-sm font-semibold text-gray-700 dark:text-gray-300 mb-3">
-              Sample Requests
-            </h3>
-            {job.sampleRequests.length === 0 && (
-              <p className="text-sm text-gray-500 dark:text-gray-400">
-                No sample requests linked to this job yet.
-              </p>
-            )}
-            {job.sampleRequests.length > 0 && (
-              <div className="space-y-2">
-                {job.sampleRequests.map((request) => (
-                  <div
-                    key={request.id}
-                    className="flex items-center justify-between gap-2 bg-gray-50 dark:bg-gray-900/40 rounded px-3 py-2"
-                  >
-                    <div>
-                      <p className="text-sm text-gray-900 dark:text-gray-100">
-                        {request.brand} - {request.colorName}
-                      </p>
-                      <p className="text-xs text-gray-500 dark:text-gray-400">
-                        {request.sampleType} | Qty {request.quantity}
-                      </p>
-                    </div>
-                    <span className="text-xs font-medium text-gray-700 dark:text-gray-300">
-                      {request.status}
-                    </span>
-                  </div>
-                ))}
-              </div>
-            )}
-          </div>
-
           <div className="p-6" id="job-artifacts">
             <h3 className="text-sm font-semibold text-gray-700 dark:text-gray-300 mb-3">
-              Job Artifacts
+              Documents
             </h3>
             {visibleArtifacts.length === 0 && (
               <p className="text-sm text-gray-500 dark:text-gray-400">
@@ -470,56 +437,89 @@ export default async function CustomerV2JobDetailPage({
             )}
             {visibleArtifacts.length > 0 && (
               <div className="space-y-2">
-                {visibleArtifacts.map((artifact) => (
-                  <div
-                    key={artifact.id}
-                    className={`flex items-center justify-between gap-2 rounded px-3 py-2 ${
-                      selectedArtifactId === artifact.id
-                        ? "bg-teal-50 dark:bg-teal-900/20 ring-1 ring-teal-400"
-                        : "bg-gray-50 dark:bg-gray-900/40"
-                    }`}
-                  >
-                    <div>
-                      <p className="text-sm text-gray-900 dark:text-gray-100">
-                        {artifact.title}
-                      </p>
-                      <p className="text-xs text-gray-500 dark:text-gray-400">
-                        {artifact.sourceApp} | {artifact.type} |{" "}
-                        {fmtDate(artifact.createdAt)}
-                      </p>
-                    </div>
-                    {artifact.url ? (
-                      <a
-                        href={artifact.url}
-                        target="_blank"
-                        rel="noopener noreferrer"
-                        className="text-xs text-teal-600 dark:text-teal-400 hover:underline"
+                {visibleArtifacts.map((artifact) =>
+                  (() => {
+                    const artifactMeta =
+                      artifact.metadata && typeof artifact.metadata === "object"
+                        ? (artifact.metadata as Record<string, unknown>)
+                        : {};
+
+                    const agreementKey = String(
+                      artifactMeta.agreementKey ?? "",
+                    ).trim();
+                    const paymentTermArtifactId = String(
+                      artifactMeta.paymentTermArtifactId ?? "",
+                    ).trim();
+
+                    const isPrintedPaymentTermAgreement =
+                      artifact.sourceApp === "PAYMENT_TERM_PRINT" &&
+                      paymentTermArtifactId &&
+                      (agreementKey === "cabinet_agreement" ||
+                        agreementKey === "countertop_agreement" ||
+                        agreementKey === "repair_agreement" ||
+                        agreementKey === "honed_agreement");
+
+                    return (
+                      <div
+                        key={artifact.id}
+                        className={`flex items-center justify-between gap-2 rounded px-3 py-2 ${
+                          selectedArtifactId === artifact.id
+                            ? "bg-teal-50 dark:bg-teal-900/20 ring-1 ring-teal-400"
+                            : "bg-gray-50 dark:bg-gray-900/40"
+                        }`}
                       >
-                        Open
-                      </a>
-                    ) : artifact.sourceApp === "MISC_ESTIMATE" ? (
-                      <a
-                        href={`/misc-estimate-print/${encodeURIComponent(artifact.id)}?autoprint=1`}
-                        target="_blank"
-                        rel="noopener noreferrer"
-                        className="text-xs text-teal-600 dark:text-teal-400 hover:underline"
-                      >
-                        Download Estimate
-                      </a>
-                    ) : artifact.sourceApp === "PAYMENT_TERM" ? (
-                      <a
-                        href={`/payment-term-print/${encodeURIComponent(artifact.id)}?autoprint=1`}
-                        target="_blank"
-                        rel="noopener noreferrer"
-                        className="text-xs text-teal-600 dark:text-teal-400 hover:underline"
-                      >
-                        Open Payment Term
-                      </a>
-                    ) : (
-                      <FileText className="w-4 h-4 text-gray-400" />
-                    )}
-                  </div>
-                ))}
+                        <div>
+                          <p className="text-sm text-gray-900 dark:text-gray-100">
+                            {artifact.title}
+                          </p>
+                          <p className="text-xs text-gray-500 dark:text-gray-400">
+                            {artifact.sourceApp} | {artifact.type} |{" "}
+                            {fmtDate(artifact.createdAt)}
+                          </p>
+                        </div>
+                        {artifact.url ? (
+                          <a
+                            href={artifact.url}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            className="text-xs text-teal-600 dark:text-teal-400 hover:underline"
+                          >
+                            Open
+                          </a>
+                        ) : artifact.sourceApp === "MISC_ESTIMATE" ? (
+                          <a
+                            href={`/misc-estimate-print/${encodeURIComponent(artifact.id)}?autoprint=1`}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            className="text-xs text-teal-600 dark:text-teal-400 hover:underline"
+                          >
+                            Download Estimate
+                          </a>
+                        ) : artifact.sourceApp === "PAYMENT_TERM" ? (
+                          <a
+                            href={`/payment-term-print/${encodeURIComponent(artifact.id)}?autoprint=1`}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            className="text-xs text-teal-600 dark:text-teal-400 hover:underline"
+                          >
+                            Open Payment Term
+                          </a>
+                        ) : isPrintedPaymentTermAgreement ? (
+                          <a
+                            href={`/agreement-print/${encodeURIComponent(paymentTermArtifactId)}?key=${encodeURIComponent(agreementKey)}&autoprint=1`}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            className="text-xs text-teal-600 dark:text-teal-400 hover:underline"
+                          >
+                            Open Agreement
+                          </a>
+                        ) : (
+                          <FileText className="w-4 h-4 text-gray-400" />
+                        )}
+                      </div>
+                    );
+                  })(),
+                )}
               </div>
             )}
           </div>

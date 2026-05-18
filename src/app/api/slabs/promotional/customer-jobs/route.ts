@@ -12,6 +12,7 @@ type CustomerOption = {
 
 type JobOption = {
   id: string;
+  jobNumber: number;
   jobName: string;
   pipedriveId: string | null;
   dealTitle: string | null;
@@ -67,6 +68,7 @@ export async function GET(request: Request) {
       },
       select: {
         id: true,
+        jobNumber: true,
         jobName: true,
         pipedriveId: true,
         dealTitle: true,
