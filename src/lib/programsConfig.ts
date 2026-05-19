@@ -113,6 +113,7 @@ export type ProgramId =
   | "storeStock"
   | "slabRack"
   | "slabs"
+  | "sinks"
   | "settings"
   | "users"
   | "closetJobs"
@@ -223,6 +224,45 @@ export const programs: ProgramConfig[] = [
         icon: PageIcon,
         name: "Import / Export",
         path: "/slabsPriceList/admin/import",
+        adminOnly: true,
+      },
+    ],
+    othersItems: [],
+  },
+  {
+    id: "sinks",
+    name: "Sinks Price List",
+    basePath: "/sinksPriceList",
+    description: "View and update sink pricing.",
+    allowedRoles: ["admin", "sales", "office", "finance"],
+    navItems: [
+      { icon: GridIcon, name: "Overview", path: "/sinksPriceList" },
+      {
+        icon: TicketPercent,
+        name: "Promotional Sinks",
+        path: "/sinksPriceList/promotional",
+      },
+      {
+        icon: ListIcon,
+        name: "Availability",
+        path: "/sinksPriceList/availability",
+      },
+      {
+        icon: Settings2,
+        name: "Brand Settings",
+        path: "/sinksPriceList/admin/brands",
+        adminOnly: true,
+      },
+      {
+        icon: Table2,
+        name: "Sinks Data",
+        path: "/sinksPriceList/admin/sinks",
+        adminOnly: true,
+      },
+      {
+        icon: PageIcon,
+        name: "Import / Export",
+        path: "/sinksPriceList/admin/import",
         adminOnly: true,
       },
     ],
@@ -453,6 +493,8 @@ export const programs: ProgramConfig[] = [
 ];
 
 export function getProgramForPath(pathname: string): ProgramConfig {
+  const normalizedPath = (pathname || "/").toLowerCase();
+
   // Sort programs by basePath length (descending) to match most specific path first
   const sortedPrograms = [...programs].sort(
     (a, b) => b.basePath.length - a.basePath.length,
@@ -461,7 +503,11 @@ export function getProgramForPath(pathname: string): ProgramConfig {
   // Find the first program whose basePath matches the pathname
   for (const program of sortedPrograms) {
     if (program.id === "main") continue; // Skip main for now, use as fallback
-    if (pathname.startsWith(program.basePath)) {
+    const normalizedBasePath = program.basePath.toLowerCase();
+    const exactMatch = normalizedPath === normalizedBasePath;
+    const nestedMatch = normalizedPath.startsWith(`${normalizedBasePath}/`);
+
+    if (exactMatch || nestedMatch) {
       return program;
     }
   }

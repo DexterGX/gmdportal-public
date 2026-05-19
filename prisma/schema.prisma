@@ -136,6 +136,45 @@ model Slab {
   brand         SlabBrandConfig @relation(fields: [brandId], references: [id])
 }
 
+model SinkBrand {
+  id           String   @id @default(cuid())
+  name         String   @unique
+  logoUrl      String?
+  factor       Decimal  @default(1) @db.Decimal(10, 4)
+  taxFactor    Decimal  @default(1) @db.Decimal(10, 4)
+  freight      Decimal  @default(0) @db.Decimal(10, 2)
+  discount     Decimal  @default(0) @db.Decimal(10, 4)
+  contactName  String?
+  contactCell  String?
+  contactPhone String?
+  contactEmail String?
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+  sinks        Sink[]
+}
+
+model Sink {
+  id               String     @id @default(cuid())
+  brandId          String
+  model            String
+  description      String?
+  dimensions       String
+  listedPrice      Decimal    @db.Decimal(10, 2)
+  finalPrice       Decimal    @db.Decimal(10, 2)
+  status           SinkStatus @default(AVAILABLE)
+  isPromotional    Boolean    @default(false)
+  promotionalPrice Decimal?   @db.Decimal(10, 2)
+  imageUrl         String?
+  createdAt        DateTime   @default(now())
+  updatedAt        DateTime   @updatedAt
+  brand            SinkBrand  @relation(fields: [brandId], references: [id], onDelete: Restrict)
+
+  @@unique([brandId, model, dimensions])
+  @@index([brandId])
+  @@index([status])
+  @@index([isPromotional])
+}
+
 model SlabBayRack {
   id                   String        @id
   name                 String
@@ -768,6 +807,11 @@ enum SlabFinish {
   ULTRASOFT
   SOFT_TOUCH
   BOOKMATCH
+}
+
+enum SinkStatus {
+  AVAILABLE
+  DISCONTINUED
 }
 
 enum ClosetAreaType {
