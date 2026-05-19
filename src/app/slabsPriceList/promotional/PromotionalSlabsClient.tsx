@@ -49,6 +49,7 @@ type CustomerOption = {
 
 type JobOption = {
   id: string;
+  jobNumber: number;
   jobName: string;
   pipedriveId: string | null;
   dealTitle: string | null;
@@ -114,7 +115,10 @@ function CustomerJobPicker({
 
   useEffect(() => {
     const handler = (event: MouseEvent) => {
-      if (wrapperRef.current && !wrapperRef.current.contains(event.target as Node)) {
+      if (
+        wrapperRef.current &&
+        !wrapperRef.current.contains(event.target as Node)
+      ) {
         setShowDropdown(false);
       }
     };
@@ -179,7 +183,11 @@ function CustomerJobPicker({
         <div ref={wrapperRef} className="relative">
           <input
             type="text"
-            value={selectedCustomer ? formatCustomerOptionLabel(selectedCustomer) : query}
+            value={
+              selectedCustomer
+                ? formatCustomerOptionLabel(selectedCustomer)
+                : query
+            }
             onChange={(event) => {
               setQuery(event.target.value);
               if (selectedCustomer) onSelectCustomer(null);
@@ -193,9 +201,13 @@ function CustomerJobPicker({
           {showDropdown && (
             <ul className="absolute z-20 mt-1 w-full rounded-lg border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800 shadow-xl max-h-56 overflow-y-auto">
               {loadingCustomers ? (
-                <li className="px-3 py-2 text-sm text-gray-500">Searching...</li>
+                <li className="px-3 py-2 text-sm text-gray-500">
+                  Searching...
+                </li>
               ) : customers.length === 0 ? (
-                <li className="px-3 py-2 text-sm text-gray-500">No customers found</li>
+                <li className="px-3 py-2 text-sm text-gray-500">
+                  No customers found
+                </li>
               ) : (
                 customers.map((customer) => (
                   <li key={customer.id}>
@@ -212,7 +224,9 @@ function CustomerJobPicker({
                         {formatCustomerOptionLabel(customer)}
                       </div>
                       {customer.companyName && (
-                        <div className="text-xs text-gray-500">{customer.companyName}</div>
+                        <div className="text-xs text-gray-500">
+                          {customer.companyName}
+                        </div>
                       )}
                     </button>
                   </li>
@@ -242,12 +256,13 @@ function CustomerJobPicker({
           </option>
           {jobs.map((job) => (
             <option key={job.id} value={job.id}>
-              {job.pipedriveId ? `#${job.pipedriveId} - ` : ""}
-              {job.dealTitle || job.jobName}
+              #{job.jobNumber} - {job.dealTitle || job.jobName}
             </option>
           ))}
         </select>
-        <p className="mt-1 text-xs text-gray-500 dark:text-gray-400">{helperLabel}</p>
+        <p className="mt-1 text-xs text-gray-500 dark:text-gray-400">
+          {helperLabel}
+        </p>
       </div>
     </div>
   );
@@ -265,7 +280,8 @@ type HoldModalProps = {
 };
 
 function HoldModal({ slab, onClose, onConfirm }: HoldModalProps) {
-  const [selectedCustomer, setSelectedCustomer] = useState<CustomerOption | null>(null);
+  const [selectedCustomer, setSelectedCustomer] =
+    useState<CustomerOption | null>(null);
   const [selectedJobId, setSelectedJobId] = useState("");
   const [submitting, setSubmitting] = useState(false);
 
@@ -284,7 +300,9 @@ function HoldModal({ slab, onClose, onConfirm }: HoldModalProps) {
     );
     if (!jobsRes.ok) return;
     const payload = (await jobsRes.json()) as { jobs?: JobOption[] };
-    const job = (payload.jobs ?? []).find((value) => value.id === selectedJobId);
+    const job = (payload.jobs ?? []).find(
+      (value) => value.id === selectedJobId,
+    );
     if (!job) return;
 
     setSubmitting(true);
@@ -304,19 +322,30 @@ function HoldModal({ slab, onClose, onConfirm }: HoldModalProps) {
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4">
       <div className="w-full max-w-lg rounded-xl bg-white dark:bg-gray-900 shadow-xl p-6 space-y-4">
         <div className="flex items-center justify-between">
-          <h2 className="text-lg font-semibold text-gray-900 dark:text-gray-100">Put Slab On Hold</h2>
-          <button type="button" onClick={onClose} className="text-gray-400 hover:text-gray-600">
+          <h2 className="text-lg font-semibold text-gray-900 dark:text-gray-100">
+            Put Slab On Hold
+          </h2>
+          <button
+            type="button"
+            onClick={onClose}
+            className="text-gray-400 hover:text-gray-600"
+          >
             <X className="h-5 w-5" />
           </button>
         </div>
 
         <div className="rounded-lg border border-amber-300 bg-amber-50 dark:bg-amber-900/20 dark:border-amber-700 p-3 text-sm text-amber-900 dark:text-amber-200">
           This slab will be on hold for 7 days and return to available on
-          <span className="font-semibold"> {formatReleaseLabel(holdUntil)}</span>.
+          <span className="font-semibold">
+            {" "}
+            {formatReleaseLabel(holdUntil)}
+          </span>
+          .
         </div>
 
         <p className="text-sm text-gray-600 dark:text-gray-400">
-          Slab: <span className="font-medium">{slab.name}</span> ({slab.slabBaySlabId})
+          Slab: <span className="font-medium">{slab.name}</span> (
+          {slab.slabBaySlabId})
         </p>
 
         <CustomerJobPicker
@@ -357,12 +386,15 @@ type SoldModalProps = {
     soldCustomerName: string;
     soldJobId: string;
     soldJobName: string;
+    slabNotes: string;
   }) => Promise<void>;
 };
 
 function SoldModal({ slab, onClose, onConfirm }: SoldModalProps) {
-  const [selectedCustomer, setSelectedCustomer] = useState<CustomerOption | null>(null);
+  const [selectedCustomer, setSelectedCustomer] =
+    useState<CustomerOption | null>(null);
   const [selectedJobId, setSelectedJobId] = useState("");
+  const [slabNotes, setSlabNotes] = useState("");
   const [submitting, setSubmitting] = useState(false);
 
   const canSubmit = Boolean(selectedCustomer && selectedJobId);
@@ -375,7 +407,9 @@ function SoldModal({ slab, onClose, onConfirm }: SoldModalProps) {
     );
     if (!jobsRes.ok) return;
     const payload = (await jobsRes.json()) as { jobs?: JobOption[] };
-    const job = (payload.jobs ?? []).find((value) => value.id === selectedJobId);
+    const job = (payload.jobs ?? []).find(
+      (value) => value.id === selectedJobId,
+    );
     if (!job) return;
 
     setSubmitting(true);
@@ -385,6 +419,7 @@ function SoldModal({ slab, onClose, onConfirm }: SoldModalProps) {
         soldCustomerName: selectedCustomer.displayName,
         soldJobId: job.id,
         soldJobName: job.dealTitle || job.jobName,
+        slabNotes,
       });
     } finally {
       setSubmitting(false);
@@ -395,14 +430,21 @@ function SoldModal({ slab, onClose, onConfirm }: SoldModalProps) {
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4">
       <div className="w-full max-w-lg rounded-xl bg-white dark:bg-gray-900 shadow-xl p-6 space-y-4">
         <div className="flex items-center justify-between">
-          <h2 className="text-lg font-semibold text-gray-900 dark:text-gray-100">Mark Slab As Sold</h2>
-          <button type="button" onClick={onClose} className="text-gray-400 hover:text-gray-600">
+          <h2 className="text-lg font-semibold text-gray-900 dark:text-gray-100">
+            Mark Slab As Sold
+          </h2>
+          <button
+            type="button"
+            onClick={onClose}
+            className="text-gray-400 hover:text-gray-600"
+          >
             <X className="h-5 w-5" />
           </button>
         </div>
 
         <p className="text-sm text-gray-600 dark:text-gray-400">
-          Slab: <span className="font-medium">{slab.name}</span> ({slab.slabBaySlabId})
+          Slab: <span className="font-medium">{slab.name}</span> (
+          {slab.slabBaySlabId})
         </p>
 
         <CustomerJobPicker
@@ -412,6 +454,19 @@ function SoldModal({ slab, onClose, onConfirm }: SoldModalProps) {
           onSelectJobId={setSelectedJobId}
           helperLabel="Sale information will be linked to this customer and deal."
         />
+
+        <div>
+          <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
+            Slab Notes
+          </label>
+          <textarea
+            value={slabNotes}
+            onChange={(event) => setSlabNotes(event.target.value)}
+            rows={4}
+            placeholder="Optional notes to save on the slab info"
+            className="w-full rounded-lg border border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-800 px-3 py-2 text-sm text-gray-900 dark:text-gray-100 focus:outline-none focus:ring-2 focus:ring-blue-500"
+          />
+        </div>
 
         <div className="flex justify-end gap-3 pt-2">
           <button
@@ -473,19 +528,23 @@ export default function PromotionalSlabsClient() {
   }, [rows]);
 
   const brandOptions = useMemo<MultiSelectOption[]>(() => {
-    const values = Array.from(new Set(rows.map((row) => row.brand ?? "").filter(Boolean))).sort();
+    const values = Array.from(
+      new Set(rows.map((row) => row.brand ?? "").filter(Boolean)),
+    ).sort();
     return values.map((value) => ({ value, label: value }));
   }, [rows]);
 
   const finishOptions = useMemo<MultiSelectOption[]>(() => {
-    const values = Array.from(new Set(rows.map((row) => row.finish ?? "").filter(Boolean))).sort();
+    const values = Array.from(
+      new Set(rows.map((row) => row.finish ?? "").filter(Boolean)),
+    ).sort();
     return values.map((value) => ({ value, label: value }));
   }, [rows]);
 
   const thicknessOptions = useMemo<MultiSelectOption[]>(() => {
-    const values = Array.from(new Set(rows.map((row) => row.thickness).filter(Boolean))).sort((a, b) =>
-      a.localeCompare(b, undefined, { numeric: true }),
-    );
+    const values = Array.from(
+      new Set(rows.map((row) => row.thickness).filter(Boolean)),
+    ).sort((a, b) => a.localeCompare(b, undefined, { numeric: true }));
     return values.map((value) => ({ value, label: value }));
   }, [rows]);
 
@@ -504,8 +563,10 @@ export default function PromotionalSlabsClient() {
     const clientQuery = clientNameSearch.trim().toLowerCase();
 
     return rows.filter((row) => {
-      if (nameQuery && !row.name.toLowerCase().includes(nameQuery)) return false;
-      if (slabIdQuery && !row.slabBaySlabId.toLowerCase().includes(slabIdQuery)) return false;
+      if (nameQuery && !row.name.toLowerCase().includes(nameQuery))
+        return false;
+      if (slabIdQuery && !row.slabBaySlabId.toLowerCase().includes(slabIdQuery))
+        return false;
       if (clientQuery) {
         const clientValues = [
           row.holdCustomerName,
@@ -515,13 +576,25 @@ export default function PromotionalSlabsClient() {
         ]
           .filter(Boolean)
           .map((value) => String(value).toLowerCase());
-        if (!clientValues.some((value) => value.includes(clientQuery))) return false;
+        if (!clientValues.some((value) => value.includes(clientQuery)))
+          return false;
       }
-      if (filterTypes.length > 0 && !filterTypes.includes(row.type)) return false;
-      if (filterBrands.length > 0 && !filterBrands.includes(row.brand ?? "")) return false;
-      if (filterFinishes.length > 0 && !filterFinishes.includes(row.finish ?? "")) return false;
-      if (filterThicknesses.length > 0 && !filterThicknesses.includes(row.thickness)) return false;
-      if (filterStatuses.length > 0 && !filterStatuses.includes(row.status)) return false;
+      if (filterTypes.length > 0 && !filterTypes.includes(row.type))
+        return false;
+      if (filterBrands.length > 0 && !filterBrands.includes(row.brand ?? ""))
+        return false;
+      if (
+        filterFinishes.length > 0 &&
+        !filterFinishes.includes(row.finish ?? "")
+      )
+        return false;
+      if (
+        filterThicknesses.length > 0 &&
+        !filterThicknesses.includes(row.thickness)
+      )
+        return false;
+      if (filterStatuses.length > 0 && !filterStatuses.includes(row.status))
+        return false;
       return true;
     });
   }, [
@@ -555,7 +628,9 @@ export default function PromotionalSlabsClient() {
         body: JSON.stringify(payload),
       });
       if (!res.ok) {
-        const errorPayload = (await res.json().catch(() => null)) as { error?: string } | null;
+        const errorPayload = (await res.json().catch(() => null)) as {
+          error?: string;
+        } | null;
         throw new Error(errorPayload?.error || "Failed to update slab status");
       }
       await fetchData();
@@ -614,6 +689,7 @@ export default function PromotionalSlabsClient() {
               soldCustomerName: payload.soldCustomerName,
               soldJobId: payload.soldJobId,
               soldJobName: payload.soldJobName,
+              slabNotes: payload.slabNotes,
             });
             setSoldTarget(null);
           }}
@@ -622,7 +698,9 @@ export default function PromotionalSlabsClient() {
 
       <div className="space-y-6">
         <div>
-          <h1 className="text-2xl font-semibold text-gray-800 dark:text-gray-200">Promotional Slabs</h1>
+          <h1 className="text-2xl font-semibold text-gray-800 dark:text-gray-200">
+            Promotional Slabs
+          </h1>
           <p className="text-sm text-gray-500 dark:text-gray-400">
             GMD and Remnant slabs available at special prices.
           </p>
@@ -664,13 +742,28 @@ export default function PromotionalSlabsClient() {
             </div>
 
             <div className="w-full sm:w-32 lg:w-36">
-              <MultiSelectDropdown label="Type" options={typeOptions} selectedValues={filterTypes} onChange={setFilterTypes} />
+              <MultiSelectDropdown
+                label="Type"
+                options={typeOptions}
+                selectedValues={filterTypes}
+                onChange={setFilterTypes}
+              />
             </div>
             <div className="w-full sm:w-32 lg:w-36">
-              <MultiSelectDropdown label="Brand" options={brandOptions} selectedValues={filterBrands} onChange={setFilterBrands} />
+              <MultiSelectDropdown
+                label="Brand"
+                options={brandOptions}
+                selectedValues={filterBrands}
+                onChange={setFilterBrands}
+              />
             </div>
             <div className="w-full sm:w-32 lg:w-36">
-              <MultiSelectDropdown label="Finish" options={finishOptions} selectedValues={filterFinishes} onChange={setFilterFinishes} />
+              <MultiSelectDropdown
+                label="Finish"
+                options={finishOptions}
+                selectedValues={filterFinishes}
+                onChange={setFilterFinishes}
+              />
             </div>
             <div className="w-full sm:w-32 lg:w-36">
               <MultiSelectDropdown
@@ -681,7 +774,12 @@ export default function PromotionalSlabsClient() {
               />
             </div>
             <div className="w-full sm:w-32 lg:w-36">
-              <MultiSelectDropdown label="Status" options={statusOptions} selectedValues={filterStatuses} onChange={setFilterStatuses} />
+              <MultiSelectDropdown
+                label="Status"
+                options={statusOptions}
+                selectedValues={filterStatuses}
+                onChange={setFilterStatuses}
+              />
             </div>
           </div>
 
@@ -714,10 +812,14 @@ export default function PromotionalSlabsClient() {
           {isLoading ? (
             <div className="flex flex-col items-center justify-center gap-3 py-16">
               <div className="h-8 w-8 rounded-full border-2 border-blue-600 border-t-transparent animate-spin" />
-              <p className="text-sm text-gray-500 dark:text-gray-400">Loading promotional slabs...</p>
+              <p className="text-sm text-gray-500 dark:text-gray-400">
+                Loading promotional slabs...
+              </p>
             </div>
           ) : filtered.length === 0 ? (
-            <div className="py-16 text-center text-gray-400 dark:text-gray-500 text-sm">No promotional slabs found.</div>
+            <div className="py-16 text-center text-gray-400 dark:text-gray-500 text-sm">
+              No promotional slabs found.
+            </div>
           ) : (
             <table className="min-w-full text-sm">
               <thead>
@@ -742,8 +844,13 @@ export default function PromotionalSlabsClient() {
                   const isWorking = actionLoading === row.id;
                   const regularPrice = row.isPriceTbd ? null : row.price / 0.65;
                   return (
-                    <tr key={row.id} className="hover:bg-gray-50 dark:hover:bg-gray-800/50">
-                      <td className="py-3 pr-4 text-gray-600 dark:text-gray-300 font-mono text-xs">{row.slabBaySlabId}</td>
+                    <tr
+                      key={row.id}
+                      className="hover:bg-gray-50 dark:hover:bg-gray-800/50"
+                    >
+                      <td className="py-3 pr-4 text-gray-600 dark:text-gray-300 font-mono text-xs">
+                        {row.slabBaySlabId}
+                      </td>
                       <td className="py-3 pr-4">
                         {row.scannerId ? (
                           <a
@@ -758,13 +865,27 @@ export default function PromotionalSlabsClient() {
                           <span className="text-gray-400">-</span>
                         )}
                       </td>
-                      <td className="py-3 pr-4 text-gray-800 dark:text-gray-200 font-medium">{row.name}</td>
-                      <td className="py-3 pr-4 text-gray-600 dark:text-gray-300">{row.brand || "-"}</td>
-                      <td className="py-3 pr-4 text-gray-600 dark:text-gray-300">{row.finish || "-"}</td>
-                      <td className="py-3 pr-4 text-gray-600 dark:text-gray-300">{row.thickness}</td>
-                      <td className="py-3 pr-4 text-gray-600 dark:text-gray-300">{row.size}</td>
-                      <td className="py-3 pr-4 text-gray-600 dark:text-gray-300">{row.type}</td>
-                      <td className="py-3 pr-4 text-gray-600 dark:text-gray-300">{row.rackId || "-"}</td>
+                      <td className="py-3 pr-4 text-gray-800 dark:text-gray-200 font-medium">
+                        {row.name}
+                      </td>
+                      <td className="py-3 pr-4 text-gray-600 dark:text-gray-300">
+                        {row.brand || "-"}
+                      </td>
+                      <td className="py-3 pr-4 text-gray-600 dark:text-gray-300">
+                        {row.finish || "-"}
+                      </td>
+                      <td className="py-3 pr-4 text-gray-600 dark:text-gray-300">
+                        {row.thickness}
+                      </td>
+                      <td className="py-3 pr-4 text-gray-600 dark:text-gray-300">
+                        {row.size}
+                      </td>
+                      <td className="py-3 pr-4 text-gray-600 dark:text-gray-300">
+                        {row.type}
+                      </td>
+                      <td className="py-3 pr-4 text-gray-600 dark:text-gray-300">
+                        {row.rackId || "-"}
+                      </td>
                       <td className="py-3 pr-4 text-gray-800 dark:text-gray-200 font-medium">
                         {row.isPriceTbd ? (
                           <span className="inline-flex items-center rounded-full bg-gray-100 px-2 py-0.5 text-xs font-medium text-gray-700 dark:bg-gray-800 dark:text-gray-300">
@@ -773,7 +894,12 @@ export default function PromotionalSlabsClient() {
                         ) : (
                           <div>
                             <div>{formatPrice(row.price)}</div>
-                            <div className="text-xs text-gray-500">35% OFF {regularPrice ? `(${formatPrice(regularPrice)} regular)` : ""}</div>
+                            <div className="text-xs text-gray-500">
+                              35% OFF{" "}
+                              {regularPrice
+                                ? `(${formatPrice(regularPrice)} regular)`
+                                : ""}
+                            </div>
                           </div>
                         )}
                       </td>
@@ -787,14 +913,19 @@ export default function PromotionalSlabsClient() {
                           <div className="text-xs text-gray-500 mt-1">
                             Reserved by {row.holdByUserName || "-"}
                             <div>
-                              For: {row.holdCustomerName || "-"} / {row.holdJobName || "-"}
+                              For: {row.holdCustomerName || "-"} /{" "}
+                              {row.holdJobName || "-"}
                             </div>
-                            <div>Release: {formatReleaseLabel(row.holdUntil)}</div>
+                            <div>
+                              Release: {formatReleaseLabel(row.holdUntil)}
+                            </div>
                           </div>
                         )}
                         {row.status === "SOLD" && (
                           <div className="text-xs text-gray-500 mt-1">
-                            {row.soldCustomerName || row.soldToClientName || "-"}
+                            {row.soldCustomerName ||
+                              row.soldToClientName ||
+                              "-"}
                             <div>{row.soldJobName || "-"}</div>
                           </div>
                         )}
@@ -804,13 +935,19 @@ export default function PromotionalSlabsClient() {
                           {row.status !== "AVAILABLE" && (
                             <button
                               type="button"
-                              disabled={isWorking || (row.status === "ON_HOLD" && !row.canReleaseHold)}
+                              disabled={
+                                isWorking ||
+                                (row.status === "ON_HOLD" &&
+                                  !row.canReleaseHold)
+                              }
                               title={
                                 row.status === "ON_HOLD" && !row.canReleaseHold
                                   ? "Only admin/office or who placed the hold can release it"
                                   : "Mark available"
                               }
-                              onClick={() => updateRow(row.id, { status: "AVAILABLE" })}
+                              onClick={() =>
+                                updateRow(row.id, { status: "AVAILABLE" })
+                              }
                               className="px-2.5 py-1 text-xs rounded-md bg-emerald-50 text-emerald-700 border border-emerald-200 hover:bg-emerald-100 disabled:opacity-50"
                             >
                               Available
