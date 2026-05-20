@@ -33,6 +33,7 @@ export default async function SinksDataPage() {
     id: row.id,
     brandId: row.brandId,
     brandName: row.brand?.name || "",
+    series: row.series,
     model: row.model,
     description: row.description,
     dimensions: row.dimensions,

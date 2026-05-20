@@ -18,7 +18,9 @@ type CountertopAgreementSpec = {
   sinkSelection?: string;
   gmdSinkType?: string;
   fabricatedSinkStyle?: string;
+  kitchenBathroomBrand?: string;
   kitchenBathroomModel?: string;
+  kitchenBathroomColor?: string;
   edgeThickness?: string;
   edgeProfile?: string;
   customEdgeProfile?: string;
@@ -355,6 +357,84 @@ export default async function AgreementPrintPage({
     if (!category || !optionKey || !imageUrl) continue;
     countertopImageMap.set(`${category}:${optionKey}`, imageUrl);
   }
+
+  const kitchenBathroomSpecPairs =
+    agreementKey === "countertop_agreement"
+      ? Array.from(
+          new Set(
+            countertopSpecs
+              .filter(
+                (spec) =>
+                  normalizeOptionKey(spec.sinkSelection) === "gmd-sink" &&
+                  normalizeOptionKey(spec.gmdSinkType) === "kitchen-bathroom" &&
+                  String(spec.kitchenBathroomBrand || "").trim() &&
+                  String(spec.kitchenBathroomModel || "").trim(),
+              )
+              .map(
+                (spec) =>
+                  `${String(spec.kitchenBathroomBrand || "")
+                    .trim()
+                    .toLowerCase()}|||${String(spec.kitchenBathroomModel || "")
+                    .trim()
+                    .toLowerCase()}`,
+              ),
+          ),
+        )
+      : [];
+
+  const sinkCatalogImageMap = new Map<string, string>();
+  if (kitchenBathroomSpecPairs.length > 0) {
+    const whereOr = kitchenBathroomSpecPairs
+      .map((entry) => {
+        const [brandName, model] = entry.split("|||");
+        if (!brandName || !model) return null;
+        return {
+          brand: {
+            name: {
+              equals: brandName,
+              mode: "insensitive",
+            },
+          },
+          model: {
+            equals: model,
+            mode: "insensitive",
+          },
+        };
+      })
+      .filter(Boolean);
+
+    if (whereOr.length > 0) {
+      const catalogSinks = await prismaAny.sink.findMany({
+        where: { OR: whereOr },
+        select: {
+          model: true,
+          imageUrl: true,
+          brand: {
+            select: { name: true },
+          },
+        },
+      });
+
+      for (const sink of catalogSinks) {
+        const imageUrl =
+          typeof sink?.imageUrl === "string" ? sink.imageUrl.trim() : "";
+        const brandName =
+          typeof sink?.brand?.name === "string"
+            ? sink.brand.name.trim().toLowerCase()
+            : "";
+        const model =
+          typeof sink?.model === "string"
+            ? sink.model.trim().toLowerCase()
+            : "";
+
+        if (!imageUrl || !brandName || !model) continue;
+        const key = `${brandName}|||${model}`;
+        if (!sinkCatalogImageMap.has(key)) {
+          sinkCatalogImageMap.set(key, imageUrl);
+        }
+      }
+    }
+  }
   const companyPhone =
     companySettings?.companyPhone || companySettings?.phoneNumber || "";
   const companyEmail =
@@ -494,16 +574,27 @@ export default async function AgreementPrintPage({
                   const sinkType = formatEnumValue(spec.gmdSinkType) || "-";
                   const fabricatedStyle =
                     formatEnumValue(spec.fabricatedSinkStyle) || "-";
+                  const sinkBrand = spec.kitchenBathroomBrand?.trim() || "-";
                   const sinkModel = spec.kitchenBathroomModel?.trim() || "-";
+                  const sinkColor = spec.kitchenBathroomColor?.trim() || "-";
                   const thickness = formatEnumValue(spec.edgeThickness) || "-";
                   const edgeProfile =
                     normalizeOptionKey(spec.edgeProfile) === "custom"
                       ? spec.customEdgeProfile?.trim() || "Custom"
                       : formatEnumValue(spec.edgeProfile) || "-";
                   const sinkImageOptionKey = getSinkImageOptionKey(spec);
-                  const sinkImageUrl = countertopImageMap.get(
-                    `sink:${sinkImageOptionKey}`,
-                  );
+                  const sinkCatalogImageKey = `${String(
+                    spec.kitchenBathroomBrand || "",
+                  )
+                    .trim()
+                    .toLowerCase()}|||${String(spec.kitchenBathroomModel || "")
+                    .trim()
+                    .toLowerCase()}`;
+                  const sinkImageUrlFromCatalog =
+                    sinkCatalogImageMap.get(sinkCatalogImageKey);
+                  const sinkImageUrl =
+                    sinkImageUrlFromCatalog ||
+                    countertopImageMap.get(`sink:${sinkImageOptionKey}`);
                   const thicknessImageUrl = countertopImageMap.get(
                     `thickness:${normalizeOptionKey(spec.edgeThickness)}`,
                   );
@@ -547,12 +638,26 @@ export default async function AgreementPrintPage({
                             ) : null}
                             {normalizeOptionKey(spec.gmdSinkType) ===
                             "kitchen-bathroom" ? (
-                              <div>
-                                <span className={styles.detailsLabel}>
-                                  Kitchen/Bathroom Model:
-                                </span>{" "}
-                                {sinkModel}
-                              </div>
+                              <>
+                                <div>
+                                  <span className={styles.detailsLabel}>
+                                    Sink Brand:
+                                  </span>{" "}
+                                  {sinkBrand}
+                                </div>
+                                <div>
+                                  <span className={styles.detailsLabel}>
+                                    Kitchen/Bathroom Model:
+                                  </span>{" "}
+                                  {sinkModel}
+                                </div>
+                                <div>
+                                  <span className={styles.detailsLabel}>
+                                    Color:
+                                  </span>{" "}
+                                  {sinkColor}
+                                </div>
+                              </>
                             ) : null}
                           </>
                         ) : null}

@@ -114,6 +114,20 @@ model SlabBrandConfig {
   brandNumber   Int?      @unique
   logoUrl       String?
   slabs         Slab[]
+  notes         SlabBrandNote[]
+}
+
+model SlabBrandNote {
+  id         String          @id @default(cuid())
+  brandId    String
+  title      String
+  content    String
+  catalogUrl String?
+  createdAt  DateTime        @default(now())
+  updatedAt  DateTime        @updatedAt
+  brand      SlabBrandConfig @relation(fields: [brandId], references: [id], onDelete: Cascade)
+
+  @@index([brandId, createdAt])
 }
 
 model Slab {
@@ -151,11 +165,26 @@ model SinkBrand {
   createdAt    DateTime @default(now())
   updatedAt    DateTime @updatedAt
   sinks        Sink[]
+  notes        SinkBrandNote[]
+}
+
+model SinkBrandNote {
+  id          String    @id @default(cuid())
+  brandId     String
+  title       String
+  content     String
+  catalogUrl  String?
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+  brand       SinkBrand @relation(fields: [brandId], references: [id], onDelete: Cascade)
+
+  @@index([brandId, createdAt])
 }
 
 model Sink {
   id               String     @id @default(cuid())
   brandId          String
+  series           String?
   model            String
   description      String?
   dimensions       String

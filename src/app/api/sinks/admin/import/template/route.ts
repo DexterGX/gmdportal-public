@@ -2,9 +2,9 @@ import { NextResponse } from "next/server";
 
 export async function GET() {
   const csv = [
-    "Brand,Model,Description,Dimensions,Price",
-    "Franke,FK-1200,Stainless undermount sink,31x18x10,425.00",
-    "Franke,FK-1201,Double bowl sink,33x20x10,510.00",
+    "Brand,Series,Model,Description,Dimensions,Price",
+    "Franke,Workstation,FK-1200,Stainless undermount sink,31x18x10,425.00",
+    "Franke,Farmhouse,FK-1201,Double bowl sink,33x20x10,510.00",
   ].join("\n");
 
   return new NextResponse(csv, {

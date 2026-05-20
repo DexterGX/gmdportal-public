@@ -3,7 +3,26 @@ import { getServerSession } from "next-auth";
 import authOptions from "@/lib/auth";
 import { getCurrentUserWithRole } from "@/lib/authHelpers";
 import { prisma } from "@/lib/prisma";
+import { supabaseAdmin } from "@/lib/supabase/server";
 import { Decimal } from "@prisma/client/runtime/library";
+
+const BUCKET_NAME = process.env.SUPABASE_SINKS_BUCKET || "sinks-assets";
+
+function extractStoragePathFromUrl(
+  url: string | null | undefined,
+): string | null {
+  if (!url) {
+    return null;
+  }
+
+  const marker = `${BUCKET_NAME}/`;
+  const markerIndex = url.indexOf(marker);
+  if (markerIndex === -1) {
+    return null;
+  }
+
+  return url.slice(markerIndex + marker.length);
+}
 
 export async function POST(request: NextRequest) {
   try {
@@ -35,19 +54,46 @@ export async function POST(request: NextRequest) {
       const isDeleted = Boolean(row?._deleted);
 
       if (isDeleted && !isNew) {
-        const sinkCount = await prismaAny.sink.count({
-          where: { brandId: rowId },
-        });
-        if (sinkCount > 0) {
-          return NextResponse.json(
-            {
-              error: `Cannot delete brand ${row.name}. Delete or reassign sinks first.`,
+        const brandToDelete = await prismaAny.sinkBrand.findUnique({
+          where: { id: rowId },
+          select: {
+            id: true,
+            logoUrl: true,
+            sinks: {
+              select: {
+                id: true,
+                imageUrl: true,
+              },
             },
-            { status: 400 },
-          );
+          },
+        });
+
+        if (!brandToDelete) {
+          continue;
         }
 
-        await prismaAny.sinkBrand.delete({ where: { id: rowId } });
+        await prismaAny.$transaction(async (tx: any) => {
+          await tx.sink.deleteMany({ where: { brandId: rowId } });
+          await tx.sinkBrand.delete({ where: { id: rowId } });
+        });
+
+        const storagePaths = [
+          extractStoragePathFromUrl(
+            brandToDelete.logoUrl ? String(brandToDelete.logoUrl) : null,
+          ),
+          ...brandToDelete.sinks
+            .map((sink: any) =>
+              extractStoragePathFromUrl(
+                sink.imageUrl ? String(sink.imageUrl) : null,
+              ),
+            )
+            .filter(Boolean),
+        ].filter(Boolean) as string[];
+
+        if (storagePaths.length > 0) {
+          await supabaseAdmin.storage.from(BUCKET_NAME).remove(storagePaths);
+        }
+
         continue;
       }
 

@@ -17,7 +17,7 @@ export default async function BrandPriceListPage({ params }: PageProps) {
     redirect("/api/auth/signin?callbackUrl=/slabsPriceList");
   }
 
-  const { appRoles, isActive } = await getCurrentUserWithRole();
+  const { appRole, appRoles, isActive } = await getCurrentUserWithRole();
 
   if (!isActive) {
     redirect("/auth/status?reason=inactive");
@@ -40,6 +40,16 @@ export default async function BrandPriceListPage({ params }: PageProps) {
   const brand = await prisma.slabBrandConfig.findUnique({
     where: { id: brandId },
     include: {
+      notes: {
+        select: {
+          id: true,
+          title: true,
+          content: true,
+          catalogUrl: true,
+          createdAt: true,
+        },
+        orderBy: { createdAt: "desc" },
+      },
       slabs: {
         orderBy: { color: "asc" },
       },
@@ -53,6 +63,14 @@ export default async function BrandPriceListPage({ params }: PageProps) {
   // Convert Decimal values to numbers for client component
   const serializedBrand = {
     ...brand,
+    isAdmin: appRole === "admin",
+    notes: brand.notes.map((note) => ({
+      id: note.id,
+      title: note.title,
+      content: note.content,
+      catalogUrl: note.catalogUrl,
+      createdAt: note.createdAt.toISOString(),
+    })),
     profitFactor: brand.profitFactor.toNumber(),
     taxRate: brand.taxRate.toNumber(),
     deliveryFee: brand.deliveryFee.toNumber(),
@@ -69,21 +87,21 @@ export default async function BrandPriceListPage({ params }: PageProps) {
   // Precompute distinct filter options
   const filterOptions = {
     series: Array.from(
-      new Set(brand.slabs.map((s) => s.series).filter((s): s is string => !!s))
+      new Set(brand.slabs.map((s) => s.series).filter((s): s is string => !!s)),
     ).sort(),
     finishes: Array.from(
-      new Set(brand.slabs.map((s) => formatFinish(s.finish)))
+      new Set(brand.slabs.map((s) => formatFinish(s.finish))),
     ).sort(),
     thicknesses: Array.from(
-      new Set(brand.slabs.map((s) => formatThickness(s.thickness)))
+      new Set(brand.slabs.map((s) => formatThickness(s.thickness))),
     ).sort(),
     statuses: Array.from(new Set(brand.slabs.map((s) => s.status))).sort(),
     sizes: Array.from(
       new Set(
         brand.slabs.map((s) =>
-          formatSize(s.heightIn.toNumber(), s.widthIn.toNumber())
-        )
-      )
+          formatSize(s.heightIn.toNumber(), s.widthIn.toNumber()),
+        ),
+      ),
     ).sort(),
   };
 

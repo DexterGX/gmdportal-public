@@ -5,6 +5,7 @@ import { calculateSinkFinalPrice } from "./sinksPricing";
 
 export type SinkImportRow = {
   Brand: string;
+  Series?: string;
   Model: string;
   Description?: string;
   Dimensions: string;
@@ -14,6 +15,7 @@ export type SinkImportRow = {
 
 export type NormalizedSinkImportRow = {
   brandName: string;
+  series: string | null;
   model: string;
   description: string | null;
   dimensions: string;
@@ -79,6 +81,7 @@ export function normalizeSinkImportRows(
 
     normalized.push({
       brandName: selectedBrandName,
+      series: row.Series ? String(row.Series).trim() : null,
       model,
       description: row.Description ? String(row.Description).trim() : null,
       dimensions,

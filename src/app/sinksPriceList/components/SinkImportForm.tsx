@@ -8,24 +8,41 @@ type Brand = { id: string; name: string };
 type DiffPayload = {
   newSinks: Array<{
     brandName: string;
+    series: string | null;
     model: string;
     description: string | null;
     dimensions: string;
     listedPrice: number;
+    finalPrice: number; // Added finalPrice property
     status: string;
   }>;
   updatedSinks: Array<{
     id: string;
     model: string;
     dimensions: string;
-    before: { listedPrice: number; status: string; description: string | null };
-    after: { listedPrice: number; status: string; description: string | null };
+    before: {
+      series: string | null;
+      listedPrice: number;
+      finalPrice: number; // Added finalPrice property
+      status: string;
+      description: string | null;
+    };
+    after: {
+      series: string | null;
+      listedPrice: number;
+      finalPrice: number; // Added finalPrice property
+      status: string;
+      description: string | null;
+    };
   }>;
   discontinuedSinks: Array<{
     id: string;
+    series: string | null;
     model: string;
+    description: string | null;
     dimensions: string;
     listedPrice: number;
+    finalPrice: number; // Added finalPrice property
     status: string;
   }>;
 };
@@ -71,6 +88,15 @@ export default function SinkImportForm() {
         throw new Error(json?.error || "Failed to preview import");
       }
 
+      // Defensive: ensure every discontinuedSink has a description property
+      if (json?.diff && Array.isArray(json.diff.discontinuedSinks)) {
+        json.diff.discontinuedSinks = json.diff.discontinuedSinks.map(
+          (sink: any) => ({
+            ...sink,
+            description: sink.description ?? null,
+          }),
+        );
+      }
       setPreview(json?.diff || null);
     } catch (err: any) {
       setError(err?.message || "Failed to preview import");
@@ -140,7 +166,7 @@ export default function SinkImportForm() {
             Template Format
           </h3>
           <p className="text-sm text-blue-800 dark:text-blue-200 mt-1">
-            Brand | Model | Description | Dimensions | Price
+            Brand | Series | Model | Description | Dimensions | Price
           </p>
         </div>
         <a
@@ -185,7 +211,11 @@ export default function SinkImportForm() {
           />
         </div>
 
-        {error ? <p className="text-sm text-red-600">{error}</p> : null}
+        {error && (
+          <div className="bg-red-100 text-red-800 p-3 rounded-lg">
+            <p>Error: {error}</p>
+          </div>
+        )}
 
         <button
           type="button"

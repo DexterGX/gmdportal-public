@@ -17,6 +17,7 @@ export async function GET() {
       sinks: sinks.map((sink: any) => ({
         id: sink.id,
         brandName: sink.brand?.name || "",
+        series: sink.series,
         model: sink.model,
         description: sink.description,
         dimensions: sink.dimensions,

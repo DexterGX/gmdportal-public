@@ -20,6 +20,7 @@ export async function POST(request: NextRequest) {
 
     const body = await request.json();
     const brandId = String(body?.brandId ?? "").trim();
+    const series = body?.series ? String(body.series).trim() : null;
     const model = String(body?.model ?? "").trim();
     const dimensions = String(body?.dimensions ?? "").trim();
     const listedPrice = Number(body?.listedPrice ?? 0);
@@ -50,6 +51,7 @@ export async function POST(request: NextRequest) {
     const created = await prismaAny.sink.create({
       data: {
         brandId,
+        series,
         model,
         description: body?.description ? String(body.description) : null,
         dimensions,

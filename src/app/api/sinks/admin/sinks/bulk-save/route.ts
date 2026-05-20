@@ -42,6 +42,7 @@ export async function POST(request: NextRequest) {
       }
 
       const brandId = String(row?.brandId ?? "").trim();
+      const series = row?.series ? String(row.series).trim() : null;
       const model = String(row?.model ?? "").trim();
       const dimensions = String(row?.dimensions ?? "").trim();
       const listedPrice = Number(row?.listedPrice ?? 0);
@@ -79,6 +80,7 @@ export async function POST(request: NextRequest) {
 
       const data = {
         brandId,
+        series,
         model,
         description: row?.description ? String(row.description) : null,
         dimensions,
