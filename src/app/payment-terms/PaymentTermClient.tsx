@@ -72,10 +72,17 @@ type CountertopAgreementSpec = {
   sinkSelection: SinkSelection;
   gmdSinkType: GmdSinkType;
   fabricatedSinkStyle: FabricatedSinkStyle;
+  kitchenBathroomBrand: string;
   kitchenBathroomModel: string;
+  kitchenBathroomColor: string;
   edgeThickness: EdgeThickness;
   edgeProfile: EdgeProfile;
   customEdgeProfile?: string;
+};
+
+type SinkCatalogItem = {
+  brandName: string;
+  model: string;
 };
 
 type AgreementFormTemplateLite = {
@@ -128,7 +135,9 @@ function makeCountertopAgreementSpec(): CountertopAgreementSpec {
     sinkSelection: "no-sink",
     gmdSinkType: "fabricated",
     fabricatedSinkStyle: "slanted-mitered",
+    kitchenBathroomBrand: "",
     kitchenBathroomModel: "",
+    kitchenBathroomColor: "",
     edgeThickness: "2cm",
     edgeProfile: "flat-polished",
   };
@@ -248,6 +257,11 @@ export default function PaymentTermClient({
   const [countertopAgreementSpecs, setCountertopAgreementSpecs] = useState<
     CountertopAgreementSpec[]
   >([]);
+  const [activeModelDropdownSpecId, setActiveModelDropdownSpecId] = useState<
+    string | null
+  >(null);
+  const [sinkCatalog, setSinkCatalog] = useState<SinkCatalogItem[]>([]);
+  const [sinkBrandOptions, setSinkBrandOptions] = useState<string[]>([]);
 
   // Invoices
   const [invoices, setInvoices] = useState<Invoice[]>(() => {
@@ -479,7 +493,9 @@ export default function PaymentTermClient({
                   spec?.fabricatedSinkStyle === "rectangular-undermount"
                     ? spec.fabricatedSinkStyle
                     : "slanted-mitered",
+                kitchenBathroomBrand: String(spec?.kitchenBathroomBrand || ""),
                 kitchenBathroomModel: String(spec?.kitchenBathroomModel || ""),
+                kitchenBathroomColor: String(spec?.kitchenBathroomColor || ""),
                 edgeThickness:
                   spec?.edgeThickness === "3cm" ||
                   spec?.edgeThickness === "2cm-build-up" ||
@@ -548,6 +564,44 @@ export default function PaymentTermClient({
     }
 
     void loadAgreementTemplates();
+
+    return () => {
+      isCancelled = true;
+    };
+  }, []);
+
+  useEffect(() => {
+    let isCancelled = false;
+
+    async function loadSinkCatalog() {
+      try {
+        const response = await fetch("/api/sinks?status=AVAILABLE", {
+          cache: "no-store",
+        });
+        const data = await response.json().catch(() => ({}));
+        if (!response.ok || !Array.isArray(data?.sinks) || isCancelled) {
+          return;
+        }
+
+        const catalog: SinkCatalogItem[] = data.sinks
+          .map((row: any) => ({
+            brandName: String(row?.brandName || "").trim(),
+            model: String(row?.model || "").trim(),
+          }))
+          .filter((row: SinkCatalogItem) => row.brandName && row.model);
+
+        const brands = Array.from(
+          new Set(catalog.map((row) => row.brandName)),
+        ).sort((a, b) => a.localeCompare(b));
+
+        setSinkCatalog(catalog);
+        setSinkBrandOptions(brands);
+      } catch {
+        // Keep empty options if this request fails.
+      }
+    }
+
+    void loadSinkCatalog();
 
     return () => {
       isCancelled = true;
@@ -896,6 +950,28 @@ export default function PaymentTermClient({
     setCountertopAgreementSpecs((prev) =>
       prev.filter((spec) => spec.id !== id),
     );
+  }
+
+  function getKitchenBathroomModelOptions(spec: CountertopAgreementSpec) {
+    const selectedBrand = spec.kitchenBathroomBrand.trim().toLowerCase();
+    const query = spec.kitchenBathroomModel.trim().toLowerCase();
+
+    return Array.from(
+      new Set(
+        sinkCatalog
+          .filter((item) =>
+            selectedBrand
+              ? item.brandName.toLowerCase() === selectedBrand
+              : true,
+          )
+          .map((item) => item.model)
+          .filter((model) =>
+            query ? model.toLowerCase().includes(query) : true,
+          ),
+      ),
+    )
+      .sort((a, b) => a.localeCompare(b))
+      .slice(0, 30);
   }
 
   async function saveCountertopAgreementSpecs(opts?: { silent?: boolean }) {
@@ -2219,22 +2295,128 @@ export default function PaymentTermClient({
                                 )}
 
                                 {spec.gmdSinkType === "kitchen-bathroom" && (
-                                  <div className="sm:col-span-2">
-                                    <label className="block text-xs font-medium text-gray-600 dark:text-gray-400 mb-1">
-                                      Kitchen/Bathroom Model
-                                    </label>
-                                    <input
-                                      type="text"
-                                      className="w-full border border-gray-300 dark:border-gray-600 rounded-md px-2.5 py-2 text-sm bg-white dark:bg-gray-700"
-                                      placeholder="Type specific model"
-                                      value={spec.kitchenBathroomModel}
-                                      onChange={(e) =>
-                                        updateCountertopSpec(spec.id, {
-                                          kitchenBathroomModel: e.target.value,
-                                        })
-                                      }
-                                    />
-                                  </div>
+                                  <>
+                                    <div>
+                                      <label className="block text-xs font-medium text-gray-600 dark:text-gray-400 mb-1">
+                                        Sink Brand
+                                      </label>
+                                      <select
+                                        className="w-full border border-gray-300 dark:border-gray-600 rounded-md px-2.5 py-2 text-sm bg-white dark:bg-gray-700"
+                                        value={spec.kitchenBathroomBrand}
+                                        onChange={(e) =>
+                                          updateCountertopSpec(spec.id, {
+                                            kitchenBathroomBrand:
+                                              e.target.value,
+                                            kitchenBathroomModel: "",
+                                          })
+                                        }
+                                      >
+                                        <option value="">Select brand</option>
+                                        {sinkBrandOptions.map((brandName) => (
+                                          <option
+                                            key={brandName}
+                                            value={brandName}
+                                          >
+                                            {brandName}
+                                          </option>
+                                        ))}
+                                      </select>
+                                    </div>
+
+                                    <div>
+                                      <label className="block text-xs font-medium text-gray-600 dark:text-gray-400 mb-1">
+                                        Kitchen/Bathroom Model
+                                      </label>
+                                      <div className="relative">
+                                        <input
+                                          type="text"
+                                          className="w-full border border-gray-300 dark:border-gray-600 rounded-md px-2.5 py-2 text-sm bg-white dark:bg-gray-700"
+                                          placeholder={
+                                            spec.kitchenBathroomBrand
+                                              ? "Type model to search"
+                                              : "Select sink brand first"
+                                          }
+                                          value={spec.kitchenBathroomModel}
+                                          disabled={!spec.kitchenBathroomBrand}
+                                          onFocus={() =>
+                                            setActiveModelDropdownSpecId(
+                                              spec.id,
+                                            )
+                                          }
+                                          onBlur={() => {
+                                            window.setTimeout(() => {
+                                              setActiveModelDropdownSpecId(
+                                                (prev) =>
+                                                  prev === spec.id
+                                                    ? null
+                                                    : prev,
+                                              );
+                                            }, 120);
+                                          }}
+                                          onChange={(e) => {
+                                            updateCountertopSpec(spec.id, {
+                                              kitchenBathroomModel:
+                                                e.target.value,
+                                            });
+                                            setActiveModelDropdownSpecId(
+                                              spec.id,
+                                            );
+                                          }}
+                                        />
+
+                                        {spec.kitchenBathroomBrand &&
+                                          activeModelDropdownSpecId ===
+                                            spec.id &&
+                                          getKitchenBathroomModelOptions(spec)
+                                            .length > 0 && (
+                                            <div className="absolute z-20 mt-1 w-full max-h-48 overflow-y-auto rounded-lg border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800 shadow-lg">
+                                              {getKitchenBathroomModelOptions(
+                                                spec,
+                                              ).map((model) => (
+                                                <button
+                                                  key={`${spec.id}-${model}`}
+                                                  type="button"
+                                                  onMouseDown={(e) => {
+                                                    e.preventDefault();
+                                                    updateCountertopSpec(
+                                                      spec.id,
+                                                      {
+                                                        kitchenBathroomModel:
+                                                          model,
+                                                      },
+                                                    );
+                                                    setActiveModelDropdownSpecId(
+                                                      null,
+                                                    );
+                                                  }}
+                                                  className="block w-full px-3 py-2 text-left text-sm text-gray-700 dark:text-gray-200 hover:bg-gray-100 dark:hover:bg-gray-700"
+                                                >
+                                                  {model}
+                                                </button>
+                                              ))}
+                                            </div>
+                                          )}
+                                      </div>
+                                    </div>
+
+                                    <div>
+                                      <label className="block text-xs font-medium text-gray-600 dark:text-gray-400 mb-1">
+                                        Color
+                                      </label>
+                                      <input
+                                        type="text"
+                                        className="w-full border border-gray-300 dark:border-gray-600 rounded-md px-2.5 py-2 text-sm bg-white dark:bg-gray-700"
+                                        placeholder="Type sink color"
+                                        value={spec.kitchenBathroomColor}
+                                        onChange={(e) =>
+                                          updateCountertopSpec(spec.id, {
+                                            kitchenBathroomColor:
+                                              e.target.value,
+                                          })
+                                        }
+                                      />
+                                    </div>
+                                  </>
                                 )}
                               </>
                             )}

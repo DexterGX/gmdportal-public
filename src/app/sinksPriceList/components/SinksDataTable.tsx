@@ -11,6 +11,7 @@ type Row = {
   id: string;
   brandId: string;
   brandName: string;
+  series: string | null;
   model: string;
   description: string | null;
   dimensions: string;
@@ -70,7 +71,8 @@ export default function SinksDataTable({
       }
 
       if (term) {
-        const haystack = `${row.model} ${row.description || ""}`.toLowerCase();
+        const haystack =
+          `${row.series || ""} ${row.model} ${row.description || ""}`.toLowerCase();
         if (!haystack.includes(term)) {
           return false;
         }
@@ -104,6 +106,7 @@ export default function SinksDataTable({
         id: `new-${Date.now()}`,
         brandId: firstBrand.id,
         brandName: firstBrand.name,
+        series: null,
         model: "",
         description: null,
         dimensions: "",
@@ -210,6 +213,7 @@ export default function SinksDataTable({
             <tr>
               <th className="px-3 py-2 text-left">Sink ID</th>
               <th className="px-3 py-2 text-left">Brand</th>
+              <th className="px-3 py-2 text-left">Series</th>
               <th className="px-3 py-2 text-left">Model</th>
               <th className="px-3 py-2 text-left">Description</th>
               <th className="px-3 py-2 text-left">Dimensions</th>
@@ -252,6 +256,19 @@ export default function SinksDataTable({
                     </select>
                   ) : (
                     row.brandName
+                  )}
+                </td>
+                <td className="px-3 py-2">
+                  {isEditing ? (
+                    <input
+                      value={row.series || ""}
+                      onChange={(event) =>
+                        patchRow(row.id, { series: event.target.value || null })
+                      }
+                      className="w-full px-2 py-1 border rounded"
+                    />
+                  ) : (
+                    row.series || "-"
                   )}
                 </td>
                 <td className="px-3 py-2">
@@ -385,7 +402,7 @@ export default function SinksDataTable({
               <tr>
                 <td
                   className="px-3 py-8 text-center text-gray-500"
-                  colSpan={isEditing ? 10 : 9}
+                  colSpan={isEditing ? 11 : 10}
                 >
                   No sinks found.
                 </td>

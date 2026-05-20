@@ -12,6 +12,7 @@ export async function GET(request: NextRequest) {
 
     if (search) {
       where.OR = [
+        { series: { contains: search, mode: "insensitive" } },
         { model: { contains: search, mode: "insensitive" } },
         { description: { contains: search, mode: "insensitive" } },
         { dimensions: { contains: search, mode: "insensitive" } },
@@ -38,6 +39,7 @@ export async function GET(request: NextRequest) {
         id: sink.id,
         brandId: sink.brandId,
         brandName: sink.brand?.name || "",
+        series: sink.series,
         model: sink.model,
         description: sink.description,
         dimensions: sink.dimensions,

@@ -3,11 +3,13 @@
 import { useState, useMemo } from "react";
 import Link from "next/link";
 import {
+  AlertTriangle,
   ArrowLeft,
   Search,
   ArrowUpDown,
   ArrowUp,
   ArrowDown,
+  X,
 } from "lucide-react";
 import type { SlabBrandConfig, Slab } from "@prisma/client";
 import FilterMultiSelect from "@/components/filters/FilterMultiSelect";
@@ -30,6 +32,14 @@ type SerializedBrand = Omit<
   taxRate: number;
   deliveryFee: number;
   discount: number;
+  isAdmin: boolean;
+  notes: Array<{
+    id: string;
+    title: string;
+    content: string;
+    catalogUrl: string | null;
+    createdAt: string;
+  }>;
   slabs: SerializedSlab[];
 };
 
@@ -89,6 +99,17 @@ function formatCurrency(amount: number): string {
 }
 
 export default function BrandPriceListClient({ brand, filterOptions }: Props) {
+  const [isNotesOpen, setIsNotesOpen] = useState(false);
+  const [isAddNoteOpen, setIsAddNoteOpen] = useState(false);
+  const [notes, setNotes] = useState(brand.notes);
+  const [expandedNoteId, setExpandedNoteId] = useState<string | null>(
+    brand.notes[0]?.id ?? null,
+  );
+  const [noteTitle, setNoteTitle] = useState("");
+  const [noteContent, setNoteContent] = useState("");
+  const [noteCatalogUrl, setNoteCatalogUrl] = useState("");
+  const [isSavingNote, setIsSavingNote] = useState(false);
+  const [noteError, setNoteError] = useState<string | null>(null);
   const [searchTerm, setSearchTerm] = useState("");
   const [selectedSeries, setSelectedSeries] = useState<string[]>([]);
   const [selectedFinishes, setSelectedFinishes] = useState<string[]>([]);
@@ -96,7 +117,7 @@ export default function BrandPriceListClient({ brand, filterOptions }: Props) {
   const [selectedStatuses, setSelectedStatuses] = useState<string[]>([]);
   const [selectedSizes, setSelectedSizes] = useState<string[]>([]);
   const [sortField, setSortField] = useState<keyof SerializedSlab | "sf">(
-    "color"
+    "color",
   );
   const [sortDirection, setSortDirection] = useState<"asc" | "desc">("asc");
 
@@ -225,6 +246,52 @@ export default function BrandPriceListClient({ brand, filterOptions }: Props) {
     selectedStatuses.length > 0 ||
     selectedSizes.length > 0;
 
+  async function handleCreateNote() {
+    const title = noteTitle.trim();
+    const content = noteContent.trim();
+    const catalogUrl = noteCatalogUrl.trim();
+
+    if (!title || !content) {
+      setNoteError("Title and content are required.");
+      return;
+    }
+
+    setIsSavingNote(true);
+    setNoteError(null);
+    try {
+      const res = await fetch("/api/slabs/admin/brand-notes", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          brandId: brand.id,
+          title,
+          content,
+          catalogUrl,
+        }),
+      });
+
+      const json = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        throw new Error(json?.error || "Failed to create note");
+      }
+
+      const created = json?.note;
+      if (created) {
+        setNotes((prev) => [created, ...prev]);
+        setExpandedNoteId(created.id);
+      }
+
+      setNoteTitle("");
+      setNoteContent("");
+      setNoteCatalogUrl("");
+      setIsAddNoteOpen(false);
+    } catch (error: any) {
+      setNoteError(error?.message || "Failed to create note");
+    } finally {
+      setIsSavingNote(false);
+    }
+  }
+
   return (
     <div className="space-y-6">
       {/* Header */}
@@ -236,22 +303,34 @@ export default function BrandPriceListClient({ brand, filterOptions }: Props) {
           <ArrowLeft className="w-4 h-4" />
           Back to Overview
         </Link>
-        <div className="flex items-center gap-4">
-          {brand.logoUrl && (
-            <img
-              src={brand.logoUrl}
-              alt={`${brand.name} logo`}
-              className="h-16 w-auto object-contain"
-            />
-          )}
-          <div>
-            <h1 className="text-2xl font-bold text-gray-900 dark:text-gray-100">
-              {brand.name}
-            </h1>
-            <p className="text-gray-600 dark:text-gray-400 mt-1">
-              View current pricing for this provider.
-            </p>
+        <div className="flex items-center justify-between gap-4">
+          <div className="flex items-center gap-4">
+            {brand.logoUrl && (
+              <img
+                src={brand.logoUrl}
+                alt={`${brand.name} logo`}
+                className="h-16 w-auto object-contain"
+              />
+            )}
+            <div>
+              <h1 className="text-2xl font-bold text-gray-900 dark:text-gray-100">
+                {brand.name}
+              </h1>
+              <p className="text-gray-600 dark:text-gray-400 mt-1">
+                View current pricing for this provider.
+              </p>
+            </div>
           </div>
+
+          <button
+            type="button"
+            onClick={() => setIsNotesOpen(true)}
+            className="h-10 w-10 rounded-full bg-amber-100 hover:bg-amber-200 border border-amber-300 text-amber-700 inline-flex items-center justify-center transition-colors"
+            title="Important notes"
+            aria-label="Open important notes"
+          >
+            <AlertTriangle className="h-5 w-5" />
+          </button>
         </div>
       </div>
 
@@ -450,8 +529,8 @@ export default function BrandPriceListClient({ brand, filterOptions }: Props) {
                             slab.status === "AVAILABLE"
                               ? "bg-green-100 dark:bg-green-900/30 text-green-800 dark:text-green-300"
                               : slab.status === "DISCONTINUED"
-                              ? "bg-red-100 dark:bg-red-900/30 text-red-800 dark:text-red-300"
-                              : "bg-gray-100 dark:bg-gray-700 text-gray-800 dark:text-gray-300"
+                                ? "bg-red-100 dark:bg-red-900/30 text-red-800 dark:text-red-300"
+                                : "bg-gray-100 dark:bg-gray-700 text-gray-800 dark:text-gray-300"
                           }`}
                         >
                           {slab.status}
@@ -470,6 +549,150 @@ export default function BrandPriceListClient({ brand, filterOptions }: Props) {
       <div className="text-sm text-gray-600 dark:text-gray-400">
         Showing {filteredSlabs.length} of {brand.slabs.length} slabs
       </div>
+
+      {isNotesOpen && (
+        <div
+          className="fixed inset-0 z-[120] bg-black/50 flex items-center justify-center p-4"
+          onClick={() => setIsNotesOpen(false)}
+        >
+          <div
+            className="w-full max-w-2xl max-h-[85vh] overflow-hidden rounded-xl bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 shadow-xl"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="flex items-center justify-between px-4 py-3 border-b border-gray-200 dark:border-gray-700">
+              <h2 className="text-lg font-semibold text-gray-900 dark:text-gray-100">
+                Brand Notes
+              </h2>
+              <button
+                type="button"
+                onClick={() => setIsNotesOpen(false)}
+                className="text-gray-500 hover:text-gray-800 dark:text-gray-400 dark:hover:text-gray-100"
+              >
+                <X className="h-5 w-5" />
+              </button>
+            </div>
+
+            <div className="p-4 space-y-4 overflow-y-auto max-h-[calc(85vh-64px)]">
+              {brand.isAdmin && !isAddNoteOpen && (
+                <div className="flex justify-end">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setNoteError(null);
+                      setIsAddNoteOpen(true);
+                    }}
+                    className="px-3 py-2 rounded-md bg-blue-600 text-white text-sm hover:bg-blue-700"
+                  >
+                    Add note
+                  </button>
+                </div>
+              )}
+
+              {brand.isAdmin && isAddNoteOpen && (
+                <div className="rounded-lg border border-gray-200 dark:border-gray-700 p-3 space-y-2">
+                  <p className="text-sm font-semibold text-gray-900 dark:text-gray-100">
+                    Add Note
+                  </p>
+                  <input
+                    type="text"
+                    value={noteTitle}
+                    onChange={(e) => setNoteTitle(e.target.value)}
+                    placeholder="Note title"
+                    className="w-full h-9 rounded-md border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-900 px-3 text-sm"
+                  />
+                  <textarea
+                    value={noteContent}
+                    onChange={(e) => setNoteContent(e.target.value)}
+                    placeholder="Note content"
+                    rows={4}
+                    className="w-full rounded-md border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-900 px-3 py-2 text-sm"
+                  />
+                  <input
+                    type="url"
+                    value={noteCatalogUrl}
+                    onChange={(e) => setNoteCatalogUrl(e.target.value)}
+                    placeholder="Catalogue link (optional, https://...)"
+                    className="w-full h-9 rounded-md border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-900 px-3 text-sm"
+                  />
+                  {noteError ? (
+                    <p className="text-xs text-red-600 dark:text-red-400">
+                      {noteError}
+                    </p>
+                  ) : null}
+                  <div className="flex justify-end gap-2">
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setIsAddNoteOpen(false);
+                        setNoteError(null);
+                      }}
+                      className="px-3 py-2 rounded-md border border-gray-300 dark:border-gray-600 text-sm"
+                    >
+                      Cancel
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => void handleCreateNote()}
+                      disabled={isSavingNote}
+                      className="px-3 py-2 rounded-md bg-blue-600 text-white text-sm hover:bg-blue-700 disabled:opacity-50"
+                    >
+                      {isSavingNote ? "Saving..." : "Save note"}
+                    </button>
+                  </div>
+                </div>
+              )}
+
+              {notes.length === 0 ? (
+                <p className="text-sm text-gray-500 dark:text-gray-400">
+                  No notes added yet.
+                </p>
+              ) : (
+                <div className="space-y-2">
+                  {notes.map((note) => {
+                    const isExpanded = expandedNoteId === note.id;
+                    return (
+                      <div
+                        key={note.id}
+                        className="rounded-lg border border-gray-200 dark:border-gray-700"
+                      >
+                        <button
+                          type="button"
+                          onClick={() =>
+                            setExpandedNoteId((prev) =>
+                              prev === note.id ? null : note.id,
+                            )
+                          }
+                          className="w-full text-left px-3 py-2 text-sm font-semibold text-gray-900 dark:text-gray-100 hover:bg-gray-50 dark:hover:bg-gray-700/50"
+                        >
+                          {note.title}
+                        </button>
+                        {isExpanded && (
+                          <div className="px-3 pb-3 text-sm text-gray-700 dark:text-gray-300 whitespace-pre-wrap">
+                            <p>{note.content}</p>
+                            {note.catalogUrl ? (
+                              <a
+                                href={note.catalogUrl}
+                                target="_blank"
+                                rel="noreferrer"
+                                className="inline-flex mt-2 items-center rounded-md bg-blue-600 px-2.5 py-1.5 text-xs font-medium text-white hover:bg-blue-700"
+                              >
+                                Open link
+                              </a>
+                            ) : null}
+                            <p className="mt-2 text-xs text-gray-500 dark:text-gray-400">
+                              {new Date(note.createdAt).toLocaleDateString()}
+                            </p>
+                          </div>
+                        )}
+                      </div>
+                    );
+                  })}
+                </div>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

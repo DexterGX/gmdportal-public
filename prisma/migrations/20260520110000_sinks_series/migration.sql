@@ -1,0 +1,2 @@
+ALTER TABLE "Sink"
+ADD COLUMN "series" TEXT;

@@ -5,6 +5,7 @@ import { useEffect, useState } from "react";
 type SinkRow = {
   id: string;
   brandName: string;
+  series: string | null;
   model: string;
   description: string | null;
   dimensions: string;
@@ -73,6 +74,7 @@ export default function PromotionalSinksClient() {
               <thead className="bg-gray-50 dark:bg-gray-900 text-gray-700 dark:text-gray-300 border-b border-gray-200 dark:border-gray-700">
                 <tr>
                   <th className="px-4 py-3 text-left">Brand</th>
+                  <th className="px-4 py-3 text-left">Series</th>
                   <th className="px-4 py-3 text-left">Model</th>
                   <th className="px-4 py-3 text-left">Description</th>
                   <th className="px-4 py-3 text-left">Dimensions</th>
@@ -88,6 +90,7 @@ export default function PromotionalSinksClient() {
                     className="border-t border-gray-100 dark:border-gray-700"
                   >
                     <td className="px-4 py-3">{row.brandName}</td>
+                    <td className="px-4 py-3">{row.series || "-"}</td>
                     <td className="px-4 py-3">{row.model}</td>
                     <td className="px-4 py-3">{row.description || "-"}</td>
                     <td className="px-4 py-3">{row.dimensions}</td>
@@ -104,7 +107,7 @@ export default function PromotionalSinksClient() {
                   <tr>
                     <td
                       className="px-4 py-8 text-center text-gray-500"
-                      colSpan={7}
+                      colSpan={8}
                     >
                       No promotional sinks found.
                     </td>

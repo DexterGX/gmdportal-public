@@ -5,24 +5,41 @@ import { useState } from "react";
 type DiffPayload = {
   newSinks: Array<{
     brandName: string;
+    series: string | null;
     model: string;
     description: string | null;
     dimensions: string;
     listedPrice: number;
+    finalPrice: number; // Added finalPrice property
     status: string;
   }>;
   updatedSinks: Array<{
     id: string;
     model: string;
     dimensions: string;
-    before: { listedPrice: number; status: string; description: string | null };
-    after: { listedPrice: number; status: string; description: string | null };
+    before: {
+      series: string | null;
+      listedPrice: number;
+      finalPrice: number; // Ensure finalPrice is included here
+      status: string;
+      description: string | null;
+    };
+    after: {
+      series: string | null;
+      listedPrice: number;
+      finalPrice: number; // Ensure finalPrice is included here
+      status: string;
+      description: string | null;
+    };
   }>;
   discontinuedSinks: Array<{
     id: string;
+    series: string | null;
     model: string;
+    description: string | null;
     dimensions: string;
     listedPrice: number;
+    finalPrice: number; // Added finalPrice property
     status: string;
   }>;
 };
@@ -49,7 +66,7 @@ export default function SinkImportPreview({
           </h3>
           <p className="text-sm text-gray-500 dark:text-gray-400">
             {diff.newSinks.length} new, {diff.updatedSinks.length} updated,{" "}
-            {diff.discontinuedSinks.length} discontinued
+            {diff.discontinuedSinks.length} removed
           </p>
         </div>
         <div className="flex gap-2">
@@ -92,50 +109,59 @@ export default function SinkImportPreview({
             onClick={() => setTab("discontinued")}
             className={`px-4 py-2 text-sm ${tab === "discontinued" ? "border-b-2 border-blue-600 text-blue-600" : "text-gray-500"}`}
           >
-            Discontinued ({diff.discontinuedSinks.length})
+            Removed ({diff.discontinuedSinks.length})
           </button>
         </div>
 
         <div className="p-4 text-sm">
-          {tab === "new" &&
-            diff.newSinks.map((row, idx) => (
-              <div
-                key={`${row.model}-${idx}`}
-                className="py-2 border-b border-gray-100 dark:border-gray-700"
-              >
-                {row.model} | {row.dimensions} | ${row.listedPrice.toFixed(2)}
-              </div>
-            ))}
-          {tab === "updated" &&
-            diff.updatedSinks.map((row) => (
-              <div
-                key={row.id}
-                className="py-2 border-b border-gray-100 dark:border-gray-700"
-              >
-                {row.model} | {row.dimensions} | $
-                {row.before.listedPrice.toFixed(2)} {"->"} $
-                {row.after.listedPrice.toFixed(2)}
-              </div>
-            ))}
-          {tab === "discontinued" &&
-            diff.discontinuedSinks.map((row) => (
-              <div
-                key={row.id}
-                className="py-2 border-b border-gray-100 dark:border-gray-700"
-              >
-                {row.model} | {row.dimensions} | currently {row.status}
-              </div>
-            ))}
-
-          {tab === "new" && diff.newSinks.length === 0 && (
-            <p className="text-gray-500">No new sinks.</p>
-          )}
-          {tab === "updated" && diff.updatedSinks.length === 0 && (
-            <p className="text-gray-500">No updated sinks.</p>
-          )}
-          {tab === "discontinued" && diff.discontinuedSinks.length === 0 && (
-            <p className="text-gray-500">No discontinued sinks.</p>
-          )}
+          <table className="table-auto w-full text-left text-sm">
+            <thead>
+              <tr>
+                <th className="px-4 py-2">Series</th>
+                <th className="px-4 py-2">Model</th>
+                <th className="px-4 py-2">Dimensions</th>
+                <th className="px-4 py-2">Listed Price</th>
+                <th className="px-4 py-2">Status</th>
+                <th className="px-4 py-2">Final Price</th>
+              </tr>
+            </thead>
+            <tbody>
+              {tab === "new" &&
+                diff.newSinks.map((row, idx) => (
+                  <tr key={`${row.model}-${idx}`} className="border-b">
+                    <td className="px-4 py-2">{row.series || "-"}</td>
+                    <td className="px-4 py-2">{row.model}</td>
+                    <td className="px-4 py-2">{row.dimensions}</td>
+                    <td className="px-4 py-2">${row.listedPrice.toFixed(2)}</td>
+                    <td className="px-4 py-2">{row.status}</td>
+                    <td className="px-4 py-2">${row.finalPrice.toFixed(2)}</td>
+                  </tr>
+                ))}
+              {tab === "updated" &&
+                diff.updatedSinks.map((row) => (
+                  <tr key={row.id} className="border-b">
+                    <td className="px-4 py-2">{row.after.series || "-"}</td>
+                    <td className="px-4 py-2">{row.model}</td>
+                    <td className="px-4 py-2">{row.dimensions}</td>
+                    <td className="px-4 py-2">
+                      ${row.before?.finalPrice?.toFixed(2) || "-"} {"->"} $
+                      {row.after?.finalPrice?.toFixed(2) || "-"}
+                    </td>
+                  </tr>
+                ))}
+              {tab === "discontinued" &&
+                diff.discontinuedSinks.map((row) => (
+                  <tr key={row.id} className="border-b">
+                    <td className="px-4 py-2">{row.series || "-"}</td>
+                    <td className="px-4 py-2">{row.model}</td>
+                    <td className="px-4 py-2">{row.dimensions}</td>
+                    <td className="px-4 py-2">${row.listedPrice.toFixed(2)}</td>
+                    <td className="px-4 py-2">{row.status}</td>
+                    <td className="px-4 py-2">${row.finalPrice.toFixed(2)}</td>
+                  </tr>
+                ))}
+            </tbody>
+          </table>
         </div>
       </div>
     </div>

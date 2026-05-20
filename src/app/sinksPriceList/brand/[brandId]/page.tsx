@@ -1,6 +1,7 @@
 import { notFound } from "next/navigation";
 import { prisma } from "@/lib/prisma";
 import SinkBrandClient from "./SinkBrandClient";
+import { getCurrentUserWithRole } from "@/lib/authHelpers";
 
 export default async function SinkBrandPage({
   params,
@@ -8,17 +9,30 @@ export default async function SinkBrandPage({
   params: Promise<{ brandId: string }>;
 }) {
   const { brandId } = await params;
+  const { appRole } = await getCurrentUserWithRole();
   const brand = await prisma.sinkBrand.findUnique({
     where: { id: brandId },
     select: {
       id: true,
       name: true,
       logoUrl: true,
+      notes: {
+        select: {
+          id: true,
+          title: true,
+          content: true,
+          catalogUrl: true,
+          createdAt: true,
+        },
+        orderBy: { createdAt: "desc" },
+      },
       sinks: {
         select: {
           id: true,
+          series: true,
           model: true,
           description: true,
+          dimensions: true,
           imageUrl: true,
           finalPrice: true,
         },
@@ -36,10 +50,20 @@ export default async function SinkBrandPage({
     id: brand.id,
     name: brand.name,
     logoUrl: brand.logoUrl,
+    isAdmin: appRole === "admin",
+    notes: brand.notes.map((note) => ({
+      id: note.id,
+      title: note.title,
+      content: note.content,
+      catalogUrl: note.catalogUrl,
+      createdAt: note.createdAt.toISOString(),
+    })),
     sinks: brand.sinks.map((sink) => ({
       id: sink.id,
+      series: sink.series,
       model: sink.model,
       description: sink.description,
+      dimensions: sink.dimensions,
       imageUrl: sink.imageUrl,
       finalPrice: Number(sink.finalPrice?.toString?.() ?? 0),
     })),

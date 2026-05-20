@@ -6,6 +6,7 @@ import { Search } from "lucide-react";
 type SinkRow = {
   id: string;
   brandName: string;
+  series: string | null;
   model: string;
   description: string | null;
   dimensions: string;
@@ -44,7 +45,7 @@ export default function SinkAvailabilityClient() {
     }
     return rows.filter((row) => {
       const haystack =
-        `${row.brandName} ${row.model} ${row.description || ""} ${row.dimensions}`.toLowerCase();
+        `${row.brandName} ${row.series || ""} ${row.model} ${row.description || ""} ${row.dimensions}`.toLowerCase();
       return haystack.includes(term);
     });
   }, [rows, search]);
@@ -65,7 +66,7 @@ export default function SinkAvailabilityClient() {
         <input
           value={search}
           onChange={(event) => setSearch(event.target.value)}
-          placeholder="Search by model, description, brand..."
+          placeholder="Search by brand, series, model..."
           className="w-full pl-9 pr-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-800 text-sm"
         />
       </div>
@@ -79,6 +80,7 @@ export default function SinkAvailabilityClient() {
               <thead className="bg-gray-50 dark:bg-gray-900 border-b border-gray-200 dark:border-gray-700">
                 <tr>
                   <th className="px-4 py-3 text-left">Brand</th>
+                  <th className="px-4 py-3 text-left">Series</th>
                   <th className="px-4 py-3 text-left">Model</th>
                   <th className="px-4 py-3 text-left">Description</th>
                   <th className="px-4 py-3 text-left">Dimensions</th>
@@ -92,6 +94,7 @@ export default function SinkAvailabilityClient() {
                     className="border-t border-gray-100 dark:border-gray-700"
                   >
                     <td className="px-4 py-3">{row.brandName}</td>
+                    <td className="px-4 py-3">{row.series || "-"}</td>
                     <td className="px-4 py-3">{row.model}</td>
                     <td className="px-4 py-3">{row.description || "-"}</td>
                     <td className="px-4 py-3">{row.dimensions}</td>
@@ -102,7 +105,7 @@ export default function SinkAvailabilityClient() {
                   <tr>
                     <td
                       className="px-4 py-8 text-center text-gray-500"
-                      colSpan={5}
+                      colSpan={6}
                     >
                       No sinks found.
                     </td>

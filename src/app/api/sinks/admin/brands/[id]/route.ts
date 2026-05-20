@@ -3,7 +3,26 @@ import { getServerSession } from "next-auth";
 import authOptions from "@/lib/auth";
 import { getCurrentUserWithRole } from "@/lib/authHelpers";
 import { prisma } from "@/lib/prisma";
+import { supabaseAdmin } from "@/lib/supabase/server";
 import { Decimal } from "@prisma/client/runtime/library";
+
+const BUCKET_NAME = process.env.SUPABASE_SINKS_BUCKET || "sinks-assets";
+
+function extractStoragePathFromUrl(
+  url: string | null | undefined,
+): string | null {
+  if (!url) {
+    return null;
+  }
+
+  const marker = `${BUCKET_NAME}/`;
+  const markerIndex = url.indexOf(marker);
+  if (markerIndex === -1) {
+    return null;
+  }
+
+  return url.slice(markerIndex + marker.length);
+}
 
 export async function PATCH(
   request: NextRequest,
@@ -67,15 +86,44 @@ export async function DELETE(
     const { id } = await params;
     const prismaAny = prisma as any;
 
-    const sinkCount = await prismaAny.sink.count({ where: { brandId: id } });
-    if (sinkCount > 0) {
-      return NextResponse.json(
-        { error: "Cannot delete brand while sinks still exist for this brand" },
-        { status: 400 },
-      );
+    const brand = await prismaAny.sinkBrand.findUnique({
+      where: { id },
+      select: {
+        id: true,
+        logoUrl: true,
+        sinks: {
+          select: {
+            id: true,
+            imageUrl: true,
+          },
+        },
+      },
+    });
+
+    if (!brand) {
+      return NextResponse.json({ error: "Brand not found" }, { status: 404 });
     }
 
-    await prismaAny.sinkBrand.delete({ where: { id } });
+    await prismaAny.$transaction(async (tx: any) => {
+      await tx.sink.deleteMany({ where: { brandId: id } });
+      await tx.sinkBrand.delete({ where: { id } });
+    });
+
+    const storagePaths = [
+      extractStoragePathFromUrl(brand.logoUrl ? String(brand.logoUrl) : null),
+      ...brand.sinks
+        .map((sink: any) =>
+          extractStoragePathFromUrl(
+            sink.imageUrl ? String(sink.imageUrl) : null,
+          ),
+        )
+        .filter(Boolean),
+    ].filter(Boolean) as string[];
+
+    if (storagePaths.length > 0) {
+      await supabaseAdmin.storage.from(BUCKET_NAME).remove(storagePaths);
+    }
+
     return NextResponse.json({ ok: true });
   } catch (error: any) {
     return NextResponse.json(

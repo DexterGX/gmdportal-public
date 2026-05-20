@@ -86,6 +86,7 @@ export async function POST(request: Request) {
       if (!match) {
         newSinks.push({
           brandName: brand.name,
+          series: row.series,
           model: row.model,
           description: row.description,
           dimensions: row.dimensions,
@@ -97,18 +98,23 @@ export async function POST(request: Request) {
       }
 
       const before = {
+        series: match.series,
         listedPrice: Number(match.listedPrice),
+        finalPrice: Number(match.finalPrice), // Include finalPrice in before
         status: String(match.status),
         description: match.description,
       };
 
       const after = {
+        series: row.series,
         listedPrice: row.listedPrice,
+        finalPrice: nextFinalPrice, // Include finalPrice in after
         status: row.status,
         description: row.description,
       };
 
       if (
+        (before.series || "") !== (after.series || "") ||
         before.listedPrice !== after.listedPrice ||
         before.status !== after.status ||
         (before.description || "") !== (after.description || "")
@@ -132,9 +138,12 @@ export async function POST(request: Request) {
       )
       .map((sink: any) => ({
         id: sink.id,
+        series: sink.series,
         model: sink.model,
+        description: sink.description ?? null,
         dimensions: sink.dimensions,
         listedPrice: Number(sink.listedPrice),
+        finalPrice: Number(sink.finalPrice),
         status: String(sink.status),
       }));
 
