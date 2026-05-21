@@ -90,11 +90,16 @@ export async function DELETE(request: Request) {
     const noteId = String(body?.noteId ?? "").trim();
 
     if (!noteId) {
-      return NextResponse.json({ error: "Note id is required" }, { status: 400 });
+      return NextResponse.json(
+        { error: "Note id is required" },
+        { status: 400 },
+      );
     }
 
     const prismaAny = prisma as any;
-    const note = await prismaAny.sinkBrandNote.findUnique({ where: { id: noteId } });
+    const note = await prismaAny.sinkBrandNote.findUnique({
+      where: { id: noteId },
+    });
     if (!note) {
       return NextResponse.json({ error: "Note not found" }, { status: 404 });
     }

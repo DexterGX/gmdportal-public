@@ -89,7 +89,9 @@ export async function POST(request: NextRequest) {
             description: row?.description ? String(row.description) : null,
             listedPrice: new Decimal(listedPrice),
             finalPrice,
-            imageUrl: modelImageByModel.get(String(row?.model ?? "").trim()) || undefined,
+            imageUrl:
+              modelImageByModel.get(String(row?.model ?? "").trim()) ||
+              undefined,
             status:
               row?.status === "DISCONTINUED" ? "DISCONTINUED" : "AVAILABLE",
           };
@@ -146,7 +148,8 @@ export async function POST(request: NextRequest) {
               listedPrice: new Decimal(listedPrice),
               finalPrice,
               imageUrl:
-                modelImageByModel.get(String(row?.model ?? "").trim()) || undefined,
+                modelImageByModel.get(String(row?.model ?? "").trim()) ||
+                undefined,
               status:
                 row?.after?.status === "DISCONTINUED"
                   ? "DISCONTINUED"

@@ -16,14 +16,18 @@ const ALLOWED_TYPES = [
 ];
 
 function slugifyModelSegment(value: string) {
-  return value
-    .trim()
-    .toLowerCase()
-    .replace(/[^a-z0-9]+/g, "-")
-    .replace(/^-+|-+$/g, "") || "model";
+  return (
+    value
+      .trim()
+      .toLowerCase()
+      .replace(/[^a-z0-9]+/g, "-")
+      .replace(/^-+|-+$/g, "") || "model"
+  );
 }
 
-function extractStoragePathFromUrl(url: string | null | undefined): string | null {
+function extractStoragePathFromUrl(
+  url: string | null | undefined,
+): string | null {
   if (!url) {
     return null;
   }
@@ -152,9 +156,13 @@ export async function POST(request: Request) {
       });
     });
 
-    const previousStoragePath = extractStoragePathFromUrl(existingModelImage?.imageUrl);
+    const previousStoragePath = extractStoragePathFromUrl(
+      existingModelImage?.imageUrl,
+    );
     if (previousStoragePath) {
-      await supabaseAdmin.storage.from(BUCKET_NAME).remove([previousStoragePath]);
+      await supabaseAdmin.storage
+        .from(BUCKET_NAME)
+        .remove([previousStoragePath]);
     }
 
     return NextResponse.json({ imageUrl: publicUrl });

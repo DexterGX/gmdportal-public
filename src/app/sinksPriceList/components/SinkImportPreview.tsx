@@ -60,13 +60,17 @@ export default function SinkImportPreview({
   const formatCurrencyChange = (before: number, after: number) => {
     const beforeText = `$${before.toFixed(2)}`;
     const afterText = `$${after.toFixed(2)}`;
-    return beforeText === afterText ? beforeText : `${beforeText} -> ${afterText}`;
+    return beforeText === afterText
+      ? beforeText
+      : `${beforeText} -> ${afterText}`;
   };
 
   const formatTextChange = (before: string, after: string) => {
     const beforeText = before.trim() || "-";
     const afterText = after.trim() || "-";
-    return beforeText === afterText ? beforeText : `${beforeText} -> ${afterText}`;
+    return beforeText === afterText
+      ? beforeText
+      : `${beforeText} -> ${afterText}`;
   };
 
   return (
@@ -156,7 +160,10 @@ export default function SinkImportPreview({
                     className="border-b"
                   >
                     <td className="px-4 py-2">
-                      {formatTextChange(row.before.series || "", row.after.series || "")}
+                      {formatTextChange(
+                        row.before.series || "",
+                        row.after.series || "",
+                      )}
                     </td>
                     <td className="px-4 py-2">{row.model}</td>
                     <td className="px-4 py-2">{row.dimensions}</td>
@@ -167,7 +174,10 @@ export default function SinkImportPreview({
                       )}
                     </td>
                     <td className="px-4 py-2">
-                      {formatTextChange(row.before.status || "", row.after.status || "")}
+                      {formatTextChange(
+                        row.before.status || "",
+                        row.after.status || "",
+                      )}
                     </td>
                     <td className="px-4 py-2">
                       {formatCurrencyChange(

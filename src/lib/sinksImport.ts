@@ -30,7 +30,11 @@ export function buildSinkImportKey(
   dimensions: string,
   description?: string | null,
 ): string {
-  return `${brandName.trim().toLowerCase()}|${model.trim().toLowerCase()}|${dimensions.trim().toLowerCase()}|${String(description ?? "").trim().toLowerCase()}`;
+  return `${brandName.trim().toLowerCase()}|${model.trim().toLowerCase()}|${dimensions.trim().toLowerCase()}|${String(
+    description ?? "",
+  )
+    .trim()
+    .toLowerCase()}`;
 }
 
 export async function parseSinkImportFile(
@@ -92,10 +96,10 @@ export function normalizeSinkImportRows(
 
     normalized.push({
       brandName: selectedBrandName,
-      series: hasSeries ? (String(row.Series ?? "").trim() || null) : undefined,
+      series: hasSeries ? String(row.Series ?? "").trim() || null : undefined,
       model,
       description: hasDescription
-        ? (String(row.Description ?? "").trim() || null)
+        ? String(row.Description ?? "").trim() || null
         : undefined,
       dimensions,
       listedPrice,

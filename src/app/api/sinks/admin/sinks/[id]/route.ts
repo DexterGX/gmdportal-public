@@ -124,7 +124,10 @@ export async function DELETE(
     const { id } = await params;
     const prismaAny = prisma as any;
 
-    const sink = await prismaAny.sink.findUnique({ where: { id }, select: { id: true } });
+    const sink = await prismaAny.sink.findUnique({
+      where: { id },
+      select: { id: true },
+    });
     if (!sink) {
       return NextResponse.json({ error: "Sink not found" }, { status: 404 });
     }

@@ -84,7 +84,10 @@ export async function GET(request: NextRequest) {
           sink.promotionalPrice !== null && sink.promotionalPrice !== undefined
             ? Number(sink.promotionalPrice)
             : null,
-        imageUrl: sink.imageUrl || imageByKey.get(`${sink.brandId}:::${sink.model}`) || null,
+        imageUrl:
+          sink.imageUrl ||
+          imageByKey.get(`${sink.brandId}:::${sink.model}`) ||
+          null,
       })),
     });
   } catch (error: any) {

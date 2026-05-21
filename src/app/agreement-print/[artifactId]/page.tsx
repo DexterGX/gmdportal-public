@@ -433,9 +433,7 @@ export default async function AgreementPrintPage({
             ? row.brand.name.trim().toLowerCase()
             : "";
         const model =
-          typeof row?.model === "string"
-            ? row.model.trim().toLowerCase()
-            : "";
+          typeof row?.model === "string" ? row.model.trim().toLowerCase() : "";
         const imageUrl =
           typeof row?.imageUrl === "string" ? row.imageUrl.trim() : "";
         if (brandName && model && imageUrl) {

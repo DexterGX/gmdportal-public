@@ -711,7 +711,9 @@ export default function BrandPriceListClient({ brand, filterOptions }: Props) {
                                   disabled={deletingNoteId === note.id}
                                   className="inline-flex items-center rounded-md bg-red-600 px-2.5 py-1.5 text-xs font-medium text-white hover:bg-red-700 disabled:opacity-50"
                                 >
-                                  {deletingNoteId === note.id ? "Deleting..." : "Delete note"}
+                                  {deletingNoteId === note.id
+                                    ? "Deleting..."
+                                    : "Delete note"}
                                 </button>
                               </div>
                             ) : null}

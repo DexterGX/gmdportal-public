@@ -51,7 +51,9 @@ export default async function SinkBrandPage({
       ? await (prisma as any).sinkModelImage.findMany({
           where: {
             brandId,
-            model: { in: Array.from(new Set(brand.sinks.map((sink) => sink.model))) },
+            model: {
+              in: Array.from(new Set(brand.sinks.map((sink) => sink.model))),
+            },
           },
           select: { model: true, imageUrl: true },
         })
