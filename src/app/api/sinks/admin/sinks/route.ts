@@ -48,6 +48,16 @@ export async function POST(request: NextRequest) {
       discount: brand.discount,
     });
 
+    const modelImage = await prismaAny.sinkModelImage.findUnique({
+      where: {
+        brandId_model: {
+          brandId,
+          model,
+        },
+      },
+      select: { imageUrl: true },
+    });
+
     const created = await prismaAny.sink.create({
       data: {
         brandId,
@@ -57,6 +67,7 @@ export async function POST(request: NextRequest) {
         dimensions,
         listedPrice: new Decimal(listedPrice),
         finalPrice,
+        imageUrl: modelImage?.imageUrl || null,
         status: body?.status === "DISCONTINUED" ? "DISCONTINUED" : "AVAILABLE",
         isPromotional: Boolean(body?.isPromotional),
         promotionalPrice:

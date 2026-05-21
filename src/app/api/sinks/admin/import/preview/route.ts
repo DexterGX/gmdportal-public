@@ -10,6 +10,16 @@ import {
   buildSinkImportKey,
 } from "@/lib/sinksImport";
 
+function normalizeText(value: unknown): string {
+  return String(value ?? "").trim();
+}
+
+function sameMoney(left: number, right: number, toleranceCents = 0): boolean {
+  const leftCents = Math.round(Number(left) * 100);
+  const rightCents = Math.round(Number(right) * 100);
+  return Math.abs(leftCents - rightCents) <= toleranceCents;
+}
+
 export async function POST(request: Request) {
   try {
     const session = await getServerSession(authOptions);
@@ -62,7 +72,12 @@ export async function POST(request: Request) {
     const existingByKey = new Map<string, any>();
     for (const sink of existing) {
       existingByKey.set(
-        buildSinkImportKey(brand.name, sink.model, sink.dimensions),
+        buildSinkImportKey(
+          brand.name,
+          sink.model,
+          sink.dimensions,
+          sink.description,
+        ),
         sink,
       );
     }
@@ -86,38 +101,49 @@ export async function POST(request: Request) {
       if (!match) {
         newSinks.push({
           brandName: brand.name,
-          series: row.series,
+          series: row.series ?? null,
           model: row.model,
-          description: row.description,
+          description: row.description ?? null,
           dimensions: row.dimensions,
           listedPrice: row.listedPrice,
           finalPrice: nextFinalPrice,
-          status: row.status,
+          status: row.status ?? "AVAILABLE",
         });
         continue;
       }
 
+      const effectiveSeries =
+        row.series === undefined ? match.series : (row.series ?? null);
+      const effectiveDescription =
+        row.description === undefined
+          ? match.description
+          : (row.description ?? null);
+      const effectiveStatus =
+        row.status === undefined ? String(match.status) : row.status;
+
       const before = {
         series: match.series,
         listedPrice: Number(match.listedPrice),
-        finalPrice: Number(match.finalPrice), // Include finalPrice in before
+        finalPrice: Number(match.finalPrice),
         status: String(match.status),
         description: match.description,
       };
 
       const after = {
-        series: row.series,
+        series: effectiveSeries,
         listedPrice: row.listedPrice,
-        finalPrice: nextFinalPrice, // Include finalPrice in after
-        status: row.status,
-        description: row.description,
+        finalPrice: nextFinalPrice,
+        status: effectiveStatus,
+        description: effectiveDescription,
       };
 
       if (
-        (before.series || "") !== (after.series || "") ||
-        before.listedPrice !== after.listedPrice ||
-        before.status !== after.status ||
-        (before.description || "") !== (after.description || "")
+        normalizeText(before.series) !== normalizeText(after.series) ||
+        !sameMoney(before.listedPrice, after.listedPrice) ||
+        !sameMoney(before.finalPrice, after.finalPrice, 1) ||
+        normalizeText(before.status).toUpperCase() !==
+          normalizeText(after.status).toUpperCase() ||
+        normalizeText(before.description) !== normalizeText(after.description)
       ) {
         updatedSinks.push({
           id: match.id,
@@ -133,7 +159,12 @@ export async function POST(request: Request) {
       .filter(
         (sink: any) =>
           !seenKeys.has(
-            buildSinkImportKey(brand.name, sink.model, sink.dimensions),
+            buildSinkImportKey(
+              brand.name,
+              sink.model,
+              sink.dimensions,
+              sink.description,
+            ),
           ),
       )
       .map((sink: any) => ({

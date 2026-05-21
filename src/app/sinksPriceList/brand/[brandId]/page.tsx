@@ -46,6 +46,21 @@ export default async function SinkBrandPage({
     notFound();
   }
 
+  const modelImages =
+    brand.sinks.length > 0
+      ? await (prisma as any).sinkModelImage.findMany({
+          where: {
+            brandId,
+            model: { in: Array.from(new Set(brand.sinks.map((sink) => sink.model))) },
+          },
+          select: { model: true, imageUrl: true },
+        })
+      : [];
+  const imageByModel = new Map<string, string>();
+  for (const row of modelImages) {
+    imageByModel.set(String(row.model), String(row.imageUrl));
+  }
+
   const safeBrand = {
     id: brand.id,
     name: brand.name,
@@ -64,7 +79,7 @@ export default async function SinkBrandPage({
       model: sink.model,
       description: sink.description,
       dimensions: sink.dimensions,
-      imageUrl: sink.imageUrl,
+      imageUrl: sink.imageUrl || imageByModel.get(sink.model) || null,
       finalPrice: Number(sink.finalPrice?.toString?.() ?? 0),
     })),
   };

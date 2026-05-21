@@ -415,9 +415,41 @@ export default async function AgreementPrintPage({
         },
       });
 
+      const modelImages = await prismaAny.sinkModelImage.findMany({
+        where: { OR: whereOr },
+        select: {
+          model: true,
+          imageUrl: true,
+          brand: {
+            select: { name: true },
+          },
+        },
+      });
+
+      const fallbackImageByKey = new Map<string, string>();
+      for (const row of modelImages) {
+        const brandName =
+          typeof row?.brand?.name === "string"
+            ? row.brand.name.trim().toLowerCase()
+            : "";
+        const model =
+          typeof row?.model === "string"
+            ? row.model.trim().toLowerCase()
+            : "";
+        const imageUrl =
+          typeof row?.imageUrl === "string" ? row.imageUrl.trim() : "";
+        if (brandName && model && imageUrl) {
+          fallbackImageByKey.set(`${brandName}|||${model}`, imageUrl);
+        }
+      }
+
       for (const sink of catalogSinks) {
         const imageUrl =
-          typeof sink?.imageUrl === "string" ? sink.imageUrl.trim() : "";
+          typeof sink?.imageUrl === "string" && sink.imageUrl.trim()
+            ? sink.imageUrl.trim()
+            : fallbackImageByKey.get(
+                `${typeof sink?.brand?.name === "string" ? sink.brand.name.trim().toLowerCase() : ""}|||${typeof sink?.model === "string" ? sink.model.trim().toLowerCase() : ""}`,
+              ) || "";
         const brandName =
           typeof sink?.brand?.name === "string"
             ? sink.brand.name.trim().toLowerCase()

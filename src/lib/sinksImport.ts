@@ -15,12 +15,12 @@ export type SinkImportRow = {
 
 export type NormalizedSinkImportRow = {
   brandName: string;
-  series: string | null;
+  series?: string | null;
   model: string;
-  description: string | null;
+  description?: string | null;
   dimensions: string;
   listedPrice: number;
-  status: "AVAILABLE" | "DISCONTINUED";
+  status?: "AVAILABLE" | "DISCONTINUED";
   key: string;
 };
 
@@ -28,8 +28,9 @@ export function buildSinkImportKey(
   brandName: string,
   model: string,
   dimensions: string,
+  description?: string | null,
 ): string {
-  return `${brandName.trim().toLowerCase()}|${model.trim().toLowerCase()}|${dimensions.trim().toLowerCase()}`;
+  return `${brandName.trim().toLowerCase()}|${model.trim().toLowerCase()}|${dimensions.trim().toLowerCase()}|${String(description ?? "").trim().toLowerCase()}`;
 }
 
 export async function parseSinkImportFile(
@@ -74,20 +75,37 @@ export function normalizeSinkImportRows(
       continue;
     }
 
-    const statusRaw = String(row.Status ?? "AVAILABLE")
-      .trim()
-      .toUpperCase();
-    const status = statusRaw === "DISCONTINUED" ? "DISCONTINUED" : "AVAILABLE";
+    const hasStatus = row.Status !== undefined;
+    const statusRaw = hasStatus
+      ? String(row.Status ?? "")
+          .trim()
+          .toUpperCase()
+      : "";
+    const status = hasStatus
+      ? statusRaw === "DISCONTINUED"
+        ? "DISCONTINUED"
+        : "AVAILABLE"
+      : undefined;
+
+    const hasSeries = row.Series !== undefined;
+    const hasDescription = row.Description !== undefined;
 
     normalized.push({
       brandName: selectedBrandName,
-      series: row.Series ? String(row.Series).trim() : null,
+      series: hasSeries ? (String(row.Series ?? "").trim() || null) : undefined,
       model,
-      description: row.Description ? String(row.Description).trim() : null,
+      description: hasDescription
+        ? (String(row.Description ?? "").trim() || null)
+        : undefined,
       dimensions,
       listedPrice,
       status,
-      key: buildSinkImportKey(selectedBrandName, model, dimensions),
+      key: buildSinkImportKey(
+        selectedBrandName,
+        model,
+        dimensions,
+        hasDescription ? String(row.Description ?? "") : "",
+      ),
     });
   }
 

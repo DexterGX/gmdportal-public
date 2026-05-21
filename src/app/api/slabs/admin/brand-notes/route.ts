@@ -74,3 +74,38 @@ export async function POST(request: Request) {
     );
   }
 }
+
+export async function DELETE(request: Request) {
+  try {
+    const session = await getServerSession(authOptions);
+    if (!session) {
+      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+    }
+
+    const { appRole } = await getCurrentUserWithRole();
+    if (appRole !== "admin") {
+      return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+    }
+
+    const body = await request.json();
+    const noteId = String(body?.noteId ?? "").trim();
+
+    if (!noteId) {
+      return NextResponse.json({ error: "Note id is required" }, { status: 400 });
+    }
+
+    const prismaAny = prisma as any;
+    const note = await prismaAny.slabBrandNote.findUnique({ where: { id: noteId } });
+    if (!note) {
+      return NextResponse.json({ error: "Note not found" }, { status: 404 });
+    }
+
+    await prismaAny.slabBrandNote.delete({ where: { id: noteId } });
+    return NextResponse.json({ ok: true });
+  } catch (error: any) {
+    return NextResponse.json(
+      { error: error?.message || "Failed to delete note" },
+      { status: 500 },
+    );
+  }
+}
