@@ -51,6 +51,23 @@ export async function GET(request: NextRequest) {
       take: 500,
     });
 
+    const imageRows =
+      sinks.length > 0
+        ? await prismaAny.sinkModelImage.findMany({
+            where: {
+              OR: sinks.map((sink: any) => ({
+                brandId: sink.brandId,
+                model: sink.model,
+              })),
+            },
+            select: { brandId: true, model: true, imageUrl: true },
+          })
+        : [];
+    const imageByKey = new Map<string, string>();
+    for (const row of imageRows) {
+      imageByKey.set(`${row.brandId}:::${row.model}`, String(row.imageUrl));
+    }
+
     return NextResponse.json({
       rows: sinks.map((sink: any) => ({
         id: sink.id,
@@ -67,7 +84,10 @@ export async function GET(request: NextRequest) {
           sink.promotionalPrice !== null && sink.promotionalPrice !== undefined
             ? Number(sink.promotionalPrice)
             : null,
-        imageUrl: sink.imageUrl,
+        imageUrl:
+          sink.imageUrl ||
+          imageByKey.get(`${sink.brandId}:::${sink.model}`) ||
+          null,
       })),
     });
   } catch (error: any) {

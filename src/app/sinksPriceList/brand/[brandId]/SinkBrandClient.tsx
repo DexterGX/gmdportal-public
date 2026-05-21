@@ -43,6 +43,7 @@ export default function SinkBrandClient({ brand }: { brand: Brand }) {
   const [noteContent, setNoteContent] = useState("");
   const [noteCatalogUrl, setNoteCatalogUrl] = useState("");
   const [isSavingNote, setIsSavingNote] = useState(false);
+  const [deletingNoteId, setDeletingNoteId] = useState<string | null>(null);
   const [noteError, setNoteError] = useState<string | null>(null);
   const [modelFilter, setModelFilter] = useState("");
   const [descriptionFilter, setDescriptionFilter] = useState("");
@@ -166,6 +167,29 @@ export default function SinkBrandClient({ brand }: { brand: Brand }) {
       setNoteError(error?.message || "Failed to create note");
     } finally {
       setIsSavingNote(false);
+    }
+  }
+
+  async function handleDeleteNote(noteId: string) {
+    setDeletingNoteId(noteId);
+    setNoteError(null);
+    try {
+      const res = await fetch("/api/sinks/admin/brand-notes", {
+        method: "DELETE",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ noteId }),
+      });
+      const json = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        throw new Error(json?.error || "Failed to delete note");
+      }
+
+      setNotes((prev) => prev.filter((note) => note.id !== noteId));
+      setExpandedNoteId((prev) => (prev === noteId ? null : prev));
+    } catch (error: any) {
+      setNoteError(error?.message || "Failed to delete note");
+    } finally {
+      setDeletingNoteId(null);
     }
   }
 
@@ -514,6 +538,20 @@ export default function SinkBrandClient({ brand }: { brand: Brand }) {
                               >
                                 Open link
                               </a>
+                            ) : null}
+                            {brand.isAdmin ? (
+                              <div className="mt-2">
+                                <button
+                                  type="button"
+                                  onClick={() => void handleDeleteNote(note.id)}
+                                  disabled={deletingNoteId === note.id}
+                                  className="inline-flex items-center rounded-md bg-red-600 px-2.5 py-1.5 text-xs font-medium text-white hover:bg-red-700 disabled:opacity-50"
+                                >
+                                  {deletingNoteId === note.id
+                                    ? "Deleting..."
+                                    : "Delete note"}
+                                </button>
+                              </div>
                             ) : null}
                             <p className="mt-2 text-xs text-gray-500 dark:text-gray-400">
                               {new Date(note.createdAt).toLocaleDateString()}

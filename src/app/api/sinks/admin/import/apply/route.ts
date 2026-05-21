@@ -3,27 +3,8 @@ import { getServerSession } from "next-auth";
 import authOptions from "@/lib/auth";
 import { getCurrentUserWithRole } from "@/lib/authHelpers";
 import { prisma } from "@/lib/prisma";
-import { supabaseAdmin } from "@/lib/supabase/server";
 import { Decimal } from "@prisma/client/runtime/library";
 import { calculateSinkFinalPrice } from "@/lib/sinksPricing";
-
-const BUCKET_NAME = process.env.SUPABASE_SINKS_BUCKET || "sinks-assets";
-
-function extractStoragePathFromUrl(
-  url: string | null | undefined,
-): string | null {
-  if (!url) {
-    return null;
-  }
-
-  const marker = `${BUCKET_NAME}/`;
-  const markerIndex = url.indexOf(marker);
-  if (markerIndex === -1) {
-    return null;
-  }
-
-  return url.slice(markerIndex + marker.length);
-}
 
 export async function POST(request: NextRequest) {
   try {
@@ -65,18 +46,32 @@ export async function POST(request: NextRequest) {
       .map((row: any) => String(row?.id ?? "").trim())
       .filter(Boolean);
 
-    const discontinuedImageRows =
-      discontinuedIds.length > 0
-        ? await prismaAny.sink.findMany({
+    const modelNames = Array.from(
+      new Set(
+        [...newSinks, ...updatedSinks]
+          .map((row: any) => String(row?.model ?? "").trim())
+          .filter(Boolean),
+      ),
+    );
+
+    const modelImages =
+      modelNames.length > 0
+        ? await prismaAny.sinkModelImage.findMany({
             where: {
-              id: { in: discontinuedIds },
               brandId,
+              model: { in: modelNames },
             },
-            select: {
-              imageUrl: true,
-            },
+            select: { model: true, imageUrl: true },
           })
         : [];
+    const modelImageByModel = new Map<string, string>();
+    for (const row of modelImages) {
+      const model = String(row?.model ?? "").trim();
+      const imageUrl = typeof row?.imageUrl === "string" ? row.imageUrl : "";
+      if (model && imageUrl && !modelImageByModel.has(model)) {
+        modelImageByModel.set(model, imageUrl);
+      }
+    }
 
     await prismaAny.$transaction(
       async (tx: any) => {
@@ -94,16 +89,22 @@ export async function POST(request: NextRequest) {
             description: row?.description ? String(row.description) : null,
             listedPrice: new Decimal(listedPrice),
             finalPrice,
+            imageUrl:
+              modelImageByModel.get(String(row?.model ?? "").trim()) ||
+              undefined,
             status:
               row?.status === "DISCONTINUED" ? "DISCONTINUED" : "AVAILABLE",
           };
 
           await tx.sink.upsert({
             where: {
-              brandId_model_dimensions: {
+              brandId_model_dimensions_description: {
                 brandId,
                 model: String(row?.model ?? "").trim(),
                 dimensions: String(row?.dimensions ?? "").trim(),
+                description: row?.description
+                  ? String(row.description).trim()
+                  : null,
               },
             },
             update: {
@@ -146,6 +147,9 @@ export async function POST(request: NextRequest) {
                 : null,
               listedPrice: new Decimal(listedPrice),
               finalPrice,
+              imageUrl:
+                modelImageByModel.get(String(row?.model ?? "").trim()) ||
+                undefined,
               status:
                 row?.after?.status === "DISCONTINUED"
                   ? "DISCONTINUED"
@@ -168,16 +172,6 @@ export async function POST(request: NextRequest) {
         timeout: 60_000,
       },
     );
-
-    const storagePaths = discontinuedImageRows
-      .map((sink: any) =>
-        extractStoragePathFromUrl(sink.imageUrl ? String(sink.imageUrl) : null),
-      )
-      .filter(Boolean) as string[];
-
-    if (storagePaths.length > 0) {
-      await supabaseAdmin.storage.from(BUCKET_NAME).remove(storagePaths);
-    }
 
     return NextResponse.json({
       ok: true,

@@ -84,6 +84,39 @@ export async function POST(request: NextRequest) {
       ? ` - ${paymentTermNumber}${revNum ? ` Rev ${revNum}` : ""}`
       : "";
 
+    const existingPrintedDocs = await prisma.jobArtifact.findMany({
+      where: {
+        jobId: paymentTermArtifact.jobId,
+        sourceApp: "PAYMENT_TERM_PRINT",
+        type: "SNAPSHOT",
+      },
+      select: {
+        id: true,
+        metadata: true,
+      },
+    });
+
+    const duplicateIds = existingPrintedDocs
+      .filter((artifact) => {
+        const metadata =
+          artifact.metadata && typeof artifact.metadata === "object"
+            ? (artifact.metadata as Record<string, unknown>)
+            : {};
+
+        return (
+          String(metadata.paymentTermArtifactId ?? "").trim() ===
+            paymentTermArtifact.id &&
+          String(metadata.agreementKey ?? "").trim() === agreementKey
+        );
+      })
+      .map((artifact) => artifact.id);
+
+    if (duplicateIds.length > 0) {
+      await prisma.jobArtifact.deleteMany({
+        where: { id: { in: duplicateIds } },
+      });
+    }
+
     const artifact = await prisma.jobArtifact.create({
       data: {
         jobId: paymentTermArtifact.jobId,

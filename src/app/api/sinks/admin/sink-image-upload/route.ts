@@ -15,6 +15,32 @@ const ALLOWED_TYPES = [
   "image/gif",
 ];
 
+function slugifyModelSegment(value: string) {
+  return (
+    value
+      .trim()
+      .toLowerCase()
+      .replace(/[^a-z0-9]+/g, "-")
+      .replace(/^-+|-+$/g, "") || "model"
+  );
+}
+
+function extractStoragePathFromUrl(
+  url: string | null | undefined,
+): string | null {
+  if (!url) {
+    return null;
+  }
+
+  const marker = `${BUCKET_NAME}/`;
+  const markerIndex = url.indexOf(marker);
+  if (markerIndex === -1) {
+    return null;
+  }
+
+  return url.slice(markerIndex + marker.length);
+}
+
 export async function POST(request: Request) {
   try {
     const session = await getServerSession(authOptions);
@@ -57,7 +83,7 @@ export async function POST(request: Request) {
     const prismaAny = prisma as any;
     const existingSink = await prismaAny.sink.findUnique({
       where: { id: sinkId },
-      select: { id: true, imageUrl: true },
+      select: { id: true, brandId: true, model: true, imageUrl: true },
     });
 
     if (!existingSink) {
@@ -67,7 +93,17 @@ export async function POST(request: Request) {
     const fileName = file.name || "sink.png";
     const ext = fileName.split(".").pop() || "png";
     const unique = `${Date.now()}-${Math.random().toString(36).slice(2, 10)}.${ext}`;
-    const storagePath = `sinks/images/${sinkId}/${unique}`;
+    const storagePath = `sinks/models/${existingSink.brandId}/${slugifyModelSegment(existingSink.model)}/${unique}`;
+
+    const existingModelImage = await prismaAny.sinkModelImage.findUnique({
+      where: {
+        brandId_model: {
+          brandId: existingSink.brandId,
+          model: existingSink.model,
+        },
+      },
+      select: { id: true, imageUrl: true },
+    });
 
     const uploadResult = await supabaseAdmin.storage
       .from(BUCKET_NAME)
@@ -95,27 +131,38 @@ export async function POST(request: Request) {
       );
     }
 
-    const previousImageUrl = existingSink.imageUrl
-      ? String(existingSink.imageUrl)
-      : null;
+    await prismaAny.$transaction(async (tx: any) => {
+      await tx.sinkModelImage.upsert({
+        where: {
+          brandId_model: {
+            brandId: existingSink.brandId,
+            model: existingSink.model,
+          },
+        },
+        update: { imageUrl: publicUrl },
+        create: {
+          brandId: existingSink.brandId,
+          model: existingSink.model,
+          imageUrl: publicUrl,
+        },
+      });
 
-    await prismaAny.sink.update({
-      where: { id: sinkId },
-      data: { imageUrl: publicUrl },
+      await tx.sink.updateMany({
+        where: {
+          brandId: existingSink.brandId,
+          model: existingSink.model,
+        },
+        data: { imageUrl: publicUrl },
+      });
     });
 
-    if (previousImageUrl && previousImageUrl.includes(`${BUCKET_NAME}/`)) {
-      const marker = `${BUCKET_NAME}/`;
-      const markerIndex = previousImageUrl.indexOf(marker);
-      const previousStoragePath =
-        markerIndex !== -1
-          ? previousImageUrl.slice(markerIndex + marker.length)
-          : null;
-      if (previousStoragePath) {
-        await supabaseAdmin.storage
-          .from(BUCKET_NAME)
-          .remove([previousStoragePath]);
-      }
+    const previousStoragePath = extractStoragePathFromUrl(
+      existingModelImage?.imageUrl,
+    );
+    if (previousStoragePath) {
+      await supabaseAdmin.storage
+        .from(BUCKET_NAME)
+        .remove([previousStoragePath]);
     }
 
     return NextResponse.json({ imageUrl: publicUrl });

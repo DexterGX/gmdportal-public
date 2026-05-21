@@ -57,6 +57,22 @@ export default function SinkImportPreview({
 }) {
   const [tab, setTab] = useState<"new" | "updated" | "discontinued">("new");
 
+  const formatCurrencyChange = (before: number, after: number) => {
+    const beforeText = `$${before.toFixed(2)}`;
+    const afterText = `$${after.toFixed(2)}`;
+    return beforeText === afterText
+      ? beforeText
+      : `${beforeText} -> ${afterText}`;
+  };
+
+  const formatTextChange = (before: string, after: string) => {
+    const beforeText = before.trim() || "-";
+    const afterText = after.trim() || "-";
+    return beforeText === afterText
+      ? beforeText
+      : `${beforeText} -> ${afterText}`;
+  };
+
   return (
     <div className="space-y-4">
       <div className="bg-white dark:bg-gray-800 rounded-lg shadow p-4 flex items-center justify-between gap-3">
@@ -138,20 +154,45 @@ export default function SinkImportPreview({
                   </tr>
                 ))}
               {tab === "updated" &&
-                diff.updatedSinks.map((row) => (
-                  <tr key={row.id} className="border-b">
-                    <td className="px-4 py-2">{row.after.series || "-"}</td>
+                diff.updatedSinks.map((row, idx) => (
+                  <tr
+                    key={`updated-${row.id}-${row.model}-${row.dimensions}-${idx}`}
+                    className="border-b"
+                  >
+                    <td className="px-4 py-2">
+                      {formatTextChange(
+                        row.before.series || "",
+                        row.after.series || "",
+                      )}
+                    </td>
                     <td className="px-4 py-2">{row.model}</td>
                     <td className="px-4 py-2">{row.dimensions}</td>
                     <td className="px-4 py-2">
-                      ${row.before?.finalPrice?.toFixed(2) || "-"} {"->"} $
-                      {row.after?.finalPrice?.toFixed(2) || "-"}
+                      {formatCurrencyChange(
+                        Number(row.before.listedPrice ?? 0),
+                        Number(row.after.listedPrice ?? 0),
+                      )}
+                    </td>
+                    <td className="px-4 py-2">
+                      {formatTextChange(
+                        row.before.status || "",
+                        row.after.status || "",
+                      )}
+                    </td>
+                    <td className="px-4 py-2">
+                      {formatCurrencyChange(
+                        Number(row.before.finalPrice ?? 0),
+                        Number(row.after.finalPrice ?? 0),
+                      )}
                     </td>
                   </tr>
                 ))}
               {tab === "discontinued" &&
-                diff.discontinuedSinks.map((row) => (
-                  <tr key={row.id} className="border-b">
+                diff.discontinuedSinks.map((row, idx) => (
+                  <tr
+                    key={`removed-${row.id}-${row.model}-${row.dimensions}-${idx}`}
+                    className="border-b"
+                  >
                     <td className="px-4 py-2">{row.series || "-"}</td>
                     <td className="px-4 py-2">{row.model}</td>
                     <td className="px-4 py-2">{row.dimensions}</td>

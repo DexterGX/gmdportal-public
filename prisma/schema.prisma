@@ -166,6 +166,7 @@ model SinkBrand {
   updatedAt    DateTime @updatedAt
   sinks        Sink[]
   notes        SinkBrandNote[]
+  modelImages  SinkModelImage[]
 }
 
 model SinkBrandNote {
@@ -198,10 +199,23 @@ model Sink {
   updatedAt        DateTime   @updatedAt
   brand            SinkBrand  @relation(fields: [brandId], references: [id], onDelete: Restrict)
 
-  @@unique([brandId, model, dimensions])
+  @@unique([brandId, model, dimensions, description])
   @@index([brandId])
   @@index([status])
   @@index([isPromotional])
+}
+
+model SinkModelImage {
+  id        String    @id @default(cuid())
+  brandId   String
+  model     String
+  imageUrl  String
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
+  brand     SinkBrand @relation(fields: [brandId], references: [id], onDelete: Cascade)
+
+  @@unique([brandId, model])
+  @@index([brandId])
 }
 
 model SlabBayRack {

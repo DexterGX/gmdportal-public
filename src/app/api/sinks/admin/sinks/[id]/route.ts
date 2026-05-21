@@ -3,27 +3,8 @@ import { getServerSession } from "next-auth";
 import authOptions from "@/lib/auth";
 import { getCurrentUserWithRole } from "@/lib/authHelpers";
 import { prisma } from "@/lib/prisma";
-import { supabaseAdmin } from "@/lib/supabase/server";
 import { Decimal } from "@prisma/client/runtime/library";
 import { calculateSinkFinalPrice } from "@/lib/sinksPricing";
-
-const BUCKET_NAME = process.env.SUPABASE_SINKS_BUCKET || "sinks-assets";
-
-function extractStoragePathFromUrl(
-  url: string | null | undefined,
-): string | null {
-  if (!url) {
-    return null;
-  }
-
-  const marker = `${BUCKET_NAME}/`;
-  const markerIndex = url.indexOf(marker);
-  if (markerIndex === -1) {
-    return null;
-  }
-
-  return url.slice(markerIndex + marker.length);
-}
 
 export async function PATCH(
   request: NextRequest,
@@ -66,6 +47,17 @@ export async function PATCH(
       discount: brand.discount,
     });
 
+    const nextModel = body?.model ? String(body.model) : sink.model;
+    const modelImage = await prismaAny.sinkModelImage.findUnique({
+      where: {
+        brandId_model: {
+          brandId,
+          model: nextModel,
+        },
+      },
+      select: { imageUrl: true },
+    });
+
     const updated = await prismaAny.sink.update({
       where: { id },
       data: {
@@ -76,7 +68,7 @@ export async function PATCH(
               ? String(body.series)
               : null
             : sink.series,
-        model: body?.model ? String(body.model) : sink.model,
+        model: nextModel,
         description:
           body?.description !== undefined
             ? body.description
@@ -88,6 +80,7 @@ export async function PATCH(
           : sink.dimensions,
         listedPrice: new Decimal(listedPrice),
         finalPrice,
+        imageUrl: modelImage?.imageUrl || null,
         status: body?.status === "DISCONTINUED" ? "DISCONTINUED" : "AVAILABLE",
         isPromotional:
           body?.isPromotional !== undefined
@@ -133,20 +126,13 @@ export async function DELETE(
 
     const sink = await prismaAny.sink.findUnique({
       where: { id },
-      select: { imageUrl: true },
+      select: { id: true },
     });
     if (!sink) {
       return NextResponse.json({ error: "Sink not found" }, { status: 404 });
     }
 
     await prismaAny.sink.delete({ where: { id } });
-
-    const storagePath = extractStoragePathFromUrl(
-      sink.imageUrl ? String(sink.imageUrl) : null,
-    );
-    if (storagePath) {
-      await supabaseAdmin.storage.from(BUCKET_NAME).remove([storagePath]);
-    }
 
     return NextResponse.json({ ok: true });
   } catch (error: any) {
