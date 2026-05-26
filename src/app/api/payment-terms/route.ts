@@ -215,6 +215,7 @@ export async function POST(request: NextRequest) {
             : {
                 cabinet: { total: 0, deposit: 0, balance: 0 },
                 countertop: { total: 0, deposit: 0, balance: 0 },
+                "refinish-reface": { total: 0, deposit: 0, balance: 0 },
               },
       },
       adjustedInvoiceBreakdown: Array.isArray(body?.adjustedInvoiceBreakdown)

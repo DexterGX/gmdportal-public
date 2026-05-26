@@ -31,7 +31,7 @@ type Invoice = {
   type: InvoiceType;
 };
 
-type InvoiceType = "cabinet" | "countertop";
+type InvoiceType = "cabinet" | "countertop" | "refinish-reface";
 
 type LineItemDef = {
   key: string;
@@ -108,6 +108,10 @@ const COUNTERTOP_LINE_DEFS: LineItemDef[] = [
   { key: "ct_misc", label: "Miscellaneous", defaultPct: 50 },
 ];
 
+const REFINISH_REFACE_LINE_DEFS: LineItemDef[] = [
+  { key: "rr_total", label: "Total Amount", defaultPct: 70, accent: true },
+];
+
 const SECTION_META: Record<
   InvoiceType,
   { label: string; headerCls: string; rowCls: string; subCls: string }
@@ -123,6 +127,12 @@ const SECTION_META: Record<
     headerCls: "bg-teal-700 text-white",
     rowCls: "bg-teal-50/60 dark:bg-teal-900/10",
     subCls: "bg-teal-100/80 dark:bg-teal-900/20 font-semibold",
+  },
+  "refinish-reface": {
+    label: "Refinish / Reface",
+    headerCls: "bg-amber-700 text-white",
+    rowCls: "bg-amber-50/60 dark:bg-amber-900/10",
+    subCls: "bg-amber-100/80 dark:bg-amber-900/20 font-semibold",
   },
 };
 
@@ -171,7 +181,15 @@ function normalizeMoneyOnBlur(value: string): string {
 }
 
 function defsForType(type: InvoiceType): LineItemDef[] {
-  return type === "cabinet" ? CABINET_LINE_DEFS : COUNTERTOP_LINE_DEFS;
+  if (type === "cabinet") return CABINET_LINE_DEFS;
+  if (type === "countertop") return COUNTERTOP_LINE_DEFS;
+  return REFINISH_REFACE_LINE_DEFS;
+}
+
+function parseInvoiceType(value: unknown): InvoiceType {
+  if (value === "countertop") return "countertop";
+  if (value === "refinish-reface") return "refinish-reface";
+  return "cabinet";
 }
 
 function initLineItems(type: InvoiceType): Record<string, LineItemState> {
@@ -451,7 +469,7 @@ export default function PaymentTermClient({
                 id: String(inv.id || uid()),
                 num: String(inv.num || ""),
                 amount: String(inv.amount || ""),
-                type: inv.type === "countertop" ? "countertop" : "cabinet",
+                type: parseInvoiceType(inv?.type),
               }))
             : [{ id: uid(), num: "", amount: "", type: "cabinet" }],
         );
@@ -734,6 +752,9 @@ export default function PaymentTermClient({
         const isCabOthers =
           invoice.type === "cabinet" && def.key === "cab_others";
 
+        const isRefinishTotalLine =
+          invoice.type === "refinish-reface" && def.key === "rr_total";
+
         const amount = isAutoRemainingCabinet
           ? cabinetRemainingAmount
           : invoice.type === "countertop" && def.key === "ct_misc"
@@ -748,7 +769,9 @@ export default function PaymentTermClient({
                 },
                 0,
               )
-            : parseAmt(state.amount);
+            : isRefinishTotalLine
+              ? invoiceAmount
+              : parseAmt(state.amount);
 
         const depositPct =
           (isAutoRemainingCabinet || isCabOthers) && noInstallationEnabled
@@ -807,6 +830,17 @@ export default function PaymentTermClient({
           .reduce((sum, inv) => sum + inv.deposit, 0),
         balance: perInvoice
           .filter((inv) => inv.type === "countertop")
+          .reduce((sum, inv) => sum + inv.balance, 0),
+      },
+      "refinish-reface": {
+        total: perInvoice
+          .filter((inv) => inv.type === "refinish-reface")
+          .reduce((sum, inv) => sum + inv.total, 0),
+        deposit: perInvoice
+          .filter((inv) => inv.type === "refinish-reface")
+          .reduce((sum, inv) => sum + inv.deposit, 0),
+        balance: perInvoice
+          .filter((inv) => inv.type === "refinish-reface")
           .reduce((sum, inv) => sum + inv.balance, 0),
       },
     };
@@ -1645,6 +1679,9 @@ export default function PaymentTermClient({
                             >
                               <option value="cabinet">Cabinet</option>
                               <option value="countertop">Countertop</option>
+                              <option value="refinish-reface">
+                                Refinish / Reface
+                              </option>
                             </select>
                           </div>
 
@@ -1725,6 +1762,10 @@ export default function PaymentTermClient({
                                 inv.type === "countertop" &&
                                 def.key === "ct_misc";
 
+                              const isAutoRefinishTotal =
+                                inv.type === "refinish-reface" &&
+                                def.key === "rr_total";
+
                               const finalAmountValue = isAutoRemainingMisc
                                 ? fmt(
                                     parseAmt(inv.amount) -
@@ -1742,7 +1783,9 @@ export default function PaymentTermClient({
                                             "",
                                         )),
                                   )
-                                : amountValue;
+                                : isAutoRefinishTotal
+                                  ? fmt(parseAmt(inv.amount))
+                                  : amountValue;
 
                               const depositPctValue =
                                 isAutoRemainingCabinet && noInstallationEnabled
@@ -1778,7 +1821,8 @@ export default function PaymentTermClient({
                                         value={finalAmountValue}
                                         disabled={
                                           isAutoRemainingCabinet ||
-                                          isAutoRemainingMisc
+                                          isAutoRemainingMisc ||
+                                          isAutoRefinishTotal
                                         }
                                         onChange={(e) =>
                                           updateLineItem(inv.id, def.key, {
@@ -1866,7 +1910,9 @@ export default function PaymentTermClient({
               </h2>
 
               {/* Per-type breakdown */}
-              {(["cabinet", "countertop"] as InvoiceType[]).map((section) => {
+              {(
+                ["cabinet", "countertop", "refinish-reface"] as InvoiceType[]
+              ).map((section) => {
                 const meta = SECTION_META[section];
                 const sec = computed.byType[section];
 
