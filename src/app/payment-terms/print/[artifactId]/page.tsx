@@ -9,7 +9,7 @@ type Invoice = {
   id: string;
   num: string;
   amount: string;
-  type: "cabinet" | "countertop";
+  type: "cabinet" | "countertop" | "refinish-reface";
 };
 
 type BreakdownRow = {
@@ -42,6 +42,11 @@ type Meta = {
     byType?: {
       cabinet?: { total?: number; deposit?: number; balance?: number };
       countertop?: { total?: number; deposit?: number; balance?: number };
+      "refinish-reface"?: {
+        total?: number;
+        deposit?: number;
+        balance?: number;
+      };
     };
   };
   adjustedInvoiceBreakdown?: BreakdownRow[];
@@ -207,6 +212,12 @@ export default async function PaymentTermCurrentPrintPage({
             <div className="flex justify-between">
               <span>Countertop Total</span>
               <span>${money(meta.totals?.byType?.countertop?.total)}</span>
+            </div>
+            <div className="flex justify-between">
+              <span>Refinish / Reface Total</span>
+              <span>
+                ${money(meta.totals?.byType?.["refinish-reface"]?.total)}
+              </span>
             </div>
             <div className="flex justify-between border-t border-black pt-2 font-semibold">
               <span>Total Invoice(s) Amount</span>

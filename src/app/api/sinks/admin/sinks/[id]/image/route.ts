@@ -7,6 +7,20 @@ import { supabaseAdmin } from "@/lib/supabase/server";
 
 const BUCKET_NAME = process.env.SUPABASE_SINKS_BUCKET || "sinks-assets";
 
+function extractStoragePathFromUrl(url: string | null | undefined) {
+  if (!url) {
+    return null;
+  }
+
+  const marker = `${BUCKET_NAME}/`;
+  const markerIndex = url.indexOf(marker);
+  if (markerIndex === -1) {
+    return null;
+  }
+
+  return url.slice(markerIndex + marker.length);
+}
+
 export async function DELETE(
   _: NextRequest,
   { params }: { params: Promise<{ id: string }> },
@@ -27,28 +41,56 @@ export async function DELETE(
 
     const sink = await prismaAny.sink.findUnique({
       where: { id },
-      select: { imageUrl: true },
+      select: { id: true, brandId: true, model: true, imageUrl: true },
     });
 
     if (!sink) {
       return NextResponse.json({ error: "Sink not found" }, { status: 404 });
     }
 
-    const imageUrl = sink.imageUrl ? String(sink.imageUrl) : null;
+    const sinkImageUrl = sink.imageUrl ? String(sink.imageUrl) : null;
 
-    await prismaAny.sink.update({
-      where: { id },
-      data: { imageUrl: null },
+    const modelImage = await prismaAny.sinkModelImage.findUnique({
+      where: {
+        brandId_model: {
+          brandId: sink.brandId,
+          model: sink.model,
+        },
+      },
+      select: { imageUrl: true },
     });
 
-    if (imageUrl && imageUrl.includes(`${BUCKET_NAME}/`)) {
-      const marker = `${BUCKET_NAME}/`;
-      const markerIndex = imageUrl.indexOf(marker);
-      const storagePath =
-        markerIndex !== -1 ? imageUrl.slice(markerIndex + marker.length) : null;
-      if (storagePath) {
-        await supabaseAdmin.storage.from(BUCKET_NAME).remove([storagePath]);
-      }
+    await prismaAny.$transaction(async (tx: any) => {
+      await tx.sink.updateMany({
+        where: {
+          brandId: sink.brandId,
+          model: sink.model,
+        },
+        data: { imageUrl: null },
+      });
+
+      await tx.sinkModelImage.deleteMany({
+        where: {
+          brandId: sink.brandId,
+          model: sink.model,
+        },
+      });
+    });
+
+    const urlsToRemove = new Set<string>();
+    if (sinkImageUrl) {
+      urlsToRemove.add(sinkImageUrl);
+    }
+    if (modelImage?.imageUrl) {
+      urlsToRemove.add(String(modelImage.imageUrl));
+    }
+
+    const storagePaths = Array.from(urlsToRemove)
+      .map((url) => extractStoragePathFromUrl(url))
+      .filter((path): path is string => Boolean(path));
+
+    if (storagePaths.length > 0) {
+      await supabaseAdmin.storage.from(BUCKET_NAME).remove(storagePaths);
     }
 
     return NextResponse.json({ ok: true });

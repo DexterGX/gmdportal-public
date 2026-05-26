@@ -21,7 +21,6 @@ export default async function SinksDataPage() {
     prismaAny.sink.findMany({
       include: { brand: { select: { id: true, name: true } } },
       orderBy: [{ updatedAt: "desc" }],
-      take: 200,
     }),
     prismaAny.sinkBrand.findMany({
       select: { id: true, name: true },

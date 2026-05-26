@@ -48,7 +48,6 @@ export async function GET(request: NextRequest) {
       where,
       include: { brand: { select: { id: true, name: true } } },
       orderBy: [{ updatedAt: "desc" }],
-      take: 500,
     });
 
     const imageRows =
