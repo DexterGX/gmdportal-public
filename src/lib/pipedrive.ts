@@ -19,6 +19,7 @@ import { prisma } from "./prisma";
 import { CustomerType } from "@prisma/client";
 
 const PIPEDRIVE_API_VERSION = "v2";
+const PIPEDRIVE_USERS_API_VERSION = "v1";
 
 interface PipedriveConfig {
   apiToken: string;
@@ -49,6 +50,11 @@ function getApiBase(): string {
   return `https://${companyDomain}.pipedrive.com/api/${PIPEDRIVE_API_VERSION}`;
 }
 
+function getUsersApiBase(): string {
+  const { companyDomain } = getConfig();
+  return `https://${companyDomain}.pipedrive.com/api/${PIPEDRIVE_USERS_API_VERSION}`;
+}
+
 /**
  * Make an authenticated request to Pipedrive API v2.
  */
@@ -65,14 +71,68 @@ async function pipedriveRequest<T>(
   const response = await fetch(url.toString(), {
     ...options,
     headers: {
+      Accept: "application/json",
       "Content-Type": "application/json",
       ...options.headers,
     },
   });
 
+  const contentType = response.headers.get("content-type") || "";
+
   if (!response.ok) {
     const error = await response.text();
     throw new Error(`Pipedrive API error (${response.status}): ${error}`);
+  }
+
+  if (!contentType.toLowerCase().includes("application/json")) {
+    const body = await response.text();
+    const preview = body.slice(0, 240);
+    throw new Error(
+      `Pipedrive API returned non-JSON response (content-type: ${contentType || "unknown"}). Body preview: ${preview}`,
+    );
+  }
+
+  const data = await response.json();
+
+  if (!data.success) {
+    throw new Error(`Pipedrive API error: ${data.error || "Unknown error"}`);
+  }
+
+  return data;
+}
+
+async function pipedriveUsersRequest<T>(
+  endpoint: string,
+  options: RequestInit = {},
+): Promise<T> {
+  const { apiToken } = getConfig();
+  const baseUrl = getUsersApiBase();
+
+  const url = new URL(`${baseUrl}${endpoint}`);
+  url.searchParams.set("api_token", apiToken);
+
+  const response = await fetch(url.toString(), {
+    ...options,
+    headers: {
+      Accept: "application/json",
+      "Content-Type": "application/json",
+      ...options.headers,
+    },
+  });
+
+  const contentType = response.headers.get("content-type") || "";
+
+  if (!response.ok) {
+    const error = await response.text();
+    throw new Error(`Pipedrive API error (${response.status}): ${error}`);
+  }
+
+  if (!contentType.toLowerCase().includes("application/json")) {
+    const body = await response.text();
+    const preview = body.slice(0, 240);
+    throw new Error(
+      `Pipedrive users API returned non-JSON response (content-type: ${contentType || "unknown"}). Body preview: ${preview}`,
+    );
   }
 
   const data = await response.json();
@@ -187,8 +247,8 @@ interface PipedriveV2ListResponse<T> {
 /**
  * Fetch all deals from Pipedrive using cursor-based pagination (v2).
  */
-export async function fetchAllDeals(
-  status: "all_not_deleted" | "open" | "won" | "lost" = "all_not_deleted",
+async function fetchDealsByStatus(
+  status: "open" | "won" | "lost" | "deleted",
 ): Promise<PipedriveDeal[]> {
   const allDeals: PipedriveDeal[] = [];
   let cursor: string | null = null;
@@ -210,6 +270,34 @@ export async function fetchAllDeals(
   }
 
   return allDeals;
+}
+
+export async function fetchAllDeals(
+  status:
+    | "all_not_deleted"
+    | "open"
+    | "won"
+    | "lost"
+    | "deleted" = "all_not_deleted",
+): Promise<PipedriveDeal[]> {
+  if (status !== "all_not_deleted") {
+    return fetchDealsByStatus(status);
+  }
+
+  // Pipedrive API v2 does not accept status=all_not_deleted; fetch non-deleted
+  // buckets explicitly and merge by deal id.
+  const [openDeals, wonDeals, lostDeals] = await Promise.all([
+    fetchDealsByStatus("open"),
+    fetchDealsByStatus("won"),
+    fetchDealsByStatus("lost"),
+  ]);
+
+  const mergedById = new Map<number, PipedriveDeal>();
+  for (const deal of [...openDeals, ...wonDeals, ...lostDeals]) {
+    mergedById.set(deal.id, deal);
+  }
+
+  return Array.from(mergedById.values());
 }
 
 /**
@@ -255,7 +343,7 @@ export async function fetchUser(
   userId: number,
 ): Promise<{ id: number; name: string; email: string } | null> {
   try {
-    const response = await pipedriveRequest<{
+    const response = await pipedriveUsersRequest<{
       success: boolean;
       data: { id: number; name: string; email: string };
     }>(`/users/${userId}`);
@@ -453,7 +541,8 @@ export function mapPipedriveDealToCustomer(deal: PipedriveDeal) {
  */
 export async function testConnection(): Promise<boolean> {
   try {
-    await pipedriveRequest("/users/me");
+    // /deals is stable in v2, while /users/me can serve HTML app shell on some accounts.
+    await pipedriveRequest("/deals?limit=1&status=open");
     return true;
   } catch (error) {
     console.error("[Pipedrive] Connection test failed:", error);

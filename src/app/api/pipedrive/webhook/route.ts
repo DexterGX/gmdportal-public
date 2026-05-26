@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
+import { createHmac, timingSafeEqual } from "crypto";
 import { prisma } from "@/lib/prisma";
 import {
   PipedriveDeal,
@@ -13,34 +14,145 @@ import {
 } from "@/lib/pipedrive";
 
 function verifyPipedriveWebhook(
-  request: NextRequest,
+  signature: string | null,
+  rawBody: string,
   secret?: string,
 ): boolean {
   if (!secret) return true;
-  const signature = request.headers.get("x-pipedrive-signature");
-  return signature === secret;
+  if (!signature) return false;
+
+  // Pipedrive sends SHA-256 HMAC in x-pipedrive-signature.
+  const expected = createHmac("sha256", secret).update(rawBody).digest("hex");
+  const normalized = signature.replace(/^sha256=/i, "").trim();
+
+  const actualBuffer = Buffer.from(normalized, "utf8");
+  const expectedBuffer = Buffer.from(expected, "utf8");
+  if (actualBuffer.length !== expectedBuffer.length) {
+    return false;
+  }
+
+  return timingSafeEqual(actualBuffer, expectedBuffer);
 }
 
 function getNumericId(value: unknown): number | null {
   if (typeof value === "number") return value;
+  if (typeof value === "string") {
+    const parsed = Number(value);
+    return Number.isFinite(parsed) ? parsed : null;
+  }
   if (value && typeof value === "object") {
     const v = (value as { value?: unknown; id?: unknown }).value;
     if (typeof v === "number") return v;
+    if (typeof v === "string") {
+      const parsed = Number(v);
+      if (Number.isFinite(parsed)) return parsed;
+    }
     const id = (value as { value?: unknown; id?: unknown }).id;
     if (typeof id === "number") return id;
+    if (typeof id === "string") {
+      const parsed = Number(id);
+      if (Number.isFinite(parsed)) return parsed;
+    }
   }
   return null;
+}
+
+async function upsertOrgCustomerSafe(
+  orgCustomerData: ReturnType<typeof mapPipedriveOrgToCustomer>,
+) {
+  const serializedPipedriveData = JSON.parse(
+    JSON.stringify(orgCustomerData.pipedriveData),
+  );
+
+  const existingByPipedrive = await prisma.customer.findUnique({
+    where: { pipedriveId: orgCustomerData.pipedriveId },
+    select: { id: true },
+  });
+
+  const conflictingByQuickbooks = orgCustomerData.quickbooksId
+    ? await prisma.customer.findUnique({
+        where: { quickbooksId: orgCustomerData.quickbooksId },
+        select: { id: true },
+      })
+    : null;
+
+  const canAssignQuickbooksId = Boolean(
+    orgCustomerData.quickbooksId &&
+    (!conflictingByQuickbooks ||
+      conflictingByQuickbooks.id === existingByPipedrive?.id),
+  );
+
+  const dataForUpdate = {
+    displayName: orgCustomerData.displayName,
+    companyName: orgCustomerData.companyName,
+    salesPerson: orgCustomerData.salesPerson,
+    billAddr: orgCustomerData.billAddr,
+    shipAddr: orgCustomerData.shipAddr,
+    pipedriveData: serializedPipedriveData,
+    active: true,
+    type: orgCustomerData.type,
+    updatedAt: new Date(),
+  };
+
+  const preferredQuickbooksId = canAssignQuickbooksId
+    ? orgCustomerData.quickbooksId
+    : undefined;
+
+  const runUpsert = async (quickbooksId: string | undefined) => {
+    await prisma.customer.upsert({
+      where: { pipedriveId: orgCustomerData.pipedriveId },
+      update: {
+        ...dataForUpdate,
+        quickbooksId,
+      },
+      create: {
+        ...orgCustomerData,
+        quickbooksId,
+        pipedriveData: serializedPipedriveData,
+      },
+    });
+  };
+
+  try {
+    await runUpsert(preferredQuickbooksId);
+    return;
+  } catch (error: any) {
+    if (error?.code !== "P2002") {
+      throw error;
+    }
+  }
+
+  // Retry without quickbooksId when unique collisions happen (quickbooksId or concurrent create).
+  const latestByPipedrive = await prisma.customer.findUnique({
+    where: { pipedriveId: orgCustomerData.pipedriveId },
+    select: { id: true },
+  });
+
+  if (latestByPipedrive) {
+    await prisma.customer.update({
+      where: { id: latestByPipedrive.id },
+      data: {
+        ...dataForUpdate,
+        quickbooksId: undefined,
+      },
+    });
+    return;
+  }
+
+  await runUpsert(undefined);
 }
 
 export async function POST(request: NextRequest) {
   try {
     const webhookSecret = process.env.PIPEDRIVE_WEBHOOK_SECRET;
+    const signature = request.headers.get("x-pipedrive-signature");
+    const rawBody = await request.text();
 
-    if (webhookSecret && !verifyPipedriveWebhook(request, webhookSecret)) {
+    if (!verifyPipedriveWebhook(signature, rawBody, webhookSecret)) {
       return NextResponse.json({ error: "Invalid signature" }, { status: 401 });
     }
 
-    const payload: any = await request.json();
+    const payload: any = rawBody ? JSON.parse(rawBody) : {};
     const meta = payload?.meta;
     const data = payload?.current ?? payload?.data;
 
@@ -84,28 +196,7 @@ export async function POST(request: NextRequest) {
         orgData,
         ownerData?.name,
       );
-      await prisma.customer.upsert({
-        where: { pipedriveId: orgCustomerData.pipedriveId },
-        update: {
-          displayName: orgCustomerData.displayName,
-          companyName: orgCustomerData.companyName,
-          salesPerson: orgCustomerData.salesPerson,
-          billAddr: orgCustomerData.billAddr,
-          shipAddr: orgCustomerData.shipAddr,
-          quickbooksId: orgCustomerData.quickbooksId,
-          pipedriveData: JSON.parse(
-            JSON.stringify(orgCustomerData.pipedriveData),
-          ),
-          active: true,
-          updatedAt: new Date(),
-        },
-        create: {
-          ...orgCustomerData,
-          pipedriveData: JSON.parse(
-            JSON.stringify(orgCustomerData.pipedriveData),
-          ),
-        },
-      });
+      await upsertOrgCustomerSafe(orgCustomerData);
     }
 
     const customerPipedriveId = personId

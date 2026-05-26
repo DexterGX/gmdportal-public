@@ -29,13 +29,110 @@ type SyncProgress = {
 
 function getNumericId(value: unknown): number | null {
   if (typeof value === "number") return value;
+  if (typeof value === "string") {
+    const parsed = Number(value);
+    return Number.isFinite(parsed) ? parsed : null;
+  }
   if (value && typeof value === "object") {
     const v = (value as { value?: unknown; id?: unknown }).value;
     if (typeof v === "number") return v;
+    if (typeof v === "string") {
+      const parsed = Number(v);
+      if (Number.isFinite(parsed)) return parsed;
+    }
     const id = (value as { value?: unknown; id?: unknown }).id;
     if (typeof id === "number") return id;
+    if (typeof id === "string") {
+      const parsed = Number(id);
+      if (Number.isFinite(parsed)) return parsed;
+    }
   }
   return null;
+}
+
+async function upsertOrgCustomerSafe(
+  orgCustomerData: ReturnType<typeof mapPipedriveOrgToCustomer>,
+) {
+  const serializedPipedriveData = JSON.parse(
+    JSON.stringify(orgCustomerData.pipedriveData),
+  );
+
+  const existingByPipedrive = await prisma.customer.findUnique({
+    where: { pipedriveId: orgCustomerData.pipedriveId },
+    select: { id: true },
+  });
+
+  const conflictingByQuickbooks = orgCustomerData.quickbooksId
+    ? await prisma.customer.findUnique({
+        where: { quickbooksId: orgCustomerData.quickbooksId },
+        select: { id: true },
+      })
+    : null;
+
+  const canAssignQuickbooksId = Boolean(
+    orgCustomerData.quickbooksId &&
+    (!conflictingByQuickbooks ||
+      conflictingByQuickbooks.id === existingByPipedrive?.id),
+  );
+
+  const dataForUpdate = {
+    displayName: orgCustomerData.displayName,
+    companyName: orgCustomerData.companyName,
+    salesPerson: orgCustomerData.salesPerson,
+    billAddr: orgCustomerData.billAddr,
+    shipAddr: orgCustomerData.shipAddr,
+    pipedriveData: serializedPipedriveData,
+    active: true,
+    type: orgCustomerData.type,
+    updatedAt: new Date(),
+  };
+
+  const preferredQuickbooksId = canAssignQuickbooksId
+    ? orgCustomerData.quickbooksId
+    : undefined;
+
+  const runUpsert = async (quickbooksId: string | undefined) => {
+    await prisma.customer.upsert({
+      where: { pipedriveId: orgCustomerData.pipedriveId },
+      update: {
+        ...dataForUpdate,
+        quickbooksId,
+      },
+      create: {
+        ...orgCustomerData,
+        quickbooksId,
+        pipedriveData: serializedPipedriveData,
+      },
+    });
+  };
+
+  try {
+    await runUpsert(preferredQuickbooksId);
+    return;
+  } catch (error: any) {
+    if (error?.code !== "P2002") {
+      throw error;
+    }
+  }
+
+  // Retry without quickbooksId when unique collisions happen (quickbooksId or concurrent create).
+  const latestByPipedrive = await prisma.customer.findUnique({
+    where: { pipedriveId: orgCustomerData.pipedriveId },
+    select: { id: true },
+  });
+
+  if (latestByPipedrive) {
+    await prisma.customer.update({
+      where: { id: latestByPipedrive.id },
+      data: {
+        ...dataForUpdate,
+        quickbooksId: undefined,
+      },
+    });
+    return;
+  }
+
+  await runUpsert(undefined);
 }
 
 export async function POST(_request: NextRequest) {
@@ -129,7 +226,215 @@ export async function POST(_request: NextRequest) {
         );
 
         const personEntries = Array.from(dealsByPerson.entries());
-        const batchSize = 20;
+        const batchSize = 40;
+
+        const personFetchCache = new Map<
+          number,
+          Promise<Awaited<ReturnType<typeof fetchPerson>>>
+        >();
+        const orgFetchCache = new Map<
+          number,
+          Promise<Awaited<ReturnType<typeof fetchOrganization>>>
+        >();
+        const userFetchCache = new Map<
+          number,
+          Promise<Awaited<ReturnType<typeof fetchUser>>>
+        >();
+
+        const getCached = <T>(
+          cache: Map<number, Promise<T>>,
+          id: number,
+          loader: (id: number) => Promise<T>,
+        ) => {
+          const cached = cache.get(id);
+          if (cached) {
+            return cached;
+          }
+          const pending = loader(id);
+          cache.set(id, pending);
+          return pending;
+        };
+
+        const processPersonEntry = async (
+          personKey: string,
+          personDeals: typeof deals,
+        ) => {
+          let createdInc = 0;
+          let updatedInc = 0;
+          let errorsInc = 0;
+          let processedDealsInc = 0;
+
+          try {
+            const primaryDeal = personDeals[0];
+            const personId = getNumericId(primaryDeal.person_id);
+            const orgId = getNumericId(primaryDeal.org_id);
+            const ownerId =
+              getNumericId((primaryDeal as any).owner_id) ??
+              getNumericId((primaryDeal as any).creator_user_id);
+
+            const [personData, orgData, ownerData] = await Promise.all([
+              personId
+                ? getCached(personFetchCache, personId, fetchPerson)
+                : Promise.resolve(null),
+              orgId
+                ? getCached(orgFetchCache, orgId, fetchOrganization)
+                : Promise.resolve(null),
+              ownerId
+                ? getCached(userFetchCache, ownerId, fetchUser)
+                : Promise.resolve(null),
+            ]);
+
+            if (orgData) {
+              const orgCustomerData = mapPipedriveOrgToCustomer(
+                orgData,
+                ownerData?.name,
+              );
+              await upsertOrgCustomerSafe(orgCustomerData);
+            }
+
+            const addressData = buildBillAddr(
+              primaryDeal.custom_fields?.[DEAL_FIELDS.ADDRESS],
+            );
+
+            const customerData = personData
+              ? mapPipedrivePersonToCustomer(
+                  personData,
+                  orgData,
+                  ownerData?.name,
+                )
+              : {
+                  pipedriveId: personKey,
+                  type: "CLIENT" as const,
+                  displayName: primaryDeal.title || `Person #${personKey}`,
+                  companyName: orgData?.name,
+                  salesPerson: ownerData?.name,
+                  referredByOrgPipedriveId: orgData
+                    ? String(orgData.id)
+                    : undefined,
+                  referredByOrgName: orgData?.name,
+                  pipedriveData: primaryDeal as any,
+                  active:
+                    primaryDeal.status === "open" ||
+                    primaryDeal.status === "won",
+                };
+
+            (customerData as any).pipedriveId = personKey;
+
+            const customerCreatedAt = primaryDeal.add_time
+              ? new Date(primaryDeal.add_time)
+              : new Date();
+            const customerUpdatedAt = primaryDeal.update_time
+              ? new Date(primaryDeal.update_time)
+              : new Date();
+
+            const customer = await prisma.customer.upsert({
+              where: { pipedriveId: personKey },
+              update: {
+                ...customerData,
+                billAddr: addressData || undefined,
+                shipAddr: addressData || undefined,
+                pipedriveData: JSON.parse(
+                  JSON.stringify((customerData as any).pipedriveData),
+                ),
+                updatedAt: customerUpdatedAt,
+              },
+              create: {
+                ...customerData,
+                billAddr: addressData || undefined,
+                shipAddr: addressData || undefined,
+                pipedriveData: JSON.parse(
+                  JSON.stringify((customerData as any).pipedriveData),
+                ),
+                createdAt: customerCreatedAt,
+                updatedAt: customerUpdatedAt,
+              },
+            });
+
+            if (existingPipedriveIds.has(personKey)) {
+              updatedInc++;
+            } else {
+              createdInc++;
+              existingPipedriveIds.add(personKey);
+            }
+
+            const jobResults = await Promise.allSettled(
+              personDeals.map(async (deal) => {
+                const jobData = mapPipedriveDealToJob(deal, customer.id);
+                const dealCreatedAt = deal.add_time
+                  ? new Date(deal.add_time)
+                  : new Date();
+                const dealUpdatedAt = deal.update_time
+                  ? new Date(deal.update_time)
+                  : new Date();
+
+                await prisma.job.upsert({
+                  where: { pipedriveId: jobData.pipedriveId },
+                  update: {
+                    customerId: customer.id,
+                    jobName: jobData.jobName,
+                    dealTitle: jobData.dealTitle,
+                    value: jobData.value,
+                    status: jobData.status as any,
+                    stageId: jobData.stageId,
+                    closeDate: jobData.closeDate,
+                    expectedCloseDate: jobData.expectedCloseDate,
+                    jobType: jobData.jobType,
+                    quickbooksUrl: jobData.quickbooksUrl,
+                    companyCamId: jobData.companyCamId,
+                    companyCamUrl: jobData.companyCamUrl,
+                    propertyAddress: jobData.propertyAddress,
+                    updatedAt: dealUpdatedAt,
+                    lastSyncedAt: new Date(),
+                  },
+                  create: {
+                    customerId: customer.id,
+                    pipedriveId: jobData.pipedriveId,
+                    jobName: jobData.jobName,
+                    dealTitle: jobData.dealTitle,
+                    value: jobData.value,
+                    status: jobData.status as any,
+                    stageId: jobData.stageId,
+                    closeDate: jobData.closeDate,
+                    expectedCloseDate: jobData.expectedCloseDate,
+                    jobType: jobData.jobType,
+                    quickbooksUrl: jobData.quickbooksUrl,
+                    companyCamId: jobData.companyCamId,
+                    companyCamUrl: jobData.companyCamUrl,
+                    propertyAddress: jobData.propertyAddress,
+                    createdAt: dealCreatedAt,
+                    updatedAt: dealUpdatedAt,
+                    lastSyncedAt: new Date(),
+                  },
+                });
+              }),
+            );
+
+            for (const result of jobResults) {
+              if (result.status === "fulfilled") {
+                processedDealsInc++;
+              } else {
+                console.error(
+                  `[Pipedrive Sync] Failed to upsert one job for person ${personKey}:`,
+                  result.reason,
+                );
+                errorsInc++;
+              }
+            }
+          } catch (personError) {
+            console.error(
+              `[Pipedrive Sync] Failed to process ${personKey}:`,
+              personError,
+            );
+            errorsInc++;
+          }
+
+          return {
+            createdInc,
+            updatedInc,
+            errorsInc,
+            processedDealsInc,
+          };
+        };
 
         const checkCancellation = async () => {
           if (!syncJob) return false;
@@ -169,182 +474,17 @@ export async function POST(_request: NextRequest) {
           }
 
           const batch = personEntries.slice(start, start + batchSize);
+          const batchResults = await Promise.all(
+            batch.map(([personKey, personDeals]) =>
+              processPersonEntry(personKey, personDeals),
+            ),
+          );
 
-          for (const [personKey, personDeals] of batch) {
-            try {
-              const primaryDeal = personDeals[0];
-              const personId = getNumericId(primaryDeal.person_id);
-              const orgId = getNumericId(primaryDeal.org_id);
-              const ownerId =
-                getNumericId((primaryDeal as any).owner_id) ??
-                getNumericId((primaryDeal as any).creator_user_id);
-
-              const [personData, orgData, ownerData] = await Promise.all([
-                personId ? fetchPerson(personId) : Promise.resolve(null),
-                orgId ? fetchOrganization(orgId) : Promise.resolve(null),
-                ownerId ? fetchUser(ownerId) : Promise.resolve(null),
-              ]);
-
-              if (orgData) {
-                const orgCustomerData = mapPipedriveOrgToCustomer(
-                  orgData,
-                  ownerData?.name,
-                );
-                await prisma.customer.upsert({
-                  where: { pipedriveId: orgCustomerData.pipedriveId },
-                  update: {
-                    displayName: orgCustomerData.displayName,
-                    companyName: orgCustomerData.companyName,
-                    salesPerson: orgCustomerData.salesPerson,
-                    billAddr: orgCustomerData.billAddr,
-                    shipAddr: orgCustomerData.shipAddr,
-                    quickbooksId: orgCustomerData.quickbooksId,
-                    pipedriveData: JSON.parse(
-                      JSON.stringify(orgCustomerData.pipedriveData),
-                    ),
-                    active: true,
-                    updatedAt: new Date(),
-                  },
-                  create: {
-                    ...orgCustomerData,
-                    pipedriveData: JSON.parse(
-                      JSON.stringify(orgCustomerData.pipedriveData),
-                    ),
-                  },
-                });
-              }
-
-              const addressData = buildBillAddr(
-                primaryDeal.custom_fields?.[DEAL_FIELDS.ADDRESS],
-              );
-
-              const customerData = personData
-                ? mapPipedrivePersonToCustomer(
-                    personData,
-                    orgData,
-                    ownerData?.name,
-                  )
-                : {
-                    pipedriveId: personKey,
-                    type: "CLIENT" as const,
-                    displayName: primaryDeal.title || `Person #${personKey}`,
-                    companyName: orgData?.name,
-                    salesPerson: ownerData?.name,
-                    referredByOrgPipedriveId: orgData
-                      ? String(orgData.id)
-                      : undefined,
-                    referredByOrgName: orgData?.name,
-                    pipedriveData: primaryDeal as any,
-                    active:
-                      primaryDeal.status === "open" ||
-                      primaryDeal.status === "won",
-                  };
-
-              (customerData as any).pipedriveId = personKey;
-
-              const customerCreatedAt = primaryDeal.add_time
-                ? new Date(primaryDeal.add_time)
-                : new Date();
-              const customerUpdatedAt = primaryDeal.update_time
-                ? new Date(primaryDeal.update_time)
-                : new Date();
-
-              const customer = await prisma.customer.upsert({
-                where: { pipedriveId: personKey },
-                update: {
-                  ...customerData,
-                  billAddr: addressData || undefined,
-                  shipAddr: addressData || undefined,
-                  pipedriveData: JSON.parse(
-                    JSON.stringify((customerData as any).pipedriveData),
-                  ),
-                  updatedAt: customerUpdatedAt,
-                },
-                create: {
-                  ...customerData,
-                  billAddr: addressData || undefined,
-                  shipAddr: addressData || undefined,
-                  pipedriveData: JSON.parse(
-                    JSON.stringify((customerData as any).pipedriveData),
-                  ),
-                  createdAt: customerCreatedAt,
-                  updatedAt: customerUpdatedAt,
-                },
-              });
-
-              if (existingPipedriveIds.has(personKey)) {
-                updated++;
-              } else {
-                created++;
-                existingPipedriveIds.add(personKey);
-              }
-
-              for (const deal of personDeals) {
-                try {
-                  const jobData = mapPipedriveDealToJob(deal, customer.id);
-                  const dealCreatedAt = deal.add_time
-                    ? new Date(deal.add_time)
-                    : new Date();
-                  const dealUpdatedAt = deal.update_time
-                    ? new Date(deal.update_time)
-                    : new Date();
-
-                  await prisma.job.upsert({
-                    where: { pipedriveId: jobData.pipedriveId },
-                    update: {
-                      customerId: customer.id,
-                      jobName: jobData.jobName,
-                      dealTitle: jobData.dealTitle,
-                      value: jobData.value,
-                      status: jobData.status as any,
-                      stageId: jobData.stageId,
-                      closeDate: jobData.closeDate,
-                      expectedCloseDate: jobData.expectedCloseDate,
-                      jobType: jobData.jobType,
-                      quickbooksUrl: jobData.quickbooksUrl,
-                      companyCamId: jobData.companyCamId,
-                      companyCamUrl: jobData.companyCamUrl,
-                      propertyAddress: jobData.propertyAddress,
-                      updatedAt: dealUpdatedAt,
-                      lastSyncedAt: new Date(),
-                    },
-                    create: {
-                      customerId: customer.id,
-                      pipedriveId: jobData.pipedriveId,
-                      jobName: jobData.jobName,
-                      dealTitle: jobData.dealTitle,
-                      value: jobData.value,
-                      status: jobData.status as any,
-                      stageId: jobData.stageId,
-                      closeDate: jobData.closeDate,
-                      expectedCloseDate: jobData.expectedCloseDate,
-                      jobType: jobData.jobType,
-                      quickbooksUrl: jobData.quickbooksUrl,
-                      companyCamId: jobData.companyCamId,
-                      companyCamUrl: jobData.companyCamUrl,
-                      propertyAddress: jobData.propertyAddress,
-                      createdAt: dealCreatedAt,
-                      updatedAt: dealUpdatedAt,
-                      lastSyncedAt: new Date(),
-                    },
-                  });
-
-                  processedDeals++;
-                } catch (jobError) {
-                  console.error(
-                    `[Pipedrive Sync] Failed to upsert job ${deal.id}:`,
-                    jobError,
-                  );
-                  errors++;
-                }
-              }
-            } catch (personError) {
-              console.error(
-                `[Pipedrive Sync] Failed to process ${personKey}:`,
-                personError,
-              );
-              errors++;
-            }
+          for (const result of batchResults) {
+            created += result.createdInc;
+            updated += result.updatedInc;
+            errors += result.errorsInc;
+            processedDeals += result.processedDealsInc;
           }
 
           await prisma.syncJob.update({
