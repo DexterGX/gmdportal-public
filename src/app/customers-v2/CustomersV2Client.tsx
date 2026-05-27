@@ -49,6 +49,7 @@ type SerializedCustomer = {
   quickbooksId: string | null;
   referredByOrgPipedriveId: string | null;
   referredByOrgName: string | null;
+  referredClientCount: number | null;
   billAddr: any;
   shipAddr: any;
   jobs: SerializedJob[];
@@ -66,27 +67,43 @@ interface Props {
   contractors: Array<{ id: string; name: string }>;
   jobTypes: string[];
   initialSearchTerm: string;
-  initialSelectedInitial: string;
-  initialSelectedType: string;
-  initialSelectedStatus: string;
-  initialSelectedSalesPerson: string;
-  initialSelectedSource: string;
-  initialSelectedReferredBy: string;
-  initialSelectedJobType: string;
+  initialSelectedInitial: string[];
+  initialSelectedType: string[];
+  initialSelectedStatus: string[];
+  initialSelectedSalesPerson: string[];
+  initialSelectedSource: string[];
+  initialSelectedReferredBy: string[];
+  initialSelectedJobType: string[];
 }
 
 const typeColors: Record<string, string> = {
-  CLIENT: "bg-teal-100 dark:bg-teal-900/30 text-teal-700 dark:text-teal-300",
-  CONTRACTOR:
+  CLIENTS: "bg-teal-100 dark:bg-teal-900/30 text-teal-700 dark:text-teal-300",
+  CONTRACTOR_CLIENTS:
+    "bg-indigo-100 dark:bg-indigo-900/30 text-indigo-700 dark:text-indigo-300",
+  CONTRACTORS:
     "bg-purple-100 dark:bg-purple-900/30 text-purple-700 dark:text-purple-300",
   PROSPECT:
     "bg-yellow-100 dark:bg-yellow-900/30 text-yellow-700 dark:text-yellow-300",
 };
 
 const typeLabels: Record<string, string> = {
-  CLIENT: "Client",
-  CONTRACTOR: "Contractor",
+  CLIENTS: "Client",
+  CONTRACTOR_CLIENTS: "Contractor Client",
+  CONTRACTORS: "Contractor",
   PROSPECT: "Prospect",
+};
+
+const getCustomerTypeCategory = (customer: SerializedCustomer) => {
+  if (customer.type === "CONTRACTOR") {
+    return "CONTRACTORS";
+  }
+  if (customer.type === "CLIENT" && customer.referredByOrgPipedriveId) {
+    return "CONTRACTOR_CLIENTS";
+  }
+  if (customer.type === "CLIENT") {
+    return "CLIENTS";
+  }
+  return customer.type;
 };
 
 const jobStatusColors: Record<string, string> = {
@@ -133,19 +150,21 @@ export default function CustomersV2Client({
   };
 
   const [searchTerm, setSearchTerm] = useState(initialSearchTerm);
-  const [selectedInitial, setSelectedInitial] = useState(
+  const [selectedInitials, setSelectedInitials] = useState(
     initialSelectedInitial,
   );
-  const [selectedType, setSelectedType] = useState(initialSelectedType);
-  const [selectedStatus, setSelectedStatus] = useState(initialSelectedStatus);
-  const [selectedSalesPerson, setSelectedSalesPerson] = useState(
+  const [selectedTypes, setSelectedTypes] = useState(initialSelectedType);
+  const [selectedStatuses, setSelectedStatuses] = useState(
+    initialSelectedStatus,
+  );
+  const [selectedSalesPersons, setSelectedSalesPersons] = useState(
     initialSelectedSalesPerson,
   );
-  const [selectedSource, setSelectedSource] = useState(initialSelectedSource);
-  const [selectedReferredBy, setSelectedReferredBy] = useState(
+  const [selectedSources, setSelectedSources] = useState(initialSelectedSource);
+  const [selectedReferredBys, setSelectedReferredBys] = useState(
     initialSelectedReferredBy,
   );
-  const [selectedJobType, setSelectedJobType] = useState(
+  const [selectedJobTypes, setSelectedJobTypes] = useState(
     initialSelectedJobType,
   );
   const [isInitialLoad, setIsInitialLoad] = useState(true);
@@ -158,26 +177,32 @@ export default function CustomersV2Client({
     const timer = setTimeout(() => {
       const params = new URLSearchParams();
       if (searchTerm) params.set("search", searchTerm);
-      if (selectedInitial) params.set("initial", selectedInitial);
-      if (selectedType) params.set("type", selectedType);
-      if (selectedStatus) params.set("status", selectedStatus);
-      if (selectedSalesPerson) params.set("salesPerson", selectedSalesPerson);
-      if (selectedSource) params.set("source", selectedSource);
-      if (selectedReferredBy) params.set("referredBy", selectedReferredBy);
-      if (selectedJobType) params.set("jobType", selectedJobType);
+      if (selectedInitials.length > 0)
+        params.set("initial", selectedInitials.join(","));
+      if (selectedTypes.length > 0) params.set("type", selectedTypes.join(","));
+      if (selectedStatuses.length > 0)
+        params.set("status", selectedStatuses.join(","));
+      if (selectedSalesPersons.length > 0)
+        params.set("salesPerson", selectedSalesPersons.join(","));
+      if (selectedSources.length > 0)
+        params.set("source", selectedSources.join(","));
+      if (selectedReferredBys.length > 0)
+        params.set("referredBy", selectedReferredBys.join(","));
+      if (selectedJobTypes.length > 0)
+        params.set("jobType", selectedJobTypes.join(","));
       params.set("page", "1");
       router.push(`/customers-v2?${params.toString()}`);
     }, 400);
     return () => clearTimeout(timer);
   }, [
     searchTerm,
-    selectedInitial,
-    selectedType,
-    selectedStatus,
-    selectedSalesPerson,
-    selectedSource,
-    selectedReferredBy,
-    selectedJobType,
+    selectedInitials,
+    selectedTypes,
+    selectedStatuses,
+    selectedSalesPersons,
+    selectedSources,
+    selectedReferredBys,
+    selectedJobTypes,
   ]);
 
   const handlePageChange = (newPage: number) => {
@@ -187,23 +212,37 @@ export default function CustomersV2Client({
   };
 
   const clearFilters = () => {
-    setSelectedInitial("");
-    setSelectedType("");
-    setSelectedStatus("");
-    setSelectedSalesPerson("");
-    setSelectedSource("");
-    setSelectedReferredBy("");
-    setSelectedJobType("");
+    setSearchTerm("");
+    setSelectedInitials([]);
+    setSelectedTypes([]);
+    setSelectedStatuses([]);
+    setSelectedSalesPersons([]);
+    setSelectedSources([]);
+    setSelectedReferredBys([]);
+    setSelectedJobTypes([]);
   };
 
   const hasActiveFilters =
-    selectedInitial !== "" ||
-    selectedType !== "" ||
-    selectedStatus !== "" ||
-    selectedSalesPerson !== "" ||
-    selectedSource !== "" ||
-    selectedReferredBy !== "" ||
-    selectedJobType !== "";
+    searchTerm.trim() !== "" ||
+    selectedInitials.length > 0 ||
+    selectedTypes.length > 0 ||
+    selectedStatuses.length > 0 ||
+    selectedSalesPersons.length > 0 ||
+    selectedSources.length > 0 ||
+    selectedReferredBys.length > 0 ||
+    selectedJobTypes.length > 0;
+
+  const toggleMultiValue = (
+    values: string[],
+    value: string,
+    setValues: (next: string[]) => void,
+  ) => {
+    if (values.includes(value)) {
+      setValues(values.filter((v) => v !== value));
+      return;
+    }
+    setValues([...values, value]);
+  };
 
   const formatAddress = (addr: any): string | null => {
     if (!addr) return null;
@@ -242,9 +281,14 @@ export default function CustomersV2Client({
   };
 
   // Counts
-  const clientCount = customers.filter((c) => c.type === "CLIENT").length;
+  const clientCount = customers.filter(
+    (c) => getCustomerTypeCategory(c) === "CLIENTS",
+  ).length;
+  const contractorClientCount = customers.filter(
+    (c) => getCustomerTypeCategory(c) === "CONTRACTOR_CLIENTS",
+  ).length;
   const contractorCount = customers.filter(
-    (c) => c.type === "CONTRACTOR",
+    (c) => getCustomerTypeCategory(c) === "CONTRACTORS",
   ).length;
 
   return (
@@ -278,10 +322,10 @@ export default function CustomersV2Client({
       <div className="flex flex-wrap gap-2">
         <button
           onClick={() =>
-            setSelectedType(selectedType === "CLIENT" ? "" : "CLIENT")
+            toggleMultiValue(selectedTypes, "CLIENTS", setSelectedTypes)
           }
           className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full text-sm font-medium border transition-colors ${
-            selectedType === "CLIENT"
+            selectedTypes.includes("CLIENTS")
               ? "bg-teal-600 text-white border-teal-600"
               : "bg-teal-50 dark:bg-teal-900/20 text-teal-700 dark:text-teal-300 border-teal-200 dark:border-teal-800 hover:bg-teal-100"
           }`}
@@ -291,16 +335,33 @@ export default function CustomersV2Client({
         </button>
         <button
           onClick={() =>
-            setSelectedType(selectedType === "CONTRACTOR" ? "" : "CONTRACTOR")
+            toggleMultiValue(
+              selectedTypes,
+              "CONTRACTOR_CLIENTS",
+              setSelectedTypes,
+            )
           }
           className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full text-sm font-medium border transition-colors ${
-            selectedType === "CONTRACTOR"
+            selectedTypes.includes("CONTRACTOR_CLIENTS")
+              ? "bg-indigo-600 text-white border-indigo-600"
+              : "bg-indigo-50 dark:bg-indigo-900/20 text-indigo-700 dark:text-indigo-300 border-indigo-200 dark:border-indigo-800 hover:bg-indigo-100"
+          }`}
+        >
+          <UserCheck className="w-3.5 h-3.5" />
+          {contractorClientCount} Contractor Clients
+        </button>
+        <button
+          onClick={() =>
+            toggleMultiValue(selectedTypes, "CONTRACTORS", setSelectedTypes)
+          }
+          className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full text-sm font-medium border transition-colors ${
+            selectedTypes.includes("CONTRACTORS")
               ? "bg-purple-600 text-white border-purple-600"
               : "bg-purple-50 dark:bg-purple-900/20 text-purple-700 dark:text-purple-300 border-purple-200 dark:border-purple-800 hover:bg-purple-100"
           }`}
         >
           <Building2 className="w-3.5 h-3.5" />
-          {contractorCount} Contractors / Designers
+          {contractorCount} Contractors
         </button>
       </div>
 
@@ -317,126 +378,127 @@ export default function CustomersV2Client({
           />
         </div>
 
-        <div className="flex flex-wrap items-center gap-2">
-          <FilterMultiSelect
-            label="Last Name"
-            options={lastNameInitials}
-            selected={selectedInitial ? [selectedInitial] : []}
-            onChange={(s) =>
-              setSelectedInitial(s.length ? s[s.length - 1] : "")
-            }
-          />
-
-          <FilterMultiSelect
-            label="Type"
-            options={["Client", "Contractor / Designer", "Prospect"]}
-            selected={
-              selectedType
-                ? [
-                    selectedType === "CLIENT"
-                      ? "Client"
-                      : selectedType === "CONTRACTOR"
-                        ? "Contractor / Designer"
-                        : "Prospect",
-                  ]
-                : []
-            }
-            onChange={(s) => {
-              const v = s.length ? s[s.length - 1] : "";
-              setSelectedType(
-                v === "Client"
-                  ? "CLIENT"
-                  : v === "Contractor / Designer"
-                    ? "CONTRACTOR"
-                    : v === "Prospect"
-                      ? "PROSPECT"
-                      : "",
-              );
-            }}
-          />
-
-          <FilterMultiSelect
-            label="Status"
-            options={["Active", "Inactive"]}
-            selected={
-              selectedStatus
-                ? [selectedStatus === "active" ? "Active" : "Inactive"]
-                : []
-            }
-            onChange={(s) => {
-              const v = s.length ? s[s.length - 1] : "";
-              setSelectedStatus(
-                v === "Active" ? "active" : v === "Inactive" ? "inactive" : "",
-              );
-            }}
-          />
-
-          {salesPersons.length > 0 && (
+        <div className="flex items-start justify-between gap-3">
+          <div className="flex flex-wrap items-center gap-2 flex-1">
             <FilterMultiSelect
-              label="Sales Person"
-              options={salesPersons}
-              selected={selectedSalesPerson ? [selectedSalesPerson] : []}
-              onChange={(s) =>
-                setSelectedSalesPerson(s.length ? s[s.length - 1] : "")
-              }
+              label="Last Name"
+              options={lastNameInitials}
+              selected={selectedInitials}
+              onChange={setSelectedInitials}
             />
-          )}
 
-          {contractors.length > 0 && (
             <FilterMultiSelect
-              label="Referred By"
-              options={contractors.map((c) => c.name)}
-              selected={
-                selectedReferredBy
-                  ? [
-                      contractors.find((c) => c.id === selectedReferredBy)
-                        ?.name ?? "",
-                    ]
-                  : []
-              }
+              label="Type"
+              options={["Clients", "Contractor Clients", "Contractors"]}
+              selected={selectedTypes.map((type) =>
+                type === "CLIENTS"
+                  ? "Clients"
+                  : type === "CONTRACTOR_CLIENTS"
+                    ? "Contractor Clients"
+                    : "Contractors",
+              )}
               onChange={(s) => {
-                const name = s.length ? s[s.length - 1] : "";
-                const found = contractors.find((c) => c.name === name);
-                setSelectedReferredBy(found ? found.id : "");
+                setSelectedTypes(
+                  s
+                    .map((v) =>
+                      v === "Clients"
+                        ? "CLIENTS"
+                        : v === "Contractor Clients"
+                          ? "CONTRACTOR_CLIENTS"
+                          : v === "Contractors"
+                            ? "CONTRACTORS"
+                            : "",
+                    )
+                    .filter(Boolean),
+                );
               }}
             />
-          )}
 
-          {jobTypes.length > 0 && (
             <FilterMultiSelect
-              label="Job Type"
-              options={jobTypes}
-              selected={selectedJobType ? [selectedJobType] : []}
-              onChange={(s) =>
-                setSelectedJobType(s.length ? s[s.length - 1] : "")
-              }
+              label="Status"
+              options={["Active", "Inactive"]}
+              selected={selectedStatuses.map((status) =>
+                status === "active" ? "Active" : "Inactive",
+              )}
+              onChange={(s) => {
+                setSelectedStatuses(
+                  s
+                    .map((v) =>
+                      v === "Active"
+                        ? "active"
+                        : v === "Inactive"
+                          ? "inactive"
+                          : "",
+                    )
+                    .filter(Boolean),
+                );
+              }}
             />
-          )}
 
-          <FilterMultiSelect
-            label="Source"
-            options={["Pipedrive", "QuickBooks"]}
-            selected={
-              selectedSource
-                ? [selectedSource === "pipedrive" ? "Pipedrive" : "QuickBooks"]
-                : []
-            }
-            onChange={(s) => {
-              const v = s.length ? s[s.length - 1] : "";
-              setSelectedSource(
-                v === "Pipedrive"
-                  ? "pipedrive"
-                  : v === "QuickBooks"
-                    ? "quickbooks"
-                    : "",
-              );
-            }}
-          />
+            {salesPersons.length > 0 && (
+              <FilterMultiSelect
+                label="Sales Person"
+                options={salesPersons}
+                selected={selectedSalesPersons}
+                onChange={setSelectedSalesPersons}
+              />
+            )}
+
+            {contractors.length > 0 && (
+              <FilterMultiSelect
+                label="Referred By"
+                options={contractors.map((c) => c.name)}
+                selected={selectedReferredBys
+                  .map((id) => contractors.find((c) => c.id === id)?.name ?? "")
+                  .filter(Boolean)}
+                onChange={(s) => {
+                  setSelectedReferredBys(
+                    s
+                      .map(
+                        (name) =>
+                          contractors.find((c) => c.name === name)?.id ?? "",
+                      )
+                      .filter(Boolean),
+                  );
+                }}
+              />
+            )}
+
+            {jobTypes.length > 0 && (
+              <FilterMultiSelect
+                label="Job Type"
+                options={jobTypes}
+                selected={selectedJobTypes}
+                onChange={setSelectedJobTypes}
+              />
+            )}
+
+            <FilterMultiSelect
+              label="Source"
+              options={["Pipedrive", "QuickBooks"]}
+              selected={selectedSources.map((source) =>
+                source === "pipedrive" ? "Pipedrive" : "QuickBooks",
+              )}
+              onChange={(s) => {
+                setSelectedSources(
+                  s
+                    .map((v) =>
+                      v === "Pipedrive"
+                        ? "pipedrive"
+                        : v === "QuickBooks"
+                          ? "quickbooks"
+                          : "",
+                    )
+                    .filter(Boolean),
+                );
+              }}
+            />
+          </div>
 
           {hasActiveFilters && (
             <button
               onClick={clearFilters}
-              className="inline-flex items-center gap-1 px-3 py-1.5 rounded-lg text-sm text-gray-600 dark:text-gray-400 hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors"
+              className="inline-flex items-center gap-1 px-3 py-2 rounded-lg text-sm text-gray-700 dark:text-gray-300 border border-gray-300 dark:border-gray-600 hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors ml-auto"
             >
               <X className="w-4 h-4" />
               Clear
@@ -485,6 +547,8 @@ export default function CustomersV2Client({
                   const address = formatAddress(
                     customer.billAddr || customer.shipAddr,
                   );
+                  const customerTypeCategory =
+                    getCustomerTypeCategory(customer);
                   const isContractor = customer.type === "CONTRACTOR";
 
                   return (
@@ -511,11 +575,12 @@ export default function CustomersV2Client({
                             </span>
                             <span
                               className={`inline-flex items-center px-1.5 py-0.5 rounded text-xs font-medium ${
-                                typeColors[customer.type] ??
+                                typeColors[customerTypeCategory] ??
                                 "bg-gray-100 text-gray-600"
                               }`}
                             >
-                              {typeLabels[customer.type] ?? customer.type}
+                              {typeLabels[customerTypeCategory] ??
+                                customer.type}
                             </span>
                             {!customer.active && (
                               <span className="inline-flex items-center px-1.5 py-0.5 rounded text-xs font-medium bg-gray-100 dark:bg-gray-700 text-gray-500 dark:text-gray-400">
@@ -541,6 +606,14 @@ export default function CustomersV2Client({
                               {customer.companyName}
                             </div>
                           )}
+
+                          {isContractor &&
+                            customer.referredClientCount !== null && (
+                              <div className="text-xs text-purple-600 dark:text-purple-400 mt-1">
+                                {customer.referredClientCount} referred client
+                                {customer.referredClientCount === 1 ? "" : "s"}
+                              </div>
+                            )}
 
                           {/* Client — show referred by */}
                           {!isContractor && customer.referredByOrgName && (
