@@ -29,71 +29,124 @@ export default async function CustomersV2Page({
   const params = await searchParams;
   const currentPage = parseInt(params.page || "1");
   const searchTerm = params.search || "";
-  const selectedInitial = params.initial || "";
-  const selectedType = params.type || "";
-  const selectedStatus = params.status || "";
-  const selectedSalesPerson = params.salesPerson || "";
-  const selectedSource = params.source || "";
-  const selectedReferredBy = params.referredBy || "";
-  const selectedJobType = params.jobType || "";
+  const parseMultiParam = (value?: string) =>
+    (value || "")
+      .split(",")
+      .map((v) => v.trim())
+      .filter(Boolean);
+
+  const selectedInitials = parseMultiParam(params.initial);
+  const selectedTypesRaw = parseMultiParam(params.type);
+  const selectedStatuses = parseMultiParam(params.status);
+  const selectedSalesPersons = parseMultiParam(params.salesPerson);
+  const selectedSources = parseMultiParam(params.source);
+  const selectedReferredBy = parseMultiParam(params.referredBy);
+  const selectedJobTypes = parseMultiParam(params.jobType);
+
+  const normalizeType = (value: string) =>
+    value === "CLIENT"
+      ? "CLIENTS"
+      : value === "CONTRACTOR"
+        ? "CONTRACTORS"
+        : value;
+  const normalizedSelectedTypes = selectedTypesRaw.map(normalizeType);
 
   // Build where clause
-  const where: any = {};
+  const andConditions: any[] = [];
 
-  if (selectedType) {
-    where.type = selectedType;
+  if (normalizedSelectedTypes.length > 0) {
+    const typeConditions = normalizedSelectedTypes.map((selectedType) => {
+      if (selectedType === "CLIENTS") {
+        return {
+          type: "CLIENT",
+          referredByOrgPipedriveId: null,
+        };
+      }
+      if (selectedType === "CONTRACTOR_CLIENTS") {
+        return {
+          type: "CLIENT",
+          referredByOrgPipedriveId: { not: null },
+        };
+      }
+      if (selectedType === "CONTRACTORS") {
+        return { type: "CONTRACTOR" };
+      }
+      return { type: selectedType };
+    });
+
+    andConditions.push({ OR: typeConditions });
   }
 
-  if (selectedStatus) {
-    where.active = selectedStatus === "active";
+  if (selectedStatuses.length === 1) {
+    andConditions.push({ active: selectedStatuses[0] === "active" });
   }
 
-  if (selectedSalesPerson) {
-    where.salesPerson = { contains: selectedSalesPerson, mode: "insensitive" };
+  if (selectedSalesPersons.length > 0) {
+    andConditions.push({
+      OR: selectedSalesPersons.map((salesPerson) => ({
+        salesPerson: { contains: salesPerson, mode: "insensitive" },
+      })),
+    });
   }
 
-  if (selectedSource === "pipedrive") {
-    where.pipedriveId = { not: null };
-  } else if (selectedSource === "quickbooks") {
-    where.quickbooksId = { not: null };
+  if (selectedSources.length === 1) {
+    if (selectedSources[0] === "pipedrive") {
+      andConditions.push({ pipedriveId: { not: null } });
+    } else if (selectedSources[0] === "quickbooks") {
+      andConditions.push({ quickbooksId: { not: null } });
+    }
   }
 
-  if (selectedReferredBy) {
-    where.referredByOrgPipedriveId = selectedReferredBy;
+  if (selectedReferredBy.length > 0) {
+    andConditions.push({
+      OR: selectedReferredBy.flatMap((referredBy) => [
+        { referredByOrgPipedriveId: referredBy },
+        { pipedriveId: `org_${referredBy}` },
+        { pipedriveId: referredBy },
+      ]),
+    });
   }
 
   if (searchTerm) {
-    where.OR = [
-      { pipedriveId: { contains: searchTerm, mode: "insensitive" } },
-      { displayName: { contains: searchTerm, mode: "insensitive" } },
-      { companyName: { contains: searchTerm, mode: "insensitive" } },
-      { email: { contains: searchTerm, mode: "insensitive" } },
-      { phone: { contains: searchTerm, mode: "insensitive" } },
-    ];
+    andConditions.push({
+      OR: [
+        { pipedriveId: { contains: searchTerm, mode: "insensitive" } },
+        { displayName: { contains: searchTerm, mode: "insensitive" } },
+        { companyName: { contains: searchTerm, mode: "insensitive" } },
+        { email: { contains: searchTerm, mode: "insensitive" } },
+        { phone: { contains: searchTerm, mode: "insensitive" } },
+      ],
+    });
   }
 
-  if (selectedInitial) {
-    where.AND = [
-      {
-        OR: [
-          { displayName: { startsWith: selectedInitial, mode: "insensitive" } },
-          {
-            displayName: {
-              contains: ` ${selectedInitial}`,
-              mode: "insensitive",
-            },
+  if (selectedInitials.length > 0) {
+    andConditions.push({
+      OR: selectedInitials.flatMap((selectedInitial) => [
+        { displayName: { startsWith: selectedInitial, mode: "insensitive" } },
+        {
+          displayName: {
+            contains: ` ${selectedInitial}`,
+            mode: "insensitive",
           },
-        ],
-      },
-    ];
+        },
+      ]),
+    });
   }
 
-  // If filtering by jobType, we need to join through jobs
-  if (selectedJobType) {
-    where.jobs = {
-      some: { jobType: { equals: selectedJobType, mode: "insensitive" } },
-    };
+  // If filtering by jobType, we need to join through jobs.
+  if (selectedJobTypes.length > 0) {
+    andConditions.push({
+      jobs: {
+        some: {
+          OR: selectedJobTypes.map((selectedJobType) => ({
+            jobType: { equals: selectedJobType, mode: "insensitive" },
+          })),
+        },
+      },
+    });
   }
+
+  const where: any = andConditions.length > 0 ? { AND: andConditions } : {};
 
   const totalCustomers = await prisma.customer.count({ where });
 
@@ -130,24 +183,54 @@ export default async function CustomersV2Page({
   });
 
   // Client-side initial filter for precision
-  if (selectedInitial) {
+  if (selectedInitials.length > 0) {
     customers = customers.filter((customer) => {
       const name = customer.displayName.trim();
       if (name.includes(",")) {
-        return (
-          name.split(",")[0].trim().charAt(0).toUpperCase() ===
-          selectedInitial.toUpperCase()
-        );
+        const initial = name.split(",")[0].trim().charAt(0).toUpperCase();
+        return selectedInitials.map((i) => i.toUpperCase()).includes(initial);
       }
       const parts = name.split(/\s+/);
       const last = parts.length > 1 ? parts[parts.length - 1] : parts[0];
-      return last.charAt(0).toUpperCase() === selectedInitial.toUpperCase();
+      return selectedInitials
+        .map((i) => i.toUpperCase())
+        .includes(last.charAt(0).toUpperCase());
     });
   }
 
   // Serialize Decimal fields
+  const referredClientCounts = await prisma.customer.groupBy({
+    by: ["referredByOrgPipedriveId"],
+    where: {
+      type: "CLIENT",
+      referredByOrgPipedriveId: { not: null },
+    },
+    _count: { _all: true },
+  });
+
+  const referredClientCountByOrg = new Map<string, number>();
+  referredClientCounts.forEach((row) => {
+    if (!row.referredByOrgPipedriveId) {
+      return;
+    }
+    referredClientCountByOrg.set(row.referredByOrgPipedriveId, row._count._all);
+  });
+
+  const normalizeOrgPipedriveId = (value: string | null | undefined) => {
+    if (!value) {
+      return null;
+    }
+    return value.replace(/^org_/, "");
+  };
+
   const serializedCustomers = customers.map((c) => ({
     ...c,
+    referredClientCount:
+      c.type === "CONTRACTOR"
+        ? (referredClientCountByOrg.get(
+            normalizeOrgPipedriveId(c.pipedriveId) || "",
+          ) ?? 0)
+        : null,
     balance: c.balance?.toNumber() ?? null,
     jobs: c.jobs.map((j) => ({
       ...j,
@@ -221,13 +304,13 @@ export default async function CustomersV2Page({
       contractors={contractors}
       jobTypes={jobTypes}
       initialSearchTerm={searchTerm}
-      initialSelectedInitial={selectedInitial}
-      initialSelectedType={selectedType}
-      initialSelectedStatus={selectedStatus}
-      initialSelectedSalesPerson={selectedSalesPerson}
-      initialSelectedSource={selectedSource}
+      initialSelectedInitial={selectedInitials}
+      initialSelectedType={normalizedSelectedTypes}
+      initialSelectedStatus={selectedStatuses}
+      initialSelectedSalesPerson={selectedSalesPersons}
+      initialSelectedSource={selectedSources}
       initialSelectedReferredBy={selectedReferredBy}
-      initialSelectedJobType={selectedJobType}
+      initialSelectedJobType={selectedJobTypes}
     />
   );
 }
