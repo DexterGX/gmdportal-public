@@ -679,26 +679,28 @@ export async function POST(request: NextRequest) {
       }),
     ]);
 
-    const roomById = new Map(rooms.map((item: any) => [String(item.id), item]));
-    const typeById = new Map(
+    const roomById = new Map<string, any>(
+      rooms.map((item: any) => [String(item.id), item]),
+    );
+    const typeById = new Map<string, any>(
       ledTypes.map((item: any) => [String(item.id), item]),
     );
-    const controlById = new Map(
+    const controlById = new Map<string, any>(
       controlTypes.map((item: any) => [String(item.id), item]),
     );
-    const profileById = new Map(
+    const profileById = new Map<string, any>(
       profiles.map((item: any) => [String(item.id), item]),
     );
-    const roomByName = new Map(
+    const roomByName = new Map<string, any>(
       rooms.map((item: any) => [String(item.name).toLowerCase(), item]),
     );
-    const typeByName = new Map(
+    const typeByName = new Map<string, any>(
       ledTypes.map((item: any) => [String(item.name).toLowerCase(), item]),
     );
-    const controlByName = new Map(
+    const controlByName = new Map<string, any>(
       controlTypes.map((item: any) => [String(item.name).toLowerCase(), item]),
     );
-    const profileByName = new Map(
+    const profileByName = new Map<string, any>(
       profiles.map((item: any) => [String(item.name).toLowerCase(), item]),
     );
 
