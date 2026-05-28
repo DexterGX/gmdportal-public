@@ -1,0 +1,2 @@
+ALTER TABLE "MiscLedProfile"
+ADD COLUMN "groovePricePerFt" DECIMAL(12,2) NOT NULL DEFAULT 0;

@@ -443,6 +443,12 @@ export const programs: ProgramConfig[] = [
         name: "Saved Estimates",
         path: "/misc-estimates/saved",
       },
+      {
+        icon: Settings2,
+        name: "Settings",
+        path: "/misc-estimates/settings",
+        adminOnly: true,
+      },
     ],
     othersItems: [],
   },

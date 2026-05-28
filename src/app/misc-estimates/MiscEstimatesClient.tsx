@@ -5,6 +5,11 @@ import { useSearchParams } from "next/navigation";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { Check, Plus, Printer, RotateCcw, Save, X } from "lucide-react";
 
+const CURRENCY_FORMATTER = new Intl.NumberFormat("en-US", {
+  minimumFractionDigits: 2,
+  maximumFractionDigits: 2,
+});
+
 type CompanyInfo = {
   companyName: string;
   phoneNumber: string | null;
@@ -33,13 +38,41 @@ type ClientOption = {
 
 type LedStripRow = {
   id: string;
-  room: string;
-  lnFt: string;
-  ledType: string;
-  controlType: string;
-  profile: string;
+  roomId: string;
+  linearFeet: string;
+  ledTypeId: string;
+  controlTypeId: string;
+  profileId: string;
   profileQty: string;
-  subtotal: string;
+};
+
+type RoomOption = {
+  id: string;
+  name: string;
+  active: boolean;
+};
+
+type LedTypeOption = {
+  id: string;
+  name: string;
+  minimumPriceUnder25Ft: number;
+  pricePerFt: number;
+  active: boolean;
+};
+
+type ControlTypeOption = {
+  id: string;
+  name: string;
+  unitPrice: number;
+  active: boolean;
+};
+
+type ProfileOption = {
+  id: string;
+  name: string;
+  unitPrice: number;
+  groovePricePerFt: number;
+  active: boolean;
 };
 
 type OptionKey =
@@ -64,13 +97,12 @@ const OPTION_LABELS: Array<{ key: OptionKey; label: string }> = [
 function makeRow(index: number): LedStripRow {
   return {
     id: `row-${Date.now()}-${index}`,
-    room: "",
-    lnFt: "",
-    ledType: "",
-    controlType: "",
-    profile: "",
+    roomId: "",
+    linearFeet: "",
+    ledTypeId: "",
+    controlTypeId: "",
+    profileId: "",
     profileQty: "",
-    subtotal: "",
   };
 }
 
@@ -94,15 +126,84 @@ type LoadedMetadata = {
   salesRep?: string;
   selectedOptions?: OptionKey[];
   ledStripRows?: Array<{
+    roomId?: string | null;
     room?: string;
+    linearFeet?: number | null;
     lnFt?: number | null;
+    ledTypeId?: string | null;
     ledType?: string;
+    controlTypeId?: string | null;
     controlType?: string;
+    profileId?: string | null;
     profile?: string;
     profileQty?: number | null;
     subtotal?: number | null;
   }>;
 };
+
+function RollingCurrency({
+  value,
+  withDollarSign = false,
+}: {
+  value: number;
+  withDollarSign?: boolean;
+}) {
+  const [displayValue, setDisplayValue] = useState(value);
+  const [incomingValue, setIncomingValue] = useState<number | null>(null);
+  const [direction, setDirection] = useState<"up" | "down">("up");
+  const timeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  useEffect(() => {
+    if (value === displayValue) {
+      return;
+    }
+
+    if (timeoutRef.current) {
+      clearTimeout(timeoutRef.current);
+    }
+
+    setDirection(value > displayValue ? "up" : "down");
+    setIncomingValue(value);
+
+    timeoutRef.current = setTimeout(() => {
+      setDisplayValue(value);
+      setIncomingValue(null);
+      timeoutRef.current = null;
+    }, 320);
+
+    return () => {
+      if (timeoutRef.current) {
+        clearTimeout(timeoutRef.current);
+      }
+    };
+  }, [value, displayValue]);
+
+  const currentText = CURRENCY_FORMATTER.format(displayValue);
+  const incomingText =
+    incomingValue === null ? "" : CURRENCY_FORMATTER.format(incomingValue);
+  const animationClass =
+    incomingValue === null
+      ? ""
+      : direction === "up"
+        ? "rolling-value--up"
+        : "rolling-value--down";
+
+  return (
+    <span className="inline-flex items-center justify-end gap-0.5">
+      {withDollarSign && <span>$</span>}
+      <span className={`rolling-value ${animationClass}`}>
+        <span className="rolling-value__line rolling-value__line--current">
+          {currentText}
+        </span>
+        {incomingValue !== null && (
+          <span className="rolling-value__line rolling-value__line--incoming">
+            {incomingText}
+          </span>
+        )}
+      </span>
+    </span>
+  );
+}
 
 export default function MiscEstimatesClient({
   initialCompanyInfo,
@@ -126,6 +227,10 @@ export default function MiscEstimatesClient({
     makeRow(2),
     makeRow(3),
   ]);
+  const [rooms, setRooms] = useState<RoomOption[]>([]);
+  const [ledTypes, setLedTypes] = useState<LedTypeOption[]>([]);
+  const [controlTypes, setControlTypes] = useState<ControlTypeOption[]>([]);
+  const [profiles, setProfiles] = useState<ProfileOption[]>([]);
   const [saveLoading, setSaveLoading] = useState(false);
   const [saveMessage, setSaveMessage] = useState<string | null>(null);
   const [saveError, setSaveError] = useState<string | null>(null);
@@ -164,6 +269,29 @@ export default function MiscEstimatesClient({
     };
   }, [clientResults]);
 
+  useEffect(() => {
+    async function loadLedSettings() {
+      try {
+        const response = await fetch("/api/misc-estimates/settings/led");
+        const json = await response.json();
+        if (!response.ok) {
+          throw new Error(json?.error || "Failed to load LED settings");
+        }
+
+        setRooms(Array.isArray(json?.rooms) ? json.rooms : []);
+        setLedTypes(Array.isArray(json?.ledTypes) ? json.ledTypes : []);
+        setControlTypes(
+          Array.isArray(json?.controlTypes) ? json.controlTypes : [],
+        );
+        setProfiles(Array.isArray(json?.profiles) ? json.profiles : []);
+      } catch (error: any) {
+        setSaveError(error?.message || "Failed to load LED settings");
+      }
+    }
+
+    void loadLedSettings();
+  }, []);
+
   const selectedJob = useMemo(
     () => selectedClient?.jobs.find((j) => j.id === selectedJobId) ?? null,
     [selectedClient, selectedJobId],
@@ -171,14 +299,92 @@ export default function MiscEstimatesClient({
 
   const inferredContractor = selectedClient?.contractor?.trim() || null;
 
-  const ledStripSubtotal = useMemo(
+  const ledTypeById = useMemo(
+    () => new Map(ledTypes.map((item) => [item.id, item])),
+    [ledTypes],
+  );
+  const controlTypeById = useMemo(
+    () => new Map(controlTypes.map((item) => [item.id, item])),
+    [controlTypes],
+  );
+  const profileById = useMemo(
+    () => new Map(profiles.map((item) => [item.id, item])),
+    [profiles],
+  );
+
+  const roomNameToId = useMemo(
     () =>
-      ledStripRows.reduce((sum, row) => {
-        const value = Number(row.subtotal || 0);
-        if (!Number.isFinite(value)) return sum;
-        return sum + value;
-      }, 0),
-    [ledStripRows],
+      new Map(rooms.map((item) => [item.name.trim().toLowerCase(), item.id])),
+    [rooms],
+  );
+  const ledTypeNameToId = useMemo(
+    () =>
+      new Map(
+        ledTypes.map((item) => [item.name.trim().toLowerCase(), item.id]),
+      ),
+    [ledTypes],
+  );
+  const controlNameToId = useMemo(
+    () =>
+      new Map(
+        controlTypes.map((item) => [item.name.trim().toLowerCase(), item.id]),
+      ),
+    [controlTypes],
+  );
+  const profileNameToId = useMemo(
+    () =>
+      new Map(
+        profiles.map((item) => [item.name.trim().toLowerCase(), item.id]),
+      ),
+    [profiles],
+  );
+
+  function toNumber(value: string) {
+    const parsed = Number(value || 0);
+    return Number.isFinite(parsed) ? parsed : 0;
+  }
+
+  function isProfileYes(row: LedStripRow) {
+    const selectedName = profileById
+      .get(row.profileId)
+      ?.name?.trim()
+      .toLowerCase();
+    return selectedName === "yes";
+  }
+
+  function getComputedProfileQty(row: LedStripRow) {
+    const linearFeet = toNumber(row.linearFeet);
+    if (!isProfileYes(row) || linearFeet <= 0) {
+      return 0;
+    }
+    return Math.ceil(linearFeet / 8);
+  }
+
+  function getRowSubtotal(row: LedStripRow) {
+    const linearFeet = toNumber(row.linearFeet);
+    const profileQty = getComputedProfileQty(row);
+    const profileEnabled = isProfileYes(row);
+    const minimumTypePrice =
+      ledTypeById.get(row.ledTypeId)?.minimumPriceUnder25Ft || 0;
+    const typePrice = ledTypeById.get(row.ledTypeId)?.pricePerFt || 0;
+    const groovePricePerFt =
+      profileById.get(row.profileId)?.groovePricePerFt || 0;
+    const profilePrice = profileById.get(row.profileId)?.unitPrice || 0;
+    const ledBasePrice =
+      linearFeet <= 0
+        ? 0
+        : linearFeet <= 25
+          ? minimumTypePrice
+          : minimumTypePrice + (linearFeet - 25) * typePrice;
+    const profileAndGrooveCharge = profileEnabled
+      ? profileQty * profilePrice + linearFeet * groovePricePerFt
+      : 0;
+    return ledBasePrice + profileAndGrooveCharge;
+  }
+
+  const ledStripSubtotal = useMemo(
+    () => ledStripRows.reduce((sum, row) => sum + getRowSubtotal(row), 0),
+    [ledStripRows, ledTypeById, controlTypeById, profileById],
   );
 
   async function searchClients(input: string) {
@@ -251,11 +457,17 @@ export default function MiscEstimatesClient({
       setSaveError(null);
       try {
         const response = await fetch(
-          `/api/misc-estimates?id=${encodeURIComponent(estimateId)}`,
+          `/api/misc-estimates/${encodeURIComponent(estimateId)}`,
         );
-        const json = await response.json();
+        let json = await response.json();
         if (!response.ok) {
-          throw new Error(json?.error || "Failed to load estimate");
+          const fallbackResponse = await fetch(
+            `/api/misc-estimates?id=${encodeURIComponent(estimateId)}`,
+          );
+          json = await fallbackResponse.json();
+          if (!fallbackResponse.ok) {
+            throw new Error(json?.error || "Failed to load estimate");
+          }
         }
 
         const meta = (json?.metadata ?? {}) as LoadedMetadata;
@@ -274,23 +486,36 @@ export default function MiscEstimatesClient({
         const mappedRows = Array.isArray(meta.ledStripRows)
           ? meta.ledStripRows.map((row, index) => ({
               id: `loaded-${index}-${Date.now()}`,
-              room: row.room ?? "",
-              lnFt:
-                typeof row.lnFt === "number" && Number.isFinite(row.lnFt)
-                  ? String(row.lnFt)
+              roomId:
+                row.roomId ||
+                (row.room
+                  ? roomNameToId.get(row.room.trim().toLowerCase()) || ""
+                  : ""),
+              linearFeet:
+                typeof (row.linearFeet ?? row.lnFt) === "number" &&
+                Number.isFinite(row.linearFeet ?? row.lnFt)
+                  ? String(row.linearFeet ?? row.lnFt)
                   : "",
-              ledType: row.ledType ?? "",
-              controlType: row.controlType ?? "",
-              profile: row.profile ?? "",
+              ledTypeId:
+                row.ledTypeId ||
+                (row.ledType
+                  ? ledTypeNameToId.get(row.ledType.trim().toLowerCase()) || ""
+                  : ""),
+              controlTypeId:
+                row.controlTypeId ||
+                (row.controlType
+                  ? controlNameToId.get(row.controlType.trim().toLowerCase()) ||
+                    ""
+                  : ""),
+              profileId:
+                row.profileId ||
+                (row.profile
+                  ? profileNameToId.get(row.profile.trim().toLowerCase()) || ""
+                  : ""),
               profileQty:
                 typeof row.profileQty === "number" &&
                 Number.isFinite(row.profileQty)
                   ? String(row.profileQty)
-                  : "",
-              subtotal:
-                typeof row.subtotal === "number" &&
-                Number.isFinite(row.subtotal)
-                  ? String(row.subtotal)
                   : "",
             }))
           : [];
@@ -338,7 +563,14 @@ export default function MiscEstimatesClient({
     }
 
     void loadEstimate();
-  }, [initialSalesRep, searchParams]);
+  }, [
+    initialSalesRep,
+    searchParams,
+    roomNameToId,
+    ledTypeNameToId,
+    controlNameToId,
+    profileNameToId,
+  ]);
 
   function handlePrint() {
     window.print();
@@ -396,13 +628,13 @@ export default function MiscEstimatesClient({
         selectedOptions,
         sourceEstimateNumber,
         ledStripRows: ledStripRows.map((row) => ({
-          room: row.room,
-          lnFt: row.lnFt ? Number(row.lnFt) : null,
-          ledType: row.ledType,
-          controlType: row.controlType,
-          profile: row.profile,
-          profileQty: row.profileQty ? Number(row.profileQty) : null,
-          subtotal: row.subtotal ? Number(row.subtotal) : null,
+          roomId: row.roomId || null,
+          linearFeet: row.linearFeet ? Number(row.linearFeet) : null,
+          ledTypeId: row.ledTypeId || null,
+          controlTypeId: row.controlTypeId || null,
+          profileId: row.profileId || null,
+          profileQty: getComputedProfileQty(row),
+          subtotal: getRowSubtotal(row),
         })),
         ledStripSubtotal,
       };
@@ -789,90 +1021,105 @@ export default function MiscEstimatesClient({
                       </button>
                     </td>
                     <td className="border border-gray-300 dark:border-gray-700 p-1">
-                      <input
-                        value={row.room}
+                      <select
+                        value={row.roomId}
                         onChange={(event) =>
                           updateLedStripRow(row.id, {
-                            room: event.target.value,
+                            roomId: event.target.value,
                           })
                         }
                         className="w-full bg-transparent px-2 py-1 text-sm"
-                      />
+                      >
+                        <option value="">Select room</option>
+                        {rooms.map((item) => (
+                          <option key={item.id} value={item.id}>
+                            {item.name}
+                          </option>
+                        ))}
+                      </select>
                     </td>
                     <td className="border border-gray-300 dark:border-gray-700 p-1">
                       <input
                         type="number"
                         min="0"
                         step="0.01"
-                        value={row.lnFt}
+                        value={row.linearFeet}
                         onChange={(event) =>
                           updateLedStripRow(row.id, {
-                            lnFt: event.target.value,
+                            linearFeet: event.target.value,
                           })
                         }
                         className="w-full bg-transparent px-2 py-1 text-sm"
                       />
                     </td>
                     <td className="border border-gray-300 dark:border-gray-700 p-1">
-                      <input
-                        value={row.ledType}
+                      <select
+                        value={row.ledTypeId}
                         onChange={(event) =>
                           updateLedStripRow(row.id, {
-                            ledType: event.target.value,
+                            ledTypeId: event.target.value,
                           })
                         }
                         className="w-full bg-transparent px-2 py-1 text-sm"
-                      />
+                      >
+                        <option value="">Select LED type</option>
+                        {ledTypes.map((item) => (
+                          <option key={item.id} value={item.id}>
+                            {item.name}
+                          </option>
+                        ))}
+                      </select>
                     </td>
                     <td className="border border-gray-300 dark:border-gray-700 p-1">
-                      <input
-                        value={row.controlType}
+                      <select
+                        value={row.controlTypeId}
                         onChange={(event) =>
                           updateLedStripRow(row.id, {
-                            controlType: event.target.value,
+                            controlTypeId: event.target.value,
                           })
                         }
                         className="w-full bg-transparent px-2 py-1 text-sm"
-                      />
+                      >
+                        <option value="">Select control type</option>
+                        {controlTypes.map((item) => (
+                          <option key={item.id} value={item.id}>
+                            {item.name}
+                          </option>
+                        ))}
+                      </select>
                     </td>
                     <td className="border border-gray-300 dark:border-gray-700 p-1">
-                      <input
-                        value={row.profile}
+                      <select
+                        value={row.profileId}
                         onChange={(event) =>
                           updateLedStripRow(row.id, {
-                            profile: event.target.value,
+                            profileId: event.target.value,
                           })
                         }
                         className="w-full bg-transparent px-2 py-1 text-sm"
-                      />
+                      >
+                        <option value="">Select profile</option>
+                        {profiles.map((item) => (
+                          <option key={item.id} value={item.id}>
+                            {item.name}
+                          </option>
+                        ))}
+                      </select>
                     </td>
                     <td className="border border-gray-300 dark:border-gray-700 p-1">
                       <input
                         type="number"
                         min="0"
                         step="1"
-                        value={row.profileQty}
-                        onChange={(event) =>
-                          updateLedStripRow(row.id, {
-                            profileQty: event.target.value,
-                          })
-                        }
-                        className="w-full bg-transparent px-2 py-1 text-sm"
+                        readOnly
+                        value={getComputedProfileQty(row)}
+                        className="w-full bg-gray-50 dark:bg-gray-900 px-2 py-1 text-sm"
                       />
                     </td>
                     <td className="border border-gray-300 dark:border-gray-700 p-1">
-                      <input
-                        type="number"
-                        min="0"
-                        step="0.01"
-                        value={row.subtotal}
-                        onChange={(event) =>
-                          updateLedStripRow(row.id, {
-                            subtotal: event.target.value,
-                          })
-                        }
-                        className="w-full bg-transparent px-2 py-1 text-sm"
-                      />
+                      <div className="w-full px-2 py-1 text-sm text-right">
+                        <RollingCurrency value={getRowSubtotal(row)} />
+                      </div>
                     </td>
                   </tr>
                 ))}
@@ -893,11 +1140,7 @@ export default function MiscEstimatesClient({
                     colSpan={5}
                   />
                   <td className="border border-gray-300 dark:border-gray-700 px-2 py-2 text-right font-semibold text-sm">
-                    $
-                    {ledStripSubtotal.toLocaleString("en-US", {
-                      minimumFractionDigits: 2,
-                      maximumFractionDigits: 2,
-                    })}
+                    <RollingCurrency value={ledStripSubtotal} withDollarSign />
                   </td>
                 </tr>
               </tbody>
@@ -905,6 +1148,17 @@ export default function MiscEstimatesClient({
           </div>
         </section>
       )}
+
+      <section className="misc-print-block bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-xl p-4 print:border print:border-gray-900 print:rounded-none print:p-2">
+        <div className="flex items-center justify-end gap-4 text-sm">
+          <span className="font-semibold text-gray-700 dark:text-gray-300">
+            Estimate Total
+          </span>
+          <span className="text-lg font-bold text-gray-900 dark:text-gray-100">
+            <RollingCurrency value={ledStripSubtotal} withDollarSign />
+          </span>
+        </div>
+      </section>
     </div>
   );
 }
