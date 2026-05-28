@@ -7,11 +7,16 @@ import { PDFDocument, StandardFonts, rgb } from "pdf-lib";
 const prismaAny = prisma as any;
 
 type LedStripRowPayload = {
-  room: string;
-  lnFt: number | null;
-  ledType: string;
-  controlType: string;
-  profile: string;
+  roomId?: string | null;
+  room?: string;
+  linearFeet?: number | null;
+  lnFt?: number | null;
+  ledTypeId?: string | null;
+  ledType?: string;
+  controlTypeId?: string | null;
+  controlType?: string;
+  profileId?: string | null;
+  profile?: string;
   profileQty: number | null;
   subtotal: number | null;
 };
@@ -20,6 +25,22 @@ type ArtifactMeta = {
   estimateNumber?: string;
   [key: string]: unknown;
 };
+
+function toNumber(value: unknown): number {
+  const parsed = Number(value);
+  return Number.isFinite(parsed) ? parsed : 0;
+}
+
+function parseDateInput(value: string | undefined): Date {
+  if (!value?.trim()) {
+    return new Date();
+  }
+  const parsed = new Date(value);
+  if (Number.isNaN(parsed.getTime())) {
+    return new Date();
+  }
+  return parsed;
+}
 
 function text(meta: ArtifactMeta, key: string): string {
   const value = meta[key];
@@ -630,6 +651,158 @@ export async function POST(request: NextRequest) {
       ? await generateVersionedEstimateNumber(sourceEstimateNumber)
       : await generateMonthlyEstimateNumber();
 
+    const actor = await prisma.user.findUnique({
+      where: { email },
+      select: { id: true },
+    });
+
+    const [rooms, ledTypes, controlTypes, profiles] = await Promise.all([
+      prismaAny.miscLedRoom.findMany({ select: { id: true, name: true } }),
+      prismaAny.miscLedType.findMany({
+        select: {
+          id: true,
+          name: true,
+          minimumPriceUnder25Ft: true,
+          pricePerFt: true,
+        },
+      }),
+      prismaAny.miscLedControlType.findMany({
+        select: { id: true, name: true, unitPrice: true },
+      }),
+      prismaAny.miscLedProfile.findMany({
+        select: {
+          id: true,
+          name: true,
+          unitPrice: true,
+          groovePricePerFt: true,
+        },
+      }),
+    ]);
+
+    const roomById = new Map(rooms.map((item: any) => [String(item.id), item]));
+    const typeById = new Map(
+      ledTypes.map((item: any) => [String(item.id), item]),
+    );
+    const controlById = new Map(
+      controlTypes.map((item: any) => [String(item.id), item]),
+    );
+    const profileById = new Map(
+      profiles.map((item: any) => [String(item.id), item]),
+    );
+    const roomByName = new Map(
+      rooms.map((item: any) => [String(item.name).toLowerCase(), item]),
+    );
+    const typeByName = new Map(
+      ledTypes.map((item: any) => [String(item.name).toLowerCase(), item]),
+    );
+    const controlByName = new Map(
+      controlTypes.map((item: any) => [String(item.name).toLowerCase(), item]),
+    );
+    const profileByName = new Map(
+      profiles.map((item: any) => [String(item.name).toLowerCase(), item]),
+    );
+
+    const normalizedRows = (
+      Array.isArray(ledStripRows) ? ledStripRows : []
+    ).map((raw) => {
+      const roomIdRaw = raw.roomId?.trim() || "";
+      const roomNameRaw = raw.room?.trim() || "";
+      const roomResolved =
+        roomById.get(roomIdRaw) || roomByName.get(roomNameRaw.toLowerCase());
+
+      const ledTypeIdRaw = raw.ledTypeId?.trim() || "";
+      const ledTypeNameRaw = raw.ledType?.trim() || "";
+      const ledTypeResolved =
+        typeById.get(ledTypeIdRaw) ||
+        typeByName.get(ledTypeNameRaw.toLowerCase());
+
+      const controlTypeIdRaw = raw.controlTypeId?.trim() || "";
+      const controlTypeNameRaw = raw.controlType?.trim() || "";
+      const controlTypeResolved =
+        controlById.get(controlTypeIdRaw) ||
+        controlByName.get(controlTypeNameRaw.toLowerCase());
+
+      const profileIdRaw = raw.profileId?.trim() || "";
+      const profileNameRaw = raw.profile?.trim() || "";
+      const profileResolved =
+        profileById.get(profileIdRaw) ||
+        profileByName.get(profileNameRaw.toLowerCase());
+
+      const linearFeet = toNumber(raw.linearFeet ?? raw.lnFt);
+      const profileIsYes =
+        String(profileResolved?.name || "")
+          .trim()
+          .toLowerCase() === "yes";
+      const profileQty =
+        profileIsYes && linearFeet > 0 ? Math.ceil(linearFeet / 8) : 0;
+      const minimumPrice = toNumber(ledTypeResolved?.minimumPriceUnder25Ft);
+      const perFootPrice = toNumber(ledTypeResolved?.pricePerFt);
+      const ledBasePrice =
+        linearFeet <= 0
+          ? 0
+          : linearFeet <= 25
+            ? minimumPrice
+            : minimumPrice + (linearFeet - 25) * perFootPrice;
+      const groovePerFt = toNumber(profileResolved?.groovePricePerFt);
+      const profilePrice = toNumber(profileResolved?.unitPrice);
+      const profileAndGrooveCharge = profileIsYes
+        ? profileQty * profilePrice + linearFeet * groovePerFt
+        : 0;
+      const rowSubtotal = ledBasePrice + profileAndGrooveCharge;
+
+      return {
+        roomId: roomResolved?.id ?? null,
+        roomName: roomResolved?.name ?? roomNameRaw,
+        linearFeet,
+        ledTypeId: ledTypeResolved?.id ?? null,
+        ledTypeName: ledTypeResolved?.name ?? ledTypeNameRaw,
+        controlTypeId: controlTypeResolved?.id ?? null,
+        controlTypeName: controlTypeResolved?.name ?? controlTypeNameRaw,
+        profileId: profileResolved?.id ?? null,
+        profileName: profileResolved?.name ?? profileNameRaw,
+        profileQty,
+        subtotal: rowSubtotal,
+      };
+    });
+
+    const computedLedSubtotal = normalizedRows.reduce(
+      (sum, row) => sum + toNumber(row.subtotal),
+      0,
+    );
+
+    const safeSelectedOptions = Array.isArray(selectedOptions)
+      ? selectedOptions
+      : [];
+
+    const miscEstimate = await prismaAny.miscEstimate.create({
+      data: {
+        estimateNo: estimateNumber,
+        title,
+        clientName: customerName ?? null,
+        clientId: customerId,
+        dealName: dealName ?? null,
+        dealId: dealId ?? null,
+        date: parseDateInput(date),
+        salesRep: salesRep?.trim() || "",
+        status: "DRAFT",
+        subtotal: computedLedSubtotal,
+        discount: 0,
+        total: computedLedSubtotal,
+        createdById: actor?.id ?? null,
+        ledRows: {
+          create: normalizedRows.map((row) => ({
+            roomId: row.roomId,
+            ledTypeId: row.ledTypeId,
+            controlTypeId: row.controlTypeId,
+            profileId: row.profileId,
+            linearFeet: row.linearFeet,
+            profileQty: row.profileQty,
+            subtotal: row.subtotal,
+          })),
+        },
+      },
+    });
+
     const artifact = await prisma.jobArtifact.create({
       data: {
         jobId,
@@ -648,11 +821,24 @@ export async function POST(request: NextRequest) {
           contractor,
           date,
           salesRep,
-          selectedOptions: Array.isArray(selectedOptions)
-            ? selectedOptions
-            : [],
-          ledStripRows: Array.isArray(ledStripRows) ? ledStripRows : [],
-          ledStripSubtotal: Number.isFinite(ledStripSubtotal)
+          miscEstimateId: miscEstimate.id,
+          selectedOptions: safeSelectedOptions,
+          ledStripRows: normalizedRows.map((row) => ({
+            roomId: row.roomId,
+            room: row.roomName,
+            lnFt: row.linearFeet,
+            linearFeet: row.linearFeet,
+            ledTypeId: row.ledTypeId,
+            ledType: row.ledTypeName,
+            controlTypeId: row.controlTypeId,
+            controlType: row.controlTypeName,
+            profileId: row.profileId,
+            profile: row.profileName,
+            profileQty: row.profileQty,
+            subtotal: row.subtotal,
+          })),
+          ledStripSubtotal: computedLedSubtotal,
+          ledStripSubtotalInput: Number.isFinite(ledStripSubtotal)
             ? Number(ledStripSubtotal)
             : 0,
           sourceEstimateNumber: sourceEstimateNumber?.trim() || null,
@@ -664,6 +850,7 @@ export async function POST(request: NextRequest) {
 
     return NextResponse.json({
       id: artifact.id,
+      miscEstimateId: miscEstimate.id,
       estimateNumber,
       savedAt: artifact.createdAt,
     });

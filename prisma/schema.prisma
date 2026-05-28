@@ -582,6 +582,100 @@ model JobArtifact {
   @@index([type])
 }
 
+model MiscEstimate {
+  id          String               @id @default(cuid())
+  estimateNo  String?              @unique
+  title       String
+  clientName  String?
+  clientId    String?
+  dealName    String?
+  dealId      String?
+  date        DateTime
+  salesRep    String
+  status      String               @default("DRAFT")
+  subtotal    Decimal              @default(0) @db.Decimal(12, 2)
+  discount    Decimal              @default(0) @db.Decimal(12, 2)
+  total       Decimal              @default(0) @db.Decimal(12, 2)
+  createdById String?
+  createdAt   DateTime             @default(now())
+  updatedAt   DateTime             @updatedAt
+  ledRows     MiscEstimateLedRow[]
+
+  @@index([estimateNo])
+  @@index([clientId])
+  @@index([dealId])
+}
+
+model MiscEstimateLedRow {
+  id            String              @id @default(cuid())
+  estimateId    String
+  estimate      MiscEstimate        @relation(fields: [estimateId], references: [id], onDelete: Cascade)
+  roomId        String?
+  room          MiscLedRoom?        @relation(fields: [roomId], references: [id])
+  ledTypeId     String?
+  ledType       MiscLedType?        @relation(fields: [ledTypeId], references: [id])
+  controlTypeId String?
+  controlType   MiscLedControlType? @relation(fields: [controlTypeId], references: [id])
+  profileId     String?
+  profile       MiscLedProfile?     @relation(fields: [profileId], references: [id])
+  linearFeet    Decimal             @default(0) @db.Decimal(12, 2)
+  profileQty    Int                 @default(0)
+  subtotal      Decimal             @default(0) @db.Decimal(12, 2)
+  createdAt     DateTime            @default(now())
+  updatedAt     DateTime            @updatedAt
+
+  @@index([estimateId])
+  @@index([roomId])
+  @@index([ledTypeId])
+  @@index([controlTypeId])
+  @@index([profileId])
+}
+
+model MiscLedRoom {
+  id        String               @id @default(cuid())
+  name      String               @unique
+  sortOrder Int                  @default(0)
+  active    Boolean              @default(true)
+  rows      MiscEstimateLedRow[]
+  createdAt DateTime             @default(now())
+  updatedAt DateTime             @updatedAt
+}
+
+model MiscLedType {
+  id         String               @id @default(cuid())
+  name       String               @unique
+  minimumPriceUnder25Ft Decimal   @default(0) @db.Decimal(12, 2)
+  pricePerFt Decimal              @default(0) @db.Decimal(12, 2)
+  active     Boolean              @default(true)
+  sortOrder  Int                  @default(0)
+  rows       MiscEstimateLedRow[]
+  createdAt  DateTime             @default(now())
+  updatedAt  DateTime             @updatedAt
+}
+
+model MiscLedControlType {
+  id        String               @id @default(cuid())
+  name      String               @unique
+  unitPrice Decimal              @default(0) @db.Decimal(12, 2)
+  active    Boolean              @default(true)
+  sortOrder Int                  @default(0)
+  rows      MiscEstimateLedRow[]
+  createdAt DateTime             @default(now())
+  updatedAt DateTime             @updatedAt
+}
+
+model MiscLedProfile {
+  id        String               @id @default(cuid())
+  name      String               @unique
+  unitPrice Decimal              @default(0) @db.Decimal(12, 2)
+  groovePricePerFt Decimal       @default(0) @db.Decimal(12, 2)
+  active    Boolean              @default(true)
+  sortOrder Int                  @default(0)
+  rows      MiscEstimateLedRow[]
+  createdAt DateTime             @default(now())
+  updatedAt DateTime             @updatedAt
+}
+
 model SampleRequestProvider {
   id            String            @id @default(cuid())
   name          String
