@@ -11,6 +11,7 @@ type CompanyDocumentSettings = {
   website: string | null;
   address: string | null;
   logoUrl: string;
+  showPrintGuides: boolean;
   updatedAt: string;
 };
 
@@ -42,6 +43,7 @@ export default function CompanyDocumentSettingsClient({
           website: settings.website,
           address: settings.address,
           logoUrl: settings.logoUrl,
+          showPrintGuides: settings.showPrintGuides,
         }),
       });
 
@@ -237,6 +239,26 @@ export default function CompanyDocumentSettingsClient({
                 className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-900"
                 placeholder="123 Main St, Miami, FL"
               />
+            </div>
+
+            <div className="md:col-span-2">
+              <label className="inline-flex items-center gap-2 text-sm font-medium text-gray-700 dark:text-gray-300">
+                <input
+                  type="checkbox"
+                  checked={settings.showPrintGuides}
+                  onChange={(e) =>
+                    setSettings((prev) => ({
+                      ...prev,
+                      showPrintGuides: e.target.checked,
+                    }))
+                  }
+                />
+                Show dotted print guide lines in documents
+              </label>
+              <p className="mt-1 text-xs text-gray-500 dark:text-gray-400">
+                When disabled, agreement and printable document guide outlines
+                are hidden.
+              </p>
             </div>
           </div>
         </div>

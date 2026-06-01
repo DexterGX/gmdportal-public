@@ -41,6 +41,7 @@ export default async function CompanyDocumentsSettingsPage() {
         website: settings.website,
         address: settings.address,
         logoUrl: settings.logoUrl,
+        showPrintGuides: Boolean(settings.showPrintGuides),
         updatedAt: settings.updatedAt.toISOString(),
       }}
     />
