@@ -473,6 +473,7 @@ export default async function AgreementPrintPage({
     companySettings?.companyWebsite || companySettings?.website || "";
   const companyAddress =
     companySettings?.companyAddress || companySettings?.address || "";
+  const showPrintGuides = Boolean(companySettings?.showPrintGuides);
   const paginatedPages = paginateParagraphs(paragraphs);
   const countertopDetailsPages =
     agreementKey === "countertop_agreement"
@@ -489,7 +490,9 @@ export default async function AgreementPrintPage({
             className={`${styles.agreementPage} ${pageIndex === 0 ? styles.agreementPageFirst : styles.agreementPageContinuation}`}
           >
             {pageIndex === 0 ? (
-              <div className={styles.headerBlock}>
+              <div
+                className={`${styles.headerBlock} ${!showPrintGuides ? styles.guidesHidden : ""}`}
+              >
                 <header className={styles.header}>
                   <div className={styles.brand}>
                     <img
@@ -548,7 +551,7 @@ export default async function AgreementPrintPage({
             ) : null}
 
             <div
-              className={`${styles.bodyBlock} ${pageIndex === 0 ? styles.bodyBlockFirst : styles.bodyBlockContinuation}`}
+              className={`${styles.bodyBlock} ${pageIndex === 0 ? styles.bodyBlockFirst : styles.bodyBlockContinuation} ${!showPrintGuides ? styles.guidesHidden : ""}`}
             >
               {pageIndex === 0 ? (
                 <h1 className={styles.centeredTitle}>{title}</h1>
@@ -574,7 +577,9 @@ export default async function AgreementPrintPage({
               </section>
             </div>
 
-            <div className={styles.footerBlock}>
+            <div
+              className={`${styles.footerBlock} ${!showPrintGuides ? styles.guidesHidden : ""}`}
+            >
               Initials: ____________________
             </div>
           </section>
@@ -586,7 +591,7 @@ export default async function AgreementPrintPage({
             className={`${styles.agreementPage} ${styles.agreementPageContinuation} ${styles.countertopDetailsPage}`}
           >
             <div
-              className={`${styles.bodyBlock} ${styles.bodyBlockContinuation} ${styles.detailsBodyBlock}`}
+              className={`${styles.bodyBlock} ${styles.bodyBlockContinuation} ${styles.detailsBodyBlock} ${!showPrintGuides ? styles.guidesHidden : ""}`}
             >
               <h1 className={styles.centeredTitle}>
                 SINK/EDGE/THICKNESS DOCUMENT
@@ -746,7 +751,9 @@ export default async function AgreementPrintPage({
               </section>
             </div>
 
-            <div className={styles.footerBlock}>
+            <div
+              className={`${styles.footerBlock} ${!showPrintGuides ? styles.guidesHidden : ""}`}
+            >
               Initials: ____________________
             </div>
           </section>

@@ -71,6 +71,10 @@
   flex-shrink: 0;
 }
 
+.guidesHidden {
+  border: 0;
+}
+
 .header {
   display: flex;
   justify-content: space-between;

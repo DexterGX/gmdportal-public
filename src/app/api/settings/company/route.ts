@@ -54,6 +54,7 @@ export async function GET() {
       website: settings.website,
       address: settings.address,
       logoUrl: settings.logoUrl,
+      showPrintGuides: Boolean(settings.showPrintGuides),
       updatedAt: settings.updatedAt,
     });
   } catch (error: any) {
@@ -77,6 +78,7 @@ export async function PATCH(request: NextRequest) {
       website,
       address,
       logoUrl,
+      showPrintGuides,
     }: {
       companyName?: string;
       phoneNumber?: string | null;
@@ -84,6 +86,7 @@ export async function PATCH(request: NextRequest) {
       website?: string | null;
       address?: string | null;
       logoUrl?: string;
+      showPrintGuides?: boolean;
     } = body;
 
     if (companyName !== undefined && !String(companyName).trim()) {
@@ -114,6 +117,9 @@ export async function PATCH(request: NextRequest) {
           ? { address: address ? String(address).trim() : null }
           : {}),
         ...(logoUrl !== undefined ? { logoUrl: String(logoUrl).trim() } : {}),
+        ...(showPrintGuides !== undefined
+          ? { showPrintGuides: Boolean(showPrintGuides) }
+          : {}),
       },
     });
 
@@ -125,6 +131,7 @@ export async function PATCH(request: NextRequest) {
       website: updated.website,
       address: updated.address,
       logoUrl: updated.logoUrl,
+      showPrintGuides: Boolean(updated.showPrintGuides),
       updatedAt: updated.updatedAt,
     });
   } catch (error: any) {
