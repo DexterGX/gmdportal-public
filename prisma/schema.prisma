@@ -601,10 +601,164 @@ model MiscEstimate {
   createdAt   DateTime             @default(now())
   updatedAt   DateTime             @updatedAt
   ledRows     MiscEstimateLedRow[]
+  ledSheetRows MiscEstimateLedSheetRow[]
+  glassDoorShelfRows MiscEstimateGlassDoorShelfRow[]
+  mirrorRows  MiscEstimateMirrorRow[]
+  islandPanelRows MiscEstimateIslandPanelRow[]
+  wallUnitRows MiscEstimateWallUnitRow[]
+  mirrorFrameRows MiscEstimateMirrorFrameRow[]
+  mirrorRemovalRows MiscEstimateMirrorRemovalRow[]
 
   @@index([estimateNo])
   @@index([clientId])
   @@index([dealId])
+}
+
+model MiscEstimateLedSheetRow {
+  id            String              @id @default(cuid())
+  estimateId    String
+  estimate      MiscEstimate        @relation(fields: [estimateId], references: [id], onDelete: Cascade)
+  roomId        String?
+  room          MiscLedRoom?        @relation(fields: [roomId], references: [id], onDelete: SetNull)
+  sheetTypeId   String?
+  sheetType     MiscLedSheetType?   @relation(fields: [sheetTypeId], references: [id])
+  controlTypeId String?
+  controlType   MiscLedControlType? @relation(fields: [controlTypeId], references: [id])
+  widthIn       Decimal             @default(0) @db.Decimal(12, 2)
+  heightIn      Decimal             @default(0) @db.Decimal(12, 2)
+  squareFeet    Int                 @default(0)
+  subtotal      Decimal             @default(0) @db.Decimal(12, 2)
+  createdAt     DateTime            @default(now())
+  updatedAt     DateTime            @updatedAt
+
+  @@index([estimateId])
+  @@index([roomId])
+  @@index([sheetTypeId])
+  @@index([controlTypeId])
+}
+
+model MiscEstimateGlassDoorShelfRow {
+  id            String                 @id @default(cuid())
+  estimateId    String
+  estimate      MiscEstimate           @relation(fields: [estimateId], references: [id], onDelete: Cascade)
+  glassTypeId   String?
+  glassType     MiscGlassDoorShelfType? @relation(fields: [glassTypeId], references: [id], onDelete: SetNull)
+  widthIn       Decimal                @default(0) @db.Decimal(12, 2)
+  heightIn      Decimal                @default(0) @db.Decimal(12, 2)
+  squareFeet    Decimal                @default(0) @db.Decimal(12, 2)
+  quantity      Int                    @default(0)
+  note          String?
+  subtotal      Decimal                @default(0) @db.Decimal(12, 2)
+  createdAt     DateTime               @default(now())
+  updatedAt     DateTime               @updatedAt
+
+  @@index([estimateId])
+  @@index([glassTypeId])
+}
+
+model MiscEstimateMirrorRow {
+  id            String           @id @default(cuid())
+  estimateId    String
+  estimate      MiscEstimate     @relation(fields: [estimateId], references: [id], onDelete: Cascade)
+  roomId        String?
+  room          MiscLedRoom?     @relation(fields: [roomId], references: [id], onDelete: SetNull)
+  colorId       String?
+  color         MiscMirrorColor? @relation(fields: [colorId], references: [id])
+  beveledOptionId String?
+  beveledOption MiscMirrorBevelOption? @relation(fields: [beveledOptionId], references: [id])
+  widthIn       Decimal          @default(0) @db.Decimal(12, 2)
+  heightIn      Decimal          @default(0) @db.Decimal(12, 2)
+  squareFeet    Decimal          @default(0) @db.Decimal(12, 2)
+  outlets       Int              @default(0)
+  lightCutouts  Int              @default(0)
+  beveled       Boolean          @default(false)
+  note          String?
+  subtotal      Decimal          @default(0) @db.Decimal(12, 2)
+  createdAt     DateTime         @default(now())
+  updatedAt     DateTime         @updatedAt
+
+  @@index([estimateId])
+  @@index([roomId])
+  @@index([colorId])
+  @@index([beveledOptionId])
+}
+
+model MiscEstimateIslandPanelRow {
+  id            String            @id @default(cuid())
+  estimateId    String
+  estimate      MiscEstimate      @relation(fields: [estimateId], references: [id], onDelete: Cascade)
+  roomId        String?
+  room          MiscLedRoom?      @relation(fields: [roomId], references: [id], onDelete: SetNull)
+  panelModelId  String?
+  panelModel    MiscIslandPanelModel? @relation(fields: [panelModelId], references: [id], onDelete: SetNull)
+  widthIn       Decimal           @default(0) @db.Decimal(12, 2)
+  heightIn      Decimal           @default(0) @db.Decimal(12, 2)
+  squareFeet    Decimal           @default(0) @db.Decimal(12, 2)
+  boxQty        Int               @default(0)
+  subtotal      Decimal           @default(0) @db.Decimal(12, 2)
+  createdAt     DateTime          @default(now())
+  updatedAt     DateTime          @updatedAt
+
+  @@index([estimateId])
+  @@index([roomId])
+  @@index([panelModelId])
+}
+
+model MiscEstimateWallUnitRow {
+  id            String       @id @default(cuid())
+  estimateId    String
+  estimate      MiscEstimate @relation(fields: [estimateId], references: [id], onDelete: Cascade)
+  roomId        String?
+  room          MiscLedRoom? @relation(fields: [roomId], references: [id], onDelete: SetNull)
+  widthIn       Decimal      @default(0) @db.Decimal(12, 2)
+  heightIn      Decimal      @default(0) @db.Decimal(12, 2)
+  squareFeet    Decimal      @default(0) @db.Decimal(12, 2)
+  note          String?
+  subtotal      Decimal      @default(0) @db.Decimal(12, 2)
+  createdAt     DateTime     @default(now())
+  updatedAt     DateTime     @updatedAt
+
+  @@index([estimateId])
+  @@index([roomId])
+}
+
+model MiscEstimateMirrorFrameRow {
+  id            String                 @id @default(cuid())
+  estimateId    String
+  estimate      MiscEstimate           @relation(fields: [estimateId], references: [id], onDelete: Cascade)
+  roomId        String?
+  room          MiscLedRoom?           @relation(fields: [roomId], references: [id], onDelete: SetNull)
+  finishId      String?
+  finish        MiscMirrorFrameFinish? @relation(fields: [finishId], references: [id], onDelete: SetNull)
+  widthIn       Decimal                @default(0) @db.Decimal(12, 2)
+  heightIn      Decimal                @default(0) @db.Decimal(12, 2)
+  linearInches  Decimal                @default(0) @db.Decimal(12, 2)
+  painted       Boolean                @default(false)
+  color         String?
+  subtotal      Decimal                @default(0) @db.Decimal(12, 2)
+  createdAt     DateTime               @default(now())
+  updatedAt     DateTime               @updatedAt
+
+  @@index([estimateId])
+  @@index([roomId])
+  @@index([finishId])
+}
+
+model MiscEstimateMirrorRemovalRow {
+  id                 String       @id @default(cuid())
+  estimateId         String
+  estimate           MiscEstimate @relation(fields: [estimateId], references: [id], onDelete: Cascade)
+  widthIn            Decimal      @default(0) @db.Decimal(12, 2)
+  heightIn           Decimal      @default(0) @db.Decimal(12, 2)
+  squareFeet         Decimal      @default(0) @db.Decimal(12, 2)
+  repairWall         Boolean      @default(false)
+  subtotal           Decimal      @default(0) @db.Decimal(12, 2)
+  repairWallSubtotal Decimal      @default(0) @db.Decimal(12, 2)
+  total              Decimal      @default(0) @db.Decimal(12, 2)
+  createdAt          DateTime     @default(now())
+  updatedAt          DateTime     @updatedAt
+
+  @@index([estimateId])
 }
 
 model MiscEstimateLedRow {
@@ -612,7 +766,7 @@ model MiscEstimateLedRow {
   estimateId    String
   estimate      MiscEstimate        @relation(fields: [estimateId], references: [id], onDelete: Cascade)
   roomId        String?
-  room          MiscLedRoom?        @relation(fields: [roomId], references: [id])
+  room          MiscLedRoom?        @relation(fields: [roomId], references: [id], onDelete: SetNull)
   ledTypeId     String?
   ledType       MiscLedType?        @relation(fields: [ledTypeId], references: [id])
   controlTypeId String?
@@ -638,8 +792,135 @@ model MiscLedRoom {
   sortOrder Int                  @default(0)
   active    Boolean              @default(true)
   rows      MiscEstimateLedRow[]
+  sheetRows MiscEstimateLedSheetRow[]
+  islandPanelRows MiscEstimateIslandPanelRow[]
+  wallUnitRows MiscEstimateWallUnitRow[]
+  mirrorFrameRows MiscEstimateMirrorFrameRow[]
+  mirrorRows MiscEstimateMirrorRow[]
   createdAt DateTime             @default(now())
   updatedAt DateTime             @updatedAt
+}
+
+model MiscMirrorColor {
+  id        String                 @id @default(cuid())
+  name      String                 @unique
+  venda     Decimal                @default(0) @db.Decimal(12, 2)
+  custo     Decimal                @default(0) @db.Decimal(12, 2)
+  active    Boolean                @default(true)
+  sortOrder Int                    @default(0)
+  rows      MiscEstimateMirrorRow[]
+  createdAt DateTime               @default(now())
+  updatedAt DateTime               @updatedAt
+}
+
+model MiscGlassDoorShelfType {
+  id        String   @id @default(cuid())
+  name      String   @unique
+  venda     Decimal  @default(0) @db.Decimal(12, 2)
+  custo     Decimal  @default(0) @db.Decimal(12, 2)
+  active    Boolean  @default(true)
+  sortOrder Int      @default(0)
+  rows      MiscEstimateGlassDoorShelfRow[]
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
+
+model MiscIslandPanelModel {
+  id         String                    @id @default(cuid())
+  name       String                    @unique
+  sfPerBox   Decimal                   @default(0) @db.Decimal(12, 2)
+  cost       Decimal                   @default(0) @db.Decimal(12, 2)
+  salesPrice Decimal                   @default(0) @db.Decimal(12, 2)
+  link       String?
+  imageUrl   String?
+  active     Boolean                   @default(true)
+  sortOrder  Int                       @default(0)
+  rows       MiscEstimateIslandPanelRow[]
+  createdAt  DateTime                  @default(now())
+  updatedAt  DateTime                  @updatedAt
+}
+
+model MiscWallUnitSetting {
+  id                       String   @id @default(cuid())
+  constructionPricePerSqFt Decimal  @default(0) @db.Decimal(12, 2)
+  createdAt                DateTime @default(now())
+  updatedAt                DateTime @updatedAt
+}
+
+model MiscMirrorFrameFinish {
+  id               String                      @id @default(cuid())
+  name             String                      @unique
+  pricePerLinearFt Decimal                     @default(0) @db.Decimal(12, 2)
+  active           Boolean                     @default(true)
+  sortOrder        Int                         @default(0)
+  rows             MiscEstimateMirrorFrameRow[]
+  createdAt        DateTime                    @default(now())
+  updatedAt        DateTime                    @updatedAt
+}
+
+model MiscMirrorFrameSetting {
+  id             String   @id @default(cuid())
+  minimumCharge  Decimal  @default(0) @db.Decimal(12, 2)
+  paintingFactor Decimal  @default(1) @db.Decimal(12, 4)
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+}
+
+model MiscProgramNote {
+  id         String   @id @default(cuid())
+  title      String
+  content    String
+  catalogUrl String?
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+}
+
+model MiscMirrorBevelOption {
+  id        String                 @id @default(cuid())
+  name      String                 @unique
+  venda     Decimal                @default(0) @db.Decimal(12, 2)
+  custo     Decimal                @default(0) @db.Decimal(12, 2)
+  active    Boolean                @default(true)
+  sortOrder Int                    @default(0)
+  rows      MiscEstimateMirrorRow[]
+  createdAt DateTime               @default(now())
+  updatedAt DateTime               @updatedAt
+}
+
+model MiscMirrorSetting {
+  id                        String   @id @default(cuid())
+  cuttingFee                Decimal  @default(0) @db.Decimal(12, 2)
+  outletCost                Decimal  @default(0) @db.Decimal(12, 2)
+  outletSale                Decimal  @default(0) @db.Decimal(12, 2)
+  lightCutoutCost           Decimal  @default(0) @db.Decimal(12, 2)
+  lightCutoutSale           Decimal  @default(0) @db.Decimal(12, 2)
+  beveledPerInchCost        Decimal  @default(0) @db.Decimal(12, 2)
+  beveledPerInchSale        Decimal  @default(0) @db.Decimal(12, 2)
+  outOfSquareBeveledCost    Decimal  @default(0) @db.Decimal(12, 2)
+  outOfSquareBeveledSale    Decimal  @default(0) @db.Decimal(12, 2)
+  removalPricePerSqFt       Decimal  @default(0) @db.Decimal(12, 2)
+  repairWallMultiplier      Decimal  @default(0.7) @db.Decimal(12, 4)
+  createdAt                 DateTime @default(now())
+  updatedAt                 DateTime @updatedAt
+}
+
+model MiscLedSheetType {
+  id        String                    @id @default(cuid())
+  name      String                    @unique
+  minimumPrice Decimal                @default(0) @db.Decimal(12, 2)
+  unitPrice Decimal                   @default(0) @db.Decimal(12, 2)
+  active    Boolean                   @default(true)
+  sortOrder Int                       @default(0)
+  rows      MiscEstimateLedSheetRow[]
+  createdAt DateTime                  @default(now())
+  updatedAt DateTime                  @updatedAt
+}
+
+model MiscLedSheetSetting {
+  id              String   @id @default(cuid())
+  minimumSheetPrice Decimal @default(0) @db.Decimal(12, 2)
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
 }
 
 model MiscLedType {
@@ -661,6 +942,7 @@ model MiscLedControlType {
   active    Boolean              @default(true)
   sortOrder Int                  @default(0)
   rows      MiscEstimateLedRow[]
+  sheetRows MiscEstimateLedSheetRow[]
   createdAt DateTime             @default(now())
   updatedAt DateTime             @updatedAt
 }

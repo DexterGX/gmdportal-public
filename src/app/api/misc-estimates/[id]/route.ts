@@ -47,6 +47,53 @@ export async function GET(
           },
           orderBy: { createdAt: "asc" },
         },
+        ledSheetRows: {
+          include: {
+            room: { select: { id: true, name: true } },
+            sheetType: { select: { id: true, name: true, unitPrice: true } },
+            controlType: { select: { id: true, name: true, unitPrice: true } },
+          },
+          orderBy: { createdAt: "asc" },
+        },
+        glassDoorShelfRows: {
+          include: {
+            glassType: { select: { id: true, name: true, venda: true } },
+          },
+          orderBy: { createdAt: "asc" },
+        },
+        islandPanelRows: {
+          include: {
+            room: { select: { id: true, name: true } },
+            panelModel: { select: { id: true, name: true, salesPrice: true } },
+          },
+          orderBy: { createdAt: "asc" },
+        },
+        wallUnitRows: {
+          include: {
+            room: { select: { id: true, name: true } },
+          },
+          orderBy: { createdAt: "asc" },
+        },
+        mirrorFrameRows: {
+          include: {
+            room: { select: { id: true, name: true } },
+            finish: {
+              select: { id: true, name: true, pricePerLinearFt: true },
+            },
+          },
+          orderBy: { createdAt: "asc" },
+        },
+        mirrorRows: {
+          include: {
+            room: { select: { id: true, name: true } },
+            color: { select: { id: true, name: true, venda: true } },
+            beveledOption: { select: { id: true, name: true, venda: true } },
+          },
+          orderBy: { createdAt: "asc" },
+        },
+        mirrorRemovalRows: {
+          orderBy: { createdAt: "asc" },
+        },
       },
     });
 
@@ -91,6 +138,208 @@ export async function GET(
       };
     });
 
+    const ledSheetRows = estimate.ledSheetRows.map((row: any) => {
+      const width = toNumber(row.widthIn);
+      const height = toNumber(row.heightIn);
+      const squareFeet = toNumber(row.squareFeet);
+      return {
+        id: row.id,
+        roomId: row.roomId,
+        room: row.room?.name ?? "",
+        width,
+        widthIn: width,
+        height,
+        heightIn: height,
+        squareFeet,
+        sqFt: squareFeet,
+        sheetTypeId: row.sheetTypeId,
+        sheetType: row.sheetType?.name ?? "",
+        controlTypeId: row.controlTypeId,
+        controlType: row.controlType?.name ?? "",
+        subtotal: toNumber(row.subtotal),
+      };
+    });
+
+    const mirrorRows = estimate.mirrorRows.map((row: any) => {
+      const width = toNumber(row.widthIn);
+      const height = toNumber(row.heightIn);
+      const squareFeet = toNumber(row.squareFeet);
+      return {
+        id: row.id,
+        roomId: row.roomId,
+        room: row.room?.name ?? "",
+        colorId: row.colorId,
+        color: row.color?.name ?? "",
+        beveledOptionId: row.beveledOptionId,
+        beveledOption: row.beveledOption?.name ?? "",
+        width,
+        widthIn: width,
+        height,
+        heightIn: height,
+        squareFeet,
+        outlets: toNumber(row.outlets),
+        lightCutout: toNumber(row.lightCutouts),
+        beveled: Boolean(row.beveled),
+        note: row.note ?? "",
+        subtotal: toNumber(row.subtotal),
+      };
+    });
+
+    const glassDoorShelfRows = estimate.glassDoorShelfRows.map((row: any) => {
+      const width = toNumber(row.widthIn);
+      const height = toNumber(row.heightIn);
+      const squareFeet = toNumber(row.squareFeet);
+      return {
+        id: row.id,
+        width,
+        widthIn: width,
+        height,
+        heightIn: height,
+        squareFeet,
+        sqFt: squareFeet,
+        glassTypeId: row.glassTypeId,
+        glassType: row.glassType?.name ?? "",
+        quantity: toNumber(row.quantity),
+        note: row.note ?? "",
+        subtotal: toNumber(row.subtotal),
+      };
+    });
+
+    const islandPanelRows = estimate.islandPanelRows.map((row: any) => {
+      const width = toNumber(row.widthIn);
+      const height = toNumber(row.heightIn);
+      const squareFeet = toNumber(row.squareFeet);
+      return {
+        id: row.id,
+        roomId: row.roomId,
+        room: row.room?.name ?? "",
+        width,
+        widthIn: width,
+        height,
+        heightIn: height,
+        squareFeet,
+        sqFt: squareFeet,
+        panelModelId: row.panelModelId,
+        panelModel: row.panelModel?.name ?? "",
+        boxQty: toNumber(row.boxQty),
+        subtotal: toNumber(row.subtotal),
+      };
+    });
+
+    const wallUnitRows = estimate.wallUnitRows.map((row: any) => {
+      const width = toNumber(row.widthIn);
+      const height = toNumber(row.heightIn);
+      const squareFeet = toNumber(row.squareFeet);
+      return {
+        id: row.id,
+        roomId: row.roomId,
+        room: row.room?.name ?? "",
+        width,
+        widthIn: width,
+        height,
+        heightIn: height,
+        squareFeet,
+        sqFt: squareFeet,
+        note: row.note ?? "",
+        subtotal: toNumber(row.subtotal),
+      };
+    });
+
+    const mirrorFrameRows = estimate.mirrorFrameRows.map((row: any) => {
+      const width = toNumber(row.widthIn);
+      const height = toNumber(row.heightIn);
+      const linearInches = toNumber(row.linearInches);
+      return {
+        id: row.id,
+        roomId: row.roomId,
+        room: row.room?.name ?? "",
+        width,
+        widthIn: width,
+        height,
+        heightIn: height,
+        linearInches,
+        lnIn: linearInches,
+        finishId: row.finishId,
+        finish: row.finish?.name ?? "",
+        painted: Boolean(row.painted),
+        color: row.color ?? "",
+        subtotal: toNumber(row.subtotal),
+      };
+    });
+
+    const mirrorRemovalRows = estimate.mirrorRemovalRows.map((row: any) => {
+      const width = toNumber(row.widthIn);
+      const height = toNumber(row.heightIn);
+      return {
+        id: row.id,
+        width,
+        widthIn: width,
+        height,
+        heightIn: height,
+        squareFeet: toNumber(row.squareFeet),
+        repairWall: Boolean(row.repairWall),
+        note: row.note ?? "",
+        subtotal: toNumber(row.subtotal),
+        repairWallSubtotal: toNumber(row.repairWallSubtotal),
+        total: toNumber(row.total),
+      };
+    });
+
+    const ledStripSubtotal = ledRows.reduce(
+      (sum: number, row: any) => sum + toNumber(row.subtotal),
+      0,
+    );
+    const ledSheetSubtotal = ledSheetRows.reduce(
+      (sum: number, row: any) => sum + toNumber(row.subtotal),
+      0,
+    );
+    const glassDoorShelfSubtotal = glassDoorShelfRows.reduce(
+      (sum: number, row: any) => sum + toNumber(row.subtotal),
+      0,
+    );
+    const islandPanelSubtotal = islandPanelRows.reduce(
+      (sum: number, row: any) => sum + toNumber(row.subtotal),
+      0,
+    );
+    const wallUnitSubtotal = wallUnitRows.reduce(
+      (sum: number, row: any) => sum + toNumber(row.subtotal),
+      0,
+    );
+    const mirrorFrameSubtotal = mirrorFrameRows.reduce(
+      (sum: number, row: any) => sum + toNumber(row.subtotal),
+      0,
+    );
+    const mirrorSubtotal = mirrorRows.reduce(
+      (sum: number, row: any) => sum + toNumber(row.subtotal),
+      0,
+    );
+    const mirrorRemovalSubtotal = mirrorRemovalRows.reduce(
+      (sum: number, row: any) => sum + toNumber(row.total),
+      0,
+    );
+    const selectedOptions: string[] = [];
+    if (ledRows.length > 0) {
+      selectedOptions.push("LED_STRIP");
+    }
+    if (ledSheetRows.length > 0) {
+      selectedOptions.push("LED_SHEET");
+    }
+    if (glassDoorShelfRows.length > 0) {
+      selectedOptions.push("GLASS_DOOR_SHELF");
+    }
+    if (islandPanelRows.length > 0) {
+      selectedOptions.push("ISLAND_PANEL");
+    }
+    if (wallUnitRows.length > 0) {
+      selectedOptions.push("WALL_UNIT");
+    }
+    if (mirrorFrameRows.length > 0) {
+      selectedOptions.push("MIRROR_FRAME");
+    }
+    if (mirrorRows.length > 0 || mirrorRemovalRows.length > 0) {
+      selectedOptions.push("MIRROR");
+    }
+
     return NextResponse.json({
       id: estimate.id,
       estimateNumber: estimate.estimateNo,
@@ -105,8 +354,23 @@ export async function GET(
         dealName: estimate.dealName,
         date: estimate.date.toISOString().slice(0, 10),
         salesRep: estimate.salesRep,
+        selectedOptions,
         ledStripRows: ledRows,
-        ledStripSubtotal: toNumber(estimate.subtotal),
+        ledStripSubtotal,
+        ledSheetRows,
+        ledSheetSubtotal,
+        glassDoorShelfRows,
+        glassDoorShelfSubtotal,
+        islandPanelRows,
+        islandPanelSubtotal,
+        wallUnitRows,
+        wallUnitSubtotal,
+        mirrorFrameRows,
+        mirrorFrameSubtotal,
+        mirrorRows,
+        mirrorSubtotal,
+        mirrorRemovalRows,
+        mirrorRemovalSubtotal,
       },
       createdAt: estimate.createdAt,
     });

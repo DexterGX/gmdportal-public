@@ -2,7 +2,7 @@
 
 import { useState, useMemo } from "react";
 import Link from "next/link";
-import { Search, FileText, Download, Pencil, Trash2 } from "lucide-react";
+import { Search, FileText, Pencil, Trash2 } from "lucide-react";
 import FilterMultiSelect from "@/components/filters/FilterMultiSelect";
 
 type EstimateRow = {
@@ -38,6 +38,8 @@ const SECTION_LABELS: Record<string, string> = {
   MIRROR_FRAME: "Mirror Frame",
 };
 
+const MAX_VISIBLE_SECTION_TAGS = 2;
+
 export default function SavedEstimatesClient({
   estimates,
   currentUserName,
@@ -46,6 +48,7 @@ export default function SavedEstimatesClient({
   const [clientSearch, setClientSearch] = useState("");
   const [rows, setRows] = useState(estimates);
   const [deletingId, setDeletingId] = useState<string | null>(null);
+  const [selectedSections, setSelectedSections] = useState<string[]>([]);
   const [selectedSalesReps, setSelectedSalesReps] = useState<string[]>(() => {
     const me = currentUserName.trim();
     if (!me) return [];
@@ -64,6 +67,23 @@ export default function SavedEstimatesClient({
     return Array.from(set).sort((a, b) => a.localeCompare(b));
   }, [rows]);
 
+  const sectionOptions = useMemo(() => {
+    const set = new Set<string>();
+    rows.forEach((row) => {
+      row.selectedOptions.forEach((section) => {
+        if (SECTION_LABELS[section]) {
+          set.add(section);
+        }
+      });
+    });
+
+    return Array.from(set).sort((a, b) => {
+      const aLabel = SECTION_LABELS[a] ?? a;
+      const bLabel = SECTION_LABELS[b] ?? b;
+      return aLabel.localeCompare(bLabel);
+    });
+  }, [rows]);
+
   const filtered = useMemo(() => {
     const q = search.trim().toLowerCase();
     const cq = clientSearch.trim().toLowerCase();
@@ -75,6 +95,13 @@ export default function SavedEstimatesClient({
       if (selectedSalesReps.length > 0) {
         const allowed = selectedSalesReps.map((v) => v.trim().toLowerCase());
         if (!allowed.includes(rep)) return false;
+      }
+
+      if (selectedSections.length > 0) {
+        const hasSelectedSection = e.selectedOptions.some((section) =>
+          selectedSections.includes(section),
+        );
+        if (!hasSelectedSection) return false;
       }
 
       if (cq && !e.customerName.toLowerCase().includes(cq)) {
@@ -91,7 +118,14 @@ export default function SavedEstimatesClient({
         (e.address ?? "").toLowerCase().includes(q)
       );
     });
-  }, [rows, search, clientSearch, selectedSalesReps, currentUserName]);
+  }, [
+    rows,
+    search,
+    clientSearch,
+    selectedSalesReps,
+    selectedSections,
+    currentUserName,
+  ]);
 
   async function handleDeleteEstimate(id: string) {
     const confirmed = window.confirm(
@@ -134,7 +168,7 @@ export default function SavedEstimatesClient({
         </Link>
       </div>
 
-      <div className="grid grid-cols-1 md:grid-cols-3 gap-3 max-w-4xl">
+      <div className="grid grid-cols-1 md:grid-cols-4 gap-3 max-w-6xl">
         <div className="relative">
           <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
           <input
@@ -159,6 +193,21 @@ export default function SavedEstimatesClient({
             options={salesRepOptions}
             selected={selectedSalesReps}
             onChange={setSelectedSalesReps}
+            fullWidth
+            matchInputStyle
+          />
+        </div>
+        <div>
+          <FilterMultiSelect
+            label="Sections"
+            options={sectionOptions.map((key) => SECTION_LABELS[key] ?? key)}
+            selected={selectedSections.map((key) => SECTION_LABELS[key] ?? key)}
+            onChange={(labels) => {
+              const selectedKeys = Object.entries(SECTION_LABELS)
+                .filter(([, label]) => labels.includes(label))
+                .map(([key]) => key);
+              setSelectedSections(selectedKeys);
+            }}
             fullWidth
             matchInputStyle
           />
@@ -212,23 +261,14 @@ export default function SavedEstimatesClient({
                   className="hover:bg-gray-50 dark:hover:bg-gray-900/40 transition-colors"
                 >
                   <td className="px-4 py-3 font-mono font-semibold text-teal-700 dark:text-teal-400">
-                    {est.customerId ? (
-                      <Link
-                        href={`/customers-v2/${est.customerId}/jobs/${est.jobId}?artifactId=${encodeURIComponent(est.id)}#job-artifacts`}
-                        className="hover:underline"
-                      >
-                        {est.estimateNumber || "–"}
-                      </Link>
-                    ) : (
-                      <Link
-                        href={`/misc-estimates?estimateId=${encodeURIComponent(est.id)}`}
-                        className="hover:underline"
-                      >
-                        {est.estimateNumber || "–"}
-                      </Link>
-                    )}
+                    <Link
+                      href={`/misc-estimates?estimateId=${encodeURIComponent(est.id)}&mode=view`}
+                      className="hover:underline"
+                    >
+                      {est.estimateNumber || "–"}
+                    </Link>
                   </td>
-                  <td className="px-4 py-3 text-gray-900 dark:text-gray-100 max-w-[180px] truncate">
+                  <td className="px-4 py-3 text-gray-900 dark:text-gray-100 max-w-[160px] truncate">
                     {est.title}
                   </td>
                   <td className="px-4 py-3">
@@ -245,10 +285,10 @@ export default function SavedEstimatesClient({
                       </span>
                     )}
                   </td>
-                  <td className="px-4 py-3 text-gray-700 dark:text-gray-300 max-w-[160px] truncate">
+                  <td className="px-4 py-3 text-gray-700 dark:text-gray-300 max-w-[280px] truncate">
                     {est.dealName}
                   </td>
-                  <td className="px-4 py-3 text-gray-600 dark:text-gray-400 max-w-[160px] truncate">
+                  <td className="px-4 py-3 text-gray-600 dark:text-gray-400 max-w-[280px] truncate">
                     {est.address || "–"}
                   </td>
                   <td className="px-4 py-3 text-gray-700 dark:text-gray-300 whitespace-nowrap">
@@ -264,27 +304,28 @@ export default function SavedEstimatesClient({
                   </td>
                   <td className="px-4 py-3">
                     <div className="flex flex-wrap gap-1">
-                      {est.selectedOptions.map((key) => (
-                        <span
-                          key={key}
-                          className="inline-block bg-blue-100 dark:bg-blue-900/40 text-blue-700 dark:text-blue-300 text-xs rounded px-1.5 py-0.5"
-                        >
-                          {SECTION_LABELS[key] ?? key}
+                      {est.selectedOptions
+                        .slice(0, MAX_VISIBLE_SECTION_TAGS)
+                        .map((key) => (
+                          <span
+                            key={key}
+                            className="inline-block bg-blue-100 dark:bg-blue-900/40 text-blue-700 dark:text-blue-300 text-xs rounded px-1.5 py-0.5"
+                          >
+                            {SECTION_LABELS[key] ?? key}
+                          </span>
+                        ))}
+                      {est.selectedOptions.length >
+                        MAX_VISIBLE_SECTION_TAGS && (
+                        <span className="inline-block bg-gray-100 dark:bg-gray-700 text-gray-600 dark:text-gray-200 text-xs rounded px-1.5 py-0.5">
+                          +
+                          {est.selectedOptions.length -
+                            MAX_VISIBLE_SECTION_TAGS}
                         </span>
-                      ))}
+                      )}
                     </div>
                   </td>
                   <td className="px-4 py-3">
                     <div className="flex justify-end gap-2">
-                      <a
-                        href={`/misc-estimate-print/${encodeURIComponent(est.id)}?autoprint=1`}
-                        target="_blank"
-                        rel="noopener noreferrer"
-                        className="inline-flex items-center gap-1 px-2 py-1 rounded border border-gray-300 dark:border-gray-600 text-xs text-gray-700 dark:text-gray-200 hover:bg-gray-50 dark:hover:bg-gray-800"
-                      >
-                        <Download className="w-3.5 h-3.5" />
-                        Download
-                      </a>
                       <Link
                         href={`/misc-estimates?estimateId=${encodeURIComponent(est.id)}&mode=edit`}
                         className="inline-flex items-center gap-1 px-2 py-1 rounded border border-blue-300 dark:border-blue-700 text-xs text-blue-700 dark:text-blue-300 hover:bg-blue-50 dark:hover:bg-blue-900/30"
@@ -313,6 +354,11 @@ export default function SavedEstimatesClient({
             {clientSearch ? ` for client "${clientSearch}"` : ""}
             {selectedSalesReps.length > 0
               ? ` · Sales Rep: ${selectedSalesReps.join(", ")}`
+              : ""}
+            {selectedSections.length > 0
+              ? ` · Sections: ${selectedSections
+                  .map((key) => SECTION_LABELS[key] ?? key)
+                  .join(", ")}`
               : ""}
           </div>
         </div>
