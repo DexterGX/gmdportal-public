@@ -9,7 +9,7 @@ type RoomBody = {
   name?: string;
   sortOrder?: number;
   active?: boolean;
-  action?: "save" | "deactivate" | "activate";
+  action?: "save" | "deactivate" | "activate" | "delete";
 };
 
 export async function POST(request: Request) {
@@ -41,6 +41,15 @@ export async function POST(request: Request) {
       return NextResponse.json(updated);
     }
 
+    if (action === "delete") {
+      if (!id) {
+        return NextResponse.json({ error: "Missing id" }, { status: 400 });
+      }
+
+      await prismaAny.miscLedRoom.delete({ where: { id } });
+      return NextResponse.json({ success: true, id });
+    }
+
     const name = body.name?.trim();
     if (!name) {
       return NextResponse.json({ error: "Name is required" }, { status: 400 });
@@ -65,6 +74,15 @@ export async function POST(request: Request) {
 
     return NextResponse.json(created);
   } catch (error: any) {
+    if (error?.code === "P2003") {
+      return NextResponse.json(
+        {
+          error:
+            "Unable to delete room because it is referenced by other records.",
+        },
+        { status: 400 },
+      );
+    }
     const message =
       error?.code === "P2002"
         ? "Room name must be unique"

@@ -21,6 +21,112 @@ type LedStripRowPayload = {
   subtotal: number | null;
 };
 
+type LedSheetRowPayload = {
+  roomId?: string | null;
+  room?: string;
+  width?: number | null;
+  widthIn?: number | null;
+  height?: number | null;
+  heightIn?: number | null;
+  squareFeet?: number | null;
+  sqFt?: number | null;
+  sheetTypeId?: string | null;
+  sheetType?: string;
+  controlTypeId?: string | null;
+  controlType?: string;
+  subtotal?: number | null;
+};
+
+type GlassDoorShelfRowPayload = {
+  width?: number | null;
+  widthIn?: number | null;
+  height?: number | null;
+  heightIn?: number | null;
+  squareFeet?: number | null;
+  sqFt?: number | null;
+  glassTypeId?: string | null;
+  glassType?: string;
+  quantity?: number | null;
+  note?: string | null;
+  subtotal?: number | null;
+};
+
+type IslandPanelRowPayload = {
+  roomId?: string | null;
+  room?: string;
+  width?: number | null;
+  widthIn?: number | null;
+  height?: number | null;
+  heightIn?: number | null;
+  squareFeet?: number | null;
+  sqFt?: number | null;
+  panelModelId?: string | null;
+  panelModel?: string;
+  boxQty?: number | null;
+  subtotal?: number | null;
+};
+
+type WallUnitRowPayload = {
+  roomId?: string | null;
+  room?: string;
+  width?: number | null;
+  widthIn?: number | null;
+  height?: number | null;
+  heightIn?: number | null;
+  squareFeet?: number | null;
+  sqFt?: number | null;
+  note?: string | null;
+  subtotal?: number | null;
+};
+
+type MirrorFrameRowPayload = {
+  roomId?: string | null;
+  room?: string;
+  width?: number | null;
+  widthIn?: number | null;
+  height?: number | null;
+  heightIn?: number | null;
+  linearInches?: number | null;
+  lnIn?: number | null;
+  finishId?: string | null;
+  finish?: string;
+  painted?: boolean | string | null;
+  color?: string | null;
+  subtotal?: number | null;
+};
+
+type MirrorRowPayload = {
+  roomId?: string | null;
+  room?: string;
+  width?: number | null;
+  widthIn?: number | null;
+  height?: number | null;
+  heightIn?: number | null;
+  squareFeet?: number | null;
+  outlets?: number | null;
+  lightCutout?: number | null;
+  beveled?: boolean | null;
+  beveledOptionId?: string | null;
+  beveledOption?: string | null;
+  colorId?: string | null;
+  color?: string;
+  note?: string | null;
+  subtotal?: number | null;
+};
+
+type MirrorRemovalRowPayload = {
+  width?: number | null;
+  widthIn?: number | null;
+  height?: number | null;
+  heightIn?: number | null;
+  squareFeet?: number | null;
+  repairWall?: boolean | null;
+  note?: string | null;
+  subtotal?: number | null;
+  repairWallSubtotal?: number | null;
+  total?: number | null;
+};
+
 type ArtifactMeta = {
   estimateNumber?: string;
   [key: string]: unknown;
@@ -40,6 +146,15 @@ function parseDateInput(value: string | undefined): Date {
     return new Date();
   }
   return parsed;
+}
+
+function isChargeableMirrorBevelOption(
+  option: { name?: string | null } | null | undefined,
+) {
+  const normalizedName = String(option?.name ?? "")
+    .trim()
+    .toLowerCase();
+  return Boolean(normalizedName) && normalizedName !== "no";
 }
 
 function text(meta: ArtifactMeta, key: string): string {
@@ -608,6 +723,20 @@ export async function POST(request: NextRequest) {
       selectedOptions,
       ledStripRows,
       ledStripSubtotal,
+      ledSheetRows,
+      ledSheetSubtotal,
+      glassDoorShelfRows,
+      glassDoorShelfSubtotal,
+      islandPanelRows,
+      islandPanelSubtotal,
+      wallUnitRows,
+      wallUnitSubtotal,
+      mirrorFrameRows,
+      mirrorFrameSubtotal,
+      mirrorRows,
+      mirrorRemovalRows,
+      mirrorSubtotal,
+      mirrorRemovalSubtotal,
       sourceEstimateNumber,
     } = body as {
       title?: string;
@@ -624,6 +753,20 @@ export async function POST(request: NextRequest) {
       selectedOptions?: string[];
       ledStripRows?: LedStripRowPayload[];
       ledStripSubtotal?: number;
+      ledSheetRows?: LedSheetRowPayload[];
+      ledSheetSubtotal?: number;
+      glassDoorShelfRows?: GlassDoorShelfRowPayload[];
+      glassDoorShelfSubtotal?: number;
+      islandPanelRows?: IslandPanelRowPayload[];
+      islandPanelSubtotal?: number;
+      wallUnitRows?: WallUnitRowPayload[];
+      wallUnitSubtotal?: number;
+      mirrorFrameRows?: MirrorFrameRowPayload[];
+      mirrorFrameSubtotal?: number;
+      mirrorRows?: MirrorRowPayload[];
+      mirrorRemovalRows?: MirrorRemovalRowPayload[];
+      mirrorSubtotal?: number;
+      mirrorRemovalSubtotal?: number;
       sourceEstimateNumber?: string | null;
     };
 
@@ -656,7 +799,21 @@ export async function POST(request: NextRequest) {
       select: { id: true },
     });
 
-    const [rooms, ledTypes, controlTypes, profiles] = await Promise.all([
+    const [
+      rooms,
+      ledTypes,
+      controlTypes,
+      profiles,
+      sheetTypes,
+      mirrorColors,
+      glassDoorShelfTypes,
+      islandPanelModels,
+      mirrorFrameFinishes,
+      mirrorBevelOptions,
+      mirrorSetting,
+      wallUnitSetting,
+      mirrorFrameSetting,
+    ] = await Promise.all([
       prismaAny.miscLedRoom.findMany({ select: { id: true, name: true } }),
       prismaAny.miscLedType.findMany({
         select: {
@@ -677,6 +834,27 @@ export async function POST(request: NextRequest) {
           groovePricePerFt: true,
         },
       }),
+      prismaAny.miscLedSheetType.findMany({
+        select: { id: true, name: true, minimumPrice: true, unitPrice: true },
+      }),
+      prismaAny.miscMirrorColor.findMany({
+        select: { id: true, name: true, venda: true, custo: true },
+      }),
+      prismaAny.miscGlassDoorShelfType.findMany({
+        select: { id: true, name: true, venda: true, custo: true },
+      }),
+      prismaAny.miscIslandPanelModel.findMany({
+        select: { id: true, name: true, sfPerBox: true, salesPrice: true },
+      }),
+      prismaAny.miscMirrorFrameFinish.findMany({
+        select: { id: true, name: true, pricePerLinearFt: true },
+      }),
+      prismaAny.miscMirrorBevelOption.findMany({
+        select: { id: true, name: true, venda: true, custo: true },
+      }),
+      prismaAny.miscMirrorSetting.findFirst(),
+      prismaAny.miscWallUnitSetting.findFirst(),
+      prismaAny.miscMirrorFrameSetting.findFirst(),
     ]);
 
     const roomById = new Map<string, any>(
@@ -702,6 +880,54 @@ export async function POST(request: NextRequest) {
     );
     const profileByName = new Map<string, any>(
       profiles.map((item: any) => [String(item.name).toLowerCase(), item]),
+    );
+    const sheetTypeById = new Map<string, any>(
+      sheetTypes.map((item: any) => [String(item.id), item]),
+    );
+    const sheetTypeByName = new Map<string, any>(
+      sheetTypes.map((item: any) => [String(item.name).toLowerCase(), item]),
+    );
+    const mirrorColorById = new Map<string, any>(
+      mirrorColors.map((item: any) => [String(item.id), item]),
+    );
+    const mirrorColorByName = new Map<string, any>(
+      mirrorColors.map((item: any) => [String(item.name).toLowerCase(), item]),
+    );
+    const glassDoorShelfTypeById = new Map<string, any>(
+      glassDoorShelfTypes.map((item: any) => [String(item.id), item]),
+    );
+    const glassDoorShelfTypeByName = new Map<string, any>(
+      glassDoorShelfTypes.map((item: any) => [
+        String(item.name).toLowerCase(),
+        item,
+      ]),
+    );
+    const islandPanelModelById = new Map<string, any>(
+      islandPanelModels.map((item: any) => [String(item.id), item]),
+    );
+    const islandPanelModelByName = new Map<string, any>(
+      islandPanelModels.map((item: any) => [
+        String(item.name).toLowerCase(),
+        item,
+      ]),
+    );
+    const mirrorFrameFinishById = new Map<string, any>(
+      mirrorFrameFinishes.map((item: any) => [String(item.id), item]),
+    );
+    const mirrorFrameFinishByName = new Map<string, any>(
+      mirrorFrameFinishes.map((item: any) => [
+        String(item.name).toLowerCase(),
+        item,
+      ]),
+    );
+    const mirrorBevelById = new Map<string, any>(
+      mirrorBevelOptions.map((item: any) => [String(item.id), item]),
+    );
+    const mirrorBevelByName = new Map<string, any>(
+      mirrorBevelOptions.map((item: any) => [
+        String(item.name).toLowerCase(),
+        item,
+      ]),
     );
 
     const normalizedRows = (
@@ -772,6 +998,333 @@ export async function POST(request: NextRequest) {
       0,
     );
 
+    const normalizedSheetRows = (
+      Array.isArray(ledSheetRows) ? ledSheetRows : []
+    ).map((raw) => {
+      const roomIdRaw = raw.roomId?.trim() || "";
+      const roomNameRaw = raw.room?.trim() || "";
+      const roomResolved =
+        roomById.get(roomIdRaw) || roomByName.get(roomNameRaw.toLowerCase());
+
+      const sheetTypeIdRaw = raw.sheetTypeId?.trim() || "";
+      const sheetTypeNameRaw = raw.sheetType?.trim() || "";
+      const sheetTypeResolved =
+        sheetTypeById.get(sheetTypeIdRaw) ||
+        sheetTypeByName.get(sheetTypeNameRaw.toLowerCase());
+
+      const controlTypeIdRaw = raw.controlTypeId?.trim() || "";
+      const controlTypeNameRaw = raw.controlType?.trim() || "";
+      const controlTypeResolved =
+        controlById.get(controlTypeIdRaw) ||
+        controlByName.get(controlTypeNameRaw.toLowerCase());
+
+      const width = toNumber(raw.width ?? raw.widthIn);
+      const height = toNumber(raw.height ?? raw.heightIn);
+      const squareFeet =
+        width > 0 && height > 0 ? Math.ceil((width * height) / 144) : 0;
+      const sheetTypePrice = toNumber(sheetTypeResolved?.unitPrice);
+      const minimumSheetPrice = toNumber(sheetTypeResolved?.minimumPrice);
+      const rowSubtotal =
+        squareFeet > 0 && sheetTypeResolved
+          ? Math.max(minimumSheetPrice, sheetTypePrice * squareFeet)
+          : 0;
+
+      return {
+        roomId: roomResolved?.id ?? null,
+        roomName: roomResolved?.name ?? roomNameRaw,
+        width,
+        height,
+        squareFeet,
+        sheetTypeId: sheetTypeResolved?.id ?? null,
+        sheetTypeName: sheetTypeResolved?.name ?? sheetTypeNameRaw,
+        controlTypeId: controlTypeResolved?.id ?? null,
+        controlTypeName: controlTypeResolved?.name ?? controlTypeNameRaw,
+        subtotal: rowSubtotal,
+      };
+    });
+
+    const computedLedSheetSubtotal = normalizedSheetRows.reduce(
+      (sum, row) => sum + toNumber(row.subtotal),
+      0,
+    );
+
+    const normalizedGlassDoorShelfRows = (
+      Array.isArray(glassDoorShelfRows) ? glassDoorShelfRows : []
+    ).map((raw) => {
+      const glassTypeIdRaw = raw.glassTypeId?.trim() || "";
+      const glassTypeNameRaw = raw.glassType?.trim() || "";
+      const glassTypeResolved =
+        glassDoorShelfTypeById.get(glassTypeIdRaw) ||
+        glassDoorShelfTypeByName.get(glassTypeNameRaw.toLowerCase());
+
+      const width = toNumber(raw.width ?? raw.widthIn);
+      const height = toNumber(raw.height ?? raw.heightIn);
+      const squareFeet = width > 0 && height > 0 ? (width * height) / 144 : 0;
+      const quantity = Math.max(0, toNumber(raw.quantity));
+      const cuttingFee = toNumber(mirrorSetting?.cuttingFee);
+      const glassUnitSale = toNumber(glassTypeResolved?.venda);
+      const rowSubtotal =
+        glassTypeResolved && squareFeet > 0 && quantity > 0
+          ? squareFeet * glassUnitSale * quantity + cuttingFee * quantity
+          : 0;
+
+      return {
+        width,
+        height,
+        squareFeet,
+        glassTypeId: glassTypeResolved?.id ?? null,
+        glassTypeName: glassTypeResolved?.name ?? glassTypeNameRaw,
+        quantity,
+        note: raw.note?.trim() || "",
+        subtotal: rowSubtotal,
+      };
+    });
+
+    const computedGlassDoorShelfSubtotal = normalizedGlassDoorShelfRows.reduce(
+      (sum, row) => sum + toNumber(row.subtotal),
+      0,
+    );
+
+    const normalizedIslandPanelRows = (
+      Array.isArray(islandPanelRows) ? islandPanelRows : []
+    ).map((raw) => {
+      const roomIdRaw = raw.roomId?.trim() || "";
+      const roomNameRaw = raw.room?.trim() || "";
+      const roomResolved =
+        roomById.get(roomIdRaw) || roomByName.get(roomNameRaw.toLowerCase());
+
+      const panelModelIdRaw = raw.panelModelId?.trim() || "";
+      const panelModelNameRaw = raw.panelModel?.trim() || "";
+      const panelModelResolved =
+        islandPanelModelById.get(panelModelIdRaw) ||
+        islandPanelModelByName.get(panelModelNameRaw.toLowerCase());
+
+      const width = toNumber(raw.width ?? raw.widthIn);
+      const height = toNumber(raw.height ?? raw.heightIn);
+      const squareFeet = width > 0 && height > 0 ? (width * height) / 144 : 0;
+      const sfPerBox = toNumber(panelModelResolved?.sfPerBox);
+      const boxQty =
+        panelModelResolved && squareFeet > 0 && sfPerBox > 0
+          ? Math.ceil(squareFeet / sfPerBox)
+          : 0;
+      const rowSubtotal =
+        panelModelResolved && boxQty > 0
+          ? toNumber(panelModelResolved?.salesPrice) * boxQty
+          : 0;
+
+      return {
+        roomId: roomResolved?.id ?? null,
+        roomName: roomResolved?.name ?? roomNameRaw,
+        panelModelId: panelModelResolved?.id ?? null,
+        panelModelName: panelModelResolved?.name ?? panelModelNameRaw,
+        width,
+        height,
+        squareFeet,
+        boxQty,
+        subtotal: rowSubtotal,
+      };
+    });
+
+    const computedIslandPanelSubtotal = normalizedIslandPanelRows.reduce(
+      (sum, row) => sum + toNumber(row.subtotal),
+      0,
+    );
+
+    const normalizedWallUnitRows = (
+      Array.isArray(wallUnitRows) ? wallUnitRows : []
+    ).map((raw) => {
+      const roomIdRaw = raw.roomId?.trim() || "";
+      const roomNameRaw = raw.room?.trim() || "";
+      const roomResolved =
+        roomById.get(roomIdRaw) || roomByName.get(roomNameRaw.toLowerCase());
+
+      const width = toNumber(raw.width ?? raw.widthIn);
+      const height = toNumber(raw.height ?? raw.heightIn);
+      const squareFeet = width > 0 && height > 0 ? (width * height) / 144 : 0;
+      const rowSubtotal =
+        squareFeet > 0
+          ? squareFeet * toNumber(wallUnitSetting?.constructionPricePerSqFt)
+          : 0;
+
+      return {
+        roomId: roomResolved?.id ?? null,
+        roomName: roomResolved?.name ?? roomNameRaw,
+        width,
+        height,
+        squareFeet,
+        note: raw.note?.trim() || "",
+        subtotal: rowSubtotal,
+      };
+    });
+
+    const computedWallUnitSubtotal = normalizedWallUnitRows.reduce(
+      (sum, row) => sum + toNumber(row.subtotal),
+      0,
+    );
+
+    const normalizedMirrorFrameRows = (
+      Array.isArray(mirrorFrameRows) ? mirrorFrameRows : []
+    ).map((raw) => {
+      const roomIdRaw = raw.roomId?.trim() || "";
+      const roomNameRaw = raw.room?.trim() || "";
+      const roomResolved =
+        roomById.get(roomIdRaw) || roomByName.get(roomNameRaw.toLowerCase());
+
+      const finishIdRaw = raw.finishId?.trim() || "";
+      const finishNameRaw = raw.finish?.trim() || "";
+      const finishResolved =
+        mirrorFrameFinishById.get(finishIdRaw) ||
+        mirrorFrameFinishByName.get(finishNameRaw.toLowerCase());
+
+      const width = toNumber(raw.width ?? raw.widthIn);
+      const height = toNumber(raw.height ?? raw.heightIn);
+      const linearInches = width > 0 && height > 0 ? (width + height) * 2 : 0;
+      const painted =
+        raw.painted === true ||
+        String(raw.painted || "")
+          .trim()
+          .toLowerCase() === "yes";
+
+      const base =
+        linearInches > 0 && finishResolved
+          ? Math.max(
+              linearInches * toNumber(finishResolved?.pricePerLinearFt),
+              toNumber(mirrorFrameSetting?.minimumCharge),
+            )
+          : 0;
+      const rowSubtotal = painted
+        ? base * toNumber(mirrorFrameSetting?.paintingFactor || 1)
+        : base;
+
+      return {
+        roomId: roomResolved?.id ?? null,
+        roomName: roomResolved?.name ?? roomNameRaw,
+        finishId: finishResolved?.id ?? null,
+        finishName: finishResolved?.name ?? finishNameRaw,
+        width,
+        height,
+        linearInches,
+        painted,
+        color: raw.color?.trim() || "",
+        subtotal: rowSubtotal,
+      };
+    });
+
+    const computedMirrorFrameSubtotal = normalizedMirrorFrameRows.reduce(
+      (sum, row) => sum + toNumber(row.subtotal),
+      0,
+    );
+
+    const normalizedMirrorRows = (
+      Array.isArray(mirrorRows) ? mirrorRows : []
+    ).map((raw) => {
+      const roomIdRaw = raw.roomId?.trim() || "";
+      const roomNameRaw = raw.room?.trim() || "";
+      const roomResolved =
+        roomById.get(roomIdRaw) || roomByName.get(roomNameRaw.toLowerCase());
+
+      const colorIdRaw = raw.colorId?.trim() || "";
+      const colorNameRaw = raw.color?.trim() || "";
+      const colorResolved =
+        mirrorColorById.get(colorIdRaw) ||
+        mirrorColorByName.get(colorNameRaw.toLowerCase());
+
+      const beveledOptionIdRaw = raw.beveledOptionId?.trim() || "";
+      const beveledOptionNameRaw = raw.beveledOption?.trim() || "";
+      const beveledOptionResolved =
+        mirrorBevelById.get(beveledOptionIdRaw) ||
+        mirrorBevelByName.get(beveledOptionNameRaw.toLowerCase());
+
+      const width = toNumber(raw.width ?? raw.widthIn);
+      const height = toNumber(raw.height ?? raw.heightIn);
+      const squareFeet = width > 0 && height > 0 ? (width * height) / 144 : 0;
+      const outlets = Math.max(0, Math.floor(toNumber(raw.outlets)));
+      const lightCutout = Math.max(0, Math.floor(toNumber(raw.lightCutout)));
+      const beveled = beveledOptionResolved
+        ? isChargeableMirrorBevelOption(beveledOptionResolved)
+        : raw.beveled === true;
+      const perimeter = width > 0 && height > 0 ? width * 2 + height * 2 : 0;
+
+      const colorVenda = toNumber(colorResolved?.venda);
+      const outletSale = toNumber(mirrorSetting?.outletSale);
+      const lightCutoutSale = toNumber(mirrorSetting?.lightCutoutSale);
+      const beveledPerInchSale = toNumber(beveledOptionResolved?.venda);
+      const outOfSquareBeveledSale = toNumber(
+        mirrorSetting?.outOfSquareBeveledSale,
+      );
+
+      const subtotal = colorResolved
+        ? squareFeet * colorVenda +
+          outlets * outletSale +
+          lightCutout * lightCutoutSale +
+          (beveled ? perimeter * beveledPerInchSale : 0) +
+          (beveled ? outOfSquareBeveledSale : 0)
+        : 0;
+
+      return {
+        roomId: roomResolved?.id ?? null,
+        roomName: roomResolved?.name ?? roomNameRaw,
+        colorId: colorResolved?.id ?? null,
+        colorName: colorResolved?.name ?? colorNameRaw,
+        beveledOptionId: beveledOptionResolved?.id ?? null,
+        beveledOptionName: beveledOptionResolved?.name ?? beveledOptionNameRaw,
+        width,
+        height,
+        squareFeet,
+        outlets,
+        lightCutout,
+        beveled,
+        note: raw.note?.trim() || "",
+        subtotal,
+      };
+    });
+
+    const computedMirrorSubtotal = normalizedMirrorRows.reduce(
+      (sum, row) => sum + toNumber(row.subtotal),
+      0,
+    );
+
+    const normalizedMirrorRemovalRows = (
+      Array.isArray(mirrorRemovalRows) ? mirrorRemovalRows : []
+    ).map((raw) => {
+      const width = toNumber(raw.width ?? raw.widthIn);
+      const height = toNumber(raw.height ?? raw.heightIn);
+      const squareFeet = width > 0 && height > 0 ? (width * height) / 144 : 0;
+      const repairWall = raw.repairWall === true;
+      const subtotal =
+        squareFeet * toNumber(mirrorSetting?.removalPricePerSqFt);
+      const repairWallSubtotal = repairWall
+        ? subtotal * toNumber(mirrorSetting?.repairWallMultiplier)
+        : 0;
+      const total = subtotal + repairWallSubtotal;
+
+      return {
+        width,
+        height,
+        squareFeet,
+        repairWall,
+        note: raw.note?.trim() || "",
+        subtotal,
+        repairWallSubtotal,
+        total,
+      };
+    });
+
+    const computedMirrorRemovalSubtotal = normalizedMirrorRemovalRows.reduce(
+      (sum, row) => sum + toNumber(row.total),
+      0,
+    );
+
+    const computedSubtotal =
+      computedLedSubtotal +
+      computedLedSheetSubtotal +
+      computedGlassDoorShelfSubtotal +
+      computedIslandPanelSubtotal +
+      computedWallUnitSubtotal +
+      computedMirrorFrameSubtotal +
+      computedMirrorSubtotal +
+      computedMirrorRemovalSubtotal;
+
     const safeSelectedOptions = Array.isArray(selectedOptions)
       ? selectedOptions
       : [];
@@ -787,9 +1340,9 @@ export async function POST(request: NextRequest) {
         date: parseDateInput(date),
         salesRep: salesRep?.trim() || "",
         status: "DRAFT",
-        subtotal: computedLedSubtotal,
+        subtotal: computedSubtotal,
         discount: 0,
-        total: computedLedSubtotal,
+        total: computedSubtotal,
         createdById: actor?.id ?? null,
         ledRows: {
           create: normalizedRows.map((row) => ({
@@ -800,6 +1353,87 @@ export async function POST(request: NextRequest) {
             linearFeet: row.linearFeet,
             profileQty: row.profileQty,
             subtotal: row.subtotal,
+          })),
+        },
+        ledSheetRows: {
+          create: normalizedSheetRows.map((row) => ({
+            roomId: row.roomId,
+            sheetTypeId: row.sheetTypeId,
+            controlTypeId: row.controlTypeId,
+            widthIn: row.width,
+            heightIn: row.height,
+            squareFeet: row.squareFeet,
+            subtotal: row.subtotal,
+          })),
+        },
+        glassDoorShelfRows: {
+          create: normalizedGlassDoorShelfRows.map((row) => ({
+            glassTypeId: row.glassTypeId,
+            widthIn: row.width,
+            heightIn: row.height,
+            squareFeet: row.squareFeet,
+            quantity: row.quantity,
+            note: row.note,
+            subtotal: row.subtotal,
+          })),
+        },
+        islandPanelRows: {
+          create: normalizedIslandPanelRows.map((row) => ({
+            roomId: row.roomId,
+            panelModelId: row.panelModelId,
+            widthIn: row.width,
+            heightIn: row.height,
+            squareFeet: row.squareFeet,
+            boxQty: row.boxQty,
+            subtotal: row.subtotal,
+          })),
+        },
+        wallUnitRows: {
+          create: normalizedWallUnitRows.map((row) => ({
+            roomId: row.roomId,
+            widthIn: row.width,
+            heightIn: row.height,
+            squareFeet: row.squareFeet,
+            note: row.note,
+            subtotal: row.subtotal,
+          })),
+        },
+        mirrorFrameRows: {
+          create: normalizedMirrorFrameRows.map((row) => ({
+            roomId: row.roomId,
+            finishId: row.finishId,
+            widthIn: row.width,
+            heightIn: row.height,
+            linearInches: row.linearInches,
+            painted: row.painted,
+            color: row.color,
+            subtotal: row.subtotal,
+          })),
+        },
+        mirrorRows: {
+          create: normalizedMirrorRows.map((row) => ({
+            roomId: row.roomId,
+            colorId: row.colorId,
+            beveledOptionId: row.beveledOptionId,
+            widthIn: row.width,
+            heightIn: row.height,
+            squareFeet: row.squareFeet,
+            outlets: row.outlets,
+            lightCutouts: row.lightCutout,
+            beveled: row.beveled,
+            note: row.note,
+            subtotal: row.subtotal,
+          })),
+        },
+        mirrorRemovalRows: {
+          create: normalizedMirrorRemovalRows.map((row) => ({
+            widthIn: row.width,
+            heightIn: row.height,
+            squareFeet: row.squareFeet,
+            repairWall: row.repairWall,
+            subtotal: row.subtotal,
+            repairWallSubtotal: row.repairWallSubtotal,
+            total: row.total,
           })),
         },
       },
@@ -842,6 +1476,133 @@ export async function POST(request: NextRequest) {
           ledStripSubtotal: computedLedSubtotal,
           ledStripSubtotalInput: Number.isFinite(ledStripSubtotal)
             ? Number(ledStripSubtotal)
+            : 0,
+          ledSheetRows: normalizedSheetRows.map((row) => ({
+            roomId: row.roomId,
+            room: row.roomName,
+            width: row.width,
+            widthIn: row.width,
+            height: row.height,
+            heightIn: row.height,
+            squareFeet: row.squareFeet,
+            sqFt: row.squareFeet,
+            sheetTypeId: row.sheetTypeId,
+            sheetType: row.sheetTypeName,
+            controlTypeId: row.controlTypeId,
+            controlType: row.controlTypeName,
+            subtotal: row.subtotal,
+          })),
+          ledSheetSubtotal: computedLedSheetSubtotal,
+          ledSheetSubtotalInput: Number.isFinite(ledSheetSubtotal)
+            ? Number(ledSheetSubtotal)
+            : 0,
+          glassDoorShelfRows: normalizedGlassDoorShelfRows.map((row) => ({
+            width: row.width,
+            widthIn: row.width,
+            height: row.height,
+            heightIn: row.height,
+            squareFeet: row.squareFeet,
+            sqFt: row.squareFeet,
+            glassTypeId: row.glassTypeId,
+            glassType: row.glassTypeName,
+            quantity: row.quantity,
+            note: row.note,
+            subtotal: row.subtotal,
+          })),
+          glassDoorShelfSubtotal: computedGlassDoorShelfSubtotal,
+          glassDoorShelfSubtotalInput: Number.isFinite(glassDoorShelfSubtotal)
+            ? Number(glassDoorShelfSubtotal)
+            : 0,
+          islandPanelRows: normalizedIslandPanelRows.map((row) => ({
+            roomId: row.roomId,
+            room: row.roomName,
+            width: row.width,
+            widthIn: row.width,
+            height: row.height,
+            heightIn: row.height,
+            squareFeet: row.squareFeet,
+            sqFt: row.squareFeet,
+            panelModelId: row.panelModelId,
+            panelModel: row.panelModelName,
+            boxQty: row.boxQty,
+            subtotal: row.subtotal,
+          })),
+          islandPanelSubtotal: computedIslandPanelSubtotal,
+          islandPanelSubtotalInput: Number.isFinite(islandPanelSubtotal)
+            ? Number(islandPanelSubtotal)
+            : 0,
+          wallUnitRows: normalizedWallUnitRows.map((row) => ({
+            roomId: row.roomId,
+            room: row.roomName,
+            width: row.width,
+            widthIn: row.width,
+            height: row.height,
+            heightIn: row.height,
+            squareFeet: row.squareFeet,
+            sqFt: row.squareFeet,
+            note: row.note,
+            subtotal: row.subtotal,
+          })),
+          wallUnitSubtotal: computedWallUnitSubtotal,
+          wallUnitSubtotalInput: Number.isFinite(wallUnitSubtotal)
+            ? Number(wallUnitSubtotal)
+            : 0,
+          mirrorFrameRows: normalizedMirrorFrameRows.map((row) => ({
+            roomId: row.roomId,
+            room: row.roomName,
+            width: row.width,
+            widthIn: row.width,
+            height: row.height,
+            heightIn: row.height,
+            linearInches: row.linearInches,
+            lnIn: row.linearInches,
+            finishId: row.finishId,
+            finish: row.finishName,
+            painted: row.painted,
+            color: row.color,
+            subtotal: row.subtotal,
+          })),
+          mirrorFrameSubtotal: computedMirrorFrameSubtotal,
+          mirrorFrameSubtotalInput: Number.isFinite(mirrorFrameSubtotal)
+            ? Number(mirrorFrameSubtotal)
+            : 0,
+          mirrorRows: normalizedMirrorRows.map((row) => ({
+            roomId: row.roomId,
+            room: row.roomName,
+            colorId: row.colorId,
+            color: row.colorName,
+            beveledOptionId: row.beveledOptionId,
+            beveledOption: row.beveledOptionName,
+            width: row.width,
+            widthIn: row.width,
+            height: row.height,
+            heightIn: row.height,
+            squareFeet: row.squareFeet,
+            outlets: row.outlets,
+            lightCutout: row.lightCutout,
+            beveled: row.beveled,
+            note: row.note,
+            subtotal: row.subtotal,
+          })),
+          mirrorSubtotal: computedMirrorSubtotal,
+          mirrorSubtotalInput: Number.isFinite(mirrorSubtotal)
+            ? Number(mirrorSubtotal)
+            : 0,
+          mirrorRemovalRows: normalizedMirrorRemovalRows.map((row) => ({
+            width: row.width,
+            widthIn: row.width,
+            height: row.height,
+            heightIn: row.height,
+            squareFeet: row.squareFeet,
+            repairWall: row.repairWall,
+            note: row.note,
+            subtotal: row.subtotal,
+            repairWallSubtotal: row.repairWallSubtotal,
+            total: row.total,
+          })),
+          mirrorRemovalSubtotal: computedMirrorRemovalSubtotal,
+          mirrorRemovalSubtotalInput: Number.isFinite(mirrorRemovalSubtotal)
+            ? Number(mirrorRemovalSubtotal)
             : 0,
           sourceEstimateNumber: sourceEstimateNumber?.trim() || null,
           savedAt: now.toISOString(),
