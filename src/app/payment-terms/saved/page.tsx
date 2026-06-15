@@ -71,6 +71,7 @@ export default async function SavedPaymentTermsPage() {
     <SavedPaymentTermsClient
       rows={rows}
       currentUserName={user.name?.trim() || ""}
+      canDelete={appRole === "admin"}
     />
   );
 }

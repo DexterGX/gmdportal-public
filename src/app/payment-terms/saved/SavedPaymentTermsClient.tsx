@@ -1,8 +1,8 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
-import { FileText, Printer, Search } from "lucide-react";
+import { FileText, Printer, Search, Trash2, X } from "lucide-react";
 import FilterMultiSelect from "@/components/filters/FilterMultiSelect";
 
 type SavedPaymentTermRow = {
@@ -21,7 +21,13 @@ type SavedPaymentTermRow = {
 interface Props {
   rows: SavedPaymentTermRow[];
   currentUserName: string;
+  canDelete: boolean;
 }
+
+type Notification = {
+  type: "success" | "error";
+  message: string;
+};
 
 function fmtDate(value: string) {
   return new Date(value).toLocaleDateString("en-US", {
@@ -34,32 +40,50 @@ function fmtDate(value: string) {
 export default function SavedPaymentTermsClient({
   rows,
   currentUserName,
+  canDelete,
 }: Props) {
+  const [localRows, setLocalRows] = useState(rows);
   const [search, setSearch] = useState("");
   const [clientSearch, setClientSearch] = useState("");
+  const [deletingId, setDeletingId] = useState<string | null>(null);
+  const [confirmDeleteRow, setConfirmDeleteRow] =
+    useState<SavedPaymentTermRow | null>(null);
+  const [notification, setNotification] = useState<Notification | null>(null);
   const [selectedSalesReps, setSelectedSalesReps] = useState<string[]>(() => {
     const me = currentUserName.trim();
     if (!me) return [];
-    const hasMine = rows.some(
+    const hasMine = localRows.some(
       (r) => (r.salesRep ?? "").trim().toLowerCase() === me.toLowerCase(),
     );
     return hasMine ? [me] : [];
   });
 
+  useEffect(() => {
+    setLocalRows(rows);
+  }, [rows]);
+
+  useEffect(() => {
+    if (!notification) {
+      return;
+    }
+    const timer = setTimeout(() => setNotification(null), 3500);
+    return () => clearTimeout(timer);
+  }, [notification]);
+
   const salesRepOptions = useMemo(() => {
     const set = new Set<string>();
-    rows.forEach((row) => {
+    localRows.forEach((row) => {
       const rep = row.salesRep?.trim();
       if (rep) set.add(rep);
     });
     return Array.from(set).sort((a, b) => a.localeCompare(b));
-  }, [rows]);
+  }, [localRows]);
 
   const filtered = useMemo(() => {
     const q = search.trim().toLowerCase();
     const cq = clientSearch.trim().toLowerCase();
 
-    return rows.filter((row) => {
+    return localRows.filter((row) => {
       const rep = (row.salesRep ?? "").trim().toLowerCase();
       if (selectedSalesReps.length > 0) {
         const allowed = selectedSalesReps.map((v) => v.trim().toLowerCase());
@@ -80,10 +104,63 @@ export default function SavedPaymentTermsClient({
         (row.address ?? "").toLowerCase().includes(q)
       );
     });
-  }, [rows, search, clientSearch, selectedSalesReps]);
+  }, [localRows, search, clientSearch, selectedSalesReps]);
+
+  const handleDelete = async () => {
+    if (!confirmDeleteRow || !canDelete) {
+      return;
+    }
+
+    setDeletingId(confirmDeleteRow.id);
+    try {
+      const response = await fetch(
+        `/api/payment-terms?id=${encodeURIComponent(confirmDeleteRow.id)}`,
+        {
+          method: "DELETE",
+        },
+      );
+
+      if (!response.ok) {
+        const body = await response
+          .json()
+          .catch(() => ({ error: "Failed to delete payment term" }));
+        throw new Error(body.error || "Failed to delete payment term");
+      }
+
+      setLocalRows((prev) =>
+        prev.filter((row) => row.id !== confirmDeleteRow.id),
+      );
+      setNotification({
+        type: "success",
+        message: "Saved payment term deleted.",
+      });
+      setConfirmDeleteRow(null);
+    } catch (error: any) {
+      setNotification({
+        type: "error",
+        message: error?.message || "Failed to delete payment term.",
+      });
+    } finally {
+      setDeletingId(null);
+    }
+  };
 
   return (
     <div className="space-y-5">
+      {notification && (
+        <div className="fixed top-4 right-4 z-[120]">
+          <div
+            className={`rounded-lg border px-4 py-2 text-sm shadow-lg ${
+              notification.type === "success"
+                ? "bg-green-50 border-green-200 text-green-700"
+                : "bg-red-50 border-red-200 text-red-700"
+            }`}
+          >
+            {notification.message}
+          </div>
+        </div>
+      )}
+
       <div className="flex items-center justify-between">
         <h1 className="text-2xl font-bold text-gray-900 dark:text-gray-100">
           Saved Payment Terms
@@ -130,7 +207,7 @@ export default function SavedPaymentTermsClient({
 
       {filtered.length === 0 ? (
         <div className="bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-xl p-10 text-center text-gray-400 text-sm">
-          {rows.length === 0
+          {localRows.length === 0
             ? "No saved payment terms yet."
             : "No payment terms match your search."}
         </div>
@@ -175,15 +252,28 @@ export default function SavedPaymentTermsClient({
                   <span>{fmtDate(row.createdAt)}</span>
                 </div>
                 <div className="pt-1">
-                  <a
-                    href={`/payment-term-print/${encodeURIComponent(row.id)}?autoprint=1`}
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded border border-gray-300 dark:border-gray-600 text-xs font-medium hover:bg-gray-50 dark:hover:bg-gray-700"
-                  >
-                    <Printer className="w-3.5 h-3.5" />
-                    Pmt. Term
-                  </a>
+                  <div className="flex items-center gap-2">
+                    <a
+                      href={`/payment-term-print/${encodeURIComponent(row.id)}?autoprint=1`}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded border border-gray-300 dark:border-gray-600 text-xs font-medium hover:bg-gray-50 dark:hover:bg-gray-700"
+                    >
+                      <Printer className="w-3.5 h-3.5" />
+                      Pmt. Term
+                    </a>
+                    {canDelete && (
+                      <button
+                        type="button"
+                        onClick={() => setConfirmDeleteRow(row)}
+                        disabled={deletingId === row.id}
+                        className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded border border-red-300 text-red-600 text-xs font-medium hover:bg-red-50 disabled:opacity-60"
+                      >
+                        <Trash2 className="w-3.5 h-3.5" />
+                        Delete
+                      </button>
+                    )}
+                  </div>
                 </div>
               </div>
             ))}
@@ -263,6 +353,17 @@ export default function SavedPaymentTermsClient({
                           <Printer className="w-3.5 h-3.5" />
                           Pmt. Term
                         </a>
+                        {canDelete && (
+                          <button
+                            type="button"
+                            onClick={() => setConfirmDeleteRow(row)}
+                            disabled={deletingId === row.id}
+                            className="inline-flex items-center gap-1 px-2.5 py-1.5 rounded border border-red-300 text-red-600 text-xs font-medium hover:bg-red-50 disabled:opacity-60"
+                          >
+                            <Trash2 className="w-3.5 h-3.5" />
+                            Delete
+                          </button>
+                        )}
                       </div>
                     </td>
                   </tr>
@@ -271,6 +372,46 @@ export default function SavedPaymentTermsClient({
             </table>
           </div>
         </>
+      )}
+
+      {confirmDeleteRow && (
+        <div className="fixed inset-0 z-[130] bg-black/40 flex items-center justify-center p-4">
+          <div className="w-full max-w-md rounded-xl bg-white dark:bg-gray-900 border border-gray-200 dark:border-gray-700 shadow-xl">
+            <div className="flex items-center justify-between px-5 py-4 border-b border-gray-200 dark:border-gray-700">
+              <h2 className="text-base font-semibold text-gray-900 dark:text-gray-100">
+                Delete Saved Payment Term
+              </h2>
+              <button
+                type="button"
+                onClick={() => setConfirmDeleteRow(null)}
+                className="p-1 rounded hover:bg-gray-100 dark:hover:bg-gray-800"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+            <div className="px-5 py-4 text-sm text-gray-700 dark:text-gray-300">
+              Are you sure you want to delete this saved payment term? This
+              action cannot be undone.
+            </div>
+            <div className="px-5 py-4 flex items-center justify-end gap-2 border-t border-gray-200 dark:border-gray-700">
+              <button
+                type="button"
+                onClick={() => setConfirmDeleteRow(null)}
+                className="px-3 py-2 rounded-lg border border-gray-300 dark:border-gray-600 text-sm hover:bg-gray-50 dark:hover:bg-gray-800"
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                onClick={handleDelete}
+                disabled={deletingId === confirmDeleteRow.id}
+                className="px-3 py-2 rounded-lg bg-red-600 text-white text-sm hover:bg-red-700 disabled:opacity-60"
+              >
+                {deletingId === confirmDeleteRow.id ? "Deleting..." : "Delete"}
+              </button>
+            </div>
+          </div>
+        </div>
       )}
     </div>
   );
