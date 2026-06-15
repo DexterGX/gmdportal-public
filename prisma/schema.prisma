@@ -1161,6 +1161,267 @@ model SlabBayExpectedDelivery {
   createdBy          String
 }
 
+model SalesCommissionSettings {
+  id                      String   @id @default(cuid())
+  firstCommissionPercent  Decimal  @default(60) @db.Decimal(6, 3)
+  secondCommissionPercent Decimal  @default(40) @db.Decimal(6, 3)
+  minimumWeeklyPay        Decimal  @default(560) @db.Decimal(12, 2)
+  monthlyBonusSalesTarget Decimal  @default(200000) @db.Decimal(12, 2)
+  monthlyBonusAmount      Decimal  @default(2500) @db.Decimal(12, 2)
+  payWeekStartDay         Int      @default(5)
+  payWeekEndDay           Int      @default(4)
+  checkDateRule           String   @default("SECOND_MONDAY_AFTER_PERIOD_END")
+  createdAt               DateTime @default(now())
+  updatedAt               DateTime @updatedAt
+}
+
+model SalesCommissionSalesRep {
+  id                    String                     @id @default(cuid())
+  displayName           String
+  quickbooksInitials    String
+  active                Boolean                    @default(true)
+  defaultCommissionRate Decimal?                   @db.Decimal(6, 3)
+  notes                 String?
+  createdAt             DateTime                   @default(now())
+  updatedAt             DateTime                   @updatedAt
+  invoices              SalesCommissionInvoice[]
+  masterInvoices        SalesCommissionMasterInvoice[]
+  debtEntries           SalesCommissionDebtLedger[]
+  bonusEntries          SalesCommissionBonusLedger[]
+
+  @@unique([quickbooksInitials])
+  @@index([active])
+  @@index([displayName])
+}
+
+model SalesCommissionNoteOption {
+  id        String   @id @default(cuid())
+  label     String   @unique
+  isActive  Boolean  @default(true)
+  isSystem  Boolean  @default(false)
+  sortOrder Int      @default(0)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([isActive])
+  @@index([sortOrder])
+}
+
+model SalesCommissionPeriod {
+  id              String                       @id @default(cuid())
+  startDate       DateTime                     @db.Date
+  endDate         DateTime                     @db.Date
+  checkDate       DateTime                     @db.Date
+  status          SalesCommissionPeriodStatus  @default(DRAFT)
+  salesRepScope   String                       @default("ALL")
+  totalFirstPayments Decimal                   @default(0) @db.Decimal(12, 2)
+  totalSecondPayments Decimal                  @default(0) @db.Decimal(12, 2)
+  totalCommission Decimal                      @default(0) @db.Decimal(12, 2)
+  totalDebtAdded Decimal                       @default(0) @db.Decimal(12, 2)
+  totalDebtDeducted Decimal                    @default(0) @db.Decimal(12, 2)
+  totalBonus Decimal                           @default(0) @db.Decimal(12, 2)
+  totalFinalPayroll Decimal                    @default(0) @db.Decimal(12, 2)
+  createdByUserId String?
+  updatedByUserId String?
+  reviewedByUserId String?
+  reviewedAt      DateTime?
+  finalizedByUserId String?
+  finalizedAt     DateTime?
+  reopenedByUserId String?
+  reopenedAt      DateTime?
+  reopenReason    String?
+  createdAt       DateTime                     @default(now())
+  updatedAt       DateTime                     @updatedAt
+  invoices        SalesCommissionInvoice[]
+  weeklyActivities SalesCommissionWeeklyInvoiceActivity[]
+  debtEntries     SalesCommissionDebtLedger[]
+  bonusEntries    SalesCommissionBonusLedger[]
+
+  @@unique([startDate, endDate])
+  @@index([status])
+  @@index([checkDate])
+}
+
+model SalesCommissionMasterInvoice {
+  id                          String                                @id @default(cuid())
+  quickbooksInvoiceId         String?
+  quickbooksTxnId             String?
+  invoiceNumber               String?
+  invoiceDate                 DateTime?                             @db.Date
+  customerName                String
+  salesRepId                  String?
+  salesRepDisplay             String?
+  salesRepInitialsRaw         String?
+  salesRepUnmatched           Boolean                               @default(false)
+  commissionRate              Decimal?                              @db.Decimal(8, 4)
+  invoiceAmount               Decimal                               @default(0) @db.Decimal(12, 2)
+  thirdPartyAdjustment        Decimal                               @default(0) @db.Decimal(12, 2)
+  refundAdjustment            Decimal                               @default(0) @db.Decimal(12, 2)
+  totalCommissionCalculated   Decimal                               @default(0) @db.Decimal(12, 2)
+  firstCommissionCalculated   Decimal                               @default(0) @db.Decimal(12, 2)
+  secondCommissionCalculated  Decimal                               @default(0) @db.Decimal(12, 2)
+  adjustedSecondCommissionCalculated Decimal                        @default(0) @db.Decimal(12, 2)
+  firstCommissionPaid         Boolean                               @default(false)
+  secondCommissionPaid        Boolean                               @default(false)
+  firstCommissionPaidAt       DateTime?
+  secondCommissionPaidAt      DateTime?
+  notesOptionLabels           String[]                              @default([])
+  notesFreeText               String?
+  status                      SalesCommissionInvoiceStatus          @default(OPEN)
+  isClosed                    Boolean                               @default(false)
+  closedAt                    DateTime?
+  manualEditedFields          String[]                              @default([])
+  importFlags                 Json?
+  createdByUserId             String?
+  updatedByUserId             String?
+  createdAt                   DateTime                              @default(now())
+  updatedAt                   DateTime                              @updatedAt
+  salesRep                    SalesCommissionSalesRep?              @relation(fields: [salesRepId], references: [id], onDelete: SetNull)
+  weeklyActivities            SalesCommissionWeeklyInvoiceActivity[]
+
+  @@index([invoiceNumber])
+  @@index([quickbooksTxnId])
+  @@index([customerName])
+  @@index([status])
+  @@index([salesRepDisplay])
+  @@index([invoiceDate])
+  @@index([isClosed])
+}
+
+model SalesCommissionWeeklyInvoiceActivity {
+  id                               String                         @id @default(cuid())
+  weeklyCommissionId               String
+  masterInvoiceId                  String
+  firstPaymentThisWeek             Decimal?                       @db.Decimal(12, 2)
+  secondPaymentThisWeek            Decimal?                       @db.Decimal(12, 2)
+  refundAppliedThisWeek            Decimal?                       @db.Decimal(12, 2)
+  thirdPartyAppliedThisWeek        Decimal?                       @db.Decimal(12, 2)
+  notesOptionLabels                String[]                       @default([])
+  notesFreeText                    String?
+  addedManually                    Boolean                        @default(false)
+  removedFromDraft                 Boolean                        @default(false)
+  manualCorrections                Json?
+  status                           SalesCommissionInvoiceStatus   @default(OPEN)
+  createdByUserId                  String?
+  updatedByUserId                  String?
+  createdAt                        DateTime                       @default(now())
+  updatedAt                        DateTime                       @updatedAt
+  weeklyCommission                 SalesCommissionPeriod          @relation(fields: [weeklyCommissionId], references: [id], onDelete: Cascade)
+  masterInvoice                    SalesCommissionMasterInvoice   @relation(fields: [masterInvoiceId], references: [id], onDelete: Cascade)
+
+  @@unique([weeklyCommissionId, masterInvoiceId])
+  @@index([weeklyCommissionId])
+  @@index([masterInvoiceId])
+  @@index([status])
+}
+
+model SalesCommissionInvoice {
+  id                               String                         @id @default(cuid())
+  periodId                         String?
+  quickbooksInvoiceId              String?
+  quickbooksTxnId                  String?
+  invoiceNumber                    String?
+  invoiceDate                      DateTime?                      @db.Date
+  customerName                     String
+  salesRepId                       String?
+  salesRepDisplay                  String?
+  salesRepInitialsRaw              String?
+  salesRepUnmatched                Boolean                        @default(false)
+  commissionRate                   Decimal?                       @db.Decimal(8, 4)
+  invoiceAmount                    Decimal                        @default(0) @db.Decimal(12, 2)
+  quickbooksBalance                Decimal                        @default(0) @db.Decimal(12, 2)
+  thirdPartyAdjustment             Decimal                        @default(0) @db.Decimal(12, 2)
+  refundAdjustment                 Decimal                        @default(0) @db.Decimal(12, 2)
+  totalCommissionCalculated        Decimal                        @default(0) @db.Decimal(12, 2)
+  totalCommissionOverride          Decimal?                       @db.Decimal(12, 2)
+  firstCommissionCalculated        Decimal                        @default(0) @db.Decimal(12, 2)
+  firstCommissionOverride          Decimal?                       @db.Decimal(12, 2)
+  firstPaymentNowCalculated        Decimal                        @default(0) @db.Decimal(12, 2)
+  firstPaymentNowOverride          Decimal?                       @db.Decimal(12, 2)
+  secondCommissionCalculated       Decimal                        @default(0) @db.Decimal(12, 2)
+  secondCommissionOverride         Decimal?                       @db.Decimal(12, 2)
+  adjustedSecondCommissionCalculated Decimal                      @default(0) @db.Decimal(12, 2)
+  secondPaymentNowCalculated       Decimal                        @default(0) @db.Decimal(12, 2)
+  secondPaymentNowOverride         Decimal?                       @db.Decimal(12, 2)
+  depositPaidDate                  DateTime?                      @db.Date
+  fullyPaidDate                    DateTime?                      @db.Date
+  notesOptionLabels                String[]                       @default([])
+  notesFreeText                    String?
+  status                           SalesCommissionInvoiceStatus   @default(OPEN)
+  closedAt                         DateTime?
+  manualOverrideFields             String[]                       @default([])
+  importFlags                      Json?
+  createdByUserId                  String?
+  updatedByUserId                  String?
+  createdAt                        DateTime                       @default(now())
+  updatedAt                        DateTime                       @updatedAt
+  period                           SalesCommissionPeriod?         @relation(fields: [periodId], references: [id], onDelete: SetNull)
+  salesRep                         SalesCommissionSalesRep?       @relation(fields: [salesRepId], references: [id], onDelete: SetNull)
+
+  @@index([periodId])
+  @@index([invoiceNumber])
+  @@index([quickbooksTxnId])
+  @@index([customerName])
+  @@index([status])
+  @@index([salesRepDisplay])
+  @@index([invoiceDate])
+  @@unique([periodId, invoiceNumber])
+}
+
+model SalesCommissionDebtLedger {
+  id              String                  @id @default(cuid())
+  salesRepId      String
+  periodId        String?
+  type            SalesCommissionDebtType
+  amount          Decimal                 @db.Decimal(12, 2)
+  previousBalance Decimal                 @db.Decimal(12, 2)
+  newBalance      Decimal                 @db.Decimal(12, 2)
+  notes           String?
+  createdByUserId String?
+  createdAt       DateTime                @default(now())
+  period          SalesCommissionPeriod?  @relation(fields: [periodId], references: [id], onDelete: SetNull)
+  salesRep        SalesCommissionSalesRep @relation(fields: [salesRepId], references: [id], onDelete: Cascade)
+
+  @@index([salesRepId])
+  @@index([periodId])
+  @@index([createdAt])
+}
+
+model SalesCommissionBonusLedger {
+  id                   String                  @id @default(cuid())
+  salesRepId           String
+  periodId             String?
+  monthKey             String
+  thresholdIndex       Int
+  thresholdSalesAmount Decimal                 @db.Decimal(12, 2)
+  bonusAmount          Decimal                 @db.Decimal(12, 2)
+  reachedByInvoiceDate DateTime?               @db.Date
+  notes                String?
+  createdByUserId      String?
+  createdAt            DateTime                @default(now())
+  period               SalesCommissionPeriod?  @relation(fields: [periodId], references: [id], onDelete: SetNull)
+  salesRep             SalesCommissionSalesRep @relation(fields: [salesRepId], references: [id], onDelete: Cascade)
+
+  @@unique([salesRepId, monthKey, thresholdIndex])
+  @@index([periodId])
+  @@index([monthKey])
+}
+
+model SalesCommissionAuditLog {
+  id              String                     @id @default(cuid())
+  entityType      SalesCommissionAuditEntity
+  entityId        String
+  fieldName       String
+  oldValue        Json?
+  newValue        Json?
+  notes           String?
+  changedByUserId String?
+  changedAt       DateTime                   @default(now())
+
+  @@index([entityType, entityId])
+  @@index([changedAt])
+}
+
 enum Role {
   ADMIN
   SALES
@@ -1326,4 +1587,35 @@ enum AccessoryEventType {
   NOTE
   FIELD_EDIT
   CREATED
+}
+
+enum SalesCommissionPeriodStatus {
+  DRAFT
+  REVIEWED
+  FINALIZED
+  REOPENED
+}
+
+enum SalesCommissionInvoiceStatus {
+  OPEN
+  HOLD
+  FIRST_PAID
+  SECOND_PAID
+  CLOSED
+  MANUAL_REVIEW
+}
+
+enum SalesCommissionDebtType {
+  DEBT_ADDED
+  DEBT_DEDUCTED
+  MANUAL_ADJUSTMENT
+}
+
+enum SalesCommissionAuditEntity {
+  INVOICE
+  PERIOD
+  SETTINGS
+  SALES_REP
+  DEBT
+  BONUS
 }

@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { getServerSession } from "next-auth";
 import authOptions from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
+import { getCurrentUserWithRole } from "@/lib/authHelpers";
 
 function parseAmount(value: unknown): number {
   const raw = typeof value === "string" ? value : String(value ?? "");
@@ -316,6 +317,55 @@ export async function PATCH(request: NextRequest) {
   } catch (error: any) {
     return NextResponse.json(
       { error: error?.message || "Failed to update payment term" },
+      { status: 500 },
+    );
+  }
+}
+
+export async function DELETE(request: NextRequest) {
+  try {
+    const email = await requireUserEmail();
+    if (!email) {
+      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+    }
+
+    const { appRole, isActive } = await getCurrentUserWithRole();
+    if (!isActive || appRole !== "admin") {
+      return NextResponse.json(
+        { error: "Only admin users can delete saved payment terms." },
+        { status: 403 },
+      );
+    }
+
+    const id = request.nextUrl.searchParams.get("id")?.trim();
+    if (!id) {
+      return NextResponse.json(
+        { error: "Artifact id is required" },
+        { status: 400 },
+      );
+    }
+
+    const artifact = await prisma.jobArtifact.findFirst({
+      where: {
+        id,
+        sourceApp: "PAYMENT_TERM",
+      },
+      select: { id: true },
+    });
+
+    if (!artifact) {
+      return NextResponse.json(
+        { error: "Payment term not found" },
+        { status: 404 },
+      );
+    }
+
+    await prisma.jobArtifact.delete({ where: { id: artifact.id } });
+
+    return NextResponse.json({ ok: true });
+  } catch (error: any) {
+    return NextResponse.json(
+      { error: error?.message || "Failed to delete payment term" },
       { status: 500 },
     );
   }

@@ -40,6 +40,8 @@ export default async function CustomersV2Page({
   const selectedStatuses = parseMultiParam(params.status);
   const selectedSalesPersons = parseMultiParam(params.salesPerson);
   const selectedSources = parseMultiParam(params.source);
+  const selectedSourcesWithDefault =
+    selectedSources.length > 0 ? selectedSources : ["pipedrive"];
   const selectedReferredBy = parseMultiParam(params.referredBy);
   const selectedJobTypes = parseMultiParam(params.jobType);
 
@@ -89,10 +91,10 @@ export default async function CustomersV2Page({
     });
   }
 
-  if (selectedSources.length === 1) {
-    if (selectedSources[0] === "pipedrive") {
+  if (selectedSourcesWithDefault.length === 1) {
+    if (selectedSourcesWithDefault[0] === "pipedrive") {
       andConditions.push({ pipedriveId: { not: null } });
-    } else if (selectedSources[0] === "quickbooks") {
+    } else if (selectedSourcesWithDefault[0] === "quickbooks") {
       andConditions.push({ quickbooksId: { not: null } });
     }
   }
@@ -308,7 +310,7 @@ export default async function CustomersV2Page({
       initialSelectedType={normalizedSelectedTypes}
       initialSelectedStatus={selectedStatuses}
       initialSelectedSalesPerson={selectedSalesPersons}
-      initialSelectedSource={selectedSources}
+      initialSelectedSource={selectedSourcesWithDefault}
       initialSelectedReferredBy={selectedReferredBy}
       initialSelectedJobType={selectedJobTypes}
     />

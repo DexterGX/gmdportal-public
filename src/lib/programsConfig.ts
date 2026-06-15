@@ -122,7 +122,8 @@ export type ProgramId =
   | "samplesRequest"
   | "customersV2"
   | "miscEstimates"
-  | "paymentTerms";
+  | "paymentTerms"
+  | "salesCommission";
 
 export interface ProgramConfig {
   id: ProgramId;
@@ -492,6 +493,42 @@ export const programs: ProgramConfig[] = [
         name: "Countertop Settings",
         path: "/payment-terms/settings/countertop",
         adminOnly: true,
+      },
+    ],
+    othersItems: [],
+  },
+  {
+    id: "salesCommission",
+    name: "Sales Commission",
+    basePath: "/sales-commission",
+    description:
+      "Manage weekly sales commissions, debt ledger, and payout reports.",
+    allowedRoles: ["admin", "finance"],
+    navItems: [
+      {
+        icon: TicketPercent,
+        name: "Sales Commission",
+        path: "/sales-commission",
+      },
+      {
+        icon: ListIcon,
+        name: "Commission Periods",
+        path: "/sales-commission/periods",
+      },
+      {
+        icon: Table2,
+        name: "Closed Invoices",
+        path: "/sales-commission/closed",
+      },
+      {
+        icon: CopyIcon,
+        name: "Sales Rep Debt",
+        path: "/sales-commission/debt",
+      },
+      {
+        icon: Settings2,
+        name: "Settings",
+        path: "/sales-commission/settings",
       },
     ],
     othersItems: [],
