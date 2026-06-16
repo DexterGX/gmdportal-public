@@ -12,6 +12,7 @@ import {
   Trash2,
   X,
 } from "lucide-react";
+import { useRouter } from "next/navigation";
 import { formatDateInput, resolvePayWeek } from "@/lib/salesCommission";
 import type {
   CommissionInvoice,
@@ -202,9 +203,12 @@ function rowVisualState(row: CommissionInvoice) {
 
 export default function SalesCommissionClient({
   appRole: _appRole,
+  initialPeriodId,
 }: {
   appRole: string;
+  initialPeriodId?: string | null;
 }) {
+  const router = useRouter();
   const [periods, setPeriods] = useState<CommissionPeriod[]>([]);
   const [invoices, setInvoices] = useState<CommissionInvoice[]>([]);
   const [salesReps, setSalesReps] = useState<SalesRepOption[]>([]);
@@ -216,6 +220,9 @@ export default function SalesCommissionClient({
 
   const [filterDraft, setFilterDraft] = useState<FilterState>(defaultFilters);
   const [filters, setFilters] = useState<FilterState>(defaultFilters);
+  const [activePeriodId, setActivePeriodId] = useState<string | null>(
+    initialPeriodId || null,
+  );
   const [showSalesRepFilter, setShowSalesRepFilter] = useState(false);
 
   const [showStartWeeklyModal, setShowStartWeeklyModal] = useState(false);
@@ -280,6 +287,20 @@ export default function SalesCommissionClient({
         new Date(b.updatedAt).getTime() - new Date(a.updatedAt).getTime(),
     )[0];
   }, [periods]);
+
+  const latestFinalizedPeriod = useMemo(() => {
+    const finalized = periods.filter((period) => period.status === "FINALIZED");
+    if (!finalized.length) return null;
+    return finalized.sort(
+      (a, b) =>
+        new Date(b.updatedAt).getTime() - new Date(a.updatedAt).getTime(),
+    )[0];
+  }, [periods]);
+
+  const selectedPeriod = useMemo(() => {
+    if (!activePeriodId) return null;
+    return periods.find((p) => p.id === activePeriodId) || null;
+  }, [activePeriodId, periods]);
 
   const displayedInvoices = useMemo(() => {
     if (!filters.salesRepIds.length) return invoices;
@@ -392,6 +413,10 @@ export default function SalesCommissionClient({
     try {
       const params = new URLSearchParams();
       params.set("includeClosed", "0");
+      if (activePeriodId) {
+        params.set("periodId", activePeriodId);
+        params.set("includeDraft", "1");
+      }
       if (active.checkDate) params.set("checkDate", active.checkDate);
       if (active.clientName.trim())
         params.set("client", active.clientName.trim());
@@ -417,7 +442,7 @@ export default function SalesCommissionClient({
   useEffect(() => {
     loadBaseData();
     loadInvoices(defaultFilters);
-  }, []);
+  }, [activePeriodId]);
 
   useEffect(() => {
     const timeout = window.setTimeout(() => {
@@ -429,6 +454,10 @@ export default function SalesCommissionClient({
   }, [filterDraft]);
 
   async function clearFilters() {
+    if (activePeriodId) {
+      setActivePeriodId(null);
+      router.replace("/sales-commission");
+    }
     setFilterDraft(defaultFilters);
     setFilters(defaultFilters);
     await loadInvoices(defaultFilters);
@@ -461,24 +490,9 @@ export default function SalesCommissionClient({
 
     if (part === "first") {
       firstPaymentNow = safeTyped;
-      secondPaymentNow = Math.max(
-        0,
-        toMoneyRound(totalCommission - firstPaymentNow),
+      secondPaymentNow = asNumber(
+        row.secondPaymentNowOverride ?? row.secondPaymentNowCalculated,
       );
-      if (
-        Math.abs(
-          secondPaymentNow -
-            asNumber(
-              row.secondPaymentNowOverride ?? row.secondPaymentNowCalculated,
-            ),
-        ) > 0.009
-      ) {
-        setNotification({
-          type: "info",
-          message:
-            "Second payment was auto-adjusted to match total commission.",
-        });
-      }
     } else {
       const expectedSecond = Math.max(
         0,
@@ -569,12 +583,20 @@ export default function SalesCommissionClient({
       if (!res.ok)
         throw new Error(data.error || "Failed to start weekly commission");
 
+      const createdPeriodId = String(data.period?.id || "").trim();
+      if (createdPeriodId) {
+        setActivePeriodId(createdPeriodId);
+        router.replace(
+          `/sales-commission?periodId=${encodeURIComponent(createdPeriodId)}`,
+        );
+      }
+
       setShowStartWeeklyModal(false);
       await loadBaseData();
+      await loadInvoices(filterDraft);
       setNotification({
         type: "success",
-        message:
-          "Weekly commission draft created. Main list remains on all open invoices.",
+        message: "Weekly commission draft created and loaded.",
       });
     } catch (error: any) {
       setNotification({
@@ -613,24 +635,26 @@ export default function SalesCommissionClient({
   async function ensureDraftPeriodForImport() {
     if (importPeriodId) return importPeriodId;
 
-    const res = await fetch("/api/sales-commission/periods", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        selectedDate: formatDateInput(new Date()),
-        salesRepScope: "ALL",
-      }),
-    });
-    const data = await res.json();
-    if (!res.ok)
-      throw new Error(data.error || "Failed to create weekly draft for import");
+    if (activePeriodId) {
+      setImportPeriodId(activePeriodId);
+      return activePeriodId;
+    }
 
-    const periodId = String(data.period?.id || "");
-    if (!periodId) throw new Error("Weekly draft was not returned by API");
+    const draftPeriods = periods.filter((p) => p.status === "DRAFT");
+    if (draftPeriods.length === 1) {
+      setImportPeriodId(draftPeriods[0].id);
+      return draftPeriods[0].id;
+    }
 
-    setImportPeriodId(periodId);
-    await loadBaseData();
-    return periodId;
+    if (draftPeriods.length > 1) {
+      throw new Error(
+        "Multiple draft periods found. Open the target draft from Commission Periods, then run Import.",
+      );
+    }
+
+    throw new Error(
+      "No draft period selected. Start a weekly commission or open a draft from Commission Periods first.",
+    );
   }
 
   async function previewImport(file: File) {
@@ -704,13 +728,18 @@ export default function SalesCommissionClient({
       setImportPreviewRows([]);
       setShowImportModal(false);
 
+      const targetPeriod = periods.find((p) => p.id === importPeriodId);
+      const targetPeriodLabel = targetPeriod
+        ? `${displayDate(targetPeriod.startDate)} - ${displayDate(targetPeriod.endDate)}`
+        : null;
+
       const warning = data.quickbooksTxnIdConflictRows
         ? ` ${data.quickbooksTxnIdConflictRows} QB txn IDs were kept unchanged due to conflicts.`
         : "";
 
       setNotification({
         type: "success",
-        message: `Import complete. Created ${data.created}, updated ${data.updated}.${warning}`,
+        message: `Import complete${targetPeriodLabel ? ` for ${targetPeriodLabel}` : ""}. Created ${data.created}, updated ${data.updated}.${warning}`,
       });
     } catch (error: any) {
       setNotification({
@@ -905,15 +934,20 @@ export default function SalesCommissionClient({
             Open and incomplete invoice workspace.
           </p>
           <div className="mt-1 text-xs text-gray-600">
-            {latestDraftPeriod ? (
+            {selectedPeriod ? (
               <span className="inline-flex items-center rounded-full bg-amber-100 px-2 py-0.5 font-semibold text-amber-800">
-                Draft Period: {displayDate(latestDraftPeriod.startDate)} -{" "}
-                {displayDate(latestDraftPeriod.endDate)} (
-                {latestDraftPeriod.status})
+                Active Period: {displayDate(selectedPeriod.startDate)} -{" "}
+                {displayDate(selectedPeriod.endDate)} ({selectedPeriod.status})
+              </span>
+            ) : latestFinalizedPeriod ? (
+              <span className="inline-flex items-center rounded-full bg-green-100 px-2 py-0.5 font-semibold text-green-800">
+                Finalized Period: {displayDate(latestFinalizedPeriod.startDate)}{" "}
+                - {displayDate(latestFinalizedPeriod.endDate)} (
+                {latestFinalizedPeriod.status})
               </span>
             ) : (
               <span className="inline-flex items-center rounded-full bg-gray-100 px-2 py-0.5 font-semibold text-gray-700">
-                No active draft period
+                No finalized period
               </span>
             )}
           </div>
@@ -1182,18 +1216,33 @@ export default function SalesCommissionClient({
                 asNumber(row.refundAdjustment) > 0 ||
                 asNumber(row.thirdPartyAdjustment) > 0;
               const periodLocked = row.period?.status === "FINALIZED";
-              const periodCheckDate = row.period?.checkDate
-                ? weekMondayLabelFromCheckDate(row.period.checkDate)
-                : null;
               const firstPayValue = asNumber(
                 row.firstPaymentNowOverride ?? row.firstPaymentNowCalculated,
               );
               const secondPayValue = asNumber(
                 row.secondPaymentNowOverride ?? row.secondPaymentNowCalculated,
               );
-              const firstPaymentComplete =
-                firstPayValue > 0 &&
-                Math.abs(firstPayValue - firstCommission) <= 0.009;
+              const firstPaymentLocked =
+                periodLocked ||
+                row.status === "FIRST_PAID" ||
+                row.status === "SECOND_PAID" ||
+                row.status === "CLOSED" ||
+                !!row.depositPaidDate;
+              const showPaidDateLabels = !!selectedPeriod && !periodLocked;
+              const firstPaidDateValue =
+                row.status === "FIRST_PAID" ||
+                row.status === "SECOND_PAID" ||
+                row.status === "CLOSED"
+                  ? row.period?.checkDate || row.depositPaidDate
+                  : row.depositPaidDate;
+              const firstPaidDateLabel =
+                showPaidDateLabels && firstPaidDateValue
+                  ? displayDate(firstPaidDateValue)
+                  : "";
+              const secondPaidDateLabel =
+                showPaidDateLabels && (row.fullyPaidDate || row.closedAt)
+                  ? displayDate(row.fullyPaidDate || row.closedAt)
+                  : "";
               const secondPaymentStarted = secondPayValue > 0;
               const statusBadgeLabel =
                 row.status === "HOLD"
@@ -1201,9 +1250,11 @@ export default function SalesCommissionClient({
                   : row.status === "MANUAL_REVIEW"
                     ? "Review Required"
                     : secondPaymentStarted
-                      ? "Second Payment"
+                      ? secondPaidDateLabel
+                        ? "Second Paid"
+                        : "Second Payment"
                       : firstPayValue > 0
-                        ? firstPaymentComplete
+                        ? firstPaidDateLabel
                           ? "First Paid"
                           : "First Payment"
                         : visual.label;
@@ -1315,14 +1366,14 @@ export default function SalesCommissionClient({
                   </td>
 
                   <td className="border-r border-gray-200 px-1 py-1 text-center">
-                    {periodLocked ? (
+                    {firstPaymentLocked ? (
                       <div>
                         <div className="font-medium">
                           {money(firstPayValue)}
                         </div>
-                        {firstPayValue > 0 && periodCheckDate && (
+                        {firstPaidDateLabel && (
                           <div className="text-[9px] text-blue-600">
-                            Paid {periodCheckDate}
+                            Paid {firstPaidDateLabel}
                           </div>
                         )}
                       </div>
@@ -1344,9 +1395,9 @@ export default function SalesCommissionClient({
                             className="w-full py-1 text-center outline-none"
                           />
                         </div>
-                        {firstPayValue > 0 && periodCheckDate && (
+                        {firstPaidDateLabel && (
                           <div className="text-[9px] text-center text-blue-600">
-                            Paid {periodCheckDate}
+                            Paid {firstPaidDateLabel}
                           </div>
                         )}
                       </div>
@@ -1405,18 +1456,28 @@ export default function SalesCommissionClient({
                   <td className="border-r border-gray-200 px-1 py-1 text-center">
                     {periodLocked ? (
                       <div>
-                        <div className="font-medium">
+                        <div
+                          className={`font-medium ${
+                            secondPayValue > 0 ? "text-green-700" : ""
+                          }`}
+                        >
                           {money(secondPayValue)}
                         </div>
-                        {secondPayValue > 0 && periodCheckDate && (
+                        {secondPaidDateLabel && (
                           <div className="text-[9px] text-blue-600">
-                            Paid {periodCheckDate}
+                            Paid {secondPaidDateLabel}
                           </div>
                         )}
                       </div>
                     ) : (
                       <div>
-                        <div className="flex items-center rounded border border-gray-300 px-1">
+                        <div
+                          className={`flex items-center rounded border px-1 ${
+                            secondPayValue > 0
+                              ? "border-green-300 bg-green-50"
+                              : "border-gray-300"
+                          }`}
+                        >
                           <span className="text-gray-500">$</span>
                           <input
                             defaultValue={numberInputValue(secondPayValue)}
@@ -1429,12 +1490,16 @@ export default function SalesCommissionClient({
                                 firstPayValue,
                               )
                             }
-                            className="w-full py-1 text-center outline-none"
+                            className={`w-full py-1 text-center outline-none ${
+                              secondPayValue > 0
+                                ? "bg-green-50 text-green-800"
+                                : ""
+                            }`}
                           />
                         </div>
-                        {secondPayValue > 0 && periodCheckDate && (
+                        {secondPaidDateLabel && (
                           <div className="text-[9px] text-center text-blue-600">
-                            Paid {periodCheckDate}
+                            Paid {secondPaidDateLabel}
                           </div>
                         )}
                       </div>

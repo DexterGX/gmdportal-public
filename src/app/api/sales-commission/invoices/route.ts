@@ -86,6 +86,8 @@ export async function GET(request: NextRequest) {
     const periodId = request.nextUrl.searchParams.get("periodId")?.trim();
     const includeClosed =
       request.nextUrl.searchParams.get("includeClosed") === "1";
+    const includeDraft =
+      request.nextUrl.searchParams.get("includeDraft") === "1";
     const client = request.nextUrl.searchParams.get("client")?.trim();
     const invoiceNo = request.nextUrl.searchParams.get("invoice")?.trim();
     const salesRep = request.nextUrl.searchParams.get("salesRep")?.trim();
@@ -94,9 +96,13 @@ export async function GET(request: NextRequest) {
     const parsedCheckDate = asDate(checkDate);
 
     const periodWhere: Prisma.SalesCommissionPeriodWhereInput = {
-      status: {
-        not: "DRAFT",
-      },
+      ...(!includeDraft && !periodId
+        ? {
+            status: {
+              not: "DRAFT",
+            },
+          }
+        : {}),
       ...(parsedCheckDate ? { checkDate: parsedCheckDate } : {}),
     };
 
@@ -474,34 +480,19 @@ export async function PATCH(request: NextRequest) {
 
     const expectedFirst = Number(calc.firstCommission);
     const expectedSecond = Number(calc.adjustedSecondCommission);
-    const periodMonday = startOfWeekMonday(
-      current.period?.startDate || current.period?.checkDate || null,
-    );
 
     const paymentFieldsUpdated =
       updates.firstPaymentNow !== undefined ||
       updates.secondPaymentNow !== undefined;
 
     if (paymentFieldsUpdated && updates.status === undefined) {
-      if (secondNow > 0) {
-        updateData.status = "SECOND_PAID";
-        if (periodMonday) {
-          updateData.depositPaidDate = periodMonday;
-          updateData.fullyPaidDate = periodMonday;
-        }
-        updateData.closedAt = undefined;
-      } else if (firstNow > 0) {
-        updateData.status =
-          firstNow + 0.009 >= expectedFirst ? "FIRST_PAID" : "OPEN";
-        if (periodMonday) {
-          updateData.depositPaidDate = periodMonday;
-          updateData.fullyPaidDate = null;
-        }
+      // Entered payment amounts are treated as scheduled in the current week.
+      // They become paid only when a subsequent weekly period is created.
+      if (secondNow > 0 || firstNow > 0) {
+        updateData.status = "OPEN";
         updateData.closedAt = undefined;
       } else {
         updateData.status = "OPEN";
-        updateData.depositPaidDate = null;
-        updateData.fullyPaidDate = null;
         updateData.closedAt = null;
       }
     }

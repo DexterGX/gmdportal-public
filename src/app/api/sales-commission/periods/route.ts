@@ -65,6 +65,66 @@ async function closeCarryOverPaidInvoices(newPeriodId: string, userId: string) {
   }
 }
 
+async function promoteScheduledFirstPayments(
+  newPeriodId: string,
+  userId: string,
+) {
+  const scheduled = await prisma.salesCommissionInvoice.findMany({
+    where: {
+      periodId: {
+        not: newPeriodId,
+      },
+      status: "OPEN",
+      depositPaidDate: null,
+      OR: [
+        { firstPaymentNowOverride: { gt: new Prisma.Decimal(0) } },
+        { firstPaymentNowCalculated: { gt: new Prisma.Decimal(0) } },
+      ],
+    },
+    select: {
+      id: true,
+      period: {
+        select: {
+          checkDate: true,
+        },
+      },
+    },
+  });
+
+  if (scheduled.length === 0) return;
+
+  await prisma.$transaction(
+    scheduled.map((row) => {
+      const paidDate = row.period?.checkDate
+        ? toDateOnly(row.period.checkDate)
+        : null;
+      return prisma.salesCommissionInvoice.update({
+        where: {
+          id: row.id,
+        },
+        data: {
+          status: "FIRST_PAID",
+          depositPaidDate: paidDate,
+          updatedByUserId: userId,
+        },
+      });
+    }),
+  );
+
+  await prisma.salesCommissionAuditLog.create({
+    data: {
+      entityType: "PERIOD",
+      entityId: newPeriodId,
+      fieldName: "autoPromotedFirstPayments",
+      oldValue: Prisma.JsonNull,
+      newValue: {
+        promotedCount: scheduled.length,
+      },
+      changedByUserId: userId,
+    },
+  });
+}
+
 export async function GET() {
   try {
     const access = await requireSalesCommissionAccess();
@@ -139,6 +199,8 @@ export async function POST(request: NextRequest) {
         updatedByUserId: access.userId,
       },
     });
+
+    await promoteScheduledFirstPayments(period.id, access.userId);
 
     await closeCarryOverPaidInvoices(period.id, access.userId);
 
