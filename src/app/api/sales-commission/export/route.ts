@@ -40,9 +40,12 @@ export async function GET(req: NextRequest) {
   const ws = XLSX.utils.json_to_sheet(rows);
   const wb = XLSX.utils.book_new();
   XLSX.utils.book_append_sheet(wb, ws, "Commission");
-  const buffer = XLSX.write(wb, { bookType: "xlsx", type: "buffer" }) as Buffer;
+  const body = XLSX.write(wb, {
+    bookType: "xlsx",
+    type: "array",
+  }) as ArrayBuffer;
 
-  return new NextResponse(buffer, {
+  return new NextResponse(body, {
     headers: {
       "Content-Type":
         "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
