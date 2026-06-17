@@ -521,11 +521,6 @@ export const programs: ProgramConfig[] = [
         path: "/sales-commission/closed",
       },
       {
-        icon: CopyIcon,
-        name: "Sales Rep Debt",
-        path: "/sales-commission/debt",
-      },
-      {
         icon: Settings2,
         name: "Settings",
         path: "/sales-commission/settings",
@@ -534,11 +529,9 @@ export const programs: ProgramConfig[] = [
     othersItems: [],
   },
 ];
-
 export function getProgramForPath(pathname: string): ProgramConfig {
   const normalizedPath = (pathname || "/").toLowerCase();
 
-  // Sort programs by basePath length (descending) to match most specific path first
   const sortedPrograms = [...programs].sort(
     (a, b) => b.basePath.length - a.basePath.length,
   );

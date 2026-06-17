@@ -1,70 +1,178 @@
-export type CommissionPeriod = {
+// Shared types for Sales Commission V2
+
+export type CMSWeekStatus = "DRAFT" | "REVIEW" | "APPROVED";
+
+export type CMSInvoiceStatus =
+  | "PENDING"
+  | "FIRST_PAYMENT"
+  | "FIRST_PAID"
+  | "SECOND_PAYMENT"
+  | "BOTH_PAYMENTS"
+  | "HOLD"
+  | "HOLD_SIGNATURE";
+
+export interface CMSWeek {
   id: string;
-  startDate: string;
-  endDate: string;
+  weekStart: string; // ISO date string
+  weekEnd: string;
   checkDate: string;
-  status: "DRAFT" | "REVIEWED" | "FINALIZED" | "REOPENED";
-  salesRepScope?: string;
+  status: CMSWeekStatus;
+  notes: string | null;
   createdAt: string;
   updatedAt: string;
-  _count?: { invoices: number };
-};
+  invoices?: CMSInvoice[];
+}
 
-export type CommissionInvoice = {
+export interface CMSInvoice {
   id: string;
-  periodId: string | null;
-  quickbooksTxnId: string | null;
-  invoiceNumber: string | null;
-  invoiceDate: string | null;
-  customerName: string;
-  salesRepId: string | null;
-  salesRepDisplay: string | null;
-  salesRepInitialsRaw: string | null;
-  salesRepUnmatched: boolean;
-  commissionRate: string | null;
-  invoiceAmount: string;
-  quickbooksBalance: string;
-  totalCommissionCalculated: string;
-  totalCommissionOverride: string | null;
-  firstCommissionCalculated: string;
-  firstCommissionOverride: string | null;
-  firstPaymentNowCalculated: string;
-  firstPaymentNowOverride: string | null;
-  thirdPartyAdjustment: string;
-  refundAdjustment: string;
-  secondCommissionCalculated: string;
-  secondCommissionOverride: string | null;
-  adjustedSecondCommissionCalculated: string;
-  secondPaymentNowCalculated: string;
-  secondPaymentNowOverride: string | null;
-  depositPaidDate?: string | null;
-  fullyPaidDate?: string | null;
-  closedAt?: string | null;
-  notesOptionLabels: string[];
-  notesFreeText: string | null;
-  status:
-    | "OPEN"
-    | "HOLD"
-    | "FIRST_PAID"
-    | "SECOND_PAID"
-    | "CLOSED"
-    | "MANUAL_REVIEW";
-  manualOverrideFields: string[];
-  period?: CommissionPeriod;
-};
-
-export type SalesRepOption = {
-  id: string;
-  displayName: string;
-  quickbooksInitials: string;
-  active: boolean;
-  defaultCommissionRate: string | null;
+  weekId: string;
+  salesRep: string;
+  invoiceDate: string;
+  invoiceNumber: string;
+  customer: string;
+  commissionRate: number; // percentage, e.g. 8
+  amount: number;
+  calculatedCommission: number; // amount * rate / 100
+  firstPaymentAmount: number; // 60% of calculatedCommission
+  secondPaymentAmount: number; // 40% adjusted
+  payFirst: boolean;
+  paySecond: boolean;
+  firstPaid: boolean;
+  firstPaidDate: string | null;
+  secondPaid: boolean;
+  secondPaidDate: string | null;
+  thirdPartyAmount: number | null;
+  refundAmount: number | null;
   notes: string | null;
-};
-
-export type NoteOption = {
-  id: string;
-  label: string;
-  isActive: boolean;
+  isNew: boolean;
+  status: CMSInvoiceStatus;
+  originalInvoiceId: string | null;
   sortOrder: number;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface CMSClosedInvoice {
+  id: string;
+  salesRep: string;
+  invoiceDate: string;
+  invoiceNumber: string;
+  customer: string;
+  commissionRate: number;
+  amount: number;
+  calculatedCommission: number;
+  firstPaymentAmount: number;
+  secondPaymentAmount: number;
+  thirdPartyAmount: number | null;
+  refundAmount: number | null;
+  firstPaidDate: string | null;
+  secondPaidDate: string | null;
+  notes: string | null;
+  weekStart: string;
+  weekEnd: string;
+  checkDate: string;
+  originalInvoiceId: string | null;
+  closedAt: string;
+}
+
+export interface CMSSettings {
+  id: string;
+  firstPaymentPercent: number;
+  secondPaymentPercent: number;
+  colorPending: string;
+  colorFirstPayment: string;
+  colorFirstPaid: string;
+  colorClosing: string;
+  colorHold: string;
+  colorHoldSignature: string;
+  colorError: string;
+  createdAt: string;
+  updatedAt: string;
+}
+
+// Helpers
+export function calcCommission(amount: number, rate: number): number {
+  return parseFloat(((amount * rate) / 100).toFixed(2));
+}
+
+export function calcFirstPayment(
+  commission: number,
+  firstPercent: number,
+): number {
+  return parseFloat(((commission * firstPercent) / 100).toFixed(2));
+}
+
+export function calcSecondPayment(
+  commission: number,
+  secondPercent: number,
+  thirdParty: number,
+  refund: number,
+): number {
+  const base = parseFloat(((commission * secondPercent) / 100).toFixed(2));
+  return parseFloat(Math.max(0, base - thirdParty - refund).toFixed(2));
+}
+
+export function getInvoiceRowBg(
+  invoice: CMSInvoice,
+  settings: CMSSettings,
+  hasDuplicate: boolean,
+): string {
+  // Hold states have priority over generic invalid highlighting.
+  if (invoice.status === "HOLD_SIGNATURE") return settings.colorHoldSignature;
+  if (invoice.status === "HOLD") return settings.colorHold;
+  // Red: invalid data check
+  if (isInvoiceInvalid(invoice)) return settings.colorError;
+  if (invoice.status === "SECOND_PAYMENT" || invoice.status === "BOTH_PAYMENTS")
+    return settings.colorClosing;
+  if (invoice.status === "FIRST_PAYMENT") return settings.colorFirstPayment;
+  if (invoice.status === "FIRST_PAID") return settings.colorFirstPaid;
+  return settings.colorPending;
+}
+
+export function isInvoiceInvalid(invoice: CMSInvoice): boolean {
+  if (!invoice.invoiceNumber || invoice.invoiceNumber.trim() === "")
+    return true;
+  if (
+    !invoice.invoiceDate ||
+    Number.isNaN(new Date(invoice.invoiceDate).getTime())
+  )
+    return true;
+  if (isNaN(invoice.amount) || invoice.amount <= 0) return true;
+  if (isNaN(invoice.commissionRate) || invoice.commissionRate <= 0) return true;
+  return false;
+}
+
+export function formatDate(dateStr: string | null | undefined): string {
+  if (!dateStr) return "";
+  const d = new Date(dateStr);
+  return d.toLocaleDateString("en-US", {
+    month: "numeric",
+    day: "numeric",
+    year: "numeric",
+    timeZone: "UTC",
+  });
+}
+
+export function formatCurrency(val: number | null | undefined): string {
+  if (val == null || isNaN(val)) return "$0.00";
+  return new Intl.NumberFormat("en-US", {
+    style: "currency",
+    currency: "USD",
+    minimumFractionDigits: 2,
+  }).format(val);
+}
+
+export const DEFAULT_SETTINGS: CMSSettings = {
+  id: "",
+  firstPaymentPercent: 60,
+  secondPaymentPercent: 40,
+  colorPending: "#FFFFFF",
+  colorFirstPayment: "#BFDBFE",
+  colorFirstPaid: "#F0F9FF",
+  colorClosing: "#BBF7D0",
+  colorHold: "#FEF08A",
+  colorHoldSignature: "#FBCFE8",
+  colorError: "#FECACA",
+  createdAt: "",
+  updatedAt: "",
 };
