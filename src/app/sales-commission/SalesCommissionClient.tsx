@@ -1,2285 +1,1707 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
+import { useRouter } from "next/navigation";
+import * as Papa from "papaparse";
 import * as XLSX from "xlsx";
 import {
-  CheckCircle2,
-  FileDown,
-  FileUp,
-  Loader2,
+  ArrowRight,
+  Download,
   Plus,
+  Printer,
+  RefreshCw,
   Save,
   Trash2,
-  X,
+  Upload,
 } from "lucide-react";
-import { useRouter } from "next/navigation";
-import { formatDateInput, resolvePayWeek } from "@/lib/salesCommission";
-import type {
-  CommissionInvoice,
-  CommissionPeriod,
-  NoteOption,
-  SalesRepOption,
+import {
+  CMSInvoice,
+  CMSSettings,
+  CMSWeek,
+  calcCommission,
+  calcFirstPayment,
+  calcSecondPayment,
+  formatCurrency,
+  formatDate,
+  getInvoiceRowBg,
+  isInvoiceInvalid,
 } from "./types";
 
-type Notification = {
-  type: "success" | "error" | "info";
-  message: string;
+type Props = {
+  initialUserName: string;
+  initialSettings: CMSSettings;
+  initialActiveWeek: CMSWeek | null;
+  initialApprovedWeeks: CMSWeek[];
+  mode: "main" | "draft" | "review";
 };
 
-type FilterState = {
-  salesRepIds: string[];
-  checkDate: string;
-  clientName: string;
-  invoiceNumber: string;
+type RowDraft = CMSInvoice & {
+  duplicateInvoice?: boolean;
 };
 
-type AddInvoiceForm = {
-  salesRepId: string;
+type ImportPreviewRow = {
+  salesRep: string;
   invoiceDate: string;
   invoiceNumber: string;
-  customerName: string;
-  commissionRate: string;
-  invoiceAmount: string;
-  notes: string;
+  customer: string;
+  commissionRate: number;
+  amount: number;
+  calculatedCommission: number;
+  firstPaymentAmount: number;
+  secondPaymentAmount: number;
 };
 
-type AddInvoiceErrors = Partial<Record<keyof AddInvoiceForm, string>>;
-
-const defaultFilters: FilterState = {
-  salesRepIds: [],
-  checkDate: "",
-  clientName: "",
-  invoiceNumber: "",
+// Alias map: each key is the canonical field name, value is the list of
+// column header variants accepted from QuickBooks or manual files.
+const COLUMN_ALIASES: Record<string, string[]> = {
+  salesRep: ["Sales Rep", "SalesRep", "Salesperson"],
+  invoiceDate: ["Date", "Invoice Date", "InvoiceDate"],
+  invoiceNumber: [
+    "Invoice#",
+    "Invoice #",
+    "Num(Invoice#)",
+    "Num Invoice",
+    "InvoiceNumber",
+    "Num",
+  ],
+  customer: ["Customer", "Client", "Customer Name"],
+  commissionRate: [
+    "%Cms",
+    "Cms",
+    "Commission %",
+    "Internal Use(%Cms)",
+    "Internal Use",
+    "CommissionRate",
+    "Commission Rate",
+  ],
+  amount: ["Amount", "Invoice Amount", "Total"],
 };
 
-const defaultAddInvoiceForm: AddInvoiceForm = {
-  salesRepId: "",
-  invoiceDate: formatDateInput(new Date()),
-  invoiceNumber: "",
-  customerName: "",
-  commissionRate: "",
-  invoiceAmount: "",
-  notes: "",
-};
-
-const predefinedHolds = [
-  "Missing client signature",
-  "No deposit received",
-  "Waiting final payment",
-  "Refund applied",
-  "Third party involved",
-  "Credit memo",
-  "Manual review needed",
-  "Commission rate error",
-  "Other",
+const NOTE_REASON_OPTIONS = [
+  "No Deposit",
+  "Not Signed",
+  "Customer Hold",
+  "Install Pending",
+  "Waiting Final Payment",
+  "Missing Info",
+  "On Hold",
+  "Material Delay",
+  "Customer Requested Delay",
 ];
 
-function money(value: unknown) {
-  const n = Number(value || 0);
-  return Number.isFinite(n)
-    ? n.toLocaleString("en-US", { style: "currency", currency: "USD" })
-    : "$0.00";
+const HOLD_SIGNATURE_REASONS = new Set(["Not Signed"]);
+const HOLD_REASONS = new Set(NOTE_REASON_OPTIONS);
+
+/** Find the first key in `row` that matches one of the aliases (case-insensitive). */
+function resolveField(row: Record<string, any>, aliases: string[]): any {
+  const rowKeys = Object.keys(row);
+  for (const alias of aliases) {
+    const match = rowKeys.find(
+      (k) => k.toLowerCase().trim() === alias.toLowerCase().trim(),
+    );
+    if (match !== undefined) return row[match];
+  }
+  return undefined;
 }
 
-function asNumber(value: unknown) {
-  const n = Number(value);
+const emptyDraftRow = (): RowDraft => ({
+  id: crypto.randomUUID(),
+  weekId: "",
+  salesRep: "",
+  invoiceDate: new Date().toISOString().slice(0, 10),
+  invoiceNumber: "",
+  customer: "",
+  commissionRate: 0,
+  amount: 0,
+  calculatedCommission: 0,
+  firstPaymentAmount: 0,
+  secondPaymentAmount: 0,
+  payFirst: false,
+  paySecond: false,
+  firstPaid: false,
+  firstPaidDate: null,
+  secondPaid: false,
+  secondPaidDate: null,
+  thirdPartyAmount: null,
+  refundAmount: null,
+  notes: null,
+  isNew: true,
+  status: "PENDING",
+  originalInvoiceId: null,
+  sortOrder: 0,
+  createdAt: new Date().toISOString(),
+  updatedAt: new Date().toISOString(),
+});
+
+function asNum(v: unknown) {
+  if (typeof v === "string") {
+    const cleaned = v.replace(/[$,%\s]/g, "").replace(",", ".");
+    const n = Number(cleaned);
+    return Number.isFinite(n) ? n : 0;
+  }
+  const n = Number(v);
   return Number.isFinite(n) ? n : 0;
 }
 
-function percent(value: unknown) {
-  const n = Number(value);
-  return Number.isFinite(n) ? `${n}%` : "-";
-}
+/** Convert Excel serial/date strings/Date to YYYY-MM-DD for <input type="date"> */
+function normalizeDate(raw: unknown): string {
+  if (raw == null || raw === "") return "";
 
-function parseDateLike(value?: string | Date | null) {
-  if (!value) return null;
-  if (value instanceof Date) {
-    return Number.isNaN(value.getTime()) ? null : new Date(value);
+  if (raw instanceof Date && !Number.isNaN(raw.getTime())) {
+    return raw.toISOString().slice(0, 10);
   }
 
-  const raw = String(value).trim();
-  if (!raw) return null;
-
-  const match = raw.match(/^(\d{4})-(\d{2})-(\d{2})(?:[T\s].*)?$/);
-  if (match) {
-    return new Date(Number(match[1]), Number(match[2]) - 1, Number(match[3]));
+  if (typeof raw === "number" && Number.isFinite(raw)) {
+    // Excel serial date (1900 system)
+    const ms = Math.round((raw - 25569) * 86400 * 1000);
+    const d = new Date(ms);
+    if (!Number.isNaN(d.getTime())) return d.toISOString().slice(0, 10);
   }
 
-  const parsed = new Date(raw);
-  return Number.isNaN(parsed.getTime()) ? null : parsed;
+  const t = String(raw).trim();
+  if (!t) return "";
+
+  if (/^\d{5}(\.\d+)?$/.test(t)) {
+    const serial = Number(t);
+    if (Number.isFinite(serial)) {
+      const ms = Math.round((serial - 25569) * 86400 * 1000);
+      const d = new Date(ms);
+      if (!Number.isNaN(d.getTime())) return d.toISOString().slice(0, 10);
+    }
+  }
+
+  if (/^\d{4}-\d{2}-\d{2}$/.test(t)) return t;
+
+  const m = t.match(/^(\d{1,2})[\/\-\.](\d{1,2})[\/\-\.](\d{2,4})$/);
+  if (m) {
+    const year = m[3].length === 2 ? `20${m[3]}` : m[3];
+    return `${year}-${m[1].padStart(2, "0")}-${m[2].padStart(2, "0")}`;
+  }
+
+  const parsed = new Date(t);
+  if (!Number.isNaN(parsed.getTime())) return parsed.toISOString().slice(0, 10);
+  return "";
 }
 
-function dateOnly(value?: string | null) {
-  if (!value) return "";
-  const d = parseDateLike(value);
-  if (!d) return "";
-  const y = d.getFullYear();
-  const m = String(d.getMonth() + 1).padStart(2, "0");
-  const day = String(d.getDate()).padStart(2, "0");
-  return `${y}-${m}-${day}`;
+function formatStatus(status: string): string {
+  switch (status) {
+    case "PENDING":
+      return "Open";
+    case "FIRST_PAYMENT":
+      return "1st Payment";
+    case "FIRST_PAID":
+      return "1st Paid";
+    case "SECOND_PAYMENT":
+      return "2nd Payment · Closing";
+    case "BOTH_PAYMENTS":
+      return "Both · Closing";
+    case "HOLD":
+      return "Hold";
+    case "HOLD_SIGNATURE":
+      return "Hold – Signature";
+    default:
+      return status;
+  }
 }
 
-function displayDate(value?: string | Date | null) {
-  if (!value) return "";
-  const d = parseDateLike(value);
-  if (!d) return "";
-  const m = String(d.getMonth() + 1).padStart(2, "0");
-  const day = String(d.getDate()).padStart(2, "0");
-  const y = d.getFullYear();
-  return `${m}/${day}/${y}`;
+function rowDisplayStatus(row: RowDraft): string {
+  if (row.status === "HOLD" || row.status === "HOLD_SIGNATURE")
+    return formatStatus(row.status);
+  if (isInvoiceInvalid(row)) return "Missing field(s)";
+  return formatStatus(row.status);
 }
 
-function cleanNumeric(value: string) {
-  return value.replace(/[^0-9.-]/g, "").trim();
+function getPaymentStatus(
+  payFirst: boolean,
+  paySecond: boolean,
+): RowDraft["status"] {
+  if (payFirst && paySecond) return "BOTH_PAYMENTS";
+  if (paySecond) return "SECOND_PAYMENT";
+  if (payFirst) return "FIRST_PAYMENT";
+  return "PENDING";
 }
 
-function numberInputValue(value: unknown) {
-  if (value === null || value === undefined) return "";
-  const n = Number(value);
-  if (!Number.isFinite(n) || n === 0) return "";
-  return n.toFixed(2);
+function parseNoteReasons(notes: string | null | undefined): string[] {
+  if (!notes) return [];
+  return notes
+    .split("|")
+    .map((part) => part.trim())
+    .filter(Boolean);
 }
 
-function rowVisualState(row: CommissionInvoice) {
-  const firstPayment = asNumber(
-    row.firstPaymentNowOverride ?? row.firstPaymentNowCalculated,
-  );
-  const secondPayment = asNumber(
-    row.secondPaymentNowOverride ?? row.secondPaymentNowCalculated,
-  );
-  const hasAdjustments =
-    asNumber(row.refundAdjustment) > 0 ||
-    asNumber(row.thirdPartyAdjustment) > 0;
-  const hasHold =
-    row.status === "HOLD" ||
-    (row.notesOptionLabels || []).some((x) => x.toLowerCase().includes("hold"));
-  const missingRequired =
-    !row.customerName ||
-    !row.commissionRate ||
-    asNumber(row.invoiceAmount) <= 0;
+function getHoldStatusFromNotes(
+  notes: string | null | undefined,
+): RowDraft["status"] | null {
+  const reasons = parseNoteReasons(notes);
+  if (reasons.some((reason) => HOLD_SIGNATURE_REASONS.has(reason)))
+    return "HOLD_SIGNATURE";
+  if (reasons.some((reason) => HOLD_REASONS.has(reason))) return "HOLD";
+  return null;
+}
 
-  if (row.status === "CLOSED")
-    return {
-      rowClass: "bg-gray-100",
-      label: "Closed",
-      badgeClass: "bg-gray-200 text-gray-700",
-    };
-  if (missingRequired || row.status === "MANUAL_REVIEW")
-    return {
-      rowClass: "bg-red-50",
-      label: "Review Required",
-      badgeClass: "bg-red-100 text-red-700",
-    };
-  if (hasHold)
-    return {
-      rowClass: "bg-yellow-50",
-      label: "Hold",
-      badgeClass: "bg-yellow-100 text-yellow-800",
-    };
-  if (hasAdjustments)
-    return {
-      rowClass: "bg-orange-50",
-      label: "Adjustment",
-      badgeClass: "bg-orange-100 text-orange-700",
-    };
-  if (firstPayment > 0 && secondPayment > 0)
-    return {
-      rowClass: "bg-green-50",
-      label: "Ready to Close",
-      badgeClass: "bg-green-100 text-green-700",
-    };
-  if (firstPayment > 0)
-    return {
-      rowClass: "bg-blue-50",
-      label: "First Paid",
-      badgeClass: "bg-blue-100 text-blue-700",
-    };
-  return {
-    rowClass: "bg-white",
-    label: "Open",
-    badgeClass: "bg-gray-100 text-gray-700",
-  };
+function normalizeDecimalDraft(input: string): string {
+  return input.replace(/,/g, ".").replace(/[^0-9.]/g, "");
+}
+
+function isIntermediateDecimal(value: string): boolean {
+  return value === "" || value === "." || /^\d+\.$/.test(value);
 }
 
 export default function SalesCommissionClient({
-  appRole: _appRole,
-  initialPeriodId,
-}: {
-  appRole: string;
-  initialPeriodId?: string | null;
-}) {
+  initialUserName,
+  initialSettings,
+  initialActiveWeek,
+  initialApprovedWeeks,
+  mode,
+}: Props) {
   const router = useRouter();
-  const [periods, setPeriods] = useState<CommissionPeriod[]>([]);
-  const [invoices, setInvoices] = useState<CommissionInvoice[]>([]);
-  const [salesReps, setSalesReps] = useState<SalesRepOption[]>([]);
-  const [noteOptions, setNoteOptions] = useState<NoteOption[]>([]);
-
-  const [loading, setLoading] = useState(false);
-  const [savingRowId, setSavingRowId] = useState<string | null>(null);
-  const [notification, setNotification] = useState<Notification | null>(null);
-
-  const [filterDraft, setFilterDraft] = useState<FilterState>(defaultFilters);
-  const [filters, setFilters] = useState<FilterState>(defaultFilters);
-  const [activePeriodId, setActivePeriodId] = useState<string | null>(
-    initialPeriodId || null,
+  const [settings, setSettings] = useState<CMSSettings>(initialSettings);
+  const [activeWeek, setActiveWeek] = useState<CMSWeek | null>(
+    initialActiveWeek,
   );
-  const [showSalesRepFilter, setShowSalesRepFilter] = useState(false);
-
-  const [showStartWeeklyModal, setShowStartWeeklyModal] = useState(false);
-  const [weeklyDate, setWeeklyDate] = useState(formatDateInput(new Date()));
-  const [weeklyScope, setWeeklyScope] = useState("ALL");
-
+  const [approvedWeeks] = useState<CMSWeek[]>(initialApprovedWeeks);
+  const [rows, setRows] = useState<RowDraft[]>(
+    initialActiveWeek?.invoices?.map((row) => ({
+      ...row,
+      duplicateInvoice: false,
+    })) ?? [],
+  );
+  const [salesRepFilter, setSalesRepFilter] = useState("");
+  const [customerFilter, setCustomerFilter] = useState("");
+  const [invoiceFilter, setInvoiceFilter] = useState("");
+  const [weekStart, setWeekStart] = useState("");
+  const [weekEnd, setWeekEnd] = useState("");
+  const [checkDate, setCheckDate] = useState("");
+  const [busy, setBusy] = useState(false);
+  const [message, setMessage] = useState<string | null>(null);
   const [showImportModal, setShowImportModal] = useState(false);
-  const [importBusy, setImportBusy] = useState(false);
-  const [importMode, setImportMode] = useState<"preview" | "commit" | null>(
-    null,
-  );
-  const [importPeriodId, setImportPeriodId] = useState<string | null>(null);
-  const [importPreview, setImportPreview] = useState<any | null>(null);
-  const [importPreviewRows, setImportPreviewRows] = useState<any[]>([]);
-
-  const [showAddInvoiceModal, setShowAddInvoiceModal] = useState(false);
-  const [addInvoiceBusy, setAddInvoiceBusy] = useState(false);
-  const [addInvoiceForm, setAddInvoiceForm] = useState<AddInvoiceForm>(
-    defaultAddInvoiceForm,
-  );
-  const [addInvoiceErrors, setAddInvoiceErrors] = useState<AddInvoiceErrors>(
-    {},
-  );
-
-  const [noteRow, setNoteRow] = useState<CommissionInvoice | null>(null);
-  const [noteReasons, setNoteReasons] = useState<string[]>([]);
-  const [noteText, setNoteText] = useState("");
+  const importInputRef = useRef<HTMLInputElement | null>(null);
+  const [importFileName, setImportFileName] = useState("");
+  const [importPreviewRows, setImportPreviewRows] = useState<
+    ImportPreviewRow[]
+  >([]);
+  const [importError, setImportError] = useState<string | null>(null);
+  const [numericInputDrafts, setNumericInputDrafts] = useState<
+    Record<string, string>
+  >({});
+  const [openNotesRowId, setOpenNotesRowId] = useState<string | null>(null);
 
   useEffect(() => {
-    if (!notification) return;
-    const timer = setTimeout(() => setNotification(null), 3500);
-    return () => clearTimeout(timer);
-  }, [notification]);
-
-  const weeklyPeriod = useMemo(
-    () => resolvePayWeek(weeklyDate || new Date()),
-    [weeklyDate],
-  );
-  const weeklyFromText = useMemo(
-    () => displayDate(weeklyPeriod.start),
-    [weeklyPeriod.start],
-  );
-  const weeklyToText = useMemo(
-    () => displayDate(weeklyPeriod.end),
-    [weeklyPeriod.end],
-  );
-  const weeklyCheckDateText = useMemo(
-    () => displayDate(weeklyPeriod.checkDate),
-    [weeklyPeriod.checkDate],
-  );
-
-  const checkDateOptions = useMemo(() => {
-    const values = periods.map((p) => dateOnly(p.checkDate)).filter(Boolean);
-    return Array.from(new Set(values));
-  }, [periods]);
-
-  const latestDraftPeriod = useMemo(() => {
-    const drafts = periods.filter((period) => period.status === "DRAFT");
-    if (!drafts.length) return null;
-    return drafts.sort(
-      (a, b) =>
-        new Date(b.updatedAt).getTime() - new Date(a.updatedAt).getTime(),
-    )[0];
-  }, [periods]);
-
-  const latestFinalizedPeriod = useMemo(() => {
-    const finalized = periods.filter((period) => period.status === "FINALIZED");
-    if (!finalized.length) return null;
-    return finalized.sort(
-      (a, b) =>
-        new Date(b.updatedAt).getTime() - new Date(a.updatedAt).getTime(),
-    )[0];
-  }, [periods]);
-
-  const selectedPeriod = useMemo(() => {
-    if (!activePeriodId) return null;
-    return periods.find((p) => p.id === activePeriodId) || null;
-  }, [activePeriodId, periods]);
-
-  const displayedInvoices = useMemo(() => {
-    if (!filters.salesRepIds.length) return invoices;
-    return invoices.filter((inv) =>
-      filters.salesRepIds.includes(inv.salesRepId || ""),
-    );
-  }, [invoices, filters.salesRepIds]);
-
-  const summaryByRep = useMemo(() => {
-    const map = new Map<
-      string,
-      {
-        rep: string;
-        sales: number;
-        first: number;
-        second: number;
-        commission: number;
-        bonus: number;
-      }
-    >();
-
-    displayedInvoices.forEach((row) => {
-      const rep =
-        row.salesRepDisplay || row.salesRepInitialsRaw || "Unassigned";
-      if (!map.has(rep)) {
-        map.set(rep, {
-          rep,
-          sales: 0,
-          first: 0,
-          second: 0,
-          commission: 0,
-          bonus: 0,
-        });
-      }
-      const item = map.get(rep)!;
-      const first = asNumber(
-        row.firstPaymentNowOverride ?? row.firstPaymentNowCalculated,
+    if (!activeWeek && mode === "main") return;
+    if (activeWeek) {
+      setRows(
+        (activeWeek.invoices ?? []).map((row: CMSInvoice) => ({
+          ...row,
+          duplicateInvoice: false,
+        })),
       );
-      const second = asNumber(
-        row.secondPaymentNowOverride ?? row.secondPaymentNowCalculated,
-      );
+      setWeekStart(activeWeek.weekStart.slice(0, 10));
+      setWeekEnd(activeWeek.weekEnd.slice(0, 10));
+      setCheckDate(activeWeek.checkDate.slice(0, 10));
+    }
+  }, [activeWeek, mode]);
 
-      item.sales += asNumber(row.invoiceAmount);
-      item.first += first;
-      item.second += second;
-      item.commission += first + second;
+  const filteredRows = useMemo(() => {
+    const normalizedRep = salesRepFilter.toLowerCase();
+    const normalizedCustomer = customerFilter.toLowerCase();
+    const normalizedInvoice = invoiceFilter.toLowerCase();
+    const sorted = [...rows].sort((a, b) => {
+      const repCompare = a.salesRep.localeCompare(b.salesRep);
+      if (repCompare !== 0) return repCompare;
+      return a.invoiceNumber.localeCompare(b.invoiceNumber, undefined, {
+        numeric: true,
+      });
     });
-
-    return Array.from(map.values()).sort((a, b) => a.rep.localeCompare(b.rep));
-  }, [displayedInvoices]);
-
-  const overall = useMemo(() => {
-    return summaryByRep.reduce(
-      (acc, row) => {
-        acc.first += row.first;
-        acc.second += row.second;
-        acc.commission += row.commission;
-        acc.bonus += row.bonus;
-        return acc;
-      },
-      { first: 0, second: 0, commission: 0, bonus: 0 },
-    );
-  }, [summaryByRep]);
-
-  const selectedSalesRepSummary = useMemo(() => {
-    if (!filterDraft.salesRepIds.length) return "Any";
-    if (filterDraft.salesRepIds.length === 1) {
-      const only = salesReps.find(
-        (rep) => rep.id === filterDraft.salesRepIds[0],
-      );
-      return only?.displayName || "1 selected";
-    }
-    return `${filterDraft.salesRepIds.length} selected`;
-  }, [filterDraft.salesRepIds, salesReps]);
-
-  async function loadBaseData() {
-    setLoading(true);
-    try {
-      const [periodRes, settingsRes] = await Promise.all([
-        fetch("/api/sales-commission/periods"),
-        fetch("/api/sales-commission/settings"),
-      ]);
-      const periodData = await periodRes.json();
-      const settingsData = await settingsRes.json();
-
-      if (!periodRes.ok)
-        throw new Error(periodData.error || "Failed to load periods");
-      if (!settingsRes.ok)
-        throw new Error(settingsData.error || "Failed to load settings");
-
-      setPeriods(periodData.periods || []);
-      setSalesReps(
-        (settingsData.salesReps || []).filter((x: SalesRepOption) => x.active),
-      );
-      setNoteOptions(
-        (settingsData.noteOptions || []).filter((x: NoteOption) => x.isActive),
-      );
-    } catch (error: any) {
-      setNotification({
-        type: "error",
-        message: error?.message || "Failed to load page",
-      });
-    } finally {
-      setLoading(false);
-    }
-  }
-
-  async function loadInvoices(active: FilterState) {
-    setLoading(true);
-    try {
-      const params = new URLSearchParams();
-      params.set("includeClosed", "0");
-      if (activePeriodId) {
-        params.set("periodId", activePeriodId);
-        params.set("includeDraft", "1");
-      }
-      if (active.checkDate) params.set("checkDate", active.checkDate);
-      if (active.clientName.trim())
-        params.set("client", active.clientName.trim());
-      if (active.invoiceNumber.trim())
-        params.set("invoice", active.invoiceNumber.trim());
-
-      const res = await fetch(
-        `/api/sales-commission/invoices?${params.toString()}`,
-      );
-      const data = await res.json();
-      if (!res.ok) throw new Error(data.error || "Failed to load invoices");
-      setInvoices(data.invoices || []);
-    } catch (error: any) {
-      setNotification({
-        type: "error",
-        message: error?.message || "Failed to load invoices",
-      });
-    } finally {
-      setLoading(false);
-    }
-  }
-
-  useEffect(() => {
-    loadBaseData();
-    loadInvoices(defaultFilters);
-  }, [activePeriodId]);
-
-  useEffect(() => {
-    const timeout = window.setTimeout(() => {
-      setFilters(filterDraft);
-      loadInvoices(filterDraft);
-    }, 250);
-
-    return () => window.clearTimeout(timeout);
-  }, [filterDraft]);
-
-  async function clearFilters() {
-    if (activePeriodId) {
-      setActivePeriodId(null);
-      router.replace("/sales-commission");
-    }
-    setFilterDraft(defaultFilters);
-    setFilters(defaultFilters);
-    await loadInvoices(defaultFilters);
-  }
-
-  function weekMondayLabelFromCheckDate(value?: string | null) {
-    if (!value) return "";
-    const d = parseDateLike(value);
-    if (!d) return "";
-    const day = d.getDay();
-    const deltaToMonday = day === 0 ? 6 : day - 1;
-    d.setDate(d.getDate() - deltaToMonday);
-    return displayDate(d);
-  }
-
-  async function savePaymentRow(
-    row: CommissionInvoice,
-    part: "first" | "second",
-    inputValue: string,
-    totalCommission: number,
-    firstPaymentCurrent: number,
-  ) {
-    const typedValue = asNumber(cleanNumeric(inputValue) || 0);
-    const safeTyped = Math.max(0, typedValue);
-
-    let firstPaymentNow = firstPaymentCurrent;
-    let secondPaymentNow = asNumber(
-      row.secondPaymentNowOverride ?? row.secondPaymentNowCalculated,
-    );
-
-    if (part === "first") {
-      firstPaymentNow = safeTyped;
-      secondPaymentNow = asNumber(
-        row.secondPaymentNowOverride ?? row.secondPaymentNowCalculated,
-      );
-    } else {
-      const expectedSecond = Math.max(
-        0,
-        toMoneyRound(totalCommission - firstPaymentCurrent),
-      );
-      if (Math.abs(safeTyped - expectedSecond) > 0.009) {
-        secondPaymentNow = expectedSecond;
-        setNotification({
-          type: "info",
-          message: `2nd payment was adjusted to ${money(expectedSecond)}.`,
-        });
-      } else {
-        secondPaymentNow = safeTyped;
-      }
-    }
-
-    await updateRow(row.id, {
-      firstPaymentNow,
-      secondPaymentNow,
+    return sorted.filter((row) => {
+      if (normalizedRep && !row.salesRep.toLowerCase().includes(normalizedRep))
+        return false;
+      if (
+        normalizedCustomer &&
+        !row.customer.toLowerCase().includes(normalizedCustomer)
+      )
+        return false;
+      if (
+        normalizedInvoice &&
+        !row.invoiceNumber.toLowerCase().includes(normalizedInvoice)
+      )
+        return false;
+      return true;
     });
-  }
+  }, [customerFilter, invoiceFilter, rows, salesRepFilter]);
 
-  function toMoneyRound(value: number) {
-    return Math.round(value * 100) / 100;
-  }
-
-  async function updateRow(
-    invoiceId: string,
-    updates: Record<string, unknown>,
-  ) {
-    setSavingRowId(invoiceId);
-    try {
-      const res = await fetch("/api/sales-commission/invoices", {
-        method: "PATCH",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ invoiceId, updates }),
-      });
-      const data = await res.json();
-      if (!res.ok) throw new Error(data.error || "Failed saving row");
-
-      setInvoices((prev) =>
-        prev.map((row) => (row.id === invoiceId ? data.invoice : row)),
-      );
-      setNotification({ type: "success", message: "Row saved." });
-    } catch (error: any) {
-      setNotification({
-        type: "error",
-        message: error?.message || "Failed saving row",
-      });
-    } finally {
-      setSavingRowId(null);
+  const duplicates = useMemo(() => {
+    const count = new Map<string, number>();
+    for (const row of rows) {
+      const key = row.invoiceNumber.trim();
+      if (!key) continue;
+      count.set(key, (count.get(key) ?? 0) + 1);
     }
-  }
+    return count;
+  }, [rows]);
 
-  async function deleteRow(invoiceId: string) {
-    if (!window.confirm("Delete this row from current workspace?")) return;
-    try {
-      const res = await fetch(
-        `/api/sales-commission/invoices?invoiceId=${encodeURIComponent(invoiceId)}`,
-        {
-          method: "DELETE",
-        },
-      );
-      const data = await res.json();
-      if (!res.ok) throw new Error(data.error || "Failed to delete row");
-
-      setInvoices((prev) => prev.filter((row) => row.id !== invoiceId));
-      setNotification({ type: "success", message: "Row deleted." });
-    } catch (error: any) {
-      setNotification({
-        type: "error",
-        message: error?.message || "Failed to delete row",
-      });
-    }
-  }
-
-  async function startWeeklyCommission() {
-    try {
-      const res = await fetch("/api/sales-commission/periods", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          selectedDate: weeklyDate,
-          salesRepScope: weeklyScope,
-        }),
-      });
-      const data = await res.json();
-      if (!res.ok)
-        throw new Error(data.error || "Failed to start weekly commission");
-
-      const createdPeriodId = String(data.period?.id || "").trim();
-      if (createdPeriodId) {
-        setActivePeriodId(createdPeriodId);
-        router.replace(
-          `/sales-commission?periodId=${encodeURIComponent(createdPeriodId)}`,
+  const updateRow = (id: string, patch: Partial<RowDraft>) => {
+    setRows((prev) =>
+      prev.map((row) => {
+        if (row.id !== id) return row;
+        const paymentTouched =
+          Object.prototype.hasOwnProperty.call(patch, "payFirst") ||
+          Object.prototype.hasOwnProperty.call(patch, "paySecond");
+        const notesTouched = Object.prototype.hasOwnProperty.call(
+          patch,
+          "notes",
         );
+        const merged = { ...row, ...patch };
+        if (paymentTouched && !merged.payFirst && !merged.firstPaid) {
+          merged.paySecond = false;
+        }
+        const holdStatus = getHoldStatusFromNotes(merged.notes);
+        const commission = calcCommission(
+          asNum(merged.amount),
+          asNum(merged.commissionRate),
+        );
+        const firstPaymentAmount = calcFirstPayment(
+          commission,
+          asNum(settings.firstPaymentPercent),
+        );
+        const secondBase = calcSecondPayment(
+          commission,
+          asNum(settings.secondPaymentPercent),
+          asNum(merged.thirdPartyAmount),
+          asNum(merged.refundAmount),
+        );
+        return {
+          ...merged,
+          calculatedCommission: commission,
+          firstPaymentAmount,
+          secondPaymentAmount: secondBase,
+          status:
+            holdStatus ??
+            (paymentTouched || notesTouched
+              ? getPaymentStatus(merged.payFirst, merged.paySecond)
+              : merged.status),
+        };
+      }),
+    );
+  };
+
+  const updateDecimalField = (
+    id: string,
+    field: "commissionRate" | "amount" | "thirdPartyAmount" | "refundAmount",
+    rawValue: string,
+    nullable: boolean,
+  ) => {
+    const normalized = normalizeDecimalDraft(rawValue);
+    const key = `${id}:${field}`;
+    setNumericInputDrafts((prev) => ({ ...prev, [key]: normalized }));
+    if (isIntermediateDecimal(normalized)) {
+      if (normalized === "") {
+        updateRow(id, {
+          [field]: nullable ? null : 0,
+          isNew: false,
+        } as Partial<RowDraft>);
       }
-
-      setShowStartWeeklyModal(false);
-      await loadBaseData();
-      await loadInvoices(filterDraft);
-      setNotification({
-        type: "success",
-        message: "Weekly commission draft created and loaded.",
-      });
-    } catch (error: any) {
-      setNotification({
-        type: "error",
-        message: error?.message || "Failed to start weekly commission",
-      });
+      return;
     }
-  }
+    if ((normalized.match(/\./g) ?? []).length > 1) return;
+    const parsed = Number(normalized);
+    if (!Number.isFinite(parsed)) return;
+    updateRow(id, { [field]: parsed, isNew: false } as Partial<RowDraft>);
+  };
 
-  function openNotesEditor(row: CommissionInvoice) {
-    setNoteRow(row);
-    setNoteReasons([...(row.notesOptionLabels || [])]);
-    setNoteText(row.notesFreeText || "");
-  }
-
-  async function saveNotesEditor() {
-    if (!noteRow) return;
-    await updateRow(noteRow.id, {
-      notesOptionLabels: noteReasons,
-      notesFreeText: noteText,
-      status: noteReasons.length > 0 ? "HOLD" : noteRow.status,
+  const commitDecimalField = (
+    id: string,
+    field: "commissionRate" | "amount" | "thirdPartyAmount" | "refundAmount",
+    nullable: boolean,
+  ) => {
+    const key = `${id}:${field}`;
+    const raw = numericInputDrafts[key];
+    if (raw == null) return;
+    if (raw === "" || raw === ".") {
+      updateRow(id, {
+        [field]: nullable ? null : 0,
+        isNew: false,
+      } as Partial<RowDraft>);
+    } else {
+      const parsed = Number(raw);
+      if (Number.isFinite(parsed)) {
+        updateRow(id, { [field]: parsed, isNew: false } as Partial<RowDraft>);
+      }
+    }
+    setNumericInputDrafts((prev) => {
+      const next = { ...prev };
+      delete next[key];
+      return next;
     });
-    setNoteRow(null);
-  }
+  };
 
-  function buildImportInstructions() {
-    return [
-      "Commission Rate must be entered as 7.5, not 0.075.",
-      "Dates can be Excel date cells or common date text formats.",
-      "Money values should be numeric and do not require $ symbols.",
-      "QuickBooks Transaction ID should be a text-safe numeric ID.",
-      "Preview all rows before saving.",
-    ];
-  }
-
-  async function ensureDraftPeriodForImport() {
-    if (importPeriodId) return importPeriodId;
-
-    if (activePeriodId) {
-      setImportPeriodId(activePeriodId);
-      return activePeriodId;
+  const getNumericInputValue = (
+    row: RowDraft,
+    field: "commissionRate" | "amount" | "thirdPartyAmount" | "refundAmount",
+  ): string => {
+    const key = `${row.id}:${field}`;
+    if (Object.prototype.hasOwnProperty.call(numericInputDrafts, key)) {
+      return numericInputDrafts[key];
     }
+    const value = row[field];
+    if (value == null) return "";
+    return String(value);
+  };
 
-    const draftPeriods = periods.filter((p) => p.status === "DRAFT");
-    if (draftPeriods.length === 1) {
-      setImportPeriodId(draftPeriods[0].id);
-      return draftPeriods[0].id;
-    }
+  const addRow = () => setRows((prev) => [...prev, emptyDraftRow()]);
+  const removeRow = (id: string) =>
+    setRows((prev) => prev.filter((row) => row.id !== id));
 
-    if (draftPeriods.length > 1) {
-      throw new Error(
-        "Multiple draft periods found. Open the target draft from Commission Periods, then run Import.",
-      );
-    }
+  const importFile = async (file: File) => {
+    setImportError(null);
+    setImportFileName(file.name);
+    setImportPreviewRows([]);
 
-    throw new Error(
-      "No draft period selected. Start a weekly commission or open a draft from Commission Periods first.",
-    );
-  }
+    const ext = file.name.split(".").pop()?.toLowerCase();
+    let data: Record<string, any>[] = [];
 
-  async function previewImport(file: File) {
-    setImportBusy(true);
-    setImportMode("preview");
-    try {
-      const periodId = await ensureDraftPeriodForImport();
-      const buffer = await file.arrayBuffer();
-      const workbook = XLSX.read(buffer, {
-        type: "array",
-        cellDates: true,
-        raw: true,
-      });
+    if (ext === "xlsx" || ext === "xls") {
+      const buf = await file.arrayBuffer();
+      const workbook = XLSX.read(buf);
       const sheet = workbook.Sheets[workbook.SheetNames[0]];
-      const rows = XLSX.utils.sheet_to_json(sheet, { defval: "", raw: true });
-
-      const controller = new AbortController();
-      const timeoutId = window.setTimeout(() => controller.abort(), 120000);
-
-      const res = await fetch("/api/sales-commission/import-preview", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        signal: controller.signal,
-        body: JSON.stringify({ periodId, rows }),
+      data = XLSX.utils.sheet_to_json<Record<string, any>>(sheet, {
+        defval: "",
       });
-      window.clearTimeout(timeoutId);
-      const data = await res.json();
-      if (!res.ok) throw new Error(data.error || "Failed import preview");
-
-      setImportPreview(data);
-      setImportPreviewRows(data.previewRows || []);
-    } catch (error: any) {
-      setNotification({
-        type: "error",
-        message:
-          error?.name === "AbortError"
-            ? "Import preview timed out. Please retry with a smaller file."
-            : error?.message || "Failed import preview",
+    } else {
+      const text = await file.text();
+      const parsed = Papa.parse<Record<string, any>>(text, {
+        header: true,
+        skipEmptyLines: true,
       });
-    } finally {
-      setImportBusy(false);
-      setImportMode(null);
+      data = parsed.data;
     }
-  }
 
-  async function commitImport() {
-    if (!importPreview) return;
-    setImportBusy(true);
-    setImportMode("commit");
-    try {
-      const controller = new AbortController();
-      const timeoutId = window.setTimeout(() => controller.abort(), 180000);
-
-      const res = await fetch("/api/sales-commission/import-commit", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        signal: controller.signal,
-        body: JSON.stringify({
-          periodId: importPeriodId,
-          rows: importPreviewRows,
-          preserveManualOverrides: true,
-        }),
-      });
-      window.clearTimeout(timeoutId);
-      const data = await res.json();
-      if (!res.ok) throw new Error(data.error || "Import failed");
-
-      await loadInvoices(filters);
-      setImportPeriodId(null);
-      setImportPreview(null);
-      setImportPreviewRows([]);
-      setShowImportModal(false);
-
-      const targetPeriod = periods.find((p) => p.id === importPeriodId);
-      const targetPeriodLabel = targetPeriod
-        ? `${displayDate(targetPeriod.startDate)} - ${displayDate(targetPeriod.endDate)}`
-        : null;
-
-      const warning = data.quickbooksTxnIdConflictRows
-        ? ` ${data.quickbooksTxnIdConflictRows} QB txn IDs were kept unchanged due to conflicts.`
-        : "";
-
-      setNotification({
-        type: "success",
-        message: `Import complete${targetPeriodLabel ? ` for ${targetPeriodLabel}` : ""}. Created ${data.created}, updated ${data.updated}.${warning}`,
-      });
-    } catch (error: any) {
-      setNotification({
-        type: "error",
-        message:
-          error?.name === "AbortError"
-            ? "Import commit timed out. Please retry; the server now processes imports in bulk for faster completion."
-            : error?.message || "Import failed",
-      });
-    } finally {
-      setImportBusy(false);
-      setImportMode(null);
-    }
-  }
-
-  async function downloadSample(format: "xlsx" | "csv") {
-    try {
-      const res = await fetch(
-        `/api/sales-commission/import-sample?format=${format}`,
-      );
-      if (!res.ok) throw new Error("Failed to download sample file");
-      const blob = await res.blob();
-      const url = window.URL.createObjectURL(blob);
-      const a = document.createElement("a");
-      a.href = url;
-      a.download =
-        format === "xlsx"
-          ? "Sales-Commission-Import-Sample.xlsx"
-          : "Sales-Commission-Import-Sample.csv";
-      document.body.appendChild(a);
-      a.click();
-      document.body.removeChild(a);
-      window.URL.revokeObjectURL(url);
-    } catch (error: any) {
-      setNotification({
-        type: "error",
-        message: error?.message || "Failed to download sample",
-      });
-    }
-  }
-
-  async function exportOpenInvoices() {
-    try {
-      const params = new URLSearchParams();
-      params.set("includeClosed", "0");
-      if (filters.checkDate) params.set("checkDate", filters.checkDate);
-      if (filters.clientName.trim())
-        params.set("client", filters.clientName.trim());
-      if (filters.invoiceNumber.trim())
-        params.set("invoice", filters.invoiceNumber.trim());
-
-      const res = await fetch(
-        `/api/sales-commission/export?${params.toString()}`,
-      );
-      if (!res.ok) throw new Error("Failed to export open invoices");
-
-      const blob = await res.blob();
-      const url = window.URL.createObjectURL(blob);
-      const a = document.createElement("a");
-      a.href = url;
-      a.download = `Sales-Commission-Open-Invoices-${formatDateInput(new Date())}.xlsx`;
-      document.body.appendChild(a);
-      a.click();
-      document.body.removeChild(a);
-      window.URL.revokeObjectURL(url);
-    } catch (error: any) {
-      setNotification({
-        type: "error",
-        message: error?.message || "Failed to export open invoices",
-      });
-    }
-  }
-
-  function validateAddInvoiceForm(values: AddInvoiceForm): AddInvoiceErrors {
-    const errors: AddInvoiceErrors = {};
-    if (!values.invoiceNumber.trim())
-      errors.invoiceNumber = "Invoice number is required";
-    if (!values.customerName.trim())
-      errors.customerName = "Customer name is required";
-    if (!values.invoiceDate.trim())
-      errors.invoiceDate = "Invoice date is required";
-    if (!values.invoiceAmount.trim() || asNumber(values.invoiceAmount) <= 0) {
-      errors.invoiceAmount = "Invoice amount must be greater than 0";
-    }
-    return errors;
-  }
-
-  function focusFirstAddInvoiceField(errors: AddInvoiceErrors) {
-    const order: (keyof AddInvoiceForm)[] = [
-      "invoiceNumber",
-      "customerName",
-      "invoiceDate",
-      "invoiceAmount",
-    ];
-    const field = order.find((key) => !!errors[key]);
-    if (!field) return;
-    const el = document.querySelector<HTMLInputElement>(
-      `[data-add-field="${field}"]`,
-    );
-    el?.focus();
-  }
-
-  async function submitAddInvoice() {
-    const errors = validateAddInvoiceForm(addInvoiceForm);
-    setAddInvoiceErrors(errors);
-
-    const firstField = Object.keys(errors)[0] as
-      | keyof AddInvoiceForm
-      | undefined;
-    if (firstField) {
-      focusFirstAddInvoiceField(errors);
+    if (!data.length) {
+      setImportError("The file appears to be empty.");
       return;
     }
 
-    setAddInvoiceBusy(true);
-    try {
-      const selectedRep = salesReps.find(
-        (rep) => rep.id === addInvoiceForm.salesRepId,
+    const firstRow = data[0];
+    const missingFields = Object.entries(COLUMN_ALIASES)
+      .filter(([, aliases]) => resolveField(firstRow, aliases) === undefined)
+      .map(([field]) => field);
+
+    if (missingFields.length > 0) {
+      const readable = missingFields
+        .map((f) => COLUMN_ALIASES[f][0])
+        .join(", ");
+      setImportError(`Missing required column(s): ${readable}`);
+      return;
+    }
+
+    setImportPreviewRows(buildPreviewRows(data));
+  };
+
+  const downloadTemplate = (filled: boolean) => {
+    const headers = [
+      "Sales Rep",
+      "Date",
+      "Invoice#",
+      "Customer",
+      "%Cms",
+      "Amount",
+      "1st Payment",
+      "2nd Payment",
+      "3rd Party",
+      "Refund",
+      "Notes",
+    ];
+    const rowsToExport = filled
+      ? [
+          {
+            "Sales Rep": "Sales Test",
+            Date: new Date().toISOString().slice(0, 10),
+            "Invoice#": "12345",
+            Customer: "Sample Customer",
+            "%Cms": 8,
+            Amount: 1000,
+            "1st Payment": 48,
+            "2nd Payment": 32,
+            "3rd Party": 0,
+            Refund: 0,
+            Notes: "Sample row",
+          },
+        ]
+      : [
+          {
+            "Sales Rep": "",
+            Date: "",
+            "Invoice#": "",
+            Customer: "",
+            "%Cms": "",
+            Amount: "",
+            "1st Payment": "",
+            "2nd Payment": "",
+            "3rd Party": "",
+            Refund: "",
+            Notes: "",
+          },
+        ];
+
+    const ws = XLSX.utils.json_to_sheet(rowsToExport, { header: headers });
+    const wb = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(wb, ws, "Import Template");
+    const bytes = XLSX.write(wb, { bookType: "xlsx", type: "array" });
+    const blob = new Blob([bytes], {
+      type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+    });
+    const url = URL.createObjectURL(blob);
+    const anchor = document.createElement("a");
+    anchor.href = url;
+    anchor.download = filled
+      ? "sales-commission-sample.xlsx"
+      : "sales-commission-empty-template.xlsx";
+    anchor.click();
+    URL.revokeObjectURL(url);
+  };
+
+  const buildPreviewRows = (
+    data: Record<string, any>[],
+  ): ImportPreviewRow[] => {
+    return data
+      .map((row) => {
+        const salesRep = String(
+          resolveField(row, COLUMN_ALIASES.salesRep) ?? "",
+        ).trim();
+        const invoiceDateRaw = resolveField(row, COLUMN_ALIASES.invoiceDate);
+        const invoiceDateNorm = normalizeDate(invoiceDateRaw);
+        const invoiceNumber = String(
+          resolveField(row, COLUMN_ALIASES.invoiceNumber) ?? "",
+        ).trim();
+        const customer = String(
+          resolveField(row, COLUMN_ALIASES.customer) ?? "",
+        ).trim();
+        const commissionRate = asNum(
+          resolveField(row, COLUMN_ALIASES.commissionRate) ?? 0,
+        );
+        const amount = asNum(resolveField(row, COLUMN_ALIASES.amount) ?? 0);
+        const commission = calcCommission(amount, commissionRate);
+        const firstPaymentAmount = calcFirstPayment(
+          commission,
+          asNum(settings.firstPaymentPercent),
+        );
+        const secondPaymentAmount = calcSecondPayment(
+          commission,
+          asNum(settings.secondPaymentPercent),
+          0,
+          0,
+        );
+        return {
+          salesRep,
+          invoiceDate: invoiceDateNorm,
+          invoiceNumber,
+          customer,
+          commissionRate,
+          amount,
+          calculatedCommission: commission,
+          firstPaymentAmount,
+          secondPaymentAmount,
+        };
+      })
+      .filter(
+        (row) =>
+          row.salesRep ||
+          row.invoiceDate ||
+          row.invoiceNumber ||
+          row.customer ||
+          row.commissionRate ||
+          row.amount,
       );
-      const res = await fetch("/api/sales-commission/invoices", {
+  };
+
+  const confirmImportRows = () => {
+    const imported: RowDraft[] = importPreviewRows.map((row, index) => {
+      const commission = calcCommission(row.amount, row.commissionRate);
+      const firstPaymentAmount = calcFirstPayment(
+        commission,
+        asNum(settings.firstPaymentPercent),
+      );
+      const secondPaymentAmount = calcSecondPayment(
+        commission,
+        asNum(settings.secondPaymentPercent),
+        0,
+        0,
+      );
+      return {
+        ...emptyDraftRow(),
+        id: crypto.randomUUID(),
+        salesRep: row.salesRep,
+        invoiceDate: row.invoiceDate,
+        invoiceNumber: row.invoiceNumber,
+        customer: row.customer,
+        commissionRate: row.commissionRate,
+        amount: row.amount,
+        calculatedCommission: commission,
+        firstPaymentAmount,
+        secondPaymentAmount,
+        sortOrder: rows.length + index,
+      };
+    });
+
+    setRows((prev) => [...prev, ...imported]);
+    setMessage(
+      `${imported.length} invoice(s) added from ${importFileName || "file"}.`,
+    );
+    setImportFileName("");
+    setImportPreviewRows([]);
+    setImportError(null);
+    setShowImportModal(false);
+  };
+
+  const saveDraft = async () => {
+    if (!activeWeek) return;
+    setBusy(true);
+    setMessage(null);
+    try {
+      const payload = rows.map((row, index) => ({
+        ...row,
+        weekId: activeWeek.id,
+        sortOrder: index,
+        thirdPartyAmount: row.thirdPartyAmount ?? null,
+        refundAmount: row.refundAmount ?? null,
+      }));
+      await fetch("/api/sales-commission/invoices", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          salesRepId: addInvoiceForm.salesRepId || null,
-          salesRepDisplay: selectedRep?.displayName || null,
-          salesRepInitialsRaw: selectedRep?.quickbooksInitials || null,
-          invoiceDate: addInvoiceForm.invoiceDate,
-          invoiceNumber: addInvoiceForm.invoiceNumber.trim(),
-          customerName: addInvoiceForm.customerName.trim(),
-          commissionRate: addInvoiceForm.commissionRate.trim() || null,
-          invoiceAmount: addInvoiceForm.invoiceAmount.trim(),
-          notesFreeText: addInvoiceForm.notes.trim() || null,
-          status:
-            !addInvoiceForm.salesRepId || !addInvoiceForm.commissionRate.trim()
-              ? "MANUAL_REVIEW"
-              : "OPEN",
+          weekId: activeWeek.id,
+          rows: payload,
+          replace: true,
         }),
       });
-      const data = await res.json();
-
-      if (!res.ok) {
-        if (data?.error === "VALIDATION_ERROR" && data?.fields) {
-          setAddInvoiceErrors(data.fields);
-          focusFirstAddInvoiceField(data.fields);
-          return;
-        }
-        throw new Error(data.error || "Failed to create invoice");
-      }
-
-      setShowAddInvoiceModal(false);
-      setAddInvoiceForm(defaultAddInvoiceForm);
-      setAddInvoiceErrors({});
-      await loadInvoices(filters);
-      setNotification({
-        type: "success",
-        message: "Invoice created successfully.",
-      });
-    } catch (error: any) {
-      setNotification({
-        type: "error",
-        message: error?.message || "Failed to create invoice",
-      });
+      setMessage("Draft saved.");
     } finally {
-      setAddInvoiceBusy(false);
+      setBusy(false);
     }
-  }
+  };
+
+  const startNewWeek = async () => {
+    if (!weekStart || !weekEnd || !checkDate) return;
+    setBusy(true);
+    try {
+      const res = await fetch("/api/sales-commission/weeks", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ weekStart, weekEnd, checkDate, notes: "" }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error ?? "Unable to create week");
+      setActiveWeek(data);
+      setRows(
+        (data.invoices ?? []).map((row: CMSInvoice) => ({
+          ...row,
+          duplicateInvoice: false,
+        })),
+      );
+      setMessage("New draft week started.");
+    } catch (error: any) {
+      setMessage(error.message || "Unable to start week.");
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const approveWeek = async () => {
+    if (!activeWeek) return;
+    setBusy(true);
+    try {
+      const res = await fetch("/api/sales-commission/weeks", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ id: activeWeek.id, status: "APPROVED" }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error ?? "Unable to approve week");
+      router.refresh();
+      setMessage("Week approved.");
+    } catch (error: any) {
+      setMessage(error.message || "Unable to approve.");
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const exportCsv = () => {
+    const csv = Papa.unparse(
+      filteredRows.map((row) => ({
+        "Sales Rep": row.salesRep,
+        Date: row.invoiceDate,
+        "Invoice#": row.invoiceNumber,
+        Customer: row.customer,
+        "%Cms": row.commissionRate,
+        Amount: row.amount,
+        FirstPayment: row.firstPaymentAmount,
+        SecondPayment: row.secondPaymentAmount,
+        Status: row.status,
+        Notes: row.notes ?? "",
+      })),
+    );
+    const blob = new Blob([csv], { type: "text/csv;charset=utf-8;" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = `sales-commission-${activeWeek?.weekStart?.slice(0, 10) ?? "export"}.csv`;
+    a.click();
+    URL.revokeObjectURL(url);
+  };
+
+  const printView = () => window.print();
+
+  const totalCommission = filteredRows.reduce(
+    (sum, row) => sum + asNum(row.calculatedCommission),
+    0,
+  );
+  const firstTotal = filteredRows.reduce(
+    (sum, row) => sum + asNum(row.firstPaymentAmount),
+    0,
+  );
+  const secondTotal = filteredRows.reduce(
+    (sum, row) => sum + asNum(row.secondPaymentAmount),
+    0,
+  );
+
+  // Per-rep summary
+  const repSummary = useMemo(() => {
+    const map = new Map<
+      string,
+      { invoiceAmount: number; totalCms: number; first: number; second: number }
+    >();
+    for (const row of filteredRows) {
+      const rep = row.salesRep || "(unassigned)";
+      const existing = map.get(rep) ?? {
+        invoiceAmount: 0,
+        totalCms: 0,
+        first: 0,
+        second: 0,
+      };
+      map.set(rep, {
+        invoiceAmount: existing.invoiceAmount + asNum(row.amount),
+        totalCms: existing.totalCms + asNum(row.calculatedCommission),
+        first:
+          existing.first + (row.payFirst ? asNum(row.firstPaymentAmount) : 0),
+        second:
+          existing.second +
+          (row.paySecond ? asNum(row.secondPaymentAmount) : 0),
+      });
+    }
+    return Array.from(map.entries()).map(([rep, vals]) => ({
+      rep,
+      ...vals,
+      finalPay: vals.first + vals.second,
+    }));
+  }, [filteredRows]);
+
+  const hasAnyWeekDate = Boolean(weekStart || weekEnd || checkDate);
+  const workingWeekLabel = activeWeek
+    ? "Active Working Week"
+    : hasAnyWeekDate
+      ? "Pending Working Week"
+      : "Working Week Not Set";
+  const weekRangeText =
+    weekStart && weekEnd
+      ? `${formatDate(weekStart)} - ${formatDate(weekEnd)}`
+      : "Week range not selected";
+  const checkDateText = checkDate
+    ? formatDate(checkDate)
+    : "Check date not selected";
+  const printSalesRep = salesRepFilter.trim() || "All";
 
   return (
-    <div className="space-y-4">
-      {notification && (
-        <div className="fixed right-4 top-4 z-[120]">
-          <div
-            className={`rounded-lg border px-4 py-2 text-sm shadow ${
-              notification.type === "success"
-                ? "border-green-200 bg-green-50 text-green-700"
-                : notification.type === "info"
-                  ? "border-blue-200 bg-blue-50 text-blue-700"
-                  : "border-red-200 bg-red-50 text-red-700"
-            }`}
-          >
-            {notification.message}
+    <div className="sales-commission-print space-y-4 print:space-y-2">
+      <div className="rounded-2xl border bg-white p-4 shadow-sm print:hidden">
+        <div className="flex flex-wrap items-start justify-between gap-3">
+          <div>
+            <p className="text-[10px] uppercase tracking-[0.22em] text-gray-500">
+              Sales Commission
+            </p>
+            <h1 className="mt-1 text-2xl font-semibold text-gray-900">
+              {mode === "main"
+                ? "Current Week"
+                : mode === "draft"
+                  ? "Draft Week"
+                  : "Review Week"}
+            </h1>
+            <p className="mt-1 text-xs text-gray-600">
+              Logged in as {initialUserName || "user"}. Week commissions run
+              Friday to Thursday and are approved after review.
+            </p>
           </div>
-        </div>
-      )}
-
-      <div className="flex flex-wrap items-start justify-between gap-3">
-        <div>
-          <h1 className="text-2xl font-bold text-gray-900 dark:text-gray-100">
-            Sales Commission
-          </h1>
-          <p className="text-sm text-gray-500 dark:text-gray-400">
-            Open and incomplete invoice workspace.
-          </p>
-          <div className="mt-1 text-xs text-gray-600">
-            {selectedPeriod ? (
-              <span className="inline-flex items-center rounded-full bg-amber-100 px-2 py-0.5 font-semibold text-amber-800">
-                Active Period: {displayDate(selectedPeriod.startDate)} -{" "}
-                {displayDate(selectedPeriod.endDate)} ({selectedPeriod.status})
-              </span>
-            ) : latestFinalizedPeriod ? (
-              <span className="inline-flex items-center rounded-full bg-green-100 px-2 py-0.5 font-semibold text-green-800">
-                Finalized Period: {displayDate(latestFinalizedPeriod.startDate)}{" "}
-                - {displayDate(latestFinalizedPeriod.endDate)} (
-                {latestFinalizedPeriod.status})
-              </span>
-            ) : (
-              <span className="inline-flex items-center rounded-full bg-gray-100 px-2 py-0.5 font-semibold text-gray-700">
-                No finalized period
-              </span>
-            )}
-          </div>
-        </div>
-        <div className="flex flex-wrap gap-2">
-          <button
-            type="button"
-            onClick={() => setShowStartWeeklyModal(true)}
-            className="rounded-lg bg-blue-600 px-3 py-2 text-sm text-white hover:bg-blue-700"
-          >
-            Start Weekly Commission
-          </button>
-          <button
-            type="button"
-            onClick={() => setShowImportModal(true)}
-            className="inline-flex items-center gap-2 rounded-lg border border-gray-300 px-3 py-2 text-sm hover:bg-gray-50"
-          >
-            <FileUp className="h-4 w-4" />
-            Import CSV/Excel
-          </button>
-          <button
-            type="button"
-            onClick={exportOpenInvoices}
-            className="inline-flex items-center gap-2 rounded-lg border border-gray-300 px-3 py-2 text-sm hover:bg-gray-50"
-          >
-            <FileDown className="h-4 w-4" />
-            Export Open Invoices
-          </button>
-          <button
-            type="button"
-            onClick={() => setShowAddInvoiceModal(true)}
-            className="inline-flex items-center gap-2 rounded-lg bg-teal-600 px-3 py-2 text-sm text-white hover:bg-teal-700"
-          >
-            <Plus className="h-4 w-4" />
-            Add Invoice
-          </button>
-        </div>
-      </div>
-
-      <div className="rounded-xl border border-gray-200 bg-white p-4 dark:border-gray-700 dark:bg-gray-800">
-        <div className="grid grid-cols-1 gap-3 md:grid-cols-4">
-          <div className="relative text-xs font-medium text-gray-600 dark:text-gray-300">
-            Sales Rep
+          <div className="flex flex-wrap gap-2">
             <button
-              type="button"
-              onClick={() => setShowSalesRepFilter((v) => !v)}
-              className="mt-1 flex w-full items-center justify-between rounded-lg border border-gray-300 bg-white px-2.5 py-2 text-left text-sm hover:bg-gray-50 dark:border-gray-600 dark:bg-gray-900"
+              onClick={saveDraft}
+              className="inline-flex items-center gap-1.5 rounded-full bg-gray-900 px-3 py-1.5 text-sm text-white"
             >
-              <span>{selectedSalesRepSummary}</span>
-              <span className="text-gray-500">▾</span>
+              <Save className="h-3.5 w-3.5" /> Save Draft
             </button>
-            {showSalesRepFilter && (
-              <div className="absolute z-20 mt-1 max-h-56 w-full overflow-auto rounded-lg border border-gray-200 bg-white p-2 shadow-lg dark:border-gray-600 dark:bg-gray-900">
-                {salesReps.length === 0 && (
-                  <div className="px-1 py-1 text-xs text-gray-400">
-                    No reps available
-                  </div>
-                )}
-                {salesReps.map((rep) => (
-                  <label
-                    key={rep.id}
-                    className="flex cursor-pointer items-center gap-2 rounded px-1.5 py-1 text-xs hover:bg-gray-50 dark:hover:bg-gray-800"
-                  >
-                    <input
-                      type="checkbox"
-                      checked={filterDraft.salesRepIds.includes(rep.id)}
-                      onChange={(e) =>
-                        setFilterDraft((p) => ({
-                          ...p,
-                          salesRepIds: e.target.checked
-                            ? [...p.salesRepIds, rep.id]
-                            : p.salesRepIds.filter((id) => id !== rep.id),
-                        }))
-                      }
-                      className="h-3.5 w-3.5 rounded border-gray-300 text-blue-600"
-                    />
-                    <span className="whitespace-nowrap">{rep.displayName}</span>
-                  </label>
-                ))}
-              </div>
-            )}
-          </div>
-
-          <label className="text-xs font-medium text-gray-600 dark:text-gray-300">
-            Check Date
-            <select
-              value={filterDraft.checkDate}
-              onChange={(e) =>
-                setFilterDraft((p) => ({ ...p, checkDate: e.target.value }))
-              }
-              className="mt-1 w-full rounded-lg border border-gray-300 px-2.5 py-2 text-sm dark:border-gray-600 dark:bg-gray-900"
+            <button
+              onClick={() => setShowImportModal(true)}
+              className="inline-flex items-center gap-1.5 rounded-full border border-dashed px-3 py-1.5 text-sm text-gray-700"
             >
-              <option value="">All</option>
-              {checkDateOptions.map((d) => (
-                <option key={d} value={d}>
-                  {displayDate(d)}
-                </option>
-              ))}
-            </select>
-          </label>
-
-          <label className="text-xs font-medium text-gray-600 dark:text-gray-300">
-            Client Name
+              <Upload className="h-3.5 w-3.5" /> Import CSV / Excel
+            </button>
+            <button
+              onClick={exportCsv}
+              className="inline-flex items-center gap-1.5 rounded-full border px-3 py-1.5 text-sm"
+            >
+              <Download className="h-3.5 w-3.5" /> Export
+            </button>
+            <button
+              onClick={printView}
+              className="inline-flex items-center gap-1.5 rounded-full border px-3 py-1.5 text-sm"
+            >
+              <Printer className="h-3.5 w-3.5" /> Print
+            </button>
+          </div>
+        </div>
+        <div className="mt-3 grid gap-2.5 sm:grid-cols-3">
+          <label className="text-xs text-gray-600">
+            <span className="mb-1 block">Sales Rep Filter</span>
             <input
-              value={filterDraft.clientName}
-              onChange={(e) =>
-                setFilterDraft((p) => ({ ...p, clientName: e.target.value }))
-              }
-              placeholder="Search Client"
-              className="mt-1 w-full rounded-lg border border-gray-300 px-2.5 py-2 text-sm dark:border-gray-600 dark:bg-gray-900"
+              className="w-full rounded-xl border px-3 py-2 text-sm"
+              placeholder="Sales Rep filter"
+              value={salesRepFilter}
+              onChange={(e) => setSalesRepFilter(e.target.value)}
             />
           </label>
-
-          <label className="text-xs font-medium text-gray-600 dark:text-gray-300">
-            Invoice #
+          <label className="text-xs text-gray-600">
+            <span className="mb-1 block">Customer Filter</span>
             <input
-              value={filterDraft.invoiceNumber}
-              onChange={(e) =>
-                setFilterDraft((p) => ({ ...p, invoiceNumber: e.target.value }))
-              }
-              placeholder="Search Invoice"
-              className="mt-1 w-full rounded-lg border border-gray-300 px-2.5 py-2 text-sm dark:border-gray-600 dark:bg-gray-900"
+              className="w-full rounded-xl border px-3 py-2 text-sm"
+              placeholder="Customer filter"
+              value={customerFilter}
+              onChange={(e) => setCustomerFilter(e.target.value)}
+            />
+          </label>
+          <label className="text-xs text-gray-600">
+            <span className="mb-1 block">Invoice# Filter</span>
+            <input
+              className="w-full rounded-xl border px-3 py-2 text-sm"
+              placeholder="Invoice# filter"
+              value={invoiceFilter}
+              onChange={(e) => setInvoiceFilter(e.target.value)}
             />
           </label>
         </div>
+        <div className="mt-3 rounded-2xl border border-blue-200 bg-blue-50/70 p-3">
+          <div className="flex flex-wrap items-center gap-2">
+            <span className="rounded-full bg-blue-600 px-2.5 py-1 text-[11px] font-semibold uppercase tracking-[0.08em] text-white">
+              {workingWeekLabel}
+            </span>
+            {activeWeek?.status && (
+              <span className="rounded-full border border-blue-300 bg-white px-2.5 py-1 text-[11px] font-medium text-blue-800">
+                Status: {activeWeek.status}
+              </span>
+            )}
+          </div>
+          <div className="mt-2 grid gap-2 text-xs text-blue-900 sm:grid-cols-2">
+            <p>
+              <span className="font-semibold">Week:</span> {weekRangeText}
+            </p>
+            <p>
+              <span className="font-semibold">Check Date:</span> {checkDateText}
+            </p>
+          </div>
+        </div>
+        {mode === "main" && !activeWeek && (
+          <div className="mt-3 rounded-2xl border border-amber-200 bg-amber-50 p-3.5">
+            <p className="text-sm font-medium text-amber-900">
+              No active week is open.
+            </p>
+            <div className="mt-2.5 grid gap-2.5 sm:grid-cols-3">
+              <label className="text-xs text-amber-900">
+                <span className="mb-1 block">Week Start</span>
+                <input
+                  type="date"
+                  className="w-full rounded-xl border px-3 py-2 text-sm"
+                  value={weekStart}
+                  onChange={(e) => setWeekStart(e.target.value)}
+                />
+              </label>
+              <label className="text-xs text-amber-900">
+                <span className="mb-1 block">Week End</span>
+                <input
+                  type="date"
+                  className="w-full rounded-xl border px-3 py-2 text-sm"
+                  value={weekEnd}
+                  onChange={(e) => setWeekEnd(e.target.value)}
+                />
+              </label>
+              <label className="text-xs text-amber-900">
+                <span className="mb-1 block">Check Date</span>
+                <input
+                  type="date"
+                  className="w-full rounded-xl border px-3 py-2 text-sm"
+                  value={checkDate}
+                  onChange={(e) => setCheckDate(e.target.value)}
+                />
+              </label>
+            </div>
+            <button
+              onClick={startNewWeek}
+              className="mt-3 inline-flex items-center gap-1.5 rounded-full bg-amber-500 px-3 py-1.5 text-sm text-white"
+            >
+              <Plus className="h-3.5 w-3.5" /> Start Weekly Commission
+            </button>
+          </div>
+        )}
+        {message && <p className="mt-2.5 text-xs text-gray-700">{message}</p>}
+      </div>
 
-        <div className="mt-3 flex gap-2">
-          <button
-            type="button"
-            onClick={clearFilters}
-            className="rounded-lg border border-gray-300 px-3 py-1.5 text-xs hover:bg-gray-50"
-          >
-            Clear Filters
-          </button>
+      <div className="hidden rounded-xl border border-gray-300 bg-white px-3 py-2 print:block">
+        <div className="border-b border-gray-300 pb-1.5">
+          <h2 className="text-[12px] font-bold tracking-[0.03em] text-gray-900">
+            GM Design Commission on Sales
+          </h2>
+        </div>
+        <div className="mt-1.5 grid grid-cols-3 gap-3 text-[10px] text-gray-800">
+          <p className="rounded bg-gray-50 px-1.5 py-1">
+            <span className="font-semibold">Period:</span> {weekRangeText}
+          </p>
+          <p className="rounded bg-gray-50 px-1.5 py-1">
+            <span className="font-semibold">Check Date:</span> {checkDateText}
+          </p>
+          <p className="rounded bg-gray-50 px-1.5 py-1">
+            <span className="font-semibold">Sales Rep:</span> {printSalesRep}
+          </p>
         </div>
       </div>
 
-      <div className="overflow-hidden rounded-xl border border-gray-200 bg-white dark:border-gray-700 dark:bg-gray-800">
-        <div className="border-b border-gray-200 px-3 py-2 text-xs font-medium text-gray-600">
-          Total Rows: {displayedInvoices.length}
-        </div>
-        <table className="w-full table-fixed text-[11px] leading-4">
-          <thead className="border-b border-gray-200 bg-gray-50 dark:border-gray-700 dark:bg-gray-900">
-            <tr>
-              <th
-                style={{ width: "3%" }}
-                className="border-r border-gray-200 px-1.5 py-2 text-center text-[11px] font-semibold text-gray-700"
-              >
-                #
-              </th>
-              <th
-                style={{ width: "6.5%" }}
-                className="border-r border-gray-200 px-1.5 py-2 text-center text-[11px] font-semibold text-gray-700"
-              >
-                Salesperson
-              </th>
-              <th
-                style={{ width: "6.5%" }}
-                className="border-r border-gray-200 px-1.5 py-2 text-center text-[11px] font-semibold text-gray-700"
-              >
-                Date
-              </th>
-              <th
-                style={{ width: "5%" }}
-                className="border-r border-gray-200 px-1.5 py-2 text-center text-[11px] font-semibold text-gray-700"
-              >
-                Invoice #
-              </th>
-              <th
-                style={{ width: "14%" }}
-                className="border-r border-gray-200 px-1.5 py-2 text-center text-[11px] font-semibold text-gray-700"
-              >
-                Customer Name
-              </th>
-              <th
-                style={{ width: "3.5%" }}
-                className="border-r border-gray-200 px-1.5 py-1 text-center text-[10px] font-semibold text-gray-700"
-              >
-                <span className="block leading-3">%</span>
-                <span className="block leading-3">Cms</span>
-              </th>
-              <th
-                style={{ width: "6.5%" }}
-                className="border-r border-gray-200 px-1.5 py-2 text-center text-[11px] font-semibold text-gray-700"
-              >
-                Inv Amount
-              </th>
-              <th
-                style={{ width: "6.5%" }}
-                className="border-r border-gray-200 px-1.5 py-2 text-center text-[11px] font-semibold text-gray-700"
-              >
-                Total Comm
-              </th>
-              <th
-                style={{ width: "5%" }}
-                className="border-r border-gray-200 px-1.5 py-2 text-center text-[11px] font-semibold text-gray-700"
-              >
-                1st 60%
-              </th>
-              <th
-                style={{ width: "6.5%" }}
-                className="border-r border-gray-200 px-1.5 py-2 text-center text-[11px] font-semibold text-gray-700"
-              >
-                1st Payment
-              </th>
-              <th
-                style={{ width: "5%" }}
-                className="border-r border-gray-200 px-1.5 py-2 text-center text-[11px] font-semibold text-gray-700"
-              >
-                3rd Party
-              </th>
-              <th
-                style={{ width: "5%" }}
-                className="border-r border-gray-200 px-1.5 py-2 text-center text-[11px] font-semibold text-gray-700"
-              >
-                Refund
-              </th>
-              <th
-                style={{ width: "5%" }}
-                className="border-r border-gray-200 px-1.5 py-2 text-center text-[11px] font-semibold text-gray-700"
-              >
-                2nd 40%
-              </th>
-              <th
-                style={{ width: "6.5%" }}
-                className="border-r border-gray-200 px-1.5 py-2 text-center text-[11px] font-semibold text-gray-700"
-              >
-                2nd Payment
-              </th>
-              <th
-                style={{ width: "8%" }}
-                className="border-r border-gray-200 px-1.5 py-2 text-center text-[11px] font-semibold text-gray-700"
-              >
-                Notes
-              </th>
-              <th
-                style={{ width: "7%" }}
-                className="border-r border-gray-200 px-1.5 py-2 text-center text-[11px] font-semibold text-gray-700"
-              >
-                Status
-              </th>
-              <th
-                style={{ width: "5%" }}
-                className="px-1.5 py-2 text-center text-[11px] font-semibold text-gray-700"
-              >
-                Actions
-              </th>
-            </tr>
-          </thead>
-          <tbody>
-            {displayedInvoices.map((row, rowIndex) => {
-              const visual = rowVisualState(row);
-              const totalCommission = asNumber(
-                row.totalCommissionOverride ?? row.totalCommissionCalculated,
-              );
-              const firstCommission = asNumber(
-                row.firstCommissionOverride ?? row.firstCommissionCalculated,
-              );
-              const secondCommission = asNumber(
-                row.secondCommissionOverride ?? row.secondCommissionCalculated,
-              );
-              const secondAdjusted = asNumber(
-                row.adjustedSecondCommissionCalculated,
-              );
-              const hasAdjustment =
-                asNumber(row.refundAdjustment) > 0 ||
-                asNumber(row.thirdPartyAdjustment) > 0;
-              const periodLocked = row.period?.status === "FINALIZED";
-              const firstPayValue = asNumber(
-                row.firstPaymentNowOverride ?? row.firstPaymentNowCalculated,
-              );
-              const secondPayValue = asNumber(
-                row.secondPaymentNowOverride ?? row.secondPaymentNowCalculated,
-              );
-              const firstPaymentLocked =
-                periodLocked ||
-                row.status === "FIRST_PAID" ||
-                row.status === "SECOND_PAID" ||
-                row.status === "CLOSED" ||
-                !!row.depositPaidDate;
-              const showPaidDateLabels = !!selectedPeriod && !periodLocked;
-              const firstPaidDateValue =
-                row.status === "FIRST_PAID" ||
-                row.status === "SECOND_PAID" ||
-                row.status === "CLOSED"
-                  ? row.period?.checkDate || row.depositPaidDate
-                  : row.depositPaidDate;
-              const firstPaidDateLabel =
-                showPaidDateLabels && firstPaidDateValue
-                  ? displayDate(firstPaidDateValue)
-                  : "";
-              const secondPaidDateLabel =
-                showPaidDateLabels && (row.fullyPaidDate || row.closedAt)
-                  ? displayDate(row.fullyPaidDate || row.closedAt)
-                  : "";
-              const secondPaymentStarted = secondPayValue > 0;
-              const statusBadgeLabel =
-                row.status === "HOLD"
-                  ? "Hold"
-                  : row.status === "MANUAL_REVIEW"
-                    ? "Review Required"
-                    : secondPaymentStarted
-                      ? secondPaidDateLabel
-                        ? "Second Paid"
-                        : "Second Payment"
-                      : firstPayValue > 0
-                        ? firstPaidDateLabel
-                          ? "First Paid"
-                          : "First Payment"
-                        : visual.label;
-
-              return (
-                <tr
-                  key={row.id}
-                  className={`border-b border-gray-100 align-top ${visual.rowClass}`}
-                >
-                  <td className="border-r border-gray-200 px-1 py-1 text-center font-semibold text-gray-500">
-                    {rowIndex + 1}
-                  </td>
-                  <td className="border-r border-gray-200 px-1 py-1 text-left">
-                    <select
-                      value={row.salesRepId || ""}
-                      onChange={(e) => {
-                        const rep = salesReps.find(
-                          (r) => r.id === e.target.value,
-                        );
-                        updateRow(row.id, {
-                          salesRepId: e.target.value || null,
-                          salesRepDisplay: rep?.displayName || null,
-                          salesRepInitialsRaw: rep?.quickbooksInitials || null,
-                        });
-                      }}
-                      className="w-full rounded border border-gray-300 px-1 py-1"
-                    >
-                      <option value="">Unassigned</option>
-                      {salesReps.map((rep) => (
-                        <option key={rep.id} value={rep.id}>
-                          {rep.displayName}
-                        </option>
-                      ))}
-                    </select>
-                  </td>
-
-                  <td className="border-r border-gray-200 px-1 py-1 text-center">
-                    <input
-                      type="date"
-                      defaultValue={dateOnly(row.invoiceDate)}
-                      onBlur={(e) =>
-                        updateRow(row.id, {
-                          invoiceDate: e.target.value || null,
-                        })
-                      }
-                      className="w-full rounded border border-gray-300 px-1 py-1 text-[10px] text-center"
-                    />
-                  </td>
-
-                  <td className="border-r border-gray-200 px-1 py-1 text-center">
-                    <input
-                      defaultValue={row.invoiceNumber || ""}
-                      onBlur={(e) =>
-                        updateRow(row.id, {
-                          invoiceNumber: e.target.value || null,
-                        })
-                      }
-                      className="w-full rounded border border-gray-300 px-1 py-1 text-center"
-                    />
-                  </td>
-
-                  <td className="border-r border-gray-200 px-1 py-1 text-left">
-                    <input
-                      defaultValue={row.customerName || ""}
-                      onBlur={(e) =>
-                        updateRow(row.id, { customerName: e.target.value })
-                      }
-                      className="w-full rounded border border-gray-300 px-1 py-1"
-                    />
-                  </td>
-
-                  <td className="border-r border-gray-200 px-1 py-1 text-center">
-                    <div className="flex items-center rounded border border-gray-300 px-1">
+      <div className="overflow-hidden rounded-2xl border bg-white shadow-sm">
+        <div className="overflow-x-auto">
+          <table className="commission-table print-compact-table min-w-full divide-y divide-gray-200 text-[11px]">
+            <colgroup>
+              <col style={{ width: "5%" }} />
+              <col style={{ width: "7%" }} />
+              <col style={{ width: "6%" }} />
+              <col style={{ width: "16%" }} />
+              <col style={{ width: "5%" }} />
+              <col style={{ width: "7%" }} />
+              <col style={{ width: "8%" }} />
+              <col style={{ width: "8%" }} />
+              <col style={{ width: "5%" }} />
+              <col style={{ width: "5%" }} />
+              <col style={{ width: "8%" }} />
+              <col style={{ width: "8%" }} />
+              <col style={{ width: "7%" }} />
+              <col className="print:hidden" style={{ width: "5%" }} />
+            </colgroup>
+            <thead className="bg-gray-100 text-[9px] uppercase tracking-[0.16em] text-gray-600">
+              <tr>
+                <th className="border-r px-2 py-2.5 text-center">Sales Rep</th>
+                <th className="border-r px-2 py-2.5 text-center">Date</th>
+                <th className="border-r px-2 py-2.5 text-center">Invoice#</th>
+                <th className="border-r px-2 py-2.5 text-center">Customer</th>
+                <th className="border-r px-2 py-2.5 text-center">% Cms</th>
+                <th className="border-r px-2 py-2.5 text-center">Amount</th>
+                <th className="border-r px-2 py-2.5 text-center">Total Cms</th>
+                <th className="border-r px-2 py-2.5 text-center">
+                  1st Payment
+                </th>
+                <th className="border-r px-2 py-2.5 text-center">3rd Party</th>
+                <th className="border-r px-2 py-2.5 text-center">Refund</th>
+                <th className="border-r px-2 py-2.5 text-center">
+                  2nd Payment
+                </th>
+                <th className="border-r px-2 py-2.5 text-center">Notes</th>
+                <th className="border-r px-2 py-2.5 text-center">Status</th>
+                <th className="px-2 py-2.5 text-center print:hidden">
+                  Actions
+                </th>
+              </tr>
+            </thead>
+            <tbody>
+              {filteredRows.map((row) => {
+                const duplicate =
+                  (duplicates.get(row.invoiceNumber.trim()) ?? 0) > 1;
+                const bg = getInvoiceRowBg(row, settings, duplicate);
+                return (
+                  <tr
+                    key={row.id}
+                    style={{
+                      backgroundColor: bg,
+                      WebkitPrintColorAdjust: "exact",
+                      printColorAdjust: "exact",
+                    }}
+                    className="divide-x divide-gray-200 border-t align-top"
+                  >
+                    <td className="px-2 py-1.5">
                       <input
-                        defaultValue={String(row.commissionRate ?? "")}
-                        onBlur={(e) =>
+                        className="w-16 rounded-md border px-2 py-1 text-[11px]"
+                        value={row.salesRep}
+                        onChange={(e) =>
                           updateRow(row.id, {
-                            commissionRate:
-                              cleanNumeric(e.target.value) || null,
+                            salesRep: e.target.value,
+                            isNew: false,
                           })
                         }
-                        className="w-full py-1 text-center outline-none"
                       />
-                      <span className="text-gray-500">%</span>
-                    </div>
-                  </td>
-
-                  <td className="border-r border-gray-200 px-1 py-1 text-center">
-                    <div className="flex items-center rounded border border-gray-300 px-1">
-                      <span className="text-gray-500">$</span>
+                    </td>
+                    <td className="px-2 py-1.5">
                       <input
-                        defaultValue={numberInputValue(row.invoiceAmount)}
-                        onBlur={(e) =>
+                        type="date"
+                        className="w-[88px] rounded-md border px-1.5 py-1 text-[11px]"
+                        value={row.invoiceDate?.slice(0, 10) ?? ""}
+                        onChange={(e) =>
                           updateRow(row.id, {
-                            invoiceAmount: cleanNumeric(e.target.value) || null,
+                            invoiceDate: e.target.value,
+                            isNew: false,
                           })
                         }
-                        className="w-full py-1 text-center outline-none"
                       />
-                    </div>
-                  </td>
-
-                  <td className="border-r border-gray-200 px-1 py-1 text-center">
-                    {money(totalCommission)}
-                  </td>
-
-                  <td className="border-r border-gray-200 px-1 py-1 text-center">
-                    {money(firstCommission)}
-                  </td>
-
-                  <td className="border-r border-gray-200 px-1 py-1 text-center">
-                    {firstPaymentLocked ? (
-                      <div>
-                        <div className="font-medium">
-                          {money(firstPayValue)}
-                        </div>
-                        {firstPaidDateLabel && (
-                          <div className="text-[9px] text-blue-600">
-                            Paid {firstPaidDateLabel}
-                          </div>
-                        )}
-                      </div>
-                    ) : (
-                      <div>
-                        <div className="flex items-center rounded border border-gray-300 px-1">
-                          <span className="text-gray-500">$</span>
-                          <input
-                            defaultValue={numberInputValue(firstPayValue)}
-                            onBlur={(e) =>
-                              savePaymentRow(
-                                row,
-                                "first",
-                                e.target.value,
-                                totalCommission,
-                                firstPayValue,
-                              )
-                            }
-                            className="w-full py-1 text-center outline-none"
-                          />
-                        </div>
-                        {firstPaidDateLabel && (
-                          <div className="text-[9px] text-center text-blue-600">
-                            Paid {firstPaidDateLabel}
-                          </div>
-                        )}
-                      </div>
-                    )}
-                  </td>
-
-                  <td className="border-r border-gray-200 px-1 py-1 text-center">
-                    <div className="flex items-center rounded border border-gray-300 px-1">
-                      <span className="text-gray-500">$</span>
+                    </td>
+                    <td className="px-2 py-1.5">
                       <input
-                        defaultValue={numberInputValue(
-                          row.thirdPartyAdjustment,
-                        )}
-                        onBlur={(e) =>
+                        className={`w-[76px] rounded-md border px-1.5 py-1 text-[11px] ${duplicate ? "text-amber-800 font-semibold" : ""}`}
+                        value={row.invoiceNumber}
+                        onChange={(e) =>
                           updateRow(row.id, {
-                            thirdPartyAdjustment:
-                              cleanNumeric(e.target.value) || null,
+                            invoiceNumber: e.target.value,
+                            isNew: false,
                           })
                         }
-                        className="w-full py-1 text-center outline-none"
                       />
-                    </div>
-                  </td>
-
-                  <td className="border-r border-gray-200 px-1 py-1 text-center">
-                    <div className="flex items-center rounded border border-gray-300 px-1">
-                      <span className="text-gray-500">$</span>
+                    </td>
+                    <td className="px-2 py-1.5">
                       <input
-                        defaultValue={numberInputValue(row.refundAdjustment)}
-                        onBlur={(e) =>
+                        className="w-[190px] rounded-md border px-2 py-1 text-[11px]"
+                        value={row.customer}
+                        onChange={(e) =>
                           updateRow(row.id, {
-                            refundAdjustment:
-                              cleanNumeric(e.target.value) || null,
+                            customer: e.target.value,
+                            isNew: false,
                           })
                         }
-                        className="w-full py-1 text-center outline-none"
                       />
-                    </div>
-                  </td>
-
-                  <td className="border-r border-gray-200 px-1 py-1 text-center">
-                    {!hasAdjustment ? (
-                      <div>{money(secondCommission)}</div>
-                    ) : (
-                      <div>
-                        <div className="text-gray-500 line-through">
-                          {money(secondCommission)}
-                        </div>
-                        <div className="text-orange-700">
-                          New: {money(secondAdjusted)}
-                        </div>
+                    </td>
+                    <td className="px-2 py-1.5">
+                      <div className="flex items-center rounded-md border bg-white overflow-hidden w-[58px]">
+                        <input
+                          type="text"
+                          inputMode="decimal"
+                          className="w-9 px-1.5 py-1 text-[11px] outline-none [appearance:textfield]"
+                          value={getNumericInputValue(row, "commissionRate")}
+                          onChange={(e) =>
+                            updateDecimalField(
+                              row.id,
+                              "commissionRate",
+                              e.target.value,
+                              false,
+                            )
+                          }
+                          onBlur={() =>
+                            commitDecimalField(row.id, "commissionRate", false)
+                          }
+                        />
+                        <span className="border-l px-1.5 py-1 text-[11px] text-gray-500 bg-gray-50">
+                          %
+                        </span>
                       </div>
-                    )}
-                  </td>
-
-                  <td className="border-r border-gray-200 px-1 py-1 text-center">
-                    {periodLocked ? (
-                      <div>
-                        <div
-                          className={`font-medium ${
-                            secondPayValue > 0 ? "text-green-700" : ""
-                          }`}
-                        >
-                          {money(secondPayValue)}
-                        </div>
-                        {secondPaidDateLabel && (
-                          <div className="text-[9px] text-blue-600">
-                            Paid {secondPaidDateLabel}
-                          </div>
-                        )}
+                    </td>
+                    <td className="px-2 py-1.5">
+                      <div className="flex items-center rounded-md border bg-white overflow-hidden w-[84px]">
+                        <span className="border-r px-1.5 py-1 text-[11px] text-gray-500 bg-gray-50">
+                          $
+                        </span>
+                        <input
+                          type="text"
+                          inputMode="decimal"
+                          className="w-[56px] px-1.5 py-1 text-[11px] outline-none [appearance:textfield]"
+                          value={getNumericInputValue(row, "amount")}
+                          onChange={(e) =>
+                            updateDecimalField(
+                              row.id,
+                              "amount",
+                              e.target.value,
+                              false,
+                            )
+                          }
+                          onBlur={() =>
+                            commitDecimalField(row.id, "amount", false)
+                          }
+                        />
                       </div>
-                    ) : (
-                      <div>
-                        <div
-                          className={`flex items-center rounded border px-1 ${
-                            secondPayValue > 0
-                              ? "border-green-300 bg-green-50"
-                              : "border-gray-300"
-                          }`}
-                        >
-                          <span className="text-gray-500">$</span>
-                          <input
-                            defaultValue={numberInputValue(secondPayValue)}
-                            onBlur={(e) =>
-                              savePaymentRow(
-                                row,
-                                "second",
-                                e.target.value,
-                                totalCommission,
-                                firstPayValue,
-                              )
-                            }
-                            className={`w-full py-1 text-center outline-none ${
-                              secondPayValue > 0
-                                ? "bg-green-50 text-green-800"
-                                : ""
-                            }`}
-                          />
-                        </div>
-                        {secondPaidDateLabel && (
-                          <div className="text-[9px] text-center text-blue-600">
-                            Paid {secondPaidDateLabel}
-                          </div>
-                        )}
+                    </td>
+                    <td className="px-2 py-1.5 text-center font-medium">
+                      {formatCurrency(row.calculatedCommission)}
+                    </td>
+                    <td className="px-2 py-1.5 text-center">
+                      <div className="print-payment-value font-medium">
+                        {formatCurrency(row.firstPaymentAmount)}
                       </div>
-                    )}
-                  </td>
-
-                  <td className="border-r border-gray-200 px-1 py-1 text-left">
-                    <div className="mb-1 flex flex-wrap gap-1">
-                      {(row.notesOptionLabels || [])
-                        .slice(0, 2)
-                        .map((label) => (
-                          <span
-                            key={label}
-                            className="inline-flex rounded-full bg-yellow-100 px-1.5 py-0.5 text-[10px] text-yellow-800"
-                          >
-                            {label}
-                          </span>
-                        ))}
-                    </div>
-                    <button
-                      type="button"
-                      onClick={() => openNotesEditor(row)}
-                      className="rounded border border-gray-300 px-1.5 py-1 text-[10px] hover:bg-gray-50"
-                    >
-                      {row.notesOptionLabels?.length
-                        ? "Edit Hold/Note"
-                        : "Add Hold/Note"}
-                    </button>
-                  </td>
-
-                  <td className="border-r border-gray-200 px-1 py-1 text-center">
-                    <div
-                      className={`inline-flex rounded-full px-2 py-0.5 text-[10px] ${visual.badgeClass}`}
-                    >
-                      {statusBadgeLabel}
-                    </div>
-                    {secondPaymentStarted &&
-                      row.status !== "HOLD" &&
-                      row.status !== "MANUAL_REVIEW" && (
-                        <div className="mt-0.5 text-[9px] font-semibold tracking-wide text-blue-600">
-                          CLOSING
+                      {row.firstPaidDate && (
+                        <div className="text-xs text-gray-600">
+                          Paid {formatDate(row.firstPaidDate)}
                         </div>
                       )}
-                    <select
-                      value={row.status}
-                      onChange={(e) =>
-                        updateRow(row.id, { status: e.target.value })
-                      }
-                      className="mt-1 w-full rounded border border-gray-300 px-1 py-1 text-center"
-                    >
-                      {[
-                        "OPEN",
-                        "HOLD",
-                        "FIRST_PAID",
-                        "SECOND_PAID",
-                        "CLOSED",
-                        "MANUAL_REVIEW",
-                      ].map((status) => (
-                        <option key={status} value={status}>
-                          {status}
-                        </option>
-                      ))}
-                    </select>
-                  </td>
-
-                  <td className="px-1 py-1 text-center">
-                    <div className="flex justify-center gap-1">
-                      <button
-                        type="button"
-                        onClick={() => updateRow(row.id, {})}
-                        className="inline-flex items-center rounded border border-gray-300 px-1.5 py-1 hover:bg-gray-50"
-                      >
-                        {savingRowId === row.id ? (
-                          <Loader2 className="h-3 w-3 animate-spin" />
-                        ) : (
-                          <Save className="h-3 w-3" />
+                      <label className="print-pay-label mt-0.5 flex items-center justify-center gap-1.5 text-[10px]">
+                        <input
+                          type="checkbox"
+                          checked={row.payFirst}
+                          onChange={(e) =>
+                            updateRow(row.id, { payFirst: e.target.checked })
+                          }
+                        />{" "}
+                        Pay
+                      </label>
+                    </td>
+                    <td className="px-2 py-1.5">
+                      <div className="flex items-center rounded-md border bg-white overflow-hidden w-[72px]">
+                        <span className="border-r px-1.5 py-1 text-[11px] text-gray-500 bg-gray-50">
+                          $
+                        </span>
+                        <input
+                          type="text"
+                          inputMode="decimal"
+                          className="w-[46px] px-1.5 py-1 text-[11px] outline-none [appearance:textfield]"
+                          value={getNumericInputValue(row, "thirdPartyAmount")}
+                          onChange={(e) =>
+                            updateDecimalField(
+                              row.id,
+                              "thirdPartyAmount",
+                              e.target.value,
+                              true,
+                            )
+                          }
+                          onBlur={() =>
+                            commitDecimalField(row.id, "thirdPartyAmount", true)
+                          }
+                        />
+                      </div>
+                    </td>
+                    <td className="px-2 py-1.5">
+                      <div className="flex items-center rounded-md border bg-white overflow-hidden w-[72px]">
+                        <span className="border-r px-1.5 py-1 text-[11px] text-gray-500 bg-gray-50">
+                          $
+                        </span>
+                        <input
+                          type="text"
+                          inputMode="decimal"
+                          className="w-[46px] px-1.5 py-1 text-[11px] outline-none [appearance:textfield]"
+                          value={getNumericInputValue(row, "refundAmount")}
+                          onChange={(e) =>
+                            updateDecimalField(
+                              row.id,
+                              "refundAmount",
+                              e.target.value,
+                              true,
+                            )
+                          }
+                          onBlur={() =>
+                            commitDecimalField(row.id, "refundAmount", true)
+                          }
+                        />
+                      </div>
+                    </td>
+                    <td className="px-2 py-1.5 text-center">
+                      <div className="print-payment-value font-medium">
+                        {formatCurrency(row.secondPaymentAmount)}
+                      </div>
+                      {row.secondPaidDate && (
+                        <div className="text-xs text-gray-600">
+                          Paid {formatDate(row.secondPaidDate)}
+                        </div>
+                      )}
+                      <label className="print-pay-label mt-0.5 flex items-center justify-center gap-1.5 text-[10px]">
+                        <input
+                          type="checkbox"
+                          checked={row.paySecond}
+                          disabled={!row.payFirst && !row.firstPaid}
+                          onChange={(e) =>
+                            updateRow(row.id, { paySecond: e.target.checked })
+                          }
+                        />
+                        Pay
+                      </label>
+                    </td>
+                    <td className="px-2 py-1.5 align-top">
+                      <div className="relative print:hidden">
+                        <div className="mb-1 min-h-[20px] w-[128px] rounded-md border bg-white px-1.5 py-1 text-[10px] leading-tight text-gray-700">
+                          {parseNoteReasons(row.notes).length > 0
+                            ? parseNoteReasons(row.notes).join(", ")
+                            : "No reasons"}
+                        </div>
+                        <div className="flex gap-1">
+                          <button
+                            type="button"
+                            onClick={() =>
+                              setOpenNotesRowId((prev) =>
+                                prev === row.id ? null : row.id,
+                              )
+                            }
+                            className="rounded-md border px-2 py-1 text-[10px] font-medium text-gray-700"
+                          >
+                            + Add
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() =>
+                              updateRow(row.id, { notes: null, isNew: false })
+                            }
+                            className="rounded-md border px-2 py-1 text-[10px] text-gray-600"
+                          >
+                            Clear
+                          </button>
+                        </div>
+                        {openNotesRowId === row.id && (
+                          <div className="absolute left-0 top-[52px] z-20 w-[180px] rounded-lg border bg-white p-2 shadow-lg">
+                            <p className="mb-1 text-[10px] font-semibold uppercase tracking-wide text-gray-500">
+                              Select Reasons
+                            </p>
+                            <div className="max-h-32 space-y-1 overflow-auto pr-1">
+                              {NOTE_REASON_OPTIONS.map((option) => {
+                                const selected = parseNoteReasons(
+                                  row.notes,
+                                ).includes(option);
+                                return (
+                                  <label
+                                    key={option}
+                                    className="flex items-center gap-1.5 text-[10px] text-gray-700"
+                                  >
+                                    <input
+                                      type="checkbox"
+                                      checked={selected}
+                                      onChange={(e) => {
+                                        const current = parseNoteReasons(
+                                          row.notes,
+                                        );
+                                        const next = e.target.checked
+                                          ? [...current, option]
+                                          : current.filter(
+                                              (value) => value !== option,
+                                            );
+                                        updateRow(row.id, {
+                                          notes:
+                                            next.length > 0
+                                              ? next.join(" | ")
+                                              : null,
+                                          isNew: false,
+                                        });
+                                      }}
+                                    />
+                                    <span>{option}</span>
+                                  </label>
+                                );
+                              })}
+                            </div>
+                            <button
+                              type="button"
+                              onClick={() => setOpenNotesRowId(null)}
+                              className="mt-2 w-full rounded-md border px-2 py-1 text-[10px] font-medium text-gray-700"
+                            >
+                              Done
+                            </button>
+                          </div>
                         )}
-                      </button>
+                      </div>
+                      <div className="hidden text-[10px] print:block">
+                        {row.notes ?? ""}
+                      </div>
+                    </td>
+                    <td className="px-2 py-1.5 whitespace-nowrap text-[11px] text-gray-700">
+                      {rowDisplayStatus(row)}
+                    </td>
+                    <td className="px-2 py-1.5 print:hidden">
                       <button
-                        type="button"
-                        onClick={() => deleteRow(row.id)}
-                        className="inline-flex items-center rounded border border-red-300 px-1.5 py-1 text-red-600 hover:bg-red-50"
+                        onClick={() => removeRow(row.id)}
+                        className="inline-flex items-center gap-1 rounded-full border px-2.5 py-1 text-[11px]"
                       >
-                        <Trash2 className="h-3 w-3" />
+                        <Trash2 className="h-3 w-3" /> Remove
                       </button>
-                    </div>
-                  </td>
-                </tr>
-              );
-            })}
-
-            {!loading && displayedInvoices.length === 0 && (
-              <tr>
-                <td
-                  colSpan={17}
-                  className="px-4 py-8 text-center text-sm text-gray-500"
-                >
-                  No open or incomplete invoices found.
-                </td>
-              </tr>
-            )}
-          </tbody>
-        </table>
-      </div>
-
-      <div className="space-y-3">
-        <h2 className="text-lg font-semibold text-gray-900 dark:text-gray-100">
-          Weekly Summary by Sales Rep
-        </h2>
-        <div className="grid grid-cols-1 gap-3 md:grid-cols-2 xl:grid-cols-3">
-          {summaryByRep.map((row) => (
-            <div
-              key={row.rep}
-              className="rounded-xl border border-gray-200 bg-white p-3"
-            >
-              <div className="mb-2 text-sm font-semibold text-gray-900">
-                {row.rep}
-              </div>
-              <div className="space-y-1 text-xs">
-                <div className="flex justify-between">
-                  <span>Total Invoice Sales</span>
-                  <span>{money(row.sales)}</span>
-                </div>
-                <div className="flex justify-between">
-                  <span>1st Payments This Week</span>
-                  <span>{money(row.first)}</span>
-                </div>
-                <div className="flex justify-between">
-                  <span>2nd Payments This Week</span>
-                  <span>{money(row.second)}</span>
-                </div>
-                <div className="flex justify-between">
-                  <span>Commission This Week</span>
-                  <span>{money(row.commission)}</span>
-                </div>
-                <div className="flex justify-between rounded bg-green-50 px-2 py-1">
-                  <span>Bonus This Week</span>
-                  <span>{money(row.bonus)}</span>
-                </div>
-                <div className="mt-2 flex justify-between border-t pt-2 text-sm font-semibold">
-                  <span>Final Pay</span>
-                  <span className="text-green-700">
-                    {money(row.commission + row.bonus)}
-                  </span>
-                </div>
-              </div>
-            </div>
-          ))}
-        </div>
-
-        <div className="rounded-xl border border-gray-200 bg-white p-3">
-          <div className="mb-2 text-sm font-semibold text-gray-900">
-            Overall Payroll Summary
-          </div>
-          <div className="grid grid-cols-1 gap-2 text-xs md:grid-cols-4">
-            <div className="rounded border border-gray-200 p-2">
-              Total First Payments: {money(overall.first)}
-            </div>
-            <div className="rounded border border-gray-200 p-2">
-              Total Second Payments: {money(overall.second)}
-            </div>
-            <div className="rounded border border-gray-200 p-2">
-              Total Commission: {money(overall.commission)}
-            </div>
-            <div className="rounded border border-gray-200 p-2 font-semibold">
-              Total Final Payroll: {money(overall.commission + overall.bonus)}
-            </div>
-          </div>
-        </div>
-      </div>
-
-      {showStartWeeklyModal && (
-        <div className="fixed inset-0 z-[130] flex items-center justify-center bg-black/50 p-4">
-          <div className="w-full max-w-lg space-y-4 rounded-xl border border-gray-200 bg-white p-5 shadow-xl">
-            <div className="flex items-start justify-between">
-              <div>
-                <h2 className="text-lg font-semibold text-gray-900">
-                  Start Weekly Commission
-                </h2>
-                <p className="text-sm text-gray-500">
-                  Choose a date inside the commission week you want to draft.
-                </p>
-              </div>
-              <button
-                type="button"
-                onClick={() => setShowStartWeeklyModal(false)}
-              >
-                <X className="h-4 w-4" />
-              </button>
-            </div>
-
-            <label className="block text-xs text-gray-600">
-              Commission Week Date
-              <input
-                type="date"
-                value={weeklyDate}
-                onChange={(e) => setWeeklyDate(e.target.value)}
-                className="mt-1 w-full rounded border border-gray-300 px-3 py-2"
-              />
-            </label>
-
-            <div className="rounded border border-gray-200 bg-gray-50 p-3">
-              <div className="mb-2 text-xs font-semibold text-gray-700">
-                Commission Period
-              </div>
-              <div className="grid grid-cols-2 gap-2">
-                <label className="text-xs text-gray-600">
-                  From
-                  <input
-                    value={weeklyFromText}
-                    disabled
-                    className="mt-1 w-full rounded border border-gray-300 bg-white px-3 py-2 text-gray-700"
-                  />
-                </label>
-                <label className="text-xs text-gray-600">
-                  To
-                  <input
-                    value={weeklyToText}
-                    disabled
-                    className="mt-1 w-full rounded border border-gray-300 bg-white px-3 py-2 text-gray-700"
-                  />
-                </label>
-              </div>
-            </div>
-
-            <label className="block text-xs text-gray-600">
-              Sales Rep Scope
-              <select
-                value={weeklyScope}
-                onChange={(e) => setWeeklyScope(e.target.value)}
-                className="mt-1 w-full rounded border border-gray-300 px-3 py-2"
-              >
-                <option value="ALL">All Sales Reps</option>
-                {salesReps.map((rep) => (
-                  <option key={rep.id} value={rep.id}>
-                    {rep.displayName}
-                  </option>
-                ))}
-              </select>
-            </label>
-
-            <label className="block text-xs text-gray-600">
-              Check Date
-              <input
-                value={weeklyCheckDateText}
-                disabled
-                className="mt-1 w-full rounded border border-gray-300 bg-white px-3 py-2 text-gray-700"
-              />
-            </label>
-
-            <div className="rounded border border-blue-200 bg-blue-50 p-3 text-sm text-blue-900">
-              <div>
-                Commission Period: {weeklyFromText} - {weeklyToText}
-              </div>
-              <div>Check Date: {weeklyCheckDateText}</div>
-              <div>
-                Sales Rep Scope:{" "}
-                {weeklyScope === "ALL"
-                  ? "All Sales Reps"
-                  : salesReps.find((r) => r.id === weeklyScope)?.displayName ||
-                    weeklyScope}
-              </div>
-            </div>
-
-            <div className="flex justify-end gap-2">
-              <button
-                type="button"
-                onClick={() => setShowStartWeeklyModal(false)}
-                className="rounded border border-gray-300 px-3 py-2 text-sm"
-              >
-                Cancel
-              </button>
-              <button
-                type="button"
-                onClick={startWeeklyCommission}
-                className="rounded bg-blue-600 px-3 py-2 text-sm text-white"
-              >
-                Create Draft
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
-
-      {showAddInvoiceModal && (
-        <div className="fixed inset-0 z-[131] flex items-center justify-center bg-black/50 p-4">
-          <div className="w-full max-w-2xl space-y-4 rounded-xl border border-gray-200 bg-white p-5 shadow-xl">
-            <div className="flex items-start justify-between">
-              <div>
-                <h2 className="text-lg font-semibold text-gray-900">
-                  Add Invoice
-                </h2>
-                <p className="text-sm text-gray-500">
-                  Create a master open invoice. Weekly period is optional.
-                </p>
-              </div>
-              <button
-                type="button"
-                onClick={() => setShowAddInvoiceModal(false)}
-              >
-                <X className="h-4 w-4" />
-              </button>
-            </div>
-
-            <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
-              <label className="text-xs text-gray-600">
-                Salesperson
-                <select
-                  value={addInvoiceForm.salesRepId}
-                  onChange={(e) =>
-                    setAddInvoiceForm((p) => ({
-                      ...p,
-                      salesRepId: e.target.value,
-                    }))
-                  }
-                  className="mt-1 w-full rounded border border-gray-300 px-3 py-2"
-                >
-                  <option value="">Unassigned</option>
-                  {salesReps.map((rep) => (
-                    <option key={rep.id} value={rep.id}>
-                      {rep.displayName}
-                    </option>
-                  ))}
-                </select>
-              </label>
-
-              <label className="text-xs text-gray-600">
-                Invoice Date *
-                <input
-                  data-add-field="invoiceDate"
-                  type="date"
-                  value={addInvoiceForm.invoiceDate}
-                  onChange={(e) =>
-                    setAddInvoiceForm((p) => ({
-                      ...p,
-                      invoiceDate: e.target.value,
-                    }))
-                  }
-                  className={`mt-1 w-full rounded border px-3 py-2 ${addInvoiceErrors.invoiceDate ? "border-red-400" : "border-gray-300"}`}
-                />
-                {addInvoiceErrors.invoiceDate && (
-                  <div className="mt-1 text-xs text-red-600">
-                    {addInvoiceErrors.invoiceDate}
-                  </div>
-                )}
-              </label>
-
-              <label className="text-xs text-gray-600">
-                Invoice Number *
-                <input
-                  data-add-field="invoiceNumber"
-                  value={addInvoiceForm.invoiceNumber}
-                  onChange={(e) =>
-                    setAddInvoiceForm((p) => ({
-                      ...p,
-                      invoiceNumber: e.target.value,
-                    }))
-                  }
-                  className={`mt-1 w-full rounded border px-3 py-2 ${addInvoiceErrors.invoiceNumber ? "border-red-400" : "border-gray-300"}`}
-                />
-                {addInvoiceErrors.invoiceNumber && (
-                  <div className="mt-1 text-xs text-red-600">
-                    {addInvoiceErrors.invoiceNumber}
-                  </div>
-                )}
-              </label>
-
-              <label className="text-xs text-gray-600">
-                Customer Name *
-                <input
-                  data-add-field="customerName"
-                  value={addInvoiceForm.customerName}
-                  onChange={(e) =>
-                    setAddInvoiceForm((p) => ({
-                      ...p,
-                      customerName: e.target.value,
-                    }))
-                  }
-                  className={`mt-1 w-full rounded border px-3 py-2 ${addInvoiceErrors.customerName ? "border-red-400" : "border-gray-300"}`}
-                />
-                {addInvoiceErrors.customerName && (
-                  <div className="mt-1 text-xs text-red-600">
-                    {addInvoiceErrors.customerName}
-                  </div>
-                )}
-              </label>
-
-              <label className="text-xs text-gray-600">
-                Commission Rate
-                <input
-                  value={addInvoiceForm.commissionRate}
-                  onChange={(e) =>
-                    setAddInvoiceForm((p) => ({
-                      ...p,
-                      commissionRate: cleanNumeric(e.target.value),
-                    }))
-                  }
-                  placeholder="7.5"
-                  className="mt-1 w-full rounded border border-gray-300 px-3 py-2"
-                />
-              </label>
-
-              <label className="text-xs text-gray-600">
-                Invoice Amount *
-                <input
-                  data-add-field="invoiceAmount"
-                  value={addInvoiceForm.invoiceAmount}
-                  onChange={(e) =>
-                    setAddInvoiceForm((p) => ({
-                      ...p,
-                      invoiceAmount: cleanNumeric(e.target.value),
-                    }))
-                  }
-                  className={`mt-1 w-full rounded border px-3 py-2 ${addInvoiceErrors.invoiceAmount ? "border-red-400" : "border-gray-300"}`}
-                />
-                {addInvoiceErrors.invoiceAmount && (
-                  <div className="mt-1 text-xs text-red-600">
-                    {addInvoiceErrors.invoiceAmount}
-                  </div>
-                )}
-              </label>
-
-              <label className="text-xs text-gray-600 md:col-span-2">
-                Optional Notes
-                <textarea
-                  value={addInvoiceForm.notes}
-                  onChange={(e) =>
-                    setAddInvoiceForm((p) => ({ ...p, notes: e.target.value }))
-                  }
-                  rows={3}
-                  className="mt-1 w-full rounded border border-gray-300 px-3 py-2"
-                />
-              </label>
-            </div>
-
-            <div className="flex justify-end gap-2">
-              <button
-                type="button"
-                onClick={() => setShowAddInvoiceModal(false)}
-                className="rounded border border-gray-300 px-3 py-2 text-sm"
-              >
-                Cancel
-              </button>
-              <button
-                type="button"
-                onClick={submitAddInvoice}
-                disabled={addInvoiceBusy}
-                className="inline-flex items-center gap-2 rounded bg-teal-600 px-3 py-2 text-sm text-white disabled:opacity-60"
-              >
-                {addInvoiceBusy && <Loader2 className="h-4 w-4 animate-spin" />}
-                Create Invoice
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
-
-      {noteRow && (
-        <div className="fixed inset-0 z-[132] flex items-center justify-center bg-black/50 p-4">
-          <div className="w-full max-w-md space-y-4 rounded-xl border border-gray-200 bg-white p-5 shadow-xl">
-            <div className="flex items-start justify-between">
-              <div>
-                <h2 className="text-base font-semibold text-gray-900">
-                  Add Hold/Note
-                </h2>
-                <p className="text-xs text-gray-500">
-                  {noteRow.customerName || "Invoice"}
-                </p>
-              </div>
-              <button type="button" onClick={() => setNoteRow(null)}>
-                <X className="h-4 w-4" />
-              </button>
-            </div>
-
-            <div className="flex flex-wrap gap-1.5">
-              {[
-                ...new Set([
-                  ...predefinedHolds,
-                  ...noteOptions.map((x) => x.label),
-                ]),
-              ].map((label) => {
-                const selected = noteReasons.includes(label);
-                return (
-                  <button
-                    key={label}
-                    type="button"
-                    onClick={() =>
-                      setNoteReasons((prev) =>
-                        selected
-                          ? prev.filter((item) => item !== label)
-                          : [...prev, label],
-                      )
-                    }
-                    className={`rounded-full border px-2 py-1 text-xs ${selected ? "border-yellow-300 bg-yellow-100 text-yellow-800" : "border-gray-300 bg-white text-gray-700"}`}
-                  >
-                    {label}
-                  </button>
+                    </td>
+                  </tr>
                 );
               })}
-            </div>
+            </tbody>
+          </table>
+        </div>
+      </div>
 
-            <label className="block text-xs text-gray-600">
-              Free Text Note
-              <textarea
-                value={noteText}
-                onChange={(e) => setNoteText(e.target.value)}
-                rows={3}
-                className="mt-1 w-full rounded border border-gray-300 px-2 py-1"
-                placeholder="Optional free text"
-              />
-            </label>
+      <div className="flex flex-wrap gap-2 print:hidden">
+        <button
+          onClick={addRow}
+          className="inline-flex items-center gap-1.5 rounded-full border px-3 py-1.5 text-sm"
+        >
+          <Plus className="h-3.5 w-3.5" /> Add Invoice
+        </button>
+        <button
+          title="Mark Existing: when you carry invoices over from the previous week, they start highlighted as 'new'. Click this to clear that flag so only truly new invoices are highlighted."
+          onClick={() =>
+            setRows((prev) => prev.map((row) => ({ ...row, isNew: false })))
+          }
+          className="inline-flex items-center gap-1.5 rounded-full border px-3 py-1.5 text-sm"
+        >
+          <RefreshCw className="h-3.5 w-3.5" /> Mark Existing
+          <span className="ml-0.5 text-[10px] text-gray-400">
+            (hover for info)
+          </span>
+        </button>
+        {mode !== "review" && (
+          <button
+            onClick={approveWeek}
+            className="inline-flex items-center gap-1.5 rounded-full bg-emerald-600 px-3 py-1.5 text-sm text-white"
+          >
+            <ArrowRight className="h-3.5 w-3.5" /> Send for Review / Approve
+          </button>
+        )}
+      </div>
 
-            <div className="flex justify-end gap-2">
-              <button
-                type="button"
-                onClick={() => setNoteRow(null)}
-                className="rounded border border-gray-300 px-3 py-2 text-sm"
-              >
-                Cancel
-              </button>
-              <button
-                type="button"
-                onClick={saveNotesEditor}
-                className="inline-flex items-center gap-2 rounded bg-teal-600 px-3 py-2 text-sm text-white"
-              >
-                <CheckCircle2 className="h-4 w-4" />
-                Save
-              </button>
-            </div>
+      {/* ── Per-Rep Summary ── */}
+      {repSummary.length > 0 && (
+        <div className="overflow-hidden rounded-2xl border bg-white shadow-sm print:border-0">
+          <div className="border-b bg-gray-50 px-4 py-2.5">
+            <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-gray-600">
+              Weekly Summary by Sales Rep
+            </p>
+          </div>
+          <div
+            className="grid gap-0 divide-y md:divide-x md:divide-y-0"
+            style={{
+              gridTemplateColumns: `repeat(${Math.min(repSummary.length, 3)}, minmax(0,1fr))`,
+            }}
+          >
+            {repSummary.map(
+              ({ rep, invoiceAmount, totalCms, first, second, finalPay }) => (
+                <div key={rep} className="p-4">
+                  <p className="mb-3 text-sm font-bold uppercase tracking-wide text-gray-800">
+                    {rep}
+                  </p>
+                  <dl className="space-y-1.5 text-xs">
+                    <div className="flex justify-between border-b pb-1">
+                      <dt className="text-gray-500">Total Invoice Sales</dt>
+                      <dd className="font-medium text-gray-900">
+                        {formatCurrency(invoiceAmount)}
+                      </dd>
+                    </div>
+                    <div className="flex justify-between border-b pb-1">
+                      <dt className="text-gray-500">Total Commission</dt>
+                      <dd className="font-medium text-gray-900">
+                        {formatCurrency(totalCms)}
+                      </dd>
+                    </div>
+                    <div className="flex justify-between border-b pb-1">
+                      <dt className="text-gray-500">1st Payments This Week</dt>
+                      <dd className="font-medium text-gray-900">
+                        {formatCurrency(first)}
+                      </dd>
+                    </div>
+                    <div className="flex justify-between border-b pb-1">
+                      <dt className="text-gray-500">2nd Payments This Week</dt>
+                      <dd className="font-medium text-gray-900">
+                        {formatCurrency(second)}
+                      </dd>
+                    </div>
+                    <div className="flex justify-between pt-1">
+                      <dt className="font-semibold text-gray-800">
+                        Final Week Pay
+                      </dt>
+                      <dd className="font-bold text-emerald-700">
+                        {formatCurrency(finalPay)}
+                      </dd>
+                    </div>
+                  </dl>
+                </div>
+              ),
+            )}
+          </div>
+          <div className="flex flex-wrap gap-6 border-t bg-gray-50 px-4 py-3 text-xs">
+            <span className="text-gray-500">
+              Overall:{" "}
+              <strong className="text-gray-900">
+                {formatCurrency(totalCommission)}
+              </strong>{" "}
+              commission
+            </span>
+            <span className="text-gray-500">
+              1st Payments:{" "}
+              <strong className="text-gray-900">
+                {formatCurrency(firstTotal)}
+              </strong>
+            </span>
+            <span className="text-gray-500">
+              2nd Payments:{" "}
+              <strong className="text-gray-900">
+                {formatCurrency(secondTotal)}
+              </strong>
+            </span>
+            <span className="text-gray-500">
+              Total Payroll:{" "}
+              <strong className="text-emerald-700">
+                {formatCurrency(firstTotal + secondTotal)}
+              </strong>
+            </span>
           </div>
         </div>
       )}
 
+      <div className="hidden print:block">
+        <div className="mb-1 text-[10px] text-gray-700">
+          Printed by {initialUserName}
+        </div>
+      </div>
+
+      <style jsx global>{`
+        .sales-commission-print .commission-table th,
+        .sales-commission-print .commission-table td {
+          padding: 4px 5px !important;
+          vertical-align: top;
+        }
+        .sales-commission-print .commission-table input,
+        .sales-commission-print .commission-table select,
+        .sales-commission-print .commission-table button {
+          font-size: 11px !important;
+        }
+        @media print {
+          @page {
+            size: landscape;
+            margin: 6mm;
+          }
+          .sales-commission-print,
+          .sales-commission-print * {
+            -webkit-print-color-adjust: exact !important;
+            print-color-adjust: exact !important;
+          }
+          .sales-commission-print .overflow-x-auto {
+            overflow: visible !important;
+          }
+          .sales-commission-print .print-compact-table {
+            width: 100% !important;
+            table-layout: fixed !important;
+            border-collapse: collapse !important;
+          }
+          .sales-commission-print .print-compact-table th:nth-child(2),
+          .sales-commission-print .print-compact-table td:nth-child(2) {
+            width: 5% !important;
+          }
+          .sales-commission-print .print-compact-table th:nth-child(3),
+          .sales-commission-print .print-compact-table td:nth-child(3) {
+            width: 4.5% !important;
+          }
+          .sales-commission-print .print-compact-table th,
+          .sales-commission-print .print-compact-table td {
+            padding: 0.9px 1.6px !important;
+            font-size: 7.1px !important;
+            line-height: 1.12 !important;
+            font-family: Arial, sans-serif !important;
+            white-space: nowrap !important;
+            vertical-align: middle !important;
+          }
+          .sales-commission-print .print-compact-table thead th {
+            letter-spacing: 0.02em !important;
+            font-size: 6.7px !important;
+            font-weight: 700 !important;
+          }
+          .sales-commission-print
+            .print-compact-table
+            input:not([type="checkbox"]) {
+            width: 100% !important;
+            min-width: 0 !important;
+            max-width: 100% !important;
+            border: 0 !important;
+            background: transparent !important;
+            font-size: 7.1px !important;
+            line-height: 1.12 !important;
+            font-family: Arial, sans-serif !important;
+            padding: 0 !important;
+            margin: 0 !important;
+            outline: 0 !important;
+            box-shadow: none !important;
+            border-radius: 0 !important;
+            appearance: none !important;
+            -webkit-appearance: none !important;
+          }
+          .sales-commission-print .print-compact-table input[type="checkbox"] {
+            width: 7px !important;
+            height: 7px !important;
+            min-width: 7px !important;
+            max-width: 7px !important;
+            margin: 0 !important;
+            vertical-align: middle !important;
+          }
+          .sales-commission-print .print-compact-table label {
+            font-size: 6.2px !important;
+            line-height: 1 !important;
+            gap: 1px !important;
+            font-family: Arial, sans-serif !important;
+          }
+          .sales-commission-print .print-compact-table .print-pay-label {
+            margin-top: 0 !important;
+            padding-bottom: 0.6px !important;
+          }
+          .sales-commission-print .print-compact-table .print-payment-value {
+            margin-top: 0.6px !important;
+            margin-bottom: 0.3px !important;
+            line-height: 1.05 !important;
+          }
+          .sales-commission-print .print-compact-table td > div {
+            border: 0 !important;
+            background: transparent !important;
+            width: auto !important;
+            min-width: 0 !important;
+            box-shadow: none !important;
+            outline: 0 !important;
+            border-radius: 0 !important;
+          }
+          .sales-commission-print .print-compact-table td > div > span {
+            border: 0 !important;
+            background: transparent !important;
+            padding: 0 1px 0 0 !important;
+          }
+          .sales-commission-print .print-compact-table .print\:hidden {
+            display: none !important;
+          }
+          .sales-commission-print .print-compact-table tr {
+            break-inside: avoid;
+            page-break-inside: avoid;
+          }
+        }
+      `}</style>
+
       {showImportModal && (
-        <div className="fixed inset-0 z-[133] flex items-center justify-center bg-black/50 p-4">
-          <div className="flex max-h-[90vh] w-full max-w-5xl flex-col overflow-hidden rounded-xl border border-gray-200 bg-white shadow-xl">
-            <div className="flex items-start justify-between gap-3 border-b border-gray-200 px-5 py-4">
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/45 p-4 print:hidden">
+          <div className="w-full max-w-4xl rounded-2xl bg-white p-4 shadow-2xl">
+            <div className="flex items-start justify-between gap-3 border-b pb-3">
               <div>
                 <h2 className="text-lg font-semibold text-gray-900">
                   Import CSV / Excel
                 </h2>
                 <p className="text-sm text-gray-500">
-                  Preview before save with duplicates and validation flags.
+                  Download an empty template or a sample file before importing.
                 </p>
               </div>
               <button
-                type="button"
-                disabled={importBusy}
-                onClick={() => {
-                  setShowImportModal(false);
-                  setImportPreview(null);
-                  setImportPreviewRows([]);
-                }}
-                className="rounded border border-gray-300 px-2 py-1 disabled:opacity-60"
-              >
-                <X className="h-4 w-4" />
-              </button>
-            </div>
-
-            <div className="space-y-4 overflow-y-auto px-5 py-4">
-              <div className="rounded-lg border border-dashed border-gray-300 p-4">
-                <div className="mb-3 flex flex-wrap items-center gap-2">
-                  <button
-                    type="button"
-                    onClick={() => downloadSample("xlsx")}
-                    className="inline-flex items-center gap-2 rounded bg-blue-600 px-3 py-2 text-sm text-white hover:bg-blue-700"
-                  >
-                    <FileDown className="h-4 w-4" />
-                    Download Sample File
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => downloadSample("csv")}
-                    className="rounded border border-gray-300 px-3 py-2 text-sm hover:bg-gray-50"
-                  >
-                    Download CSV Sample
-                  </button>
-                </div>
-
-                <input
-                  type="file"
-                  accept=".csv,.xls,.xlsx"
-                  onChange={(e) => {
-                    const file = e.target.files?.[0];
-                    if (file) previewImport(file);
-                  }}
-                />
-                <div className="mt-2 text-xs text-gray-500">
-                  Accepted file types: .csv, .xls, .xlsx
-                </div>
-
-                <div className="mt-3 rounded border border-gray-200 bg-gray-50 p-3 text-xs text-gray-700">
-                  <div className="mb-1 font-semibold">Import Instructions</div>
-                  <ul className="list-disc pl-4">
-                    {buildImportInstructions().map((item) => (
-                      <li key={item}>{item}</li>
-                    ))}
-                  </ul>
-                </div>
-              </div>
-
-              {importBusy && (
-                <div className="inline-flex items-center gap-2 text-sm text-gray-600">
-                  <Loader2 className="h-4 w-4 animate-spin" />
-                  {importMode === "commit"
-                    ? "Committing import..."
-                    : "Processing import preview..."}
-                </div>
-              )}
-
-              {importPreview && (
-                <>
-                  <div className="grid grid-cols-2 gap-2 text-xs md:grid-cols-5">
-                    <div className="rounded border border-gray-200 p-2">
-                      Rows found: {importPreview.summary.totalRows}
-                    </div>
-                    <div className="rounded border border-gray-200 p-2">
-                      Missing invoice #:{" "}
-                      {importPreview.summary.missingInvoiceNumber}
-                    </div>
-                    <div className="rounded border border-gray-200 p-2">
-                      Missing amount: {importPreview.summary.missingAmount || 0}
-                    </div>
-                    <div className="rounded border border-gray-200 p-2">
-                      Invalid commission rate:{" "}
-                      {importPreview.summary.invalidCommissionRate}
-                    </div>
-                    <div className="rounded border border-gray-200 p-2">
-                      Unmatched initials:{" "}
-                      {importPreview.summary.unmatchedSalesRepInitials}
-                    </div>
-                    <div className="rounded border border-gray-200 p-2">
-                      Duplicates: {importPreview.summary.duplicatesInSystem}
-                    </div>
-                    <div className="rounded border border-gray-200 p-2">
-                      Create: {importPreview.summary.rowsToCreate}
-                    </div>
-                    <div className="rounded border border-gray-200 p-2">
-                      Update: {importPreview.summary.rowsToUpdate}
-                    </div>
-                    <div className="rounded border border-gray-200 p-2">
-                      Duplicate:{" "}
-                      {importPreview.summary.rowsMarkedDuplicate || 0}
-                    </div>
-                    <div className="rounded border border-gray-200 p-2">
-                      Conflict: {importPreview.summary.rowsMarkedConflict || 0}
-                    </div>
-                  </div>
-
-                  <div className="rounded border border-gray-200 bg-gray-50 p-3 text-xs text-gray-700">
-                    <div className="mb-1 font-semibold">Detected Columns</div>
-                    <div className="grid grid-cols-1 gap-1 md:grid-cols-2">
-                      {(importPreview.detectedColumns || []).map((col: any) => (
-                        <div key={col.field}>
-                          <span className="font-medium">{col.label}</span>
-                          <span>
-                            {" "}
-                            -&gt; {col.matchedHeader || "Not detected"}
-                          </span>
-                        </div>
-                      ))}
-                    </div>
-                    {(importPreview.missingRequiredColumns || []).length >
-                      0 && (
-                      <div className="mt-2 rounded border border-amber-300 bg-amber-50 p-2 text-amber-800">
-                        {(importPreview.missingRequiredColumns || []).map(
-                          (label: string) => (
-                            <div key={label}>
-                              Could not find {label} column. Found headers:{" "}
-                              {(importPreview.foundHeaders || []).join(", ")}
-                            </div>
-                          ),
-                        )}
-                      </div>
-                    )}
-                  </div>
-
-                  <div className="max-h-64 overflow-auto rounded border border-gray-200">
-                    <table className="w-full text-xs">
-                      <thead className="border-b border-gray-200 bg-gray-50">
-                        <tr>
-                          <th className="px-2 py-1 text-left">Line</th>
-                          <th className="px-2 py-1 text-left">Date</th>
-                          <th className="px-2 py-1 text-left">Invoice #</th>
-                          <th className="px-2 py-1 text-left">Customer</th>
-                          <th className="px-2 py-1 text-left">Sales Rep</th>
-                          <th className="px-2 py-1 text-left">Rate</th>
-                          <th className="px-2 py-1 text-left">Amount</th>
-                          <th className="px-2 py-1 text-left">Action</th>
-                        </tr>
-                      </thead>
-                      <tbody>
-                        {importPreviewRows
-                          .slice(0, 250)
-                          .map((row: any, idx: number) => (
-                            <tr
-                              key={`${row.line}-${idx}`}
-                              className="border-b border-gray-100"
-                            >
-                              <td className="px-2 py-1">{row.line}</td>
-                              <td className="px-2 py-1">
-                                {row.invoiceDateDisplay || "-"}
-                              </td>
-                              <td className="px-2 py-1">
-                                <span
-                                  className={
-                                    row.duplicateInvoiceInImport
-                                      ? "font-semibold text-amber-700"
-                                      : ""
-                                  }
-                                >
-                                  {row.invoiceNumber || "-"}
-                                </span>
-                              </td>
-                              <td className="px-2 py-1">
-                                {row.customerName || "-"}
-                              </td>
-                              <td className="px-2 py-1">
-                                {row.mappedSalesRepName ||
-                                  row.salesRepInitials ||
-                                  "-"}
-                              </td>
-                              <td className="px-2 py-1">
-                                {percent(row.commissionRate)}
-                              </td>
-                              <td className="px-2 py-1">
-                                {row.invoiceAmount === null ||
-                                row.invoiceAmount === undefined
-                                  ? "-"
-                                  : money(row.invoiceAmount)}
-                              </td>
-                              <td className="px-2 py-1">
-                                <span
-                                  className={`inline-flex rounded px-1.5 py-0.5 text-[10px] font-semibold ${
-                                    row.actionType === "CREATE"
-                                      ? "bg-green-100 text-green-700"
-                                      : row.actionType === "UPDATE"
-                                        ? "bg-blue-100 text-blue-700"
-                                        : row.actionType === "DUPLICATE"
-                                          ? "bg-yellow-100 text-yellow-800"
-                                          : "bg-red-100 text-red-700"
-                                  }`}
-                                >
-                                  {row.actionType ||
-                                    (row.existsInSystem ? "UPDATE" : "CREATE")}
-                                </span>
-                              </td>
-                            </tr>
-                          ))}
-                      </tbody>
-                    </table>
-                  </div>
-                </>
-              )}
-            </div>
-
-            <div className="sticky bottom-0 flex justify-end gap-2 border-t border-gray-200 bg-white px-5 py-3">
-              <button
-                type="button"
-                onClick={() => {
-                  setShowImportModal(false);
-                  setImportPreview(null);
-                  setImportPreviewRows([]);
-                }}
-                disabled={importBusy}
-                className="rounded border border-gray-300 px-3 py-2 text-sm disabled:opacity-60"
+                onClick={() => setShowImportModal(false)}
+                className="rounded-full border px-2 py-1 text-sm text-gray-600"
               >
                 Close
               </button>
-              <button
-                type="button"
-                onClick={commitImport}
-                disabled={
-                  importBusy || !importPreview || importPreviewRows.length === 0
-                }
-                className="inline-flex items-center gap-2 rounded bg-teal-600 px-3 py-2 text-sm text-white disabled:opacity-60"
-              >
-                <CheckCircle2 className="h-4 w-4" />
-                Confirm Import
-              </button>
+            </div>
+
+            <div className="mt-4 grid gap-3 md:grid-cols-[1.3fr_1fr]">
+              <div className="rounded-xl border p-3">
+                <div className="flex flex-wrap gap-2">
+                  <button
+                    onClick={() => downloadTemplate(false)}
+                    className="rounded-lg bg-blue-600 px-3 py-2 text-sm text-white"
+                  >
+                    Download Empty File
+                  </button>
+                  <button
+                    onClick={() => downloadTemplate(true)}
+                    className="rounded-lg border px-3 py-2 text-sm"
+                  >
+                    Download Sample File
+                  </button>
+                  <button
+                    onClick={() => importInputRef.current?.click()}
+                    className="rounded-lg border px-3 py-2 text-sm"
+                  >
+                    Choose File
+                  </button>
+                  <input
+                    ref={importInputRef}
+                    type="file"
+                    className="hidden"
+                    accept=".csv,.xlsx,.xls"
+                    onChange={(e) => {
+                      const file = e.target.files?.[0];
+                      if (!file) return;
+                      importFile(file);
+                      e.currentTarget.value = "";
+                    }}
+                  />
+                </div>
+                {importFileName ? (
+                  <p className="mt-2 text-xs text-gray-600">
+                    Selected file: {importFileName}
+                  </p>
+                ) : null}
+                {importError ? (
+                  <p className="mt-2 text-xs font-medium text-red-600">
+                    {importError}
+                  </p>
+                ) : null}
+                <div className="mt-3 rounded-lg border bg-gray-50 p-3 text-sm text-gray-700">
+                  <p className="font-medium text-gray-900">Required columns</p>
+                  <p className="mt-1">
+                    Sales Rep, Date, Invoice#, Customer, %Cms, Amount
+                  </p>
+                </div>
+                <div className="mt-3">
+                  <button
+                    onClick={confirmImportRows}
+                    disabled={importPreviewRows.length === 0}
+                    className="rounded-lg bg-emerald-600 px-3 py-2 text-sm text-white disabled:cursor-not-allowed disabled:bg-gray-300"
+                  >
+                    Add {importPreviewRows.length} Invoice(s)
+                  </button>
+                </div>
+              </div>
+
+              <div className="rounded-xl border p-3 text-sm text-gray-700">
+                <p className="font-medium text-gray-900">Import tips</p>
+                <ul className="mt-2 list-disc space-y-1 pl-5">
+                  <li>
+                    Use the sample file if you want to see the expected format.
+                  </li>
+                  <li>The empty file already includes the right headers.</li>
+                  <li>
+                    Rows are added to the bottom so the new work stays separate
+                    from older entries.
+                  </li>
+                  <li>You can still edit the values after import.</li>
+                </ul>
+              </div>
+            </div>
+
+            <div className="mt-3 rounded-xl border p-3">
+              <p className="text-sm font-medium text-gray-900">
+                Preview of invoices to be added
+              </p>
+              <div className="mt-2 max-h-48 overflow-auto rounded-lg border">
+                <table className="min-w-full text-xs">
+                  <thead className="bg-gray-100 text-left">
+                    <tr>
+                      <th className="px-2 py-1.5">Sales Rep</th>
+                      <th className="px-2 py-1.5">Date</th>
+                      <th className="px-2 py-1.5">Invoice#</th>
+                      <th className="px-2 py-1.5">Customer</th>
+                      <th className="px-2 py-1.5">%Cms</th>
+                      <th className="px-2 py-1.5">Amount</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {importPreviewRows.slice(0, 50).map((row, index) => (
+                      <tr
+                        key={`${row.invoiceNumber}-${index}`}
+                        className="border-t"
+                      >
+                        <td className="px-2 py-1.5">{row.salesRep}</td>
+                        <td className="px-2 py-1.5">{row.invoiceDate}</td>
+                        <td className="px-2 py-1.5">{row.invoiceNumber}</td>
+                        <td className="px-2 py-1.5">{row.customer}</td>
+                        <td className="px-2 py-1.5">{row.commissionRate}</td>
+                        <td className="px-2 py-1.5">
+                          {formatCurrency(row.amount)}
+                        </td>
+                      </tr>
+                    ))}
+                    {importPreviewRows.length === 0 ? (
+                      <tr>
+                        <td
+                          colSpan={6}
+                          className="px-2 py-2 text-center text-gray-500"
+                        >
+                          Choose a file to preview rows.
+                        </td>
+                      </tr>
+                    ) : null}
+                  </tbody>
+                </table>
+              </div>
             </div>
           </div>
         </div>
