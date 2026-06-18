@@ -5,6 +5,7 @@ import { prisma } from "@/lib/prisma";
 import { PDFDocument, StandardFonts, rgb } from "pdf-lib";
 
 const prismaAny = prisma as any;
+const MISC_ESTIMATE_NUMBER_PREFIX = "MC";
 
 type LedStripRowPayload = {
   roomId?: string | null;
@@ -515,65 +516,101 @@ async function requireUserEmail() {
 
 async function generateMonthlyEstimateNumber() {
   const now = new Date();
-  const startOfMonth = new Date(
-    now.getFullYear(),
-    now.getMonth(),
-    1,
-    0,
-    0,
-    0,
-    0,
-  );
-  const startOfNextMonth = new Date(
-    now.getFullYear(),
-    now.getMonth() + 1,
-    1,
-    0,
-    0,
-    0,
-    0,
-  );
-
-  const currentMonthCount = await prisma.jobArtifact.count({
-    where: {
-      sourceApp: "MISC_ESTIMATE",
-      createdAt: {
-        gte: startOfMonth,
-        lt: startOfNextMonth,
-      },
-    },
-  });
-
   const yy = String(now.getFullYear()).slice(-2);
   const mm = String(now.getMonth() + 1).padStart(2, "0");
-  const seq = String(currentMonthCount + 1).padStart(3, "0");
-  return `${yy}${mm}${seq}`;
+  const monthToken = `${yy}${mm}`;
+  const prefixedMonthToken = `${MISC_ESTIMATE_NUMBER_PREFIX}${monthToken}`;
+
+  const monthEstimates = await prismaAny.miscEstimate.findMany({
+    where: {
+      OR: [
+        {
+          estimateNo: {
+            startsWith: prefixedMonthToken,
+          },
+        },
+        {
+          estimateNo: {
+            startsWith: monthToken,
+          },
+        },
+      ],
+    },
+    select: { estimateNo: true },
+    take: 5000,
+  });
+
+  let maxSequence = 0;
+  const monthPattern = new RegExp(
+    `^(?:${escapeRegExp(MISC_ESTIMATE_NUMBER_PREFIX)})?${escapeRegExp(monthToken)}(\\d+)$`,
+  );
+
+  for (const estimate of monthEstimates) {
+    const value = String(estimate.estimateNo ?? "").trim();
+    const match = value.match(monthPattern);
+    if (!match) {
+      continue;
+    }
+    const parsed = Number(match[1]);
+    if (Number.isFinite(parsed)) {
+      maxSequence = Math.max(maxSequence, parsed);
+    }
+  }
+
+  const seq = String(maxSequence + 1).padStart(3, "0");
+  return `${prefixedMonthToken}${seq}`;
 }
 
 async function generateVersionedEstimateNumber(sourceEstimateNumber: string) {
-  const base = sourceEstimateNumber.split("-v")[0].trim();
+  const baseRaw = sourceEstimateNumber.split("-v")[0].trim();
+  const base =
+    /^\d+$/.test(baseRaw) && !baseRaw.startsWith(MISC_ESTIMATE_NUMBER_PREFIX)
+      ? `${MISC_ESTIMATE_NUMBER_PREFIX}${baseRaw}`
+      : baseRaw;
+
   if (!base) {
     return generateMonthlyEstimateNumber();
   }
 
-  const artifacts = await prisma.jobArtifact.findMany({
-    where: { sourceApp: "MISC_ESTIMATE" },
-    select: { metadata: true },
-    take: 2000,
+  const estimates = await prismaAny.miscEstimate.findMany({
+    where: {
+      OR: [
+        {
+          estimateNo: {
+            startsWith: base,
+          },
+        },
+        ...(base !== baseRaw
+          ? [
+              {
+                estimateNo: {
+                  startsWith: baseRaw,
+                },
+              },
+            ]
+          : []),
+      ],
+    },
+    select: { estimateNo: true },
+    take: 5000,
   });
 
   let maxVersion = 1;
   const escapedBase = escapeRegExp(base);
+  const versionPattern = new RegExp(`^${escapedBase}-v(\\d+)$`);
 
-  for (const artifact of artifacts) {
-    const meta = (artifact.metadata ?? {}) as ArtifactMeta;
+  for (const estimate of estimates) {
+    const currentRaw = String(estimate.estimateNo ?? "").trim();
     const current =
-      typeof meta.estimateNumber === "string" ? meta.estimateNumber : "";
+      /^\d+(?:-v\d+)?$/.test(currentRaw) &&
+      !currentRaw.startsWith(MISC_ESTIMATE_NUMBER_PREFIX)
+        ? `${MISC_ESTIMATE_NUMBER_PREFIX}${currentRaw}`
+        : currentRaw;
     if (current === base) {
       maxVersion = Math.max(maxVersion, 1);
       continue;
     }
-    const match = current.match(new RegExp(`^${escapedBase}-v(\\d+)$`));
+    const match = current.match(versionPattern);
     if (match) {
       const parsed = Number(match[1]);
       if (Number.isFinite(parsed)) {
@@ -583,6 +620,20 @@ async function generateVersionedEstimateNumber(sourceEstimateNumber: string) {
   }
 
   return `${base}-v${maxVersion + 1}`;
+}
+
+function isEstimateNumberUniqueConstraintError(error: any) {
+  if (error?.code !== "P2002") {
+    return false;
+  }
+  const target = error?.meta?.target;
+  if (Array.isArray(target)) {
+    return target.includes("estimateNo");
+  }
+  if (typeof target === "string") {
+    return target.includes("estimateNo");
+  }
+  return false;
 }
 
 export async function GET(request: NextRequest) {
@@ -790,9 +841,6 @@ export async function POST(request: NextRequest) {
     }
 
     const now = new Date();
-    const estimateNumber = sourceEstimateNumber?.trim()
-      ? await generateVersionedEstimateNumber(sourceEstimateNumber)
-      : await generateMonthlyEstimateNumber();
 
     const actor = await prisma.user.findUnique({
       where: { email },
@@ -1329,287 +1377,326 @@ export async function POST(request: NextRequest) {
       ? selectedOptions
       : [];
 
-    const miscEstimate = await prismaAny.miscEstimate.create({
-      data: {
-        estimateNo: estimateNumber,
-        title,
-        clientName: customerName ?? null,
-        clientId: customerId,
-        dealName: dealName ?? null,
-        dealId: dealId ?? null,
-        date: parseDateInput(date),
-        salesRep: salesRep?.trim() || "",
-        status: "DRAFT",
-        subtotal: computedSubtotal,
-        discount: 0,
-        total: computedSubtotal,
-        createdById: actor?.id ?? null,
-        ledRows: {
-          create: normalizedRows.map((row) => ({
-            roomId: row.roomId,
-            ledTypeId: row.ledTypeId,
-            controlTypeId: row.controlTypeId,
-            profileId: row.profileId,
-            linearFeet: row.linearFeet,
-            profileQty: row.profileQty,
-            subtotal: row.subtotal,
-          })),
-        },
-        ledSheetRows: {
-          create: normalizedSheetRows.map((row) => ({
-            roomId: row.roomId,
-            sheetTypeId: row.sheetTypeId,
-            controlTypeId: row.controlTypeId,
-            widthIn: row.width,
-            heightIn: row.height,
-            squareFeet: row.squareFeet,
-            subtotal: row.subtotal,
-          })),
-        },
-        glassDoorShelfRows: {
-          create: normalizedGlassDoorShelfRows.map((row) => ({
-            glassTypeId: row.glassTypeId,
-            widthIn: row.width,
-            heightIn: row.height,
-            squareFeet: row.squareFeet,
-            quantity: row.quantity,
-            note: row.note,
-            subtotal: row.subtotal,
-          })),
-        },
-        islandPanelRows: {
-          create: normalizedIslandPanelRows.map((row) => ({
-            roomId: row.roomId,
-            panelModelId: row.panelModelId,
-            widthIn: row.width,
-            heightIn: row.height,
-            squareFeet: row.squareFeet,
-            boxQty: row.boxQty,
-            subtotal: row.subtotal,
-          })),
-        },
-        wallUnitRows: {
-          create: normalizedWallUnitRows.map((row) => ({
-            roomId: row.roomId,
-            widthIn: row.width,
-            heightIn: row.height,
-            squareFeet: row.squareFeet,
-            note: row.note,
-            subtotal: row.subtotal,
-          })),
-        },
-        mirrorFrameRows: {
-          create: normalizedMirrorFrameRows.map((row) => ({
-            roomId: row.roomId,
-            finishId: row.finishId,
-            widthIn: row.width,
-            heightIn: row.height,
-            linearInches: row.linearInches,
-            painted: row.painted,
-            color: row.color,
-            subtotal: row.subtotal,
-          })),
-        },
-        mirrorRows: {
-          create: normalizedMirrorRows.map((row) => ({
-            roomId: row.roomId,
-            colorId: row.colorId,
-            beveledOptionId: row.beveledOptionId,
-            widthIn: row.width,
-            heightIn: row.height,
-            squareFeet: row.squareFeet,
-            outlets: row.outlets,
-            lightCutouts: row.lightCutout,
-            beveled: row.beveled,
-            note: row.note,
-            subtotal: row.subtotal,
-          })),
-        },
-        mirrorRemovalRows: {
-          create: normalizedMirrorRemovalRows.map((row) => ({
-            widthIn: row.width,
-            heightIn: row.height,
-            squareFeet: row.squareFeet,
-            repairWall: row.repairWall,
-            subtotal: row.subtotal,
-            repairWallSubtotal: row.repairWallSubtotal,
-            total: row.total,
-          })),
-        },
-      },
-    });
+    const maxSaveAttempts = 3;
+    let estimateNumber = "";
+    let miscEstimate: any = null;
+    let artifact: any = null;
 
-    const artifact = await prisma.jobArtifact.create({
-      data: {
-        jobId,
-        sourceApp: "MISC_ESTIMATE",
-        type: "SNAPSHOT",
-        title: `${title} ${estimateNumber}`,
-        metadata: {
-          estimateNumber,
-          title,
-          customerId,
-          customerName,
-          customerPipedriveId,
-          dealId,
-          dealName,
-          address,
-          contractor,
-          date,
-          salesRep,
-          miscEstimateId: miscEstimate.id,
-          selectedOptions: safeSelectedOptions,
-          ledStripRows: normalizedRows.map((row) => ({
-            roomId: row.roomId,
-            room: row.roomName,
-            lnFt: row.linearFeet,
-            linearFeet: row.linearFeet,
-            ledTypeId: row.ledTypeId,
-            ledType: row.ledTypeName,
-            controlTypeId: row.controlTypeId,
-            controlType: row.controlTypeName,
-            profileId: row.profileId,
-            profile: row.profileName,
-            profileQty: row.profileQty,
-            subtotal: row.subtotal,
-          })),
-          ledStripSubtotal: computedLedSubtotal,
-          ledStripSubtotalInput: Number.isFinite(ledStripSubtotal)
-            ? Number(ledStripSubtotal)
-            : 0,
-          ledSheetRows: normalizedSheetRows.map((row) => ({
-            roomId: row.roomId,
-            room: row.roomName,
-            width: row.width,
-            widthIn: row.width,
-            height: row.height,
-            heightIn: row.height,
-            squareFeet: row.squareFeet,
-            sqFt: row.squareFeet,
-            sheetTypeId: row.sheetTypeId,
-            sheetType: row.sheetTypeName,
-            controlTypeId: row.controlTypeId,
-            controlType: row.controlTypeName,
-            subtotal: row.subtotal,
-          })),
-          ledSheetSubtotal: computedLedSheetSubtotal,
-          ledSheetSubtotalInput: Number.isFinite(ledSheetSubtotal)
-            ? Number(ledSheetSubtotal)
-            : 0,
-          glassDoorShelfRows: normalizedGlassDoorShelfRows.map((row) => ({
-            width: row.width,
-            widthIn: row.width,
-            height: row.height,
-            heightIn: row.height,
-            squareFeet: row.squareFeet,
-            sqFt: row.squareFeet,
-            glassTypeId: row.glassTypeId,
-            glassType: row.glassTypeName,
-            quantity: row.quantity,
-            note: row.note,
-            subtotal: row.subtotal,
-          })),
-          glassDoorShelfSubtotal: computedGlassDoorShelfSubtotal,
-          glassDoorShelfSubtotalInput: Number.isFinite(glassDoorShelfSubtotal)
-            ? Number(glassDoorShelfSubtotal)
-            : 0,
-          islandPanelRows: normalizedIslandPanelRows.map((row) => ({
-            roomId: row.roomId,
-            room: row.roomName,
-            width: row.width,
-            widthIn: row.width,
-            height: row.height,
-            heightIn: row.height,
-            squareFeet: row.squareFeet,
-            sqFt: row.squareFeet,
-            panelModelId: row.panelModelId,
-            panelModel: row.panelModelName,
-            boxQty: row.boxQty,
-            subtotal: row.subtotal,
-          })),
-          islandPanelSubtotal: computedIslandPanelSubtotal,
-          islandPanelSubtotalInput: Number.isFinite(islandPanelSubtotal)
-            ? Number(islandPanelSubtotal)
-            : 0,
-          wallUnitRows: normalizedWallUnitRows.map((row) => ({
-            roomId: row.roomId,
-            room: row.roomName,
-            width: row.width,
-            widthIn: row.width,
-            height: row.height,
-            heightIn: row.height,
-            squareFeet: row.squareFeet,
-            sqFt: row.squareFeet,
-            note: row.note,
-            subtotal: row.subtotal,
-          })),
-          wallUnitSubtotal: computedWallUnitSubtotal,
-          wallUnitSubtotalInput: Number.isFinite(wallUnitSubtotal)
-            ? Number(wallUnitSubtotal)
-            : 0,
-          mirrorFrameRows: normalizedMirrorFrameRows.map((row) => ({
-            roomId: row.roomId,
-            room: row.roomName,
-            width: row.width,
-            widthIn: row.width,
-            height: row.height,
-            heightIn: row.height,
-            linearInches: row.linearInches,
-            lnIn: row.linearInches,
-            finishId: row.finishId,
-            finish: row.finishName,
-            painted: row.painted,
-            color: row.color,
-            subtotal: row.subtotal,
-          })),
-          mirrorFrameSubtotal: computedMirrorFrameSubtotal,
-          mirrorFrameSubtotalInput: Number.isFinite(mirrorFrameSubtotal)
-            ? Number(mirrorFrameSubtotal)
-            : 0,
-          mirrorRows: normalizedMirrorRows.map((row) => ({
-            roomId: row.roomId,
-            room: row.roomName,
-            colorId: row.colorId,
-            color: row.colorName,
-            beveledOptionId: row.beveledOptionId,
-            beveledOption: row.beveledOptionName,
-            width: row.width,
-            widthIn: row.width,
-            height: row.height,
-            heightIn: row.height,
-            squareFeet: row.squareFeet,
-            outlets: row.outlets,
-            lightCutout: row.lightCutout,
-            beveled: row.beveled,
-            note: row.note,
-            subtotal: row.subtotal,
-          })),
-          mirrorSubtotal: computedMirrorSubtotal,
-          mirrorSubtotalInput: Number.isFinite(mirrorSubtotal)
-            ? Number(mirrorSubtotal)
-            : 0,
-          mirrorRemovalRows: normalizedMirrorRemovalRows.map((row) => ({
-            width: row.width,
-            widthIn: row.width,
-            height: row.height,
-            heightIn: row.height,
-            squareFeet: row.squareFeet,
-            repairWall: row.repairWall,
-            note: row.note,
-            subtotal: row.subtotal,
-            repairWallSubtotal: row.repairWallSubtotal,
-            total: row.total,
-          })),
-          mirrorRemovalSubtotal: computedMirrorRemovalSubtotal,
-          mirrorRemovalSubtotalInput: Number.isFinite(mirrorRemovalSubtotal)
-            ? Number(mirrorRemovalSubtotal)
-            : 0,
-          sourceEstimateNumber: sourceEstimateNumber?.trim() || null,
-          savedAt: now.toISOString(),
-          savedBy: email,
-        },
-      },
-    });
+    for (let attempt = 1; attempt <= maxSaveAttempts; attempt += 1) {
+      estimateNumber = sourceEstimateNumber?.trim()
+        ? await generateVersionedEstimateNumber(sourceEstimateNumber)
+        : await generateMonthlyEstimateNumber();
+
+      try {
+        const saved = await prisma.$transaction(async (tx) => {
+          const txAny = tx as any;
+
+          const createdEstimate = await txAny.miscEstimate.create({
+            data: {
+              estimateNo: estimateNumber,
+              title,
+              clientName: customerName ?? null,
+              clientId: customerId,
+              dealName: dealName ?? null,
+              dealId: dealId ?? null,
+              date: parseDateInput(date),
+              salesRep: salesRep?.trim() || "",
+              status: "DRAFT",
+              subtotal: computedSubtotal,
+              discount: 0,
+              total: computedSubtotal,
+              createdById: actor?.id ?? null,
+              ledRows: {
+                create: normalizedRows.map((row) => ({
+                  roomId: row.roomId,
+                  ledTypeId: row.ledTypeId,
+                  controlTypeId: row.controlTypeId,
+                  profileId: row.profileId,
+                  linearFeet: row.linearFeet,
+                  profileQty: row.profileQty,
+                  subtotal: row.subtotal,
+                })),
+              },
+              ledSheetRows: {
+                create: normalizedSheetRows.map((row) => ({
+                  roomId: row.roomId,
+                  sheetTypeId: row.sheetTypeId,
+                  controlTypeId: row.controlTypeId,
+                  widthIn: row.width,
+                  heightIn: row.height,
+                  squareFeet: row.squareFeet,
+                  subtotal: row.subtotal,
+                })),
+              },
+              glassDoorShelfRows: {
+                create: normalizedGlassDoorShelfRows.map((row) => ({
+                  glassTypeId: row.glassTypeId,
+                  widthIn: row.width,
+                  heightIn: row.height,
+                  squareFeet: row.squareFeet,
+                  quantity: row.quantity,
+                  note: row.note,
+                  subtotal: row.subtotal,
+                })),
+              },
+              islandPanelRows: {
+                create: normalizedIslandPanelRows.map((row) => ({
+                  roomId: row.roomId,
+                  panelModelId: row.panelModelId,
+                  widthIn: row.width,
+                  heightIn: row.height,
+                  squareFeet: row.squareFeet,
+                  boxQty: row.boxQty,
+                  subtotal: row.subtotal,
+                })),
+              },
+              wallUnitRows: {
+                create: normalizedWallUnitRows.map((row) => ({
+                  roomId: row.roomId,
+                  widthIn: row.width,
+                  heightIn: row.height,
+                  squareFeet: row.squareFeet,
+                  note: row.note,
+                  subtotal: row.subtotal,
+                })),
+              },
+              mirrorFrameRows: {
+                create: normalizedMirrorFrameRows.map((row) => ({
+                  roomId: row.roomId,
+                  finishId: row.finishId,
+                  widthIn: row.width,
+                  heightIn: row.height,
+                  linearInches: row.linearInches,
+                  painted: row.painted,
+                  color: row.color,
+                  subtotal: row.subtotal,
+                })),
+              },
+              mirrorRows: {
+                create: normalizedMirrorRows.map((row) => ({
+                  roomId: row.roomId,
+                  colorId: row.colorId,
+                  beveledOptionId: row.beveledOptionId,
+                  widthIn: row.width,
+                  heightIn: row.height,
+                  squareFeet: row.squareFeet,
+                  outlets: row.outlets,
+                  lightCutouts: row.lightCutout,
+                  beveled: row.beveled,
+                  note: row.note,
+                  subtotal: row.subtotal,
+                })),
+              },
+              mirrorRemovalRows: {
+                create: normalizedMirrorRemovalRows.map((row) => ({
+                  widthIn: row.width,
+                  heightIn: row.height,
+                  squareFeet: row.squareFeet,
+                  repairWall: row.repairWall,
+                  subtotal: row.subtotal,
+                  repairWallSubtotal: row.repairWallSubtotal,
+                  total: row.total,
+                })),
+              },
+            },
+          });
+
+          const createdArtifact = await tx.jobArtifact.create({
+            data: {
+              jobId,
+              sourceApp: "MISC_ESTIMATE",
+              type: "SNAPSHOT",
+              title: `${title} ${estimateNumber}`,
+              metadata: {
+                estimateNumber,
+                title,
+                customerId,
+                customerName,
+                customerPipedriveId,
+                dealId,
+                dealName,
+                address,
+                contractor,
+                date,
+                salesRep,
+                miscEstimateId: createdEstimate.id,
+                selectedOptions: safeSelectedOptions,
+                ledStripRows: normalizedRows.map((row) => ({
+                  roomId: row.roomId,
+                  room: row.roomName,
+                  lnFt: row.linearFeet,
+                  linearFeet: row.linearFeet,
+                  ledTypeId: row.ledTypeId,
+                  ledType: row.ledTypeName,
+                  controlTypeId: row.controlTypeId,
+                  controlType: row.controlTypeName,
+                  profileId: row.profileId,
+                  profile: row.profileName,
+                  profileQty: row.profileQty,
+                  subtotal: row.subtotal,
+                })),
+                ledStripSubtotal: computedLedSubtotal,
+                ledStripSubtotalInput: Number.isFinite(ledStripSubtotal)
+                  ? Number(ledStripSubtotal)
+                  : 0,
+                ledSheetRows: normalizedSheetRows.map((row) => ({
+                  roomId: row.roomId,
+                  room: row.roomName,
+                  width: row.width,
+                  widthIn: row.width,
+                  height: row.height,
+                  heightIn: row.height,
+                  squareFeet: row.squareFeet,
+                  sqFt: row.squareFeet,
+                  sheetTypeId: row.sheetTypeId,
+                  sheetType: row.sheetTypeName,
+                  controlTypeId: row.controlTypeId,
+                  controlType: row.controlTypeName,
+                  subtotal: row.subtotal,
+                })),
+                ledSheetSubtotal: computedLedSheetSubtotal,
+                ledSheetSubtotalInput: Number.isFinite(ledSheetSubtotal)
+                  ? Number(ledSheetSubtotal)
+                  : 0,
+                glassDoorShelfRows: normalizedGlassDoorShelfRows.map((row) => ({
+                  width: row.width,
+                  widthIn: row.width,
+                  height: row.height,
+                  heightIn: row.height,
+                  squareFeet: row.squareFeet,
+                  sqFt: row.squareFeet,
+                  glassTypeId: row.glassTypeId,
+                  glassType: row.glassTypeName,
+                  quantity: row.quantity,
+                  note: row.note,
+                  subtotal: row.subtotal,
+                })),
+                glassDoorShelfSubtotal: computedGlassDoorShelfSubtotal,
+                glassDoorShelfSubtotalInput: Number.isFinite(
+                  glassDoorShelfSubtotal,
+                )
+                  ? Number(glassDoorShelfSubtotal)
+                  : 0,
+                islandPanelRows: normalizedIslandPanelRows.map((row) => ({
+                  roomId: row.roomId,
+                  room: row.roomName,
+                  width: row.width,
+                  widthIn: row.width,
+                  height: row.height,
+                  heightIn: row.height,
+                  squareFeet: row.squareFeet,
+                  sqFt: row.squareFeet,
+                  panelModelId: row.panelModelId,
+                  panelModel: row.panelModelName,
+                  boxQty: row.boxQty,
+                  subtotal: row.subtotal,
+                })),
+                islandPanelSubtotal: computedIslandPanelSubtotal,
+                islandPanelSubtotalInput: Number.isFinite(islandPanelSubtotal)
+                  ? Number(islandPanelSubtotal)
+                  : 0,
+                wallUnitRows: normalizedWallUnitRows.map((row) => ({
+                  roomId: row.roomId,
+                  room: row.roomName,
+                  width: row.width,
+                  widthIn: row.width,
+                  height: row.height,
+                  heightIn: row.height,
+                  squareFeet: row.squareFeet,
+                  sqFt: row.squareFeet,
+                  note: row.note,
+                  subtotal: row.subtotal,
+                })),
+                wallUnitSubtotal: computedWallUnitSubtotal,
+                wallUnitSubtotalInput: Number.isFinite(wallUnitSubtotal)
+                  ? Number(wallUnitSubtotal)
+                  : 0,
+                mirrorFrameRows: normalizedMirrorFrameRows.map((row) => ({
+                  roomId: row.roomId,
+                  room: row.roomName,
+                  width: row.width,
+                  widthIn: row.width,
+                  height: row.height,
+                  heightIn: row.height,
+                  linearInches: row.linearInches,
+                  lnIn: row.linearInches,
+                  finishId: row.finishId,
+                  finish: row.finishName,
+                  painted: row.painted,
+                  color: row.color,
+                  subtotal: row.subtotal,
+                })),
+                mirrorFrameSubtotal: computedMirrorFrameSubtotal,
+                mirrorFrameSubtotalInput: Number.isFinite(mirrorFrameSubtotal)
+                  ? Number(mirrorFrameSubtotal)
+                  : 0,
+                mirrorRows: normalizedMirrorRows.map((row) => ({
+                  roomId: row.roomId,
+                  room: row.roomName,
+                  colorId: row.colorId,
+                  color: row.colorName,
+                  beveledOptionId: row.beveledOptionId,
+                  beveledOption: row.beveledOptionName,
+                  width: row.width,
+                  widthIn: row.width,
+                  height: row.height,
+                  heightIn: row.height,
+                  squareFeet: row.squareFeet,
+                  outlets: row.outlets,
+                  lightCutout: row.lightCutout,
+                  beveled: row.beveled,
+                  note: row.note,
+                  subtotal: row.subtotal,
+                })),
+                mirrorSubtotal: computedMirrorSubtotal,
+                mirrorSubtotalInput: Number.isFinite(mirrorSubtotal)
+                  ? Number(mirrorSubtotal)
+                  : 0,
+                mirrorRemovalRows: normalizedMirrorRemovalRows.map((row) => ({
+                  width: row.width,
+                  widthIn: row.width,
+                  height: row.height,
+                  heightIn: row.height,
+                  squareFeet: row.squareFeet,
+                  repairWall: row.repairWall,
+                  note: row.note,
+                  subtotal: row.subtotal,
+                  repairWallSubtotal: row.repairWallSubtotal,
+                  total: row.total,
+                })),
+                mirrorRemovalSubtotal: computedMirrorRemovalSubtotal,
+                mirrorRemovalSubtotalInput: Number.isFinite(
+                  mirrorRemovalSubtotal,
+                )
+                  ? Number(mirrorRemovalSubtotal)
+                  : 0,
+                sourceEstimateNumber: sourceEstimateNumber?.trim() || null,
+                savedAt: now.toISOString(),
+                savedBy: email,
+              },
+            },
+          });
+
+          return { createdEstimate, createdArtifact };
+        });
+
+        miscEstimate = saved.createdEstimate;
+        artifact = saved.createdArtifact;
+        break;
+      } catch (error: any) {
+        if (
+          isEstimateNumberUniqueConstraintError(error) &&
+          attempt < maxSaveAttempts
+        ) {
+          continue;
+        }
+        throw error;
+      }
+    }
+
+    if (!miscEstimate || !artifact || !estimateNumber) {
+      throw new Error("Failed to save estimate");
+    }
 
     return NextResponse.json({
       id: artifact.id,
