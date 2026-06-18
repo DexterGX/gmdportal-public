@@ -20,8 +20,7 @@
         "name": "next"
       }
     ],
-    "incremental": true,
-    "ignoreDeprecations": "6.0"
+    "incremental": true
   },
   "include": [
     "next-env.d.ts",
