@@ -44,7 +44,7 @@ type Meta = {
   invoices?: Array<{
     id: string;
     invoiceNumber: string;
-    type: "cabinet" | "countertop";
+    type: "cabinet" | "countertop" | "refinish-reface";
     amount: number;
   }>;
   lineItemsByInvoice?: Record<
@@ -97,6 +97,8 @@ const DEFAULT_PCT: Record<LineKey, number> = {
   ct_misc: 100,
   svc_repair: 100,
 };
+
+const REFINISH_REFACE_DEFAULT_PCT = 70;
 
 function safeNum(value: unknown) {
   if (typeof value === "number" && Number.isFinite(value)) return value;
@@ -193,6 +195,7 @@ export default async function PaymentTermClientPrintPage({
         ? 0
         : safeNum(stateMap.cab_installation?.amount);
       const others = safeNum(stateMap.cab_others?.amount);
+      const noInstallationEnabled = installation <= 0;
       const cabinetMain = Math.max(
         0,
         invoiceAmount - (removal + installation + others),
@@ -206,7 +209,11 @@ export default async function PaymentTermClientPrintPage({
       ];
 
       for (const [key, amount] of cabinetAmounts) {
-        const pct = clampPct(stateMap[key]?.depositPct, DEFAULT_PCT[key]);
+        const pct =
+          noInstallationEnabled &&
+          (key === "cab_cabinet" || key === "cab_others")
+            ? 100
+            : clampPct(stateMap[key]?.depositPct, DEFAULT_PCT[key]);
         const deposit = round2((amount * pct) / 100);
         const balance = round2(amount - deposit);
         amountsByKey[key] += amount;
@@ -241,6 +248,19 @@ export default async function PaymentTermClientPrintPage({
         depositsByKey[key] += deposit;
         balancesByKey[key] += balance;
       }
+    }
+
+    if (invoice.type === "refinish-reface") {
+      const amount = Math.max(0, invoiceAmount);
+      const pct = clampPct(
+        stateMap.rr_total?.depositPct,
+        REFINISH_REFACE_DEFAULT_PCT,
+      );
+      const deposit = round2((amount * pct) / 100);
+      const balance = round2(amount - deposit);
+      amountsByKey.cab_others += amount;
+      depositsByKey.cab_others += deposit;
+      balancesByKey.cab_others += balance;
     }
   }
 

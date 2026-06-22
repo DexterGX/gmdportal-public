@@ -32,6 +32,8 @@ type Props = {
   initialSettings: CMSSettings;
   initialActiveWeek: CMSWeek | null;
   initialApprovedWeeks: CMSWeek[];
+  initialLatestApprovedWeek?: CMSWeek | null;
+  initialViewWeek?: CMSWeek | null;
   mode: "main" | "draft" | "review";
 };
 
@@ -252,6 +254,8 @@ export default function SalesCommissionClient({
   initialSettings,
   initialActiveWeek,
   initialApprovedWeeks,
+  initialLatestApprovedWeek = null,
+  initialViewWeek = null,
   mode,
 }: Props) {
   const router = useRouter();
@@ -259,9 +263,20 @@ export default function SalesCommissionClient({
   const [activeWeek, setActiveWeek] = useState<CMSWeek | null>(
     initialActiveWeek,
   );
+  const displayedWeek =
+    initialViewWeek ??
+    activeWeek ??
+    (mode === "main" ? initialLatestApprovedWeek : null);
+  const isRecordedViewMode = Boolean(initialViewWeek);
+  const canEdit = Boolean(activeWeek) && !isRecordedViewMode;
+  const isApprovedSnapshotView =
+    mode === "main" &&
+    !activeWeek &&
+    !isRecordedViewMode &&
+    displayedWeek?.status === "APPROVED";
   const [approvedWeeks] = useState<CMSWeek[]>(initialApprovedWeeks);
   const [rows, setRows] = useState<RowDraft[]>(
-    initialActiveWeek?.invoices?.map((row) => ({
+    displayedWeek?.invoices?.map((row) => ({
       ...row,
       duplicateInvoice: false,
     })) ?? [],
@@ -285,34 +300,54 @@ export default function SalesCommissionClient({
     Record<string, string>
   >({});
   const [openNotesRowId, setOpenNotesRowId] = useState<string | null>(null);
+  const [showStartPanel, setShowStartPanel] = useState(false);
+  const [showReviewModal, setShowReviewModal] = useState(false);
+  const [reviewWeeks, setReviewWeeks] = useState<CMSWeek[]>([]);
+  const [reviewLoading, setReviewLoading] = useState(false);
+  const [reviewPendingCount, setReviewPendingCount] = useState(0);
 
   useEffect(() => {
-    if (!activeWeek && mode === "main") return;
-    if (activeWeek) {
+    const sourceWeek =
+      initialViewWeek ??
+      activeWeek ??
+      (mode === "main" ? initialLatestApprovedWeek : null);
+    if (sourceWeek) {
       setRows(
-        (activeWeek.invoices ?? []).map((row: CMSInvoice) => ({
+        (sourceWeek.invoices ?? []).map((row: CMSInvoice) => ({
           ...row,
           duplicateInvoice: false,
         })),
       );
-      setWeekStart(activeWeek.weekStart.slice(0, 10));
-      setWeekEnd(activeWeek.weekEnd.slice(0, 10));
-      setCheckDate(activeWeek.checkDate.slice(0, 10));
+      setWeekStart(sourceWeek.weekStart.slice(0, 10));
+      setWeekEnd(sourceWeek.weekEnd.slice(0, 10));
+      setCheckDate(sourceWeek.checkDate.slice(0, 10));
     }
-  }, [activeWeek, mode]);
+  }, [activeWeek, initialLatestApprovedWeek, initialViewWeek, mode]);
+
+  const refreshReviewPendingCount = async () => {
+    try {
+      const res = await fetch("/api/sales-commission/weeks?status=REVIEW", {
+        cache: "no-store",
+      });
+      const data = await res.json();
+      if (!res.ok)
+        throw new Error(data?.error ?? "Unable to load review weeks");
+      setReviewPendingCount(Array.isArray(data) ? data.length : 0);
+    } catch {
+      setReviewPendingCount(0);
+    }
+  };
+
+  useEffect(() => {
+    if (mode !== "main") return;
+    refreshReviewPendingCount();
+  }, [mode]);
 
   const filteredRows = useMemo(() => {
     const normalizedRep = salesRepFilter.toLowerCase();
     const normalizedCustomer = customerFilter.toLowerCase();
     const normalizedInvoice = invoiceFilter.toLowerCase();
-    const sorted = [...rows].sort((a, b) => {
-      const repCompare = a.salesRep.localeCompare(b.salesRep);
-      if (repCompare !== 0) return repCompare;
-      return a.invoiceNumber.localeCompare(b.invoiceNumber, undefined, {
-        numeric: true,
-      });
-    });
-    return sorted.filter((row) => {
+    return rows.filter((row) => {
       if (normalizedRep && !row.salesRep.toLowerCase().includes(normalizedRep))
         return false;
       if (
@@ -340,6 +375,7 @@ export default function SalesCommissionClient({
   }, [rows]);
 
   const updateRow = (id: string, patch: Partial<RowDraft>) => {
+    if (!canEdit) return;
     setRows((prev) =>
       prev.map((row) => {
         if (row.id !== id) return row;
@@ -390,6 +426,7 @@ export default function SalesCommissionClient({
     rawValue: string,
     nullable: boolean,
   ) => {
+    if (!canEdit) return;
     const normalized = normalizeDecimalDraft(rawValue);
     const key = `${id}:${field}`;
     setNumericInputDrafts((prev) => ({ ...prev, [key]: normalized }));
@@ -413,6 +450,7 @@ export default function SalesCommissionClient({
     field: "commissionRate" | "amount" | "thirdPartyAmount" | "refundAmount",
     nullable: boolean,
   ) => {
+    if (!canEdit) return;
     const key = `${id}:${field}`;
     const raw = numericInputDrafts[key];
     if (raw == null) return;
@@ -447,9 +485,14 @@ export default function SalesCommissionClient({
     return String(value);
   };
 
-  const addRow = () => setRows((prev) => [...prev, emptyDraftRow()]);
-  const removeRow = (id: string) =>
+  const addRow = () => {
+    if (!canEdit) return;
+    setRows((prev) => [...prev, emptyDraftRow()]);
+  };
+  const removeRow = (id: string) => {
+    if (!canEdit) return;
     setRows((prev) => prev.filter((row) => row.id !== id));
+  };
 
   const importFile = async (file: File) => {
     setImportError(null);
@@ -614,6 +657,7 @@ export default function SalesCommissionClient({
   };
 
   const confirmImportRows = () => {
+    if (!canEdit) return;
     const imported: RowDraft[] = importPreviewRows.map((row, index) => {
       const commission = calcCommission(row.amount, row.commissionRate);
       const firstPaymentAmount = calcFirstPayment(
@@ -653,7 +697,7 @@ export default function SalesCommissionClient({
   };
 
   const saveDraft = async () => {
-    if (!activeWeek) return;
+    if (!activeWeek || !canEdit) return;
     setBusy(true);
     setMessage(null);
     try {
@@ -691,6 +735,7 @@ export default function SalesCommissionClient({
       const data = await res.json();
       if (!res.ok) throw new Error(data.error ?? "Unable to create week");
       setActiveWeek(data);
+      setShowStartPanel(false);
       setRows(
         (data.invoices ?? []).map((row: CMSInvoice) => ({
           ...row,
@@ -725,6 +770,48 @@ export default function SalesCommissionClient({
     }
   };
 
+  const sendToReview = async () => {
+    if (!activeWeek) return;
+    setBusy(true);
+    try {
+      const res = await fetch("/api/sales-commission/weeks", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ id: activeWeek.id, status: "REVIEW" }),
+      });
+      const data = await res.json();
+      if (!res.ok)
+        throw new Error(data.error ?? "Unable to send week to review");
+      router.refresh();
+      setMessage("Week sent to review.");
+    } catch (error: any) {
+      setMessage(error.message || "Unable to send week to review.");
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const sendReviewBackToDraft = async () => {
+    if (!activeWeek) return;
+    setBusy(true);
+    try {
+      const res = await fetch("/api/sales-commission/weeks", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ id: activeWeek.id, status: "DRAFT" }),
+      });
+      const data = await res.json();
+      if (!res.ok)
+        throw new Error(data.error ?? "Unable to send week back to draft");
+      router.refresh();
+      setMessage("Week sent back to draft.");
+    } catch (error: any) {
+      setMessage(error.message || "Unable to send week back to draft.");
+    } finally {
+      setBusy(false);
+    }
+  };
+
   const exportCsv = () => {
     const csv = Papa.unparse(
       filteredRows.map((row) => ({
@@ -747,6 +834,54 @@ export default function SalesCommissionClient({
     a.download = `sales-commission-${activeWeek?.weekStart?.slice(0, 10) ?? "export"}.csv`;
     a.click();
     URL.revokeObjectURL(url);
+  };
+
+  const openReviewPicker = async () => {
+    if (reviewPendingCount === 0) return;
+    setShowReviewModal(true);
+    setReviewLoading(true);
+    try {
+      const res = await fetch(
+        "/api/sales-commission/weeks?status=REVIEW&includeInvoices=true",
+      );
+      const data = await res.json();
+      if (!res.ok)
+        throw new Error(data?.error ?? "Unable to load review weeks");
+      setReviewWeeks(Array.isArray(data) ? data : []);
+    } catch (error: any) {
+      setMessage(error?.message ?? "Unable to load review weeks.");
+      setReviewWeeks([]);
+    } finally {
+      setReviewLoading(false);
+    }
+  };
+
+  const updateReviewWeekStatus = async (
+    weekId: string,
+    status: "APPROVED" | "DRAFT",
+  ) => {
+    setBusy(true);
+    try {
+      const res = await fetch("/api/sales-commission/weeks", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ id: weekId, status }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data?.error ?? "Unable to update week.");
+      setShowReviewModal(false);
+      router.refresh();
+      await refreshReviewPendingCount();
+      setMessage(
+        status === "APPROVED"
+          ? "Review week approved."
+          : "Review week returned to draft.",
+      );
+    } catch (error: any) {
+      setMessage(error?.message ?? "Unable to update review week.");
+    } finally {
+      setBusy(false);
+    }
   };
 
   const printView = () => window.print();
@@ -798,9 +933,13 @@ export default function SalesCommissionClient({
   const hasAnyWeekDate = Boolean(weekStart || weekEnd || checkDate);
   const workingWeekLabel = activeWeek
     ? "Active Working Week"
-    : hasAnyWeekDate
-      ? "Pending Working Week"
-      : "Working Week Not Set";
+    : isRecordedViewMode
+      ? "Viewing Recorded Week"
+      : isApprovedSnapshotView
+        ? "Latest Approved Week"
+        : hasAnyWeekDate
+          ? "Pending Working Week"
+          : "Working Week Not Set";
   const weekRangeText =
     weekStart && weekEnd
       ? `${formatDate(weekStart)} - ${formatDate(weekEnd)}`
@@ -819,11 +958,13 @@ export default function SalesCommissionClient({
               Sales Commission
             </p>
             <h1 className="mt-1 text-2xl font-semibold text-gray-900">
-              {mode === "main"
-                ? "Current Week"
-                : mode === "draft"
-                  ? "Draft Week"
-                  : "Review Week"}
+              {isRecordedViewMode
+                ? "Recorded Week"
+                : mode === "main"
+                  ? "Current Week"
+                  : mode === "draft"
+                    ? "Draft Week"
+                    : "Review Week"}
             </h1>
             <p className="mt-1 text-xs text-gray-600">
               Logged in as {initialUserName || "user"}. Week commissions run
@@ -831,18 +972,48 @@ export default function SalesCommissionClient({
             </p>
           </div>
           <div className="flex flex-wrap gap-2">
-            <button
-              onClick={saveDraft}
-              className="inline-flex items-center gap-1.5 rounded-full bg-gray-900 px-3 py-1.5 text-sm text-white"
-            >
-              <Save className="h-3.5 w-3.5" /> Save Draft
-            </button>
-            <button
-              onClick={() => setShowImportModal(true)}
-              className="inline-flex items-center gap-1.5 rounded-full border border-dashed px-3 py-1.5 text-sm text-gray-700"
-            >
-              <Upload className="h-3.5 w-3.5" /> Import CSV / Excel
-            </button>
+            {canEdit && (
+              <>
+                <button
+                  onClick={saveDraft}
+                  className="inline-flex items-center gap-1.5 rounded-full bg-gray-900 px-3 py-1.5 text-sm text-white"
+                >
+                  <Save className="h-3.5 w-3.5" /> Save Draft
+                </button>
+                <button
+                  onClick={() => setShowImportModal(true)}
+                  className="inline-flex items-center gap-1.5 rounded-full border border-dashed px-3 py-1.5 text-sm text-gray-700"
+                >
+                  <Upload className="h-3.5 w-3.5" /> Import CSV / Excel
+                </button>
+              </>
+            )}
+            {mode === "main" && (
+              <button
+                onClick={openReviewPicker}
+                disabled={reviewPendingCount === 0 || busy}
+                className={`inline-flex items-center gap-1.5 rounded-full border px-3 py-1.5 text-sm ${
+                  reviewPendingCount === 0 || busy
+                    ? "cursor-not-allowed border-gray-300 bg-gray-100 text-gray-400"
+                    : "border-blue-600 bg-blue-600 text-white hover:bg-blue-700"
+                }`}
+                title={
+                  reviewPendingCount === 0
+                    ? "No review weeks pending"
+                    : `Review weeks pending: ${reviewPendingCount}`
+                }
+              >
+                Review
+              </button>
+            )}
+            {mode === "main" && !activeWeek && !isRecordedViewMode && (
+              <button
+                onClick={() => setShowStartPanel((prev) => !prev)}
+                className="inline-flex items-center gap-1.5 rounded-full bg-amber-500 px-3 py-1.5 text-sm text-white"
+              >
+                <Plus className="h-3.5 w-3.5" /> Start Weekly Commission
+              </button>
+            )}
             <button
               onClick={exportCsv}
               className="inline-flex items-center gap-1.5 rounded-full border px-3 py-1.5 text-sm"
@@ -891,9 +1062,9 @@ export default function SalesCommissionClient({
             <span className="rounded-full bg-blue-600 px-2.5 py-1 text-[11px] font-semibold uppercase tracking-[0.08em] text-white">
               {workingWeekLabel}
             </span>
-            {activeWeek?.status && (
+            {displayedWeek?.status && (
               <span className="rounded-full border border-blue-300 bg-white px-2.5 py-1 text-[11px] font-medium text-blue-800">
-                Status: {activeWeek.status}
+                Status: {displayedWeek.status}
               </span>
             )}
           </div>
@@ -906,48 +1077,51 @@ export default function SalesCommissionClient({
             </p>
           </div>
         </div>
-        {mode === "main" && !activeWeek && (
-          <div className="mt-3 rounded-2xl border border-amber-200 bg-amber-50 p-3.5">
-            <p className="text-sm font-medium text-amber-900">
-              No active week is open.
-            </p>
-            <div className="mt-2.5 grid gap-2.5 sm:grid-cols-3">
-              <label className="text-xs text-amber-900">
-                <span className="mb-1 block">Week Start</span>
-                <input
-                  type="date"
-                  className="w-full rounded-xl border px-3 py-2 text-sm"
-                  value={weekStart}
-                  onChange={(e) => setWeekStart(e.target.value)}
-                />
-              </label>
-              <label className="text-xs text-amber-900">
-                <span className="mb-1 block">Week End</span>
-                <input
-                  type="date"
-                  className="w-full rounded-xl border px-3 py-2 text-sm"
-                  value={weekEnd}
-                  onChange={(e) => setWeekEnd(e.target.value)}
-                />
-              </label>
-              <label className="text-xs text-amber-900">
-                <span className="mb-1 block">Check Date</span>
-                <input
-                  type="date"
-                  className="w-full rounded-xl border px-3 py-2 text-sm"
-                  value={checkDate}
-                  onChange={(e) => setCheckDate(e.target.value)}
-                />
-              </label>
+        {mode === "main" &&
+          !activeWeek &&
+          !isRecordedViewMode &&
+          showStartPanel && (
+            <div className="mt-3 rounded-2xl border border-amber-200 bg-amber-50 p-3.5">
+              <p className="text-sm font-medium text-amber-900">
+                No active week is open.
+              </p>
+              <div className="mt-2.5 grid gap-2.5 sm:grid-cols-3">
+                <label className="text-xs text-amber-900">
+                  <span className="mb-1 block">Week Start</span>
+                  <input
+                    type="date"
+                    className="w-full rounded-xl border px-3 py-2 text-sm"
+                    value={weekStart}
+                    onChange={(e) => setWeekStart(e.target.value)}
+                  />
+                </label>
+                <label className="text-xs text-amber-900">
+                  <span className="mb-1 block">Week End</span>
+                  <input
+                    type="date"
+                    className="w-full rounded-xl border px-3 py-2 text-sm"
+                    value={weekEnd}
+                    onChange={(e) => setWeekEnd(e.target.value)}
+                  />
+                </label>
+                <label className="text-xs text-amber-900">
+                  <span className="mb-1 block">Check Date</span>
+                  <input
+                    type="date"
+                    className="w-full rounded-xl border px-3 py-2 text-sm"
+                    value={checkDate}
+                    onChange={(e) => setCheckDate(e.target.value)}
+                  />
+                </label>
+              </div>
+              <button
+                onClick={startNewWeek}
+                className="mt-3 inline-flex items-center gap-1.5 rounded-full bg-amber-500 px-3 py-1.5 text-sm text-white"
+              >
+                <Plus className="h-3.5 w-3.5" /> Start Weekly Commission
+              </button>
             </div>
-            <button
-              onClick={startNewWeek}
-              className="mt-3 inline-flex items-center gap-1.5 rounded-full bg-amber-500 px-3 py-1.5 text-sm text-white"
-            >
-              <Plus className="h-3.5 w-3.5" /> Start Weekly Commission
-            </button>
-          </div>
-        )}
+          )}
         {message && <p className="mt-2.5 text-xs text-gray-700">{message}</p>}
       </div>
 
@@ -977,8 +1151,8 @@ export default function SalesCommissionClient({
               <col style={{ width: "5%" }} />
               <col style={{ width: "7%" }} />
               <col style={{ width: "6%" }} />
-              <col style={{ width: "16%" }} />
-              <col style={{ width: "5%" }} />
+              <col style={{ width: "19%" }} />
+              <col style={{ width: "3%" }} />
               <col style={{ width: "7%" }} />
               <col style={{ width: "8%" }} />
               <col style={{ width: "8%" }} />
@@ -1133,20 +1307,23 @@ export default function SalesCommissionClient({
                         {formatCurrency(row.firstPaymentAmount)}
                       </div>
                       {row.firstPaidDate && (
-                        <div className="text-xs text-gray-600">
+                        <div className="print-paid-date print-first-paid-date text-xs text-gray-600">
                           Paid {formatDate(row.firstPaidDate)}
                         </div>
                       )}
-                      <label className="print-pay-label mt-0.5 flex items-center justify-center gap-1.5 text-[10px]">
-                        <input
-                          type="checkbox"
-                          checked={row.payFirst}
-                          onChange={(e) =>
-                            updateRow(row.id, { payFirst: e.target.checked })
-                          }
-                        />{" "}
-                        Pay
-                      </label>
+                      {!row.firstPaidDate && canEdit && (
+                        <label className="print-pay-label mt-0.5 flex items-center justify-center gap-1.5 text-[10px]">
+                          <input
+                            type="checkbox"
+                            checked={row.payFirst}
+                            disabled={!canEdit}
+                            onChange={(e) =>
+                              updateRow(row.id, { payFirst: e.target.checked })
+                            }
+                          />{" "}
+                          Pay
+                        </label>
+                      )}
                     </td>
                     <td className="px-2 py-1.5">
                       <div className="flex items-center rounded-md border bg-white overflow-hidden w-[72px]">
@@ -1201,102 +1378,114 @@ export default function SalesCommissionClient({
                         {formatCurrency(row.secondPaymentAmount)}
                       </div>
                       {row.secondPaidDate && (
-                        <div className="text-xs text-gray-600">
+                        <div className="print-paid-date text-xs text-gray-600">
                           Paid {formatDate(row.secondPaidDate)}
                         </div>
                       )}
-                      <label className="print-pay-label mt-0.5 flex items-center justify-center gap-1.5 text-[10px]">
-                        <input
-                          type="checkbox"
-                          checked={row.paySecond}
-                          disabled={!row.payFirst && !row.firstPaid}
-                          onChange={(e) =>
-                            updateRow(row.id, { paySecond: e.target.checked })
-                          }
-                        />
-                        Pay
-                      </label>
+                      {!row.secondPaidDate && canEdit && (
+                        <label className="print-pay-label mt-0.5 flex items-center justify-center gap-1.5 text-[10px]">
+                          <input
+                            type="checkbox"
+                            checked={row.paySecond}
+                            disabled={
+                              !canEdit || (!row.payFirst && !row.firstPaid)
+                            }
+                            onChange={(e) =>
+                              updateRow(row.id, { paySecond: e.target.checked })
+                            }
+                          />
+                          Pay
+                        </label>
+                      )}
                     </td>
                     <td className="px-2 py-1.5 align-top">
-                      <div className="relative print:hidden">
-                        <div className="mb-1 min-h-[20px] w-[128px] rounded-md border bg-white px-1.5 py-1 text-[10px] leading-tight text-gray-700">
+                      {canEdit ? (
+                        <div className="relative print:hidden">
+                          <div className="mb-1 min-h-[20px] w-[128px] rounded-md border bg-white px-1.5 py-1 text-[10px] leading-tight text-gray-700">
+                            {parseNoteReasons(row.notes).length > 0
+                              ? parseNoteReasons(row.notes).join(", ")
+                              : "No reasons"}
+                          </div>
+                          <div className="flex gap-1">
+                            <button
+                              type="button"
+                              onClick={() =>
+                                setOpenNotesRowId((prev) =>
+                                  prev === row.id ? null : row.id,
+                                )
+                              }
+                              className="rounded-md border px-2 py-1 text-[10px] font-medium text-gray-700"
+                            >
+                              + Add
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() =>
+                                updateRow(row.id, { notes: null, isNew: false })
+                              }
+                              className="rounded-md border px-2 py-1 text-[10px] text-gray-600"
+                            >
+                              Clear
+                            </button>
+                          </div>
+                          {openNotesRowId === row.id && (
+                            <div className="absolute left-0 top-[52px] z-20 w-[180px] rounded-lg border bg-white p-2 shadow-lg">
+                              <p className="mb-1 text-[10px] font-semibold uppercase tracking-wide text-gray-500">
+                                Select Reasons
+                              </p>
+                              <div className="max-h-32 space-y-1 overflow-auto pr-1">
+                                {NOTE_REASON_OPTIONS.map((option) => {
+                                  const selected = parseNoteReasons(
+                                    row.notes,
+                                  ).includes(option);
+                                  return (
+                                    <label
+                                      key={option}
+                                      className="flex items-center gap-1.5 text-[10px] text-gray-700"
+                                    >
+                                      <input
+                                        type="checkbox"
+                                        checked={selected}
+                                        onChange={(e) => {
+                                          const current = parseNoteReasons(
+                                            row.notes,
+                                          );
+                                          const next = e.target.checked
+                                            ? [...current, option]
+                                            : current.filter(
+                                                (value) => value !== option,
+                                              );
+                                          updateRow(row.id, {
+                                            notes:
+                                              next.length > 0
+                                                ? next.join(" | ")
+                                                : null,
+                                            isNew: false,
+                                          });
+                                        }}
+                                      />
+                                      <span>{option}</span>
+                                    </label>
+                                  );
+                                })}
+                              </div>
+                              <button
+                                type="button"
+                                onClick={() => setOpenNotesRowId(null)}
+                                className="mt-2 w-full rounded-md border px-2 py-1 text-[10px] font-medium text-gray-700"
+                              >
+                                Done
+                              </button>
+                            </div>
+                          )}
+                        </div>
+                      ) : (
+                        <div className="rounded-md border bg-white px-1.5 py-1 text-[10px] leading-tight text-gray-700 print:hidden">
                           {parseNoteReasons(row.notes).length > 0
                             ? parseNoteReasons(row.notes).join(", ")
                             : "No reasons"}
                         </div>
-                        <div className="flex gap-1">
-                          <button
-                            type="button"
-                            onClick={() =>
-                              setOpenNotesRowId((prev) =>
-                                prev === row.id ? null : row.id,
-                              )
-                            }
-                            className="rounded-md border px-2 py-1 text-[10px] font-medium text-gray-700"
-                          >
-                            + Add
-                          </button>
-                          <button
-                            type="button"
-                            onClick={() =>
-                              updateRow(row.id, { notes: null, isNew: false })
-                            }
-                            className="rounded-md border px-2 py-1 text-[10px] text-gray-600"
-                          >
-                            Clear
-                          </button>
-                        </div>
-                        {openNotesRowId === row.id && (
-                          <div className="absolute left-0 top-[52px] z-20 w-[180px] rounded-lg border bg-white p-2 shadow-lg">
-                            <p className="mb-1 text-[10px] font-semibold uppercase tracking-wide text-gray-500">
-                              Select Reasons
-                            </p>
-                            <div className="max-h-32 space-y-1 overflow-auto pr-1">
-                              {NOTE_REASON_OPTIONS.map((option) => {
-                                const selected = parseNoteReasons(
-                                  row.notes,
-                                ).includes(option);
-                                return (
-                                  <label
-                                    key={option}
-                                    className="flex items-center gap-1.5 text-[10px] text-gray-700"
-                                  >
-                                    <input
-                                      type="checkbox"
-                                      checked={selected}
-                                      onChange={(e) => {
-                                        const current = parseNoteReasons(
-                                          row.notes,
-                                        );
-                                        const next = e.target.checked
-                                          ? [...current, option]
-                                          : current.filter(
-                                              (value) => value !== option,
-                                            );
-                                        updateRow(row.id, {
-                                          notes:
-                                            next.length > 0
-                                              ? next.join(" | ")
-                                              : null,
-                                          isNew: false,
-                                        });
-                                      }}
-                                    />
-                                    <span>{option}</span>
-                                  </label>
-                                );
-                              })}
-                            </div>
-                            <button
-                              type="button"
-                              onClick={() => setOpenNotesRowId(null)}
-                              className="mt-2 w-full rounded-md border px-2 py-1 text-[10px] font-medium text-gray-700"
-                            >
-                              Done
-                            </button>
-                          </div>
-                        )}
-                      </div>
+                      )}
                       <div className="hidden text-[10px] print:block">
                         {row.notes ?? ""}
                       </div>
@@ -1305,12 +1494,14 @@ export default function SalesCommissionClient({
                       {rowDisplayStatus(row)}
                     </td>
                     <td className="px-2 py-1.5 print:hidden">
-                      <button
-                        onClick={() => removeRow(row.id)}
-                        className="inline-flex items-center gap-1 rounded-full border px-2.5 py-1 text-[11px]"
-                      >
-                        <Trash2 className="h-3 w-3" /> Remove
-                      </button>
+                      {canEdit && (
+                        <button
+                          onClick={() => removeRow(row.id)}
+                          className="inline-flex items-center gap-1 rounded-full border px-2.5 py-1 text-[11px]"
+                        >
+                          <Trash2 className="h-3 w-3" /> Remove
+                        </button>
+                      )}
                     </td>
                   </tr>
                 );
@@ -1320,34 +1511,51 @@ export default function SalesCommissionClient({
         </div>
       </div>
 
-      <div className="flex flex-wrap gap-2 print:hidden">
-        <button
-          onClick={addRow}
-          className="inline-flex items-center gap-1.5 rounded-full border px-3 py-1.5 text-sm"
-        >
-          <Plus className="h-3.5 w-3.5" /> Add Invoice
-        </button>
-        <button
-          title="Mark Existing: when you carry invoices over from the previous week, they start highlighted as 'new'. Click this to clear that flag so only truly new invoices are highlighted."
-          onClick={() =>
-            setRows((prev) => prev.map((row) => ({ ...row, isNew: false })))
-          }
-          className="inline-flex items-center gap-1.5 rounded-full border px-3 py-1.5 text-sm"
-        >
-          <RefreshCw className="h-3.5 w-3.5" /> Mark Existing
-          <span className="ml-0.5 text-[10px] text-gray-400">
-            (hover for info)
-          </span>
-        </button>
-        {mode !== "review" && (
+      {canEdit && (
+        <div className="flex flex-wrap gap-2 print:hidden">
           <button
-            onClick={approveWeek}
-            className="inline-flex items-center gap-1.5 rounded-full bg-emerald-600 px-3 py-1.5 text-sm text-white"
+            onClick={addRow}
+            className="inline-flex items-center gap-1.5 rounded-full border px-3 py-1.5 text-sm"
           >
-            <ArrowRight className="h-3.5 w-3.5" /> Send for Review / Approve
+            <Plus className="h-3.5 w-3.5" /> Add Invoice
           </button>
-        )}
-      </div>
+          <button
+            title="Mark Existing: when you carry invoices over from the previous week, they start highlighted as 'new'. Click this to clear that flag so only truly new invoices are highlighted."
+            onClick={() =>
+              setRows((prev) => prev.map((row) => ({ ...row, isNew: false })))
+            }
+            className="inline-flex items-center gap-1.5 rounded-full border px-3 py-1.5 text-sm"
+          >
+            <RefreshCw className="h-3.5 w-3.5" /> Mark Existing
+            <span className="ml-0.5 text-[10px] text-gray-400">
+              (hover for info)
+            </span>
+          </button>
+          {mode === "review" ? (
+            <>
+              <button
+                onClick={approveWeek}
+                className="inline-flex items-center gap-1.5 rounded-full bg-emerald-600 px-3 py-1.5 text-sm text-white"
+              >
+                <ArrowRight className="h-3.5 w-3.5" /> Approve
+              </button>
+              <button
+                onClick={sendReviewBackToDraft}
+                className="inline-flex items-center gap-1.5 rounded-full border border-amber-300 bg-amber-50 px-3 py-1.5 text-sm text-amber-800"
+              >
+                Back to Draft
+              </button>
+            </>
+          ) : (
+            <button
+              onClick={sendToReview}
+              className="inline-flex items-center gap-1.5 rounded-full bg-emerald-600 px-3 py-1.5 text-sm text-white"
+            >
+              <ArrowRight className="h-3.5 w-3.5" /> Send to Review
+            </button>
+          )}
+        </div>
+      )}
 
       {/* ── Per-Rep Summary ── */}
       {repSummary.length > 0 && (
@@ -1480,6 +1688,14 @@ export default function SalesCommissionClient({
           .sales-commission-print .print-compact-table td:nth-child(3) {
             width: 4.5% !important;
           }
+          .sales-commission-print .print-compact-table th:nth-child(4),
+          .sales-commission-print .print-compact-table td:nth-child(4) {
+            width: 20% !important;
+          }
+          .sales-commission-print .print-compact-table th:nth-child(5),
+          .sales-commission-print .print-compact-table td:nth-child(5) {
+            width: 2.5% !important;
+          }
           .sales-commission-print .print-compact-table th,
           .sales-commission-print .print-compact-table td {
             padding: 0.9px 1.6px !important;
@@ -1488,6 +1704,11 @@ export default function SalesCommissionClient({
             font-family: Arial, sans-serif !important;
             white-space: nowrap !important;
             vertical-align: middle !important;
+          }
+          .sales-commission-print .print-compact-table td * {
+            font-size: inherit !important;
+            line-height: inherit !important;
+            font-family: inherit !important;
           }
           .sales-commission-print .print-compact-table thead th {
             letter-spacing: 0.02em !important;
@@ -1534,6 +1755,16 @@ export default function SalesCommissionClient({
           .sales-commission-print .print-compact-table .print-payment-value {
             margin-top: 0.6px !important;
             margin-bottom: 0.3px !important;
+            line-height: 1.05 !important;
+          }
+          .sales-commission-print .print-compact-table .print-paid-date {
+            font-size: 6.1px !important;
+            line-height: 1 !important;
+            margin-top: 0.35px !important;
+            white-space: nowrap !important;
+          }
+          .sales-commission-print .print-compact-table .print-first-paid-date {
+            margin-top: 0.8px !important;
             line-height: 1.05 !important;
           }
           .sales-commission-print .print-compact-table td > div {
@@ -1702,6 +1933,85 @@ export default function SalesCommissionClient({
                   </tbody>
                 </table>
               </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {showReviewModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/45 p-4 print:hidden">
+          <div className="w-full max-w-3xl rounded-2xl bg-white p-4 shadow-2xl">
+            <div className="flex items-start justify-between gap-3 border-b pb-3">
+              <div>
+                <h2 className="text-lg font-semibold text-gray-900">
+                  Review Weeks
+                </h2>
+                <p className="text-sm text-gray-500">
+                  Approve a review week or send it back to draft.
+                </p>
+              </div>
+              <button
+                onClick={() => setShowReviewModal(false)}
+                className="rounded-full border px-2 py-1 text-sm text-gray-600"
+              >
+                Close
+              </button>
+            </div>
+            <div className="mt-3 max-h-[55vh] space-y-3 overflow-auto">
+              {reviewLoading && (
+                <p className="text-sm text-gray-500">Loading review weeks...</p>
+              )}
+              {!reviewLoading && reviewWeeks.length === 0 && (
+                <p className="rounded-xl border bg-gray-50 px-3 py-2 text-sm text-gray-500">
+                  No weeks currently in REVIEW status.
+                </p>
+              )}
+              {!reviewLoading &&
+                reviewWeeks.map((week) => (
+                  <div key={week.id} className="rounded-xl border bg-white p-3">
+                    <div className="flex flex-wrap items-center justify-between gap-2">
+                      <div>
+                        <p className="font-semibold text-gray-900">
+                          {formatDate(week.weekStart)} -{" "}
+                          {formatDate(week.weekEnd)}
+                        </p>
+                        <p className="text-xs text-gray-600">
+                          Check date: {formatDate(week.checkDate)}
+                        </p>
+                      </div>
+                      <div className="flex gap-2">
+                        <button
+                          onClick={() => {
+                            router.push(`?viewWeekId=${week.id}`);
+                            setShowReviewModal(false);
+                          }}
+                          className="rounded-full border border-blue-200 bg-blue-50 px-3 py-1.5 text-xs text-blue-700"
+                          disabled={busy}
+                        >
+                          View
+                        </button>
+                        <button
+                          onClick={() =>
+                            updateReviewWeekStatus(week.id, "DRAFT")
+                          }
+                          className="rounded-full border border-amber-200 bg-amber-50 px-3 py-1.5 text-xs text-amber-700"
+                          disabled={busy}
+                        >
+                          Send to Draft
+                        </button>
+                        <button
+                          onClick={() =>
+                            updateReviewWeekStatus(week.id, "APPROVED")
+                          }
+                          className="rounded-full border border-emerald-200 bg-emerald-50 px-3 py-1.5 text-xs text-emerald-700"
+                          disabled={busy}
+                        >
+                          Approve
+                        </button>
+                      </div>
+                    </div>
+                  </div>
+                ))}
             </div>
           </div>
         </div>

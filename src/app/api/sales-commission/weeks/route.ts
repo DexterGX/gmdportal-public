@@ -89,10 +89,24 @@ export async function POST(req: NextRequest) {
 
   // Carry over unpaid invoices from previous approved week
   if (latestApproved?.invoices?.length) {
-    const toCarry = latestApproved.invoices.filter(
-      (inv: any) =>
-        !inv.secondPaid && !inv.paySecond && !(inv.status === "BOTH_PAYMENTS"),
-    );
+    const toCarry = latestApproved.invoices
+      .filter(
+        (inv: any) =>
+          !inv.secondPaid &&
+          !inv.paySecond &&
+          !(inv.status === "BOTH_PAYMENTS"),
+      )
+      .sort((a: any, b: any) => {
+        const repCompare = String(a.salesRep ?? "").localeCompare(
+          String(b.salesRep ?? ""),
+        );
+        if (repCompare !== 0) return repCompare;
+        return String(a.invoiceNumber ?? "").localeCompare(
+          String(b.invoiceNumber ?? ""),
+          undefined,
+          { numeric: true },
+        );
+      });
 
     if (toCarry.length > 0) {
       await p.cMSInvoice.createMany({
