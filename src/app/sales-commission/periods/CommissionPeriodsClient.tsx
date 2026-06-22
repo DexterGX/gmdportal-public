@@ -4,7 +4,7 @@ import { useMemo, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import * as XLSX from "xlsx";
-import { Download, FileText, Pencil, Trash2 } from "lucide-react";
+import { Download, Eye, FileText, Pencil, Trash2 } from "lucide-react";
 import { CMSWeek, formatCurrency, formatDate } from "../types";
 
 export default function CommissionPeriodsClient({
@@ -18,7 +18,7 @@ export default function CommissionPeriodsClient({
 
   const downloadWeek = (week: CMSWeek, rep?: string) => {
     const rows = (week.invoices ?? [])
-      .filter((row) => !rep || row.salesRep === rep)
+      .filter((row) => !rep || rep === "ALL" || row.salesRep === rep)
       .map((row) => ({
         "Sales Rep": row.salesRep,
         Date: row.invoiceDate,
@@ -76,7 +76,11 @@ export default function CommissionPeriodsClient({
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ id: week.id, status: "DRAFT" }),
     });
-    router.push("/sales-commission");
+    router.push("/sales-commission?openDraft=1");
+  };
+
+  const handleViewWeek = (week: CMSWeek) => {
+    router.push(`/sales-commission?viewWeekId=${encodeURIComponent(week.id)}`);
   };
 
   return (
@@ -134,9 +138,7 @@ export default function CommissionPeriodsClient({
               </label>
               <select
                 className="mt-2 w-full rounded-2xl border px-4 py-3 text-sm"
-                value={
-                  selectedReps[week.id] ?? week.invoices?.[0]?.salesRep ?? ""
-                }
+                value={selectedReps[week.id] ?? "ALL"}
                 onChange={(e) =>
                   setSelectedReps((prev) => ({
                     ...prev,
@@ -144,6 +146,7 @@ export default function CommissionPeriodsClient({
                   }))
                 }
               >
+                <option value="ALL">All</option>
                 {(
                   Array.from(
                     new Set((week.invoices ?? []).map((row) => row.salesRep)),
@@ -164,14 +167,17 @@ export default function CommissionPeriodsClient({
               </button>
               <button
                 onClick={() =>
-                  downloadWeek(
-                    week,
-                    selectedReps[week.id] ?? week.invoices?.[0]?.salesRep,
-                  )
+                  downloadWeek(week, selectedReps[week.id] ?? "ALL")
                 }
                 className="inline-flex items-center gap-2 rounded-full border px-4 py-2 text-sm"
               >
                 <FileText className="h-4 w-4" /> Selected Rep
+              </button>
+              <button
+                onClick={() => handleViewWeek(week)}
+                className="inline-flex items-center gap-2 rounded-full border border-sky-200 bg-sky-50 px-4 py-2 text-sm text-sky-700"
+              >
+                <Eye className="h-4 w-4" /> View
               </button>
               {(week.status === "DRAFT" || week.status === "REVIEW") && (
                 <button

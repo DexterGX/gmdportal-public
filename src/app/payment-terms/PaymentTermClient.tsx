@@ -171,6 +171,14 @@ function fmt(n: number): string {
   });
 }
 
+function toCents(n: number): number {
+  return Math.round((Number.isFinite(n) ? n : 0) * 100);
+}
+
+function fromCents(cents: number): number {
+  return cents / 100;
+}
+
 function cleanMoneyInput(value: string): string {
   return value.replace(/[^0-9.,]/g, "");
 }
@@ -858,16 +866,18 @@ export default function PaymentTermClient({
   const effectiveDeposit = useMemo(() => {
     const typed = parseAmt(clientDeposit);
     if (clientDeposit.trim().length === 0) {
-      return computed.grandDeposit;
+      return fromCents(toCents(computed.grandDeposit));
     }
-    return typed;
+    return fromCents(toCents(typed));
   }, [clientDeposit, computed.grandDeposit]);
 
-  const effectiveBalance = computed.totalInvoiceAmount - effectiveDeposit;
+  const effectiveBalance = fromCents(
+    toCents(computed.totalInvoiceAmount) - toCents(effectiveDeposit),
+  );
   const typedClientDeposit = parseAmt(clientDeposit);
   const hasBelowMinClientDeposit =
     clientDeposit.trim().length > 0 &&
-    typedClientDeposit < computed.grandDeposit;
+    toCents(typedClientDeposit) < toCents(computed.grandDeposit);
 
   const adjustedInvoiceBreakdown = useMemo(() => {
     const count = computed.perInvoice.length;
