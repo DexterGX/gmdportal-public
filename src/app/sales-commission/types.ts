@@ -108,14 +108,21 @@ export function calcFirstPayment(
   return parseFloat(((commission * firstPercent) / 100).toFixed(2));
 }
 
-export function calcSecondPayment(
-  commission: number,
-  secondPercent: number,
+export function calcAdjustedCommission(
+  amount: number,
+  rate: number,
   thirdParty: number,
   refund: number,
 ): number {
-  const base = parseFloat(((commission * secondPercent) / 100).toFixed(2));
-  return parseFloat(Math.max(0, base - thirdParty - refund).toFixed(2));
+  const adjustedAmount = amount - thirdParty - refund;
+  return calcCommission(adjustedAmount, rate);
+}
+
+export function calcSecondPayment(
+  adjustedCommission: number,
+  firstPaymentAmount: number,
+): number {
+  return parseFloat((adjustedCommission - firstPaymentAmount).toFixed(2));
 }
 
 export function getInvoiceRowBg(
