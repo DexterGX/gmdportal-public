@@ -20,6 +20,7 @@ import {
   CMSSettings,
   CMSWeek,
   calcCommission,
+  calcAdjustedCommission,
   calcFirstPayment,
   calcSecondPayment,
   formatCurrency,
@@ -425,19 +426,23 @@ export default function SalesCommissionClient({
           asNum(merged.amount),
           asNum(merged.commissionRate),
         );
+        const adjustedCommission = calcAdjustedCommission(
+          asNum(merged.amount),
+          asNum(merged.commissionRate),
+          asNum(merged.thirdPartyAmount),
+          asNum(merged.refundAmount),
+        );
         const firstPaymentAmount = calcFirstPayment(
           commission,
           asNum(settings.firstPaymentPercent),
         );
         const secondBase = calcSecondPayment(
-          commission,
-          asNum(settings.secondPaymentPercent),
-          asNum(merged.thirdPartyAmount),
-          asNum(merged.refundAmount),
+          adjustedCommission,
+          firstPaymentAmount,
         );
         return {
           ...merged,
-          calculatedCommission: commission,
+          calculatedCommission: adjustedCommission,
           firstPaymentAmount,
           secondPaymentAmount: secondBase,
           status:
@@ -658,15 +663,19 @@ export default function SalesCommissionClient({
         );
         const amount = asNum(resolveField(row, COLUMN_ALIASES.amount) ?? 0);
         const commission = calcCommission(amount, commissionRate);
+        const adjustedCommission = calcAdjustedCommission(
+          amount,
+          commissionRate,
+          0,
+          0,
+        );
         const firstPaymentAmount = calcFirstPayment(
           commission,
           asNum(settings.firstPaymentPercent),
         );
         const secondPaymentAmount = calcSecondPayment(
-          commission,
-          asNum(settings.secondPaymentPercent),
-          0,
-          0,
+          adjustedCommission,
+          firstPaymentAmount,
         );
         return {
           salesRep,
@@ -675,7 +684,7 @@ export default function SalesCommissionClient({
           customer,
           commissionRate,
           amount,
-          calculatedCommission: commission,
+          calculatedCommission: adjustedCommission,
           firstPaymentAmount,
           secondPaymentAmount,
         };
@@ -695,15 +704,19 @@ export default function SalesCommissionClient({
     if (!canEdit) return;
     const imported: RowDraft[] = importPreviewRows.map((row, index) => {
       const commission = calcCommission(row.amount, row.commissionRate);
+      const adjustedCommission = calcAdjustedCommission(
+        row.amount,
+        row.commissionRate,
+        0,
+        0,
+      );
       const firstPaymentAmount = calcFirstPayment(
         commission,
         asNum(settings.firstPaymentPercent),
       );
       const secondPaymentAmount = calcSecondPayment(
-        commission,
-        asNum(settings.secondPaymentPercent),
-        0,
-        0,
+        adjustedCommission,
+        firstPaymentAmount,
       );
       return {
         ...emptyDraftRow(),
@@ -714,7 +727,7 @@ export default function SalesCommissionClient({
         customer: row.customer,
         commissionRate: row.commissionRate,
         amount: row.amount,
-        calculatedCommission: commission,
+        calculatedCommission: adjustedCommission,
         firstPaymentAmount,
         secondPaymentAmount,
         sortOrder: rows.length + index,
@@ -1349,6 +1362,31 @@ export default function SalesCommissionClient({
                 const duplicate =
                   (duplicates.get(row.invoiceNumber.trim()) ?? 0) > 1;
                 const bg = getInvoiceRowBg(row, settings, duplicate);
+                const baseCommission = calcCommission(
+                  asNum(row.amount),
+                  asNum(row.commissionRate),
+                );
+                const adjustedAmount =
+                  asNum(row.amount) -
+                  asNum(row.thirdPartyAmount) -
+                  asNum(row.refundAmount);
+                const hasAmountAdjustment =
+                  Math.abs(adjustedAmount - asNum(row.amount)) > 0.009;
+                const hasCommissionAdjustment =
+                  (asNum(row.thirdPartyAmount) > 0 ||
+                    asNum(row.refundAmount) > 0) &&
+                  Math.abs(baseCommission - asNum(row.calculatedCommission)) >
+                    0.009;
+                const baseSecondPayment = parseFloat(
+                  (
+                    (baseCommission * asNum(settings.secondPaymentPercent)) /
+                    100
+                  ).toFixed(2),
+                );
+                const hasSecondAdjustment =
+                  hasCommissionAdjustment &&
+                  Math.abs(baseSecondPayment - asNum(row.secondPaymentAmount)) >
+                    0.009;
                 return (
                   <tr
                     key={row.id}
@@ -1468,9 +1506,30 @@ export default function SalesCommissionClient({
                           }
                         />
                       </div>
+                      {hasAmountAdjustment && (
+                        <div className="mt-1 text-center leading-tight">
+                          <div className="text-gray-400 line-through">
+                            {formatCurrency(row.amount)}
+                          </div>
+                          <div className="font-semibold text-amber-700">
+                            New: {formatCurrency(adjustedAmount)}
+                          </div>
+                        </div>
+                      )}
                     </td>
                     <td className="px-2 py-1.5 text-center font-medium">
-                      {formatCurrency(row.calculatedCommission)}
+                      {hasCommissionAdjustment ? (
+                        <div className="leading-tight">
+                          <div className="text-gray-400 line-through">
+                            {formatCurrency(baseCommission)}
+                          </div>
+                          <div className="font-semibold text-amber-700">
+                            New: {formatCurrency(row.calculatedCommission)}
+                          </div>
+                        </div>
+                      ) : (
+                        formatCurrency(row.calculatedCommission)
+                      )}
                     </td>
                     <td className="px-2 py-1.5 text-center">
                       <div className="print-payment-value font-medium">
@@ -1545,7 +1604,18 @@ export default function SalesCommissionClient({
                     </td>
                     <td className="px-2 py-1.5 text-center">
                       <div className="print-payment-value font-medium">
-                        {formatCurrency(row.secondPaymentAmount)}
+                        {hasSecondAdjustment ? (
+                          <div className="leading-tight">
+                            <div className="text-gray-400 line-through">
+                              {formatCurrency(baseSecondPayment)}
+                            </div>
+                            <div className="font-semibold text-amber-700">
+                              New: {formatCurrency(row.secondPaymentAmount)}
+                            </div>
+                          </div>
+                        ) : (
+                          formatCurrency(row.secondPaymentAmount)
+                        )}
                       </div>
                       {row.secondPaidDate && (
                         <div className="print-paid-date text-xs text-gray-600">

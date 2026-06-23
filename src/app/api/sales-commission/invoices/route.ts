@@ -74,7 +74,6 @@ export async function POST(req: NextRequest) {
 
   const settings = await p.cMSSettings.findFirst();
   const firstPercent = settings?.firstPaymentPercent ?? 60;
-  const secondPercent = settings?.secondPaymentPercent ?? 40;
 
   if (replace) {
     await p.cMSInvoice.deleteMany({ where: { weekId } });
@@ -84,12 +83,27 @@ export async function POST(req: NextRequest) {
   for (const row of rows) {
     const amount = Number(row.amount);
     const rate = Number(row.commissionRate);
-    const calculatedCommission = parseFloat(((amount * rate) / 100).toFixed(2));
+    const baseCommission = parseFloat(((amount * rate) / 100).toFixed(2));
+    const thirdPartyAmountValue =
+      row.thirdPartyAmount != null && row.thirdPartyAmount !== ""
+        ? Number(row.thirdPartyAmount)
+        : null;
+    const refundAmountValue =
+      row.refundAmount != null && row.refundAmount !== ""
+        ? Number(row.refundAmount)
+        : null;
+    const adjustedAmount =
+      amount -
+      Number(thirdPartyAmountValue ?? 0) -
+      Number(refundAmountValue ?? 0);
+    const calculatedCommission = parseFloat(
+      ((adjustedAmount * rate) / 100).toFixed(2),
+    );
     const firstPaymentAmount = parseFloat(
-      ((calculatedCommission * firstPercent) / 100).toFixed(2),
+      ((baseCommission * firstPercent) / 100).toFixed(2),
     );
     const secondPaymentAmount = parseFloat(
-      ((calculatedCommission * secondPercent) / 100).toFixed(2),
+      (calculatedCommission - firstPaymentAmount).toFixed(2),
     );
 
     const invoice = await p.cMSInvoice.create({
@@ -112,14 +126,8 @@ export async function POST(req: NextRequest) {
         secondPaidDate: row.secondPaidDate
           ? new Date(row.secondPaidDate)
           : null,
-        thirdPartyAmount:
-          row.thirdPartyAmount != null && row.thirdPartyAmount !== ""
-            ? Number(row.thirdPartyAmount)
-            : null,
-        refundAmount:
-          row.refundAmount != null && row.refundAmount !== ""
-            ? Number(row.refundAmount)
-            : null,
+        thirdPartyAmount: thirdPartyAmountValue,
+        refundAmount: refundAmountValue,
         notes: row.notes || null,
         isNew: row.isNew ?? true,
         status: computeStatus(row),
