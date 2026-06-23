@@ -154,46 +154,103 @@ export default function ClosedInvoicesClient({
         {viewError && <p className="mt-3 text-sm text-red-600">{viewError}</p>}
       </div>
       <div className="overflow-x-auto rounded-3xl border bg-white shadow-sm">
-        <table className="min-w-full text-sm">
-          <thead className="bg-gray-100 text-left text-xs uppercase tracking-[0.2em] text-gray-600">
+        <table className="min-w-full divide-y divide-gray-200 text-[11px]">
+          <colgroup>
+            <col style={{ width: "6%" }} />
+            <col style={{ width: "7%" }} />
+            <col style={{ width: "22%" }} />
+            <col style={{ width: "5%" }} />
+            <col style={{ width: "8%" }} />
+            <col style={{ width: "8%" }} />
+            <col style={{ width: "8%" }} />
+            <col style={{ width: "8%" }} />
+            <col style={{ width: "8%" }} />
+            <col style={{ width: "8%" }} />
+            <col style={{ width: "6%" }} />
+            <col style={{ width: "6%" }} />
+          </colgroup>
+          <thead className="bg-gray-100 text-[9px] uppercase tracking-[0.16em] text-gray-600">
             <tr>
-              <th className="px-3 py-3">Rep</th>
-              <th className="px-3 py-3">Invoice#</th>
-              <th className="px-3 py-3">Customer</th>
-              <th className="px-3 py-3">%CMS</th>
-              <th className="px-3 py-3">Amount</th>
-              <th className="px-3 py-3">Commission</th>
-              <th className="px-3 py-3">1st Payment</th>
-              <th className="px-3 py-3">1st Paid</th>
-              <th className="px-3 py-3">2nd Payment</th>
-              <th className="px-3 py-3">2nd Paid</th>
-              <th className="px-3 py-3">Closed</th>
-              <th className="px-3 py-3">Open</th>
+              <th className="border-r px-2 py-2.5 text-center">Sales Rep</th>
+              <th className="border-r px-2 py-2.5 text-center">Invoice#</th>
+              <th className="border-r px-2 py-2.5 text-center">Customer</th>
+              <th className="border-r px-2 py-2.5 text-center">% Cms</th>
+              <th className="border-r px-2 py-2.5 text-center">Amount</th>
+              <th className="border-r px-2 py-2.5 text-center">Total Cms</th>
+              <th className="border-r px-2 py-2.5 text-center">1st Payment</th>
+              <th className="border-r px-2 py-2.5 text-center">1st Paid</th>
+              <th className="border-r px-2 py-2.5 text-center">2nd Payment</th>
+              <th className="border-r px-2 py-2.5 text-center">2nd Paid</th>
+              <th className="border-r px-2 py-2.5 text-center">Closed</th>
+              <th className="px-2 py-2.5 text-center">Open</th>
             </tr>
           </thead>
           <tbody>
             {filtered.map((row) => (
-              <tr key={row.id} className="border-t">
-                <td className="px-3 py-2">{row.salesRep}</td>
-                <td className="px-3 py-2">{row.invoiceNumber}</td>
-                <td className="px-3 py-2">{row.customer}</td>
-                <td className="px-3 py-2">{row.commissionRate}%</td>
-                <td className="px-3 py-2">
-                  {formatCurrency(Number(row.amount))}
+              <tr
+                key={row.id}
+                className="divide-x divide-gray-200 border-t align-top"
+              >
+                <td className="px-2 py-1.5">
+                  <div className="w-16 rounded-md border bg-white px-2 py-1 text-[11px]">
+                    {row.salesRep}
+                  </div>
                 </td>
-                <td className="px-3 py-2">
+                <td className="px-2 py-1.5">
+                  <div className="flex items-center gap-1">
+                    <div className="w-[76px] rounded-md border bg-white px-1.5 py-1 text-[11px]">
+                      {row.invoiceNumber}
+                    </div>
+                  </div>
+                </td>
+                <td className="px-2 py-1.5">
+                  <div className="w-[220px] rounded-md border bg-white px-2 py-1 text-[11px]">
+                    {row.customer}
+                  </div>
+                </td>
+                <td className="px-2 py-1.5">
+                  <div className="flex items-center rounded-md border bg-white overflow-hidden w-[58px]">
+                    <div className="w-9 px-1.5 py-1 text-[11px]">
+                      {row.commissionRate}
+                    </div>
+                    <span className="border-l px-1.5 py-1 text-[11px] text-gray-500 bg-gray-50">
+                      %
+                    </span>
+                  </div>
+                </td>
+                <td className="px-2 py-1.5">
+                  <div className="flex items-center rounded-md border bg-white overflow-hidden w-[92px]">
+                    <span className="border-r px-1.5 py-1 text-[11px] text-gray-500 bg-gray-50">
+                      $
+                    </span>
+                    <div className="px-1.5 py-1 text-[11px]">
+                      {Number(row.amount).toFixed(2)}
+                    </div>
+                  </div>
+                </td>
+                <td className="px-2 py-1.5 text-center font-medium">
                   {formatCurrency(Number(row.calculatedCommission))}
                 </td>
-                <td className="px-3 py-2">
-                  {formatCurrency(Number(row.firstPaymentAmount))}
+                <td className="px-2 py-1.5 text-center">
+                  <div className="font-medium">
+                    {formatCurrency(Number(row.firstPaymentAmount))}
+                  </div>
                 </td>
-                <td className="px-3 py-2">{formatDate(row.firstPaidDate)}</td>
-                <td className="px-3 py-2">
-                  {formatCurrency(Number(row.secondPaymentAmount))}
+                <td className="px-2 py-1.5 text-center">
+                  {formatDate(row.firstPaidDate)}
                 </td>
-                <td className="px-3 py-2">{formatDate(row.secondPaidDate)}</td>
-                <td className="px-3 py-2">{formatDate(row.closedAt)}</td>
-                <td className="px-3 py-2">
+                <td className="px-2 py-1.5 text-center">
+                  <div className="font-medium">
+                    {formatCurrency(Number(row.secondPaymentAmount))}
+                  </div>
+                </td>
+                <td className="px-2 py-1.5 text-center">
+                  {formatDate(row.secondPaidDate)}
+                </td>
+                <td className="px-2 py-1.5 text-center">
+                  {formatDate(row.closedAt)}
+                </td>
+                <td className="px-2 py-1.5 text-center">
                   <button
                     type="button"
                     onClick={() => openWeekInNewTab(row)}

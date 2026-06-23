@@ -525,6 +525,57 @@ export default function SalesCommissionClient({
     return String(value);
   };
 
+  const buildPersistableRows = (): RowDraft[] => {
+    return rows.map((row) => {
+      const merged: RowDraft = { ...row };
+      const draftFields: Array<
+        "commissionRate" | "amount" | "thirdPartyAmount" | "refundAmount"
+      > = ["commissionRate", "amount", "thirdPartyAmount", "refundAmount"];
+
+      for (const field of draftFields) {
+        const key = `${row.id}:${field}`;
+        if (!Object.prototype.hasOwnProperty.call(numericInputDrafts, key)) {
+          continue;
+        }
+        const raw = numericInputDrafts[key];
+        if (raw === "" || raw === ".") {
+          (merged as any)[field] =
+            field === "thirdPartyAmount" || field === "refundAmount" ? null : 0;
+          continue;
+        }
+        const parsed = Number(raw);
+        if (Number.isFinite(parsed)) {
+          (merged as any)[field] = parsed;
+        }
+      }
+
+      const baseCommission = calcCommission(
+        asNum(merged.amount),
+        asNum(merged.commissionRate),
+      );
+      const adjustedCommission = calcAdjustedCommission(
+        asNum(merged.amount),
+        asNum(merged.commissionRate),
+        asNum(merged.thirdPartyAmount),
+        asNum(merged.refundAmount),
+      );
+      const firstPaymentAmount = calcFirstPayment(
+        baseCommission,
+        asNum(settings.firstPaymentPercent),
+      );
+      const secondPaymentAmount = calcSecondPayment(
+        adjustedCommission,
+        firstPaymentAmount,
+      );
+
+      merged.calculatedCommission = adjustedCommission;
+      merged.firstPaymentAmount = firstPaymentAmount;
+      merged.secondPaymentAmount = secondPaymentAmount;
+
+      return merged;
+    });
+  };
+
   const addRow = () => {
     if (!canEdit) return;
     setRows((prev) => [...prev, emptyDraftRow()]);
@@ -749,7 +800,9 @@ export default function SalesCommissionClient({
     setBusy(true);
     setMessage(null);
     try {
-      const payload = rows.map((row, index) => ({
+      const persistableRows = buildPersistableRows();
+      setRows(persistableRows);
+      const payload = persistableRows.map((row, index) => ({
         ...row,
         weekId: activeWeek.id,
         sortOrder: index,
@@ -827,7 +880,9 @@ export default function SalesCommissionClient({
     setBusy(true);
     try {
       // Auto-save current draft rows before moving the week to REVIEW.
-      const payload = rows.map((row, index) => ({
+      const persistableRows = buildPersistableRows();
+      setRows(persistableRows);
+      const payload = persistableRows.map((row, index) => ({
         ...row,
         weekId: activeWeek.id,
         sortOrder: index,
@@ -857,16 +912,9 @@ export default function SalesCommissionClient({
       const data = await res.json();
       if (!res.ok)
         throw new Error(data.error ?? "Unable to send week to review");
-      setActiveWeek((prev) =>
-        prev
-          ? {
-              ...prev,
-              status: "REVIEW",
-            }
-          : prev,
-      );
-      router.refresh();
-      setMessage("Week sent to review.");
+      window.scrollTo({ top: 0, behavior: "auto" });
+      window.location.assign("/sales-commission");
+      return;
     } catch (error: any) {
       setMessage(error.message || "Unable to send week to review.");
     } finally {
@@ -1974,6 +2022,14 @@ export default function SalesCommissionClient({
           .sales-commission-print .print-compact-table td:nth-child(5) {
             width: 2.5% !important;
           }
+          .sales-commission-print .print-compact-table th:nth-child(6),
+          .sales-commission-print .print-compact-table td:nth-child(6),
+          .sales-commission-print .print-compact-table th:nth-child(8),
+          .sales-commission-print .print-compact-table td:nth-child(8),
+          .sales-commission-print .print-compact-table th:nth-child(9),
+          .sales-commission-print .print-compact-table td:nth-child(9) {
+            text-align: center !important;
+          }
           .sales-commission-print .print-compact-table th,
           .sales-commission-print .print-compact-table td {
             padding: 0.9px 1.6px !important;
@@ -1987,6 +2043,20 @@ export default function SalesCommissionClient({
             font-size: inherit !important;
             line-height: inherit !important;
             font-family: inherit !important;
+          }
+          .sales-commission-print .print-compact-table td:nth-child(6) > div,
+          .sales-commission-print .print-compact-table td:nth-child(8) > div,
+          .sales-commission-print .print-compact-table td:nth-child(9) > div {
+            margin-left: auto !important;
+            margin-right: auto !important;
+          }
+          .sales-commission-print .print-compact-table td:nth-child(6) > div,
+          .sales-commission-print .print-compact-table td:nth-child(8) > div,
+          .sales-commission-print .print-compact-table td:nth-child(9) > div,
+          .sales-commission-print .print-compact-table td:nth-child(6) > input,
+          .sales-commission-print .print-compact-table td:nth-child(8) > input,
+          .sales-commission-print .print-compact-table td:nth-child(9) > input {
+            display: block !important;
           }
           .sales-commission-print .print-compact-table thead th {
             letter-spacing: 0.02em !important;

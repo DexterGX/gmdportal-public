@@ -15,7 +15,10 @@ export async function GET(req: NextRequest) {
 
   const closed = await p.cMSClosedInvoice.findMany({
     where: weekId ? { originalInvoiceId: { not: null } } : undefined,
-    orderBy: { closedAt: "desc" },
+    orderBy: [
+      { checkDate: "desc" },
+      { invoiceDate: "desc" },
+    ],
   });
 
   return NextResponse.json(closed);
