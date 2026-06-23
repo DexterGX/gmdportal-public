@@ -10,6 +10,7 @@ type Props = {
   onChange: (selected: string[]) => void;
   fullWidth?: boolean;
   matchInputStyle?: boolean;
+  showSelectedNames?: boolean;
 };
 
 export default function FilterMultiSelect({
@@ -19,6 +20,7 @@ export default function FilterMultiSelect({
   onChange,
   fullWidth = false,
   matchInputStyle = false,
+  showSelectedNames = false,
 }: Props) {
   const [isOpen, setIsOpen] = useState(false);
   const dropdownRef = useRef<HTMLDivElement>(null);
@@ -54,7 +56,9 @@ export default function FilterMultiSelect({
       ? "Any"
       : selected.length === 1
         ? selected[0]
-        : `${selected.length} selected`;
+        : showSelectedNames
+          ? selected.join(", ")
+          : `${selected.length} selected`;
 
   const triggerClassName = matchInputStyle
     ? `flex h-10 ${fullWidth ? "w-full" : "inline-flex"} items-center justify-between gap-2 rounded-lg border border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-800 px-3 text-sm text-gray-700 dark:text-gray-300 transition-colors hover:border-gray-400 dark:hover:border-gray-600`

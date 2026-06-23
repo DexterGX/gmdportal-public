@@ -174,7 +174,37 @@ export async function PATCH(req: NextRequest) {
   }
 
   if (body.status === "APPROVED") {
-    const closedInvoices = week.invoices.filter(
+    // Persist this week's payment checks as paid flags before closing invoices.
+    await p.cMSInvoice.updateMany({
+      where: {
+        weekId: week.id,
+        payFirst: true,
+        firstPaid: false,
+      },
+      data: {
+        firstPaid: true,
+        firstPaidDate: week.checkDate,
+      },
+    });
+
+    await p.cMSInvoice.updateMany({
+      where: {
+        weekId: week.id,
+        paySecond: true,
+        secondPaid: false,
+      },
+      data: {
+        secondPaid: true,
+        secondPaidDate: week.checkDate,
+      },
+    });
+
+    const refreshedWeek = await p.cMSWeek.findUnique({
+      where: { id: week.id },
+      include: { invoices: true },
+    });
+
+    const closedInvoices = (refreshedWeek?.invoices ?? []).filter(
       (invoice: any) => invoice.firstPaid && invoice.secondPaid,
     );
     if (closedInvoices.length > 0) {
