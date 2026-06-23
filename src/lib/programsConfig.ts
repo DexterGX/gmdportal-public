@@ -14,6 +14,7 @@ import {
   TicketPercent,
   Settings2,
   Table2,
+  BarChart3,
   Shirt,
   Users,
   Package,
@@ -519,6 +520,11 @@ export const programs: ProgramConfig[] = [
         icon: Table2,
         name: "Closed Invoices",
         path: "/sales-commission/closed",
+      },
+      {
+        icon: BarChart3,
+        name: "Rep Status",
+        path: "/sales-commission/status",
       },
       {
         icon: Settings2,

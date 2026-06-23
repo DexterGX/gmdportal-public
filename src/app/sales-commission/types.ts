@@ -90,6 +90,12 @@ export interface CMSSettings {
   updatedAt: string;
 }
 
+export function isBonusCustomerName(
+  customer: string | null | undefined,
+): boolean {
+  return (customer ?? "").trim().toUpperCase() === "BONUS";
+}
+
 // Helpers
 export function calcCommission(amount: number, rate: number): number {
   return parseFloat(((amount * rate) / 100).toFixed(2));
@@ -130,6 +136,7 @@ export function getInvoiceRowBg(
 }
 
 export function isInvoiceInvalid(invoice: CMSInvoice): boolean {
+  if (isBonusCustomerName(invoice.customer)) return false;
   if (!invoice.invoiceNumber || invoice.invoiceNumber.trim() === "")
     return true;
   if (

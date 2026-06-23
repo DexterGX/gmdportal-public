@@ -7,6 +7,7 @@ import * as XLSX from "xlsx";
 import {
   ArrowRight,
   Download,
+  ExternalLink,
   Plus,
   Printer,
   RefreshCw,
@@ -24,8 +25,10 @@ import {
   formatCurrency,
   formatDate,
   getInvoiceRowBg,
+  isBonusCustomerName,
   isInvoiceInvalid,
 } from "./types";
+import FilterMultiSelect from "@/components/filters/FilterMultiSelect";
 
 type Props = {
   initialUserName: string;
@@ -207,6 +210,7 @@ function formatStatus(status: string): string {
 }
 
 function rowDisplayStatus(row: RowDraft): string {
+  if (isBonusCustomerName(row.customer)) return "BONUS";
   if (row.status === "HOLD" || row.status === "HOLD_SIGNATURE")
     return formatStatus(row.status);
   if (isInvoiceInvalid(row)) return "Missing field(s)";
@@ -216,9 +220,14 @@ function rowDisplayStatus(row: RowDraft): string {
 function getPaymentStatus(
   payFirst: boolean,
   paySecond: boolean,
+  firstPaid: boolean,
+  secondPaid: boolean,
 ): RowDraft["status"] {
+  if (firstPaid && secondPaid) return "BOTH_PAYMENTS";
   if (payFirst && paySecond) return "BOTH_PAYMENTS";
+  if (secondPaid) return "BOTH_PAYMENTS";
   if (paySecond) return "SECOND_PAYMENT";
+  if (firstPaid) return "FIRST_PAID";
   if (payFirst) return "FIRST_PAYMENT";
   return "PENDING";
 }
@@ -247,6 +256,12 @@ function normalizeDecimalDraft(input: string): string {
 
 function isIntermediateDecimal(value: string): boolean {
   return value === "" || value === "." || /^\d+\.$/.test(value);
+}
+
+function getQuickBooksInvoiceUrl(invoiceNumber: string): string {
+  return `https://qbo.intuit.com/app/fullSearch/transactions?origin=prominent&instanceId=d1d9818a-6845-4908-b675-59fdbfb79239&text=${encodeURIComponent(
+    invoiceNumber.trim(),
+  )}`;
 }
 
 export default function SalesCommissionClient({
@@ -281,7 +296,7 @@ export default function SalesCommissionClient({
       duplicateInvoice: false,
     })) ?? [],
   );
-  const [salesRepFilter, setSalesRepFilter] = useState("");
+  const [selectedSalesReps, setSelectedSalesReps] = useState<string[]>([]);
   const [customerFilter, setCustomerFilter] = useState("");
   const [invoiceFilter, setInvoiceFilter] = useState("");
   const [weekStart, setWeekStart] = useState("");
@@ -324,6 +339,10 @@ export default function SalesCommissionClient({
     }
   }, [activeWeek, initialLatestApprovedWeek, initialViewWeek, mode]);
 
+  useEffect(() => {
+    setActiveWeek(initialActiveWeek);
+  }, [initialActiveWeek]);
+
   const refreshReviewPendingCount = async () => {
     try {
       const res = await fetch("/api/sales-commission/weeks?status=REVIEW", {
@@ -343,12 +362,23 @@ export default function SalesCommissionClient({
     refreshReviewPendingCount();
   }, [mode]);
 
+  const salesRepOptions = useMemo(() => {
+    return Array.from(
+      new Set(rows.map((row) => row.salesRep.trim()).filter(Boolean)),
+    ).sort((a, b) => a.localeCompare(b));
+  }, [rows]);
+
   const filteredRows = useMemo(() => {
-    const normalizedRep = salesRepFilter.toLowerCase();
+    const normalizedRepSelections = selectedSalesReps.map((rep) =>
+      rep.toLowerCase(),
+    );
     const normalizedCustomer = customerFilter.toLowerCase();
     const normalizedInvoice = invoiceFilter.toLowerCase();
     return rows.filter((row) => {
-      if (normalizedRep && !row.salesRep.toLowerCase().includes(normalizedRep))
+      if (
+        normalizedRepSelections.length > 0 &&
+        !normalizedRepSelections.includes(row.salesRep.toLowerCase())
+      )
         return false;
       if (
         normalizedCustomer &&
@@ -362,7 +392,7 @@ export default function SalesCommissionClient({
         return false;
       return true;
     });
-  }, [customerFilter, invoiceFilter, rows, salesRepFilter]);
+  }, [customerFilter, invoiceFilter, rows, selectedSalesReps]);
 
   const duplicates = useMemo(() => {
     const count = new Map<string, number>();
@@ -413,7 +443,12 @@ export default function SalesCommissionClient({
           status:
             holdStatus ??
             (paymentTouched || notesTouched
-              ? getPaymentStatus(merged.payFirst, merged.paySecond)
+              ? getPaymentStatus(
+                  merged.payFirst,
+                  merged.paySecond,
+                  merged.firstPaid,
+                  merged.secondPaid,
+                )
               : merged.status),
         };
       }),
@@ -708,7 +743,7 @@ export default function SalesCommissionClient({
         thirdPartyAmount: row.thirdPartyAmount ?? null,
         refundAmount: row.refundAmount ?? null,
       }));
-      await fetch("/api/sales-commission/invoices", {
+      const res = await fetch("/api/sales-commission/invoices", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
@@ -717,7 +752,11 @@ export default function SalesCommissionClient({
           replace: true,
         }),
       });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data?.error ?? "Unable to save draft.");
       setMessage("Draft saved.");
+    } catch (error: any) {
+      setMessage(error?.message || "Unable to save draft.");
     } finally {
       setBusy(false);
     }
@@ -771,9 +810,32 @@ export default function SalesCommissionClient({
   };
 
   const sendToReview = async () => {
-    if (!activeWeek) return;
+    if (!activeWeek || !canEdit) return;
     setBusy(true);
     try {
+      // Auto-save current draft rows before moving the week to REVIEW.
+      const payload = rows.map((row, index) => ({
+        ...row,
+        weekId: activeWeek.id,
+        sortOrder: index,
+        thirdPartyAmount: row.thirdPartyAmount ?? null,
+        refundAmount: row.refundAmount ?? null,
+      }));
+      const saveRes = await fetch("/api/sales-commission/invoices", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          weekId: activeWeek.id,
+          rows: payload,
+          replace: true,
+        }),
+      });
+      const saveData = await saveRes.json();
+      if (!saveRes.ok)
+        throw new Error(
+          saveData?.error ?? "Unable to save draft before review",
+        );
+
       const res = await fetch("/api/sales-commission/weeks", {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
@@ -782,6 +844,14 @@ export default function SalesCommissionClient({
       const data = await res.json();
       if (!res.ok)
         throw new Error(data.error ?? "Unable to send week to review");
+      setActiveWeek((prev) =>
+        prev
+          ? {
+              ...prev,
+              status: "REVIEW",
+            }
+          : prev,
+      );
       router.refresh();
       setMessage("Week sent to review.");
     } catch (error: any) {
@@ -886,49 +956,132 @@ export default function SalesCommissionClient({
 
   const printView = () => window.print();
 
-  const totalCommission = filteredRows.reduce(
-    (sum, row) => sum + asNum(row.calculatedCommission),
-    0,
-  );
-  const firstTotal = filteredRows.reduce(
-    (sum, row) => sum + asNum(row.firstPaymentAmount),
-    0,
-  );
-  const secondTotal = filteredRows.reduce(
-    (sum, row) => sum + asNum(row.secondPaymentAmount),
-    0,
-  );
-
   // Per-rep summary
   const repSummary = useMemo(() => {
+    const minimumWeeklyCommissionByLaw = 560;
+    const referenceDate = checkDate || weekEnd || weekStart;
+    const referenceMonthDate = referenceDate
+      ? new Date(`${referenceDate.slice(0, 10)}T00:00:00`)
+      : new Date();
+    const safeReferenceDate = Number.isNaN(referenceMonthDate.getTime())
+      ? new Date()
+      : referenceMonthDate;
+    const monthStart = new Date(
+      safeReferenceDate.getFullYear(),
+      safeReferenceDate.getMonth(),
+      1,
+    );
+    const monthEnd = new Date(
+      safeReferenceDate.getFullYear(),
+      safeReferenceDate.getMonth() + 1,
+      0,
+    );
+    const monthLabel = safeReferenceDate.toLocaleString("en-US", {
+      month: "long",
+      year: "numeric",
+    });
+
     const map = new Map<
       string,
-      { invoiceAmount: number; totalCms: number; first: number; second: number }
+      {
+        invoiceAmount: number;
+        monthSales: number;
+        totalCms: number;
+        commissionLeft: number;
+        commissionThisWeek: number;
+        bonus: number;
+      }
     >();
+
     for (const row of filteredRows) {
       const rep = row.salesRep || "(unassigned)";
       const existing = map.get(rep) ?? {
         invoiceAmount: 0,
+        monthSales: 0,
         totalCms: 0,
-        first: 0,
-        second: 0,
+        commissionLeft: 0,
+        commissionThisWeek: 0,
+        bonus: 0,
       };
+
+      const invoiceAmount = asNum(row.amount);
+      const totalCms = asNum(row.calculatedCommission);
+      const firstPaymentAmount = asNum(row.firstPaymentAmount);
+      const secondPaymentAmount = asNum(row.secondPaymentAmount);
+      const commissionThisWeek =
+        (row.payFirst ? firstPaymentAmount : 0) +
+        (row.paySecond ? secondPaymentAmount : 0);
+      const unpaidFirst =
+        row.firstPaidDate || row.firstPaid ? 0 : firstPaymentAmount;
+      const unpaidSecond =
+        row.secondPaidDate || row.secondPaid ? 0 : secondPaymentAmount;
+      const isBonusRow = isBonusCustomerName(row.customer);
+      const bonus = isBonusRow ? invoiceAmount : 0;
+      const salesAmount = isBonusRow ? 0 : invoiceAmount;
+
+      const rowDateValue = (row.invoiceDate || "").slice(0, 10);
+      const rowDate = rowDateValue
+        ? new Date(`${rowDateValue}T00:00:00`)
+        : null;
+      const isInCurrentMonth =
+        rowDate !== null &&
+        !Number.isNaN(rowDate.getTime()) &&
+        rowDate >= monthStart &&
+        rowDate <= monthEnd;
+
       map.set(rep, {
-        invoiceAmount: existing.invoiceAmount + asNum(row.amount),
-        totalCms: existing.totalCms + asNum(row.calculatedCommission),
-        first:
-          existing.first + (row.payFirst ? asNum(row.firstPaymentAmount) : 0),
-        second:
-          existing.second +
-          (row.paySecond ? asNum(row.secondPaymentAmount) : 0),
+        invoiceAmount: existing.invoiceAmount + salesAmount,
+        monthSales: existing.monthSales + (isInCurrentMonth ? salesAmount : 0),
+        totalCms: existing.totalCms + (isBonusRow ? 0 : totalCms),
+        commissionLeft:
+          existing.commissionLeft +
+          (isBonusRow ? 0 : unpaidFirst + unpaidSecond),
+        commissionThisWeek:
+          existing.commissionThisWeek + (isBonusRow ? 0 : commissionThisWeek),
+        bonus: existing.bonus + bonus,
       });
     }
+
     return Array.from(map.entries()).map(([rep, vals]) => ({
       rep,
       ...vals,
-      finalPay: vals.first + vals.second,
+      monthLabel,
+      commissionLeft: Math.max(
+        0,
+        vals.commissionLeft - vals.commissionThisWeek,
+      ),
+      minWageComplement: Math.max(
+        0,
+        minimumWeeklyCommissionByLaw - vals.commissionThisWeek,
+      ),
+      finalWeekPay:
+        vals.commissionThisWeek +
+        Math.max(0, minimumWeeklyCommissionByLaw - vals.commissionThisWeek) +
+        vals.bonus,
     }));
-  }, [filteredRows]);
+  }, [filteredRows, checkDate, weekEnd, weekStart]);
+
+  const overallTotalCommission = repSummary.reduce(
+    (sum, rep) => sum + rep.totalCms,
+    0,
+  );
+  const overallInvoiceSales = repSummary.reduce(
+    (sum, rep) => sum + rep.invoiceAmount,
+    0,
+  );
+  const overallCommissionThisWeek = repSummary.reduce(
+    (sum, rep) => sum + rep.commissionThisWeek,
+    0,
+  );
+  const overallBonus = repSummary.reduce((sum, rep) => sum + rep.bonus, 0);
+  const overallComplement = repSummary.reduce(
+    (sum, rep) => sum + rep.minWageComplement,
+    0,
+  );
+  const overallFinalPayroll = repSummary.reduce(
+    (sum, rep) => sum + rep.finalWeekPay,
+    0,
+  );
 
   const hasAnyWeekDate = Boolean(weekStart || weekEnd || checkDate);
   const workingWeekLabel = activeWeek
@@ -947,7 +1100,8 @@ export default function SalesCommissionClient({
   const checkDateText = checkDate
     ? formatDate(checkDate)
     : "Check date not selected";
-  const printSalesRep = salesRepFilter.trim() || "All";
+  const printSalesRep =
+    selectedSalesReps.length > 0 ? selectedSalesReps.join(", ") : "All";
 
   return (
     <div className="sales-commission-print space-y-4 print:space-y-2">
@@ -1031,11 +1185,14 @@ export default function SalesCommissionClient({
         <div className="mt-3 grid gap-2.5 sm:grid-cols-3">
           <label className="text-xs text-gray-600">
             <span className="mb-1 block">Sales Rep Filter</span>
-            <input
-              className="w-full rounded-xl border px-3 py-2 text-sm"
-              placeholder="Sales Rep filter"
-              value={salesRepFilter}
-              onChange={(e) => setSalesRepFilter(e.target.value)}
+            <FilterMultiSelect
+              label="Sales Rep"
+              options={salesRepOptions}
+              selected={selectedSalesReps}
+              onChange={setSelectedSalesReps}
+              fullWidth
+              matchInputStyle
+              showSelectedNames
             />
           </label>
           <label className="text-xs text-gray-600">
@@ -1228,16 +1385,29 @@ export default function SalesCommissionClient({
                       />
                     </td>
                     <td className="px-2 py-1.5">
-                      <input
-                        className={`w-[76px] rounded-md border px-1.5 py-1 text-[11px] ${duplicate ? "text-amber-800 font-semibold" : ""}`}
-                        value={row.invoiceNumber}
-                        onChange={(e) =>
-                          updateRow(row.id, {
-                            invoiceNumber: e.target.value,
-                            isNew: false,
-                          })
-                        }
-                      />
+                      <div className="flex items-center gap-1">
+                        <input
+                          className={`w-[76px] rounded-md border px-1.5 py-1 text-[11px] ${duplicate ? "text-amber-800 font-semibold" : ""}`}
+                          value={row.invoiceNumber}
+                          onChange={(e) =>
+                            updateRow(row.id, {
+                              invoiceNumber: e.target.value,
+                              isNew: false,
+                            })
+                          }
+                        />
+                        {row.invoiceNumber.trim() && (
+                          <a
+                            href={getQuickBooksInvoiceUrl(row.invoiceNumber)}
+                            target="_blank"
+                            rel="noreferrer"
+                            className="print:hidden text-blue-600 hover:text-blue-700"
+                            title="Open invoice in QuickBooks"
+                          >
+                            <ExternalLink className="h-3.5 w-3.5" />
+                          </a>
+                        )}
+                      </div>
                     </td>
                     <td className="px-2 py-1.5">
                       <input
@@ -1565,15 +1735,24 @@ export default function SalesCommissionClient({
               Weekly Summary by Sales Rep
             </p>
           </div>
-          <div
-            className="grid gap-0 divide-y md:divide-x md:divide-y-0"
-            style={{
-              gridTemplateColumns: `repeat(${Math.min(repSummary.length, 3)}, minmax(0,1fr))`,
-            }}
-          >
+          <div className="summary-grid grid gap-3 p-3 md:grid-cols-2 xl:grid-cols-3">
             {repSummary.map(
-              ({ rep, invoiceAmount, totalCms, first, second, finalPay }) => (
-                <div key={rep} className="p-4">
+              ({
+                rep,
+                invoiceAmount,
+                monthSales,
+                monthLabel,
+                totalCms,
+                commissionLeft,
+                commissionThisWeek,
+                minWageComplement,
+                bonus,
+                finalWeekPay,
+              }) => (
+                <div
+                  key={rep}
+                  className="summary-card rounded-xl border border-gray-200 bg-white p-4 shadow-sm"
+                >
                   <p className="mb-3 text-sm font-bold uppercase tracking-wide text-gray-800">
                     {rep}
                   </p>
@@ -1585,21 +1764,45 @@ export default function SalesCommissionClient({
                       </dd>
                     </div>
                     <div className="flex justify-between border-b pb-1">
+                      <dt className="text-gray-500">
+                        Total Sales for {monthLabel}
+                      </dt>
+                      <dd className="font-medium text-gray-900">
+                        {formatCurrency(monthSales)}
+                      </dd>
+                    </div>
+                    <div className="flex justify-between border-b pb-1">
                       <dt className="text-gray-500">Total Commission</dt>
                       <dd className="font-medium text-gray-900">
                         {formatCurrency(totalCms)}
                       </dd>
                     </div>
                     <div className="flex justify-between border-b pb-1">
-                      <dt className="text-gray-500">1st Payments This Week</dt>
+                      <dt className="text-gray-500">Total Commission Left</dt>
                       <dd className="font-medium text-gray-900">
-                        {formatCurrency(first)}
+                        {formatCurrency(commissionLeft)}
                       </dd>
                     </div>
                     <div className="flex justify-between border-b pb-1">
-                      <dt className="text-gray-500">2nd Payments This Week</dt>
+                      <dt className="text-gray-500">
+                        Commission for This Week
+                      </dt>
                       <dd className="font-medium text-gray-900">
-                        {formatCurrency(second)}
+                        {formatCurrency(commissionThisWeek)}
+                      </dd>
+                    </div>
+                    <div className="flex justify-between border-b pb-1">
+                      <dt className="text-gray-500">
+                        Complement to reach Min Wage by Law
+                      </dt>
+                      <dd className="font-medium text-gray-900">
+                        {formatCurrency(minWageComplement)}
+                      </dd>
+                    </div>
+                    <div className="flex justify-between border-b pb-1">
+                      <dt className="text-gray-500">Bonus</dt>
+                      <dd className="font-medium text-gray-900">
+                        {formatCurrency(bonus)}
                       </dd>
                     </div>
                     <div className="flex justify-between pt-1">
@@ -1607,7 +1810,7 @@ export default function SalesCommissionClient({
                         Final Week Pay
                       </dt>
                       <dd className="font-bold text-emerald-700">
-                        {formatCurrency(finalPay)}
+                        {formatCurrency(finalWeekPay)}
                       </dd>
                     </div>
                   </dl>
@@ -1617,28 +1820,33 @@ export default function SalesCommissionClient({
           </div>
           <div className="flex flex-wrap gap-6 border-t bg-gray-50 px-4 py-3 text-xs">
             <span className="text-gray-500">
-              Overall:{" "}
+              Total Invoice Sales:{" "}
               <strong className="text-gray-900">
-                {formatCurrency(totalCommission)}
-              </strong>{" "}
-              commission
-            </span>
-            <span className="text-gray-500">
-              1st Payments:{" "}
-              <strong className="text-gray-900">
-                {formatCurrency(firstTotal)}
+                {formatCurrency(overallInvoiceSales)}
               </strong>
             </span>
             <span className="text-gray-500">
-              2nd Payments:{" "}
+              Commission This Week:{" "}
               <strong className="text-gray-900">
-                {formatCurrency(secondTotal)}
+                {formatCurrency(overallCommissionThisWeek)}
+              </strong>
+            </span>
+            <span className="text-gray-500">
+              Bonus:{" "}
+              <strong className="text-gray-900">
+                {formatCurrency(overallBonus)}
+              </strong>
+            </span>
+            <span className="text-gray-500">
+              Min-Wage Complement:{" "}
+              <strong className="text-gray-900">
+                {formatCurrency(overallComplement)}
               </strong>
             </span>
             <span className="text-gray-500">
               Total Payroll:{" "}
               <strong className="text-emerald-700">
-                {formatCurrency(firstTotal + secondTotal)}
+                {formatCurrency(overallFinalPayroll)}
               </strong>
             </span>
           </div>
@@ -1787,6 +1995,23 @@ export default function SalesCommissionClient({
           .sales-commission-print .print-compact-table tr {
             break-inside: avoid;
             page-break-inside: avoid;
+          }
+          .sales-commission-print .summary-card {
+            min-height: 220px;
+          }
+          @media print {
+            .sales-commission-print .summary-grid {
+              display: grid !important;
+              grid-template-columns: repeat(3, minmax(0, 1fr)) !important;
+              gap: 6px !important;
+              padding: 6px !important;
+              align-items: start !important;
+            }
+            .sales-commission-print .summary-card {
+              min-height: 150px !important;
+              break-inside: avoid;
+              page-break-inside: avoid;
+            }
           }
         }
       `}</style>
