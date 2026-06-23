@@ -143,6 +143,22 @@ export async function POST(req: NextRequest) {
     }
   }
 
+  // Remove fully-paid invoices from all prior approved weeks now that a new
+  // draft is starting. They are already captured in CMSClosedInvoice.
+  const approvedWeeks = await p.cMSWeek.findMany({
+    where: { status: "APPROVED" },
+    select: { id: true },
+  });
+  if (approvedWeeks.length > 0) {
+    await p.cMSInvoice.deleteMany({
+      where: {
+        weekId: { in: approvedWeeks.map((w: any) => w.id) },
+        firstPaid: true,
+        secondPaid: true,
+      },
+    });
+  }
+
   const fullWeek = await p.cMSWeek.findUnique({
     where: { id: week.id },
     include: {
@@ -208,32 +224,47 @@ export async function PATCH(req: NextRequest) {
       (invoice: any) => invoice.firstPaid && invoice.secondPaid,
     );
     if (closedInvoices.length > 0) {
-      await p.cMSClosedInvoice.createMany({
-        data: closedInvoices.map((invoice: any) => ({
-          salesRep: invoice.salesRep,
-          invoiceDate: invoice.invoiceDate,
-          invoiceNumber: invoice.invoiceNumber,
-          customer: invoice.customer,
-          commissionRate: invoice.commissionRate,
-          amount: invoice.amount,
-          calculatedCommission: invoice.calculatedCommission,
-          firstPaymentAmount: invoice.firstPaymentAmount,
-          secondPaymentAmount: invoice.secondPaymentAmount,
-          thirdPartyAmount: invoice.thirdPartyAmount,
-          refundAmount: invoice.refundAmount,
-          firstPaidDate: invoice.firstPaidDate,
-          secondPaidDate: invoice.secondPaidDate,
-          notes: invoice.notes,
-          weekStart: week.weekStart,
-          weekEnd: week.weekEnd,
-          checkDate: week.checkDate,
-          originalInvoiceId: invoice.originalInvoiceId ?? invoice.id,
-        })),
+      // Upsert to closed list (skip duplicates by originalInvoiceId)
+      const originalIds = closedInvoices.map(
+        (invoice: any) => invoice.originalInvoiceId ?? invoice.id,
+      );
+      const alreadyClosed = await p.cMSClosedInvoice.findMany({
+        where: { originalInvoiceId: { in: originalIds } },
+        select: { originalInvoiceId: true },
       });
-
-      await p.cMSInvoice.deleteMany({
-        where: { id: { in: closedInvoices.map((invoice: any) => invoice.id) } },
-      });
+      const alreadyClosedSet = new Set(
+        alreadyClosed.map((r: any) => r.originalInvoiceId),
+      );
+      const toInsert = closedInvoices.filter(
+        (invoice: any) =>
+          !alreadyClosedSet.has(invoice.originalInvoiceId ?? invoice.id),
+      );
+      if (toInsert.length > 0) {
+        await p.cMSClosedInvoice.createMany({
+          data: toInsert.map((invoice: any) => ({
+            salesRep: invoice.salesRep,
+            invoiceDate: invoice.invoiceDate,
+            invoiceNumber: invoice.invoiceNumber,
+            customer: invoice.customer,
+            commissionRate: invoice.commissionRate,
+            amount: invoice.amount,
+            calculatedCommission: invoice.calculatedCommission,
+            firstPaymentAmount: invoice.firstPaymentAmount,
+            secondPaymentAmount: invoice.secondPaymentAmount,
+            thirdPartyAmount: invoice.thirdPartyAmount,
+            refundAmount: invoice.refundAmount,
+            firstPaidDate: invoice.firstPaidDate,
+            secondPaidDate: invoice.secondPaidDate,
+            notes: invoice.notes,
+            weekStart: week.weekStart,
+            weekEnd: week.weekEnd,
+            checkDate: week.checkDate,
+            originalInvoiceId: invoice.originalInvoiceId ?? invoice.id,
+          })),
+        });
+      }
+      // Invoices stay in CMSInvoice so the approved week remains printable.
+      // They will be cleaned up when a new draft week is started.
     }
   }
 
