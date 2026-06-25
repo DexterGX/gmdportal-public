@@ -6,6 +6,48 @@ type QuotesRouteContext = {
   params: Promise<{ jobId: string }>;
 };
 
+function getNextQuoteCode(
+  jobQuoteNumber: string,
+  existingQuoteCodes: string[],
+) {
+  const prefix = `${jobQuoteNumber}-Q`;
+  let maxSuffix = 0;
+
+  for (const rawQuoteCode of existingQuoteCodes) {
+    const quoteCode = String(rawQuoteCode ?? "").trim();
+    if (!quoteCode.startsWith(prefix)) {
+      continue;
+    }
+
+    const suffix = Number.parseInt(quoteCode.slice(prefix.length), 10);
+    if (Number.isFinite(suffix)) {
+      maxSuffix = Math.max(maxSuffix, suffix);
+    }
+  }
+
+  return `${prefix}${maxSuffix + 1}`;
+}
+
+function isQuoteCodeUniqueConstraintError(error: unknown) {
+  if (
+    !error ||
+    typeof error !== "object" ||
+    !("code" in error) ||
+    (error as { code?: string }).code !== "P2002"
+  ) {
+    return false;
+  }
+
+  const target = (error as { meta?: { target?: string | string[] } }).meta
+    ?.target;
+
+  if (Array.isArray(target)) {
+    return target.includes("quoteCode");
+  }
+
+  return typeof target === "string" && target.includes("quoteCode");
+}
+
 // GET /api/closet-jobs/[jobId]/quotes - List quotes for a job
 export async function GET(request: NextRequest, context: QuotesRouteContext) {
   try {
@@ -54,7 +96,7 @@ export async function GET(request: NextRequest, context: QuotesRouteContext) {
     console.error("Error fetching quotes:", error);
     return NextResponse.json(
       { error: "Failed to fetch quotes" },
-      { status: 500 }
+      { status: 500 },
     );
   }
 }
@@ -95,7 +137,7 @@ export async function POST(request: NextRequest, context: QuotesRouteContext) {
     if (!color || !installerCost) {
       return NextResponse.json(
         { error: "Missing required fields" },
-        { status: 400 }
+        { status: 400 },
       );
     }
 
@@ -107,7 +149,7 @@ export async function POST(request: NextRequest, context: QuotesRouteContext) {
       if (job.installerId !== user.id) {
         return NextResponse.json(
           { error: "Only the assigned installer can submit quotes" },
-          { status: 403 }
+          { status: 403 },
         );
       }
       effectiveInstallerId = user.id;
@@ -117,10 +159,6 @@ export async function POST(request: NextRequest, context: QuotesRouteContext) {
     } else {
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
     }
-
-    // Generate quote code: {job.quoteNumber}-Q{N}
-    const quoteCount = job.quotes.length;
-    const quoteCode = `${job.quoteNumber}-Q${quoteCount + 1}`;
 
     // Get default GM factor from settings
     let settings = await prisma.closetEstimateSettings.findFirst();
@@ -137,39 +175,79 @@ export async function POST(request: NextRequest, context: QuotesRouteContext) {
     const finalPrice =
       parseFloat(installerCost) * parseFloat(gmFactor.toString());
 
-    // Create the quote (files are uploaded separately via the files endpoint)
-    const quote = await prisma.closetQuote.create({
-      data: {
-        closetJobId: jobId,
-        quoteCode,
-        color,
-        installerCost,
-        gmFactor,
-        finalPrice,
-        notesInstaller,
-        status: "PENDING_REVIEW",
-        submittedAt: new Date(),
-        installerId: effectiveInstallerId,
-        submittedById: user.id,
-      },
-      include: {
-        files: true,
-        installer: {
-          select: {
-            id: true,
-            name: true,
-            email: true,
+    const quoteCodePrefix = `${job.quoteNumber}-Q`;
+    let quote = null;
+    let latestQuoteCodes = (
+      await prisma.closetQuote.findMany({
+        where: {
+          quoteCode: {
+            startsWith: quoteCodePrefix,
           },
         },
-        submittedBy: {
-          select: {
-            id: true,
-            name: true,
-            email: true,
+        select: { quoteCode: true },
+      })
+    ).map((existingQuote) => existingQuote.quoteCode);
+
+    for (let attempt = 0; attempt < 3; attempt += 1) {
+      const quoteCode = getNextQuoteCode(job.quoteNumber, latestQuoteCodes);
+
+      try {
+        // Create the quote (files are uploaded separately via the files endpoint)
+        quote = await prisma.closetQuote.create({
+          data: {
+            closetJobId: jobId,
+            quoteCode,
+            color,
+            installerCost,
+            gmFactor,
+            finalPrice,
+            notesInstaller,
+            status: "PENDING_REVIEW",
+            submittedAt: new Date(),
+            installerId: effectiveInstallerId,
+            submittedById: user.id,
           },
-        },
-      },
-    });
+          include: {
+            files: true,
+            installer: {
+              select: {
+                id: true,
+                name: true,
+                email: true,
+              },
+            },
+            submittedBy: {
+              select: {
+                id: true,
+                name: true,
+                email: true,
+              },
+            },
+          },
+        });
+        break;
+      } catch (error) {
+        if (!isQuoteCodeUniqueConstraintError(error) || attempt === 2) {
+          throw error;
+        }
+
+        const existingQuotes = await prisma.closetQuote.findMany({
+          where: {
+            quoteCode: {
+              startsWith: quoteCodePrefix,
+            },
+          },
+          select: { quoteCode: true },
+        });
+        latestQuoteCodes = existingQuotes.map(
+          (existingQuote) => existingQuote.quoteCode,
+        );
+      }
+    }
+
+    if (!quote) {
+      throw new Error("Failed to allocate a unique quote code");
+    }
 
     // Update job status to REVIEW if it was QUOTE
     if (job.status === "QUOTE") {
@@ -184,7 +262,7 @@ export async function POST(request: NextRequest, context: QuotesRouteContext) {
     console.error("Error creating quote:", error);
     return NextResponse.json(
       { error: "Failed to create quote" },
-      { status: 500 }
+      { status: 500 },
     );
   }
 }

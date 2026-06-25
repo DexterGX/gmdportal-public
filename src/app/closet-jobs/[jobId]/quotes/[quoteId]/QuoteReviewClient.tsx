@@ -56,6 +56,7 @@ export default function QuoteReviewClient({
   const [finalPrice, setFinalPrice] = useState(quote.finalPrice);
   const [notesSales, setNotesSales] = useState(quote.notesSales || "");
   const [saving, setSaving] = useState(false);
+  const [deleting, setDeleting] = useState(false);
 
   const calculatedPrice = (
     parseFloat(quote.installerCost) * parseFloat(gmFactor)
@@ -157,6 +158,39 @@ export default function QuoteReviewClient({
       alert("Failed to reject quote");
     } finally {
       setSaving(false);
+    }
+  };
+
+  const handleDelete = async () => {
+    if (
+      !confirm(
+        "Delete this quote and all of its uploaded images? This action cannot be undone.",
+      )
+    ) {
+      return;
+    }
+
+    setDeleting(true);
+    try {
+      const response = await fetch(
+        `/api/closet-jobs/${quote.closetJob.id}/quotes/${quote.id}`,
+        {
+          method: "DELETE",
+        },
+      );
+
+      if (response.ok) {
+        router.push(`/closet-jobs/${quote.closetJob.id}`);
+        router.refresh();
+      } else {
+        const error = await response.json();
+        alert(`Error: ${error.error}`);
+      }
+    } catch (error) {
+      console.error("Error deleting quote:", error);
+      alert("Failed to delete quote");
+    } finally {
+      setDeleting(false);
     }
   };
 
@@ -407,7 +441,7 @@ export default function QuoteReviewClient({
                       </button>
                       <button
                         onClick={handleReject}
-                        disabled={saving}
+                        disabled={saving || deleting}
                         className="w-full px-4 py-2 bg-red-600 text-white rounded-md hover:bg-red-700 disabled:opacity-50"
                       >
                         Reject Quote
@@ -415,6 +449,15 @@ export default function QuoteReviewClient({
                     </>
                   )}
                 </>
+              )}
+              {userRole === "admin" && (
+                <button
+                  onClick={handleDelete}
+                  disabled={saving || deleting}
+                  className="w-full px-4 py-2 bg-red-100 text-red-700 rounded-md hover:bg-red-200 disabled:opacity-50"
+                >
+                  {deleting ? "Deleting Quote..." : "Delete Quote & Images"}
+                </button>
               )}
               <Link
                 href={`/closet-jobs/${quote.closetJob.id}/quotes/${quote.id}/print?auto=1`}

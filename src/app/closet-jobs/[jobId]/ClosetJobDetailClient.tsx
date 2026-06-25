@@ -1,6 +1,7 @@
 "use client";
 
 import Link from "next/link";
+import { useState } from "react";
 import { useRouter } from "next/navigation";
 
 interface ClosetJobDetail {
@@ -57,6 +58,7 @@ export default function ClosetJobDetailClient({
   userId: string;
 }) {
   const router = useRouter();
+  const [deletingQuoteId, setDeletingQuoteId] = useState<string | null>(null);
 
   const getAreaLabel = (area: string) => {
     const labels: Record<string, string> = {
@@ -128,6 +130,39 @@ export default function ClosetJobDetailClient({
     userRole === "admin";
   const canReviewQuotes = userRole === "admin" || userRole === "sales";
 
+  const handleDeleteQuote = async (quoteId: string, quoteCode: string) => {
+    if (
+      !confirm(
+        `Delete ${quoteCode} and all of its uploaded images? This action cannot be undone.`,
+      )
+    ) {
+      return;
+    }
+
+    setDeletingQuoteId(quoteId);
+    try {
+      const response = await fetch(
+        `/api/closet-jobs/${job.id}/quotes/${quoteId}`,
+        {
+          method: "DELETE",
+        },
+      );
+
+      if (response.ok) {
+        router.refresh();
+        return;
+      }
+
+      const error = await response.json();
+      alert(`Error: ${error.error}`);
+    } catch (error) {
+      console.error("Error deleting quote:", error);
+      alert("Failed to delete quote");
+    } finally {
+      setDeletingQuoteId(null);
+    }
+  };
+
   return (
     <div className="max-w-7xl mx-auto">
       <div className="mb-6">
@@ -138,7 +173,9 @@ export default function ClosetJobDetailClient({
           ← Back to Jobs
         </Link>
         <div className="flex flex-col gap-3 sm:flex-row sm:justify-between sm:items-center">
-          <h1 className="text-2xl sm:text-3xl font-bold break-words">{job.quoteNumber}</h1>
+          <h1 className="text-2xl sm:text-3xl font-bold break-words">
+            {job.quoteNumber}
+          </h1>
           {getStatusBadge(job.status)}
         </div>
       </div>
@@ -162,8 +199,10 @@ export default function ClosetJobDetailClient({
             <p className="text-sm text-gray-500">Area</p>
             <p className="font-medium">
               {getAreasLabel(
-                job.areas?.length ? job.areas : getAreasFromNotes(job.notesSales),
-                job.area
+                job.areas?.length
+                  ? job.areas
+                  : getAreasFromNotes(job.notesSales),
+                job.area,
               )}
             </p>
           </div>
@@ -225,7 +264,9 @@ export default function ClosetJobDetailClient({
               >
                 <div className="flex flex-col gap-2 sm:flex-row sm:justify-between sm:items-start mb-3">
                   <div>
-                    <h3 className="font-semibold text-lg break-words">{quote.quoteCode}</h3>
+                    <h3 className="font-semibold text-lg break-words">
+                      {quote.quoteCode}
+                    </h3>
                     <p className="text-sm text-gray-600">
                       Color: {quote.color}
                     </p>
@@ -351,6 +392,20 @@ export default function ClosetJobDetailClient({
                     >
                       Print Quote
                     </Link>
+                  )}
+                  {userRole === "admin" && (
+                    <button
+                      type="button"
+                      onClick={() =>
+                        handleDeleteQuote(quote.id, quote.quoteCode)
+                      }
+                      disabled={deletingQuoteId === quote.id}
+                      className="px-3 py-1 bg-red-100 text-red-700 rounded hover:bg-red-200 disabled:opacity-50 disabled:cursor-not-allowed text-sm"
+                    >
+                      {deletingQuoteId === quote.id
+                        ? "Deleting Quote..."
+                        : "Delete Quote & Images"}
+                    </button>
                   )}
                 </div>
               </div>
