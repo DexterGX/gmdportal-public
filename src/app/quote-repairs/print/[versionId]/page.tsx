@@ -69,6 +69,10 @@ export default async function QuoteRepairPrintPage({
                 <span className="font-semibold">Sales Rep:</span>{" "}
                 {repair.salesRep?.name || repair.salesRep?.email || "-"}
               </p>
+              <p>
+                <span className="font-semibold">Status:</span>{" "}
+                {version.status}
+              </p>
             </div>
           </div>
         </section>
