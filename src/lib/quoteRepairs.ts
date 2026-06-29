@@ -10,6 +10,30 @@ export const QUOTE_REPAIR_STATUS_LABELS: Record<QuoteRepairStatus, string> = {
   ARCHIVED: "Archived",
 };
 
+export function normalizeQuoteRepairDisplayStatus(
+  status: QuoteRepairStatus,
+): "DRAFT" | "APPROVED" {
+  return status === "APPROVED" ? "APPROVED" : "DRAFT";
+}
+
+export function formatUsd(value: number | string | null | undefined) {
+  const numeric = Number(value ?? 0);
+  return new Intl.NumberFormat("en-US", {
+    style: "currency",
+    currency: "USD",
+    minimumFractionDigits: 2,
+    maximumFractionDigits: 2,
+  }).format(Number.isFinite(numeric) ? numeric : 0);
+}
+
+export function formatUsPhone(value: string | null | undefined) {
+  const digits = String(value ?? "").replace(/\D/g, "");
+  if (digits.length === 10) {
+    return `(${digits.slice(0, 3)}) ${digits.slice(3, 6)}-${digits.slice(6)}`;
+  }
+  return String(value ?? "").trim();
+}
+
 export const QUOTE_REPAIR_AREA_OPTIONS = [
   { value: "MASTER", label: "Master Closet" },
   { value: "GUEST", label: "Guest Closet" },
