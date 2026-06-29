@@ -28,9 +28,9 @@ type CreatePayload = {
 function isUniqueSequenceConflict(error: unknown) {
   return Boolean(
     error &&
-      typeof error === "object" &&
-      "code" in error &&
-      (error as { code?: string }).code === "P2002",
+    typeof error === "object" &&
+    "code" in error &&
+    (error as { code?: string }).code === "P2002",
   );
 }
 
@@ -48,17 +48,48 @@ export async function GET(request: NextRequest) {
     const customer = normalizeQuoteRepairText(searchParams.get("customer"));
     const qr = normalizeQuoteRepairText(searchParams.get("qr"));
     const page = Math.max(1, Number(searchParams.get("page") || 1));
-    const pageSize = Math.min(100, Math.max(1, Number(searchParams.get("pageSize") || 20)));
+    const pageSize = Math.min(
+      100,
+      Math.max(1, Number(searchParams.get("pageSize") || 20)),
+    );
     const statusFilter = normalizeQuoteRepairText(searchParams.get("status"));
-    const salesRepFilter = normalizeQuoteRepairText(searchParams.get("salesRep"));
+    const salesRepFilter = normalizeQuoteRepairText(
+      searchParams.get("salesRep"),
+    );
+    const requestedStatuses = statusFilter
+      .split(",")
+      .map((value) => value.trim().toUpperCase())
+      .filter(Boolean);
+    const statusIn =
+      requestedStatuses.length === 0
+        ? undefined
+        : Array.from(
+            new Set(
+              requestedStatuses.flatMap((status) => {
+                if (status === "APPROVED") return ["APPROVED"];
+                if (status === "DRAFT")
+                  return [
+                    "DRAFT",
+                    "SUBMITTED",
+                    "UNDER_REVIEW",
+                    "CHANGES_REQUESTED",
+                    "VOIDED",
+                    "ARCHIVED",
+                  ];
+                return [status];
+              }),
+            ),
+          );
     const where: Prisma.QuoteRepairWhereInput = {
       deletedAt: null,
       archivedAt: null,
-      ...(qr ? { quoteRepairNumber: { contains: qr, mode: "insensitive" } } : {}),
-      ...(customer ? { customerName: { contains: customer, mode: "insensitive" } } : {}),
-      ...(statusFilter
-        ? { status: { in: statusFilter.split(",").filter(Boolean) as any } }
+      ...(qr
+        ? { quoteRepairNumber: { contains: qr, mode: "insensitive" } }
         : {}),
+      ...(customer
+        ? { customerName: { contains: customer, mode: "insensitive" } }
+        : {}),
+      ...(statusIn ? { status: { in: statusIn as any } } : {}),
       ...(salesRepFilter
         ? {
             salesRep: {
@@ -92,10 +123,19 @@ export async function GET(request: NextRequest) {
           versions: {
             orderBy: { versionNumber: "desc" },
             take: 2,
-            select: { id: true, versionNumber: true, status: true, total: true },
+            select: {
+              id: true,
+              versionNumber: true,
+              status: true,
+              total: true,
+            },
           },
-          currentVersion: { select: { id: true, versionNumber: true, total: true } },
-          approvedVersion: { select: { id: true, versionNumber: true, total: true } },
+          currentVersion: {
+            select: { id: true, versionNumber: true, total: true },
+          },
+          approvedVersion: {
+            select: { id: true, versionNumber: true, total: true },
+          },
         },
       }),
     ]);
@@ -107,9 +147,14 @@ export async function GET(request: NextRequest) {
         customerName: repair.customerName,
         propertyAddress: repair.propertyAddress,
         status: repair.status,
-        currentVersionNumber: repair.currentVersion?.versionNumber ?? repair.versions[0]?.versionNumber ?? null,
+        currentVersionNumber:
+          repair.currentVersion?.versionNumber ??
+          repair.versions[0]?.versionNumber ??
+          null,
         approvedVersionNumber: repair.approvedVersion?.versionNumber ?? null,
-        total: String(repair.currentVersion?.total ?? repair.versions[0]?.total ?? "0"),
+        total: String(
+          repair.currentVersion?.total ?? repair.versions[0]?.total ?? "0",
+        ),
         createdAt: repair.createdAt.toISOString(),
         updatedAt: repair.updatedAt.toISOString(),
         salesRep: repair.salesRep,
@@ -126,7 +171,10 @@ export async function GET(request: NextRequest) {
       pageSize,
     });
   } catch (error: any) {
-    return NextResponse.json({ error: error?.message || "Failed to load quote repairs" }, { status: 500 });
+    return NextResponse.json(
+      { error: error?.message || "Failed to load quote repairs" },
+      { status: 500 },
+    );
   }
 }
 
@@ -147,88 +195,131 @@ export async function POST(request: NextRequest) {
     const areas = normalizeQuoteRepairAreas(body.areas);
 
     if (!customerName || !propertyAddress || areas.length === 0) {
-      return NextResponse.json({ error: "Missing required fields" }, { status: 400 });
+      return NextResponse.json(
+        { error: "Missing required fields" },
+        { status: 400 },
+      );
     }
 
-    const selectedCustomer = (body.selectedCustomer ?? {}) as Record<string, any>;
+    const selectedCustomer = (body.selectedCustomer ?? {}) as Record<
+      string,
+      any
+    >;
     const selectedDeal = (body.selectedDeal ?? {}) as Record<string, any>;
-    const customerPhone = normalizeQuoteRepairText(body.customerPhone) || normalizeQuoteRepairText(selectedCustomer.phone);
-    const pipedrivePersonId = normalizeQuoteRepairText(body.pipedrivePersonId) || normalizeQuoteRepairText(selectedCustomer.pipedriveId);
-    const pipedriveDealId = normalizeQuoteRepairText(body.pipedriveDealId) || normalizeQuoteRepairText(selectedDeal.dealId);
-    const pipedriveDealName = normalizeQuoteRepairText(body.pipedriveDealName) || normalizeQuoteRepairText(selectedDeal.dealName);
-    const contractor = normalizeQuoteRepairText(body.contractor) || normalizeQuoteRepairText(selectedCustomer.contractor);
+    const customerPhone =
+      normalizeQuoteRepairText(body.customerPhone) ||
+      normalizeQuoteRepairText(selectedCustomer.phone);
+    const pipedrivePersonId =
+      normalizeQuoteRepairText(body.pipedrivePersonId) ||
+      normalizeQuoteRepairText(selectedCustomer.pipedriveId);
+    const pipedriveDealId =
+      normalizeQuoteRepairText(body.pipedriveDealId) ||
+      normalizeQuoteRepairText(selectedDeal.dealId);
+    const pipedriveDealName =
+      normalizeQuoteRepairText(body.pipedriveDealName) ||
+      normalizeQuoteRepairText(selectedDeal.dealName);
+    const contractor =
+      normalizeQuoteRepairText(body.contractor) ||
+      normalizeQuoteRepairText(selectedCustomer.contractor);
     const customerNotes = normalizeQuoteRepairText(body.customerNotes);
 
     let repairId = "";
-    const created = await prisma.$transaction(async (tx) => {
-      const now = new Date();
-      let sequenceRow = await tx.quoteRepairSequence.findUnique({ where: { year_month: { year: now.getFullYear(), month: now.getMonth() + 1 } } });
-      if (!sequenceRow) {
-        sequenceRow = await tx.quoteRepairSequence.create({ data: { year: now.getFullYear(), month: now.getMonth() + 1, lastNumber: 1 } });
-      } else {
-        sequenceRow = await tx.quoteRepairSequence.update({
-          where: { year_month: { year: now.getFullYear(), month: now.getMonth() + 1 } },
-          data: { lastNumber: { increment: 1 } },
+    const created = await prisma.$transaction(
+      async (tx) => {
+        const now = new Date();
+        let sequenceRow = await tx.quoteRepairSequence.findUnique({
+          where: {
+            year_month: { year: now.getFullYear(), month: now.getMonth() + 1 },
+          },
         });
-      }
+        if (!sequenceRow) {
+          sequenceRow = await tx.quoteRepairSequence.create({
+            data: {
+              year: now.getFullYear(),
+              month: now.getMonth() + 1,
+              lastNumber: 1,
+            },
+          });
+        } else {
+          sequenceRow = await tx.quoteRepairSequence.update({
+            where: {
+              year_month: {
+                year: now.getFullYear(),
+                month: now.getMonth() + 1,
+              },
+            },
+            data: { lastNumber: { increment: 1 } },
+          });
+        }
 
-      const quoteRepairNumber = formatQuoteRepairNumber(now, sequenceRow.lastNumber);
-      const total = toCurrencyDecimal(0);
-      const repair = await tx.quoteRepair.create({
-        data: {
-          quoteRepairNumber,
-          customerName,
-          customerPhone: customerPhone || null,
-          propertyAddress,
-          pipedrivePersonId: pipedrivePersonId || null,
-          pipedriveDealId: pipedriveDealId || null,
-          pipedriveDealName: pipedriveDealName || null,
-          contractor: contractor || null,
-          areas,
-          salesRepId,
-          createdById: user.id,
-          status: "DRAFT",
-        },
-        select: { id: true },
-      });
+        const quoteRepairNumber = formatQuoteRepairNumber(
+          now,
+          sequenceRow.lastNumber,
+        );
+        const total = toCurrencyDecimal(0);
+        const repair = await tx.quoteRepair.create({
+          data: {
+            quoteRepairNumber,
+            customerName,
+            customerPhone: customerPhone || null,
+            propertyAddress,
+            pipedrivePersonId: pipedrivePersonId || null,
+            pipedriveDealId: pipedriveDealId || null,
+            pipedriveDealName: pipedriveDealName || null,
+            contractor: contractor || null,
+            areas,
+            salesRepId,
+            createdById: user.id,
+            status: "DRAFT",
+          },
+          select: { id: true },
+        });
 
-      const version = await tx.quoteRepairVersion.create({
-        data: {
-          quoteRepairId: repair.id,
-          versionNumber: 1,
-          status: "DRAFT",
-          customerNotes: customerNotes || null,
-          createdById: user.id,
-          total,
-        },
-        select: { id: true },
-      });
+        const version = await tx.quoteRepairVersion.create({
+          data: {
+            quoteRepairId: repair.id,
+            versionNumber: 1,
+            status: "DRAFT",
+            customerNotes: customerNotes || null,
+            createdById: user.id,
+            total,
+          },
+          select: { id: true },
+        });
 
-      await tx.quoteRepair.update({
-        where: { id: repair.id },
-        data: {
-          currentVersionId: version.id,
-        },
-      });
+        await tx.quoteRepair.update({
+          where: { id: repair.id },
+          data: {
+            currentVersionId: version.id,
+          },
+        });
 
-      repairId = repair.id;
-      await tx.quoteRepairActivity.create({
-        data: {
-          quoteRepairId: repair.id,
-          actorUserId: user.id,
-          action: "CREATED",
-          afterSummary: quoteRepairNumber,
-        },
-      });
+        repairId = repair.id;
+        await tx.quoteRepairActivity.create({
+          data: {
+            quoteRepairId: repair.id,
+            actorUserId: user.id,
+            action: "CREATED",
+            afterSummary: quoteRepairNumber,
+          },
+        });
 
-      return repair;
-    }, { maxWait: 5000, timeout: 15000 });
+        return repair;
+      },
+      { maxWait: 5000, timeout: 15000 },
+    );
 
     return NextResponse.json({ id: repairId || created.id }, { status: 201 });
   } catch (error: any) {
     if (isUniqueSequenceConflict(error)) {
-      return NextResponse.json({ error: "Quote repair number conflict. Please retry." }, { status: 409 });
+      return NextResponse.json(
+        { error: "Quote repair number conflict. Please retry." },
+        { status: 409 },
+      );
     }
-    return NextResponse.json({ error: error?.message || "Failed to create quote repair" }, { status: 500 });
+    return NextResponse.json(
+      { error: error?.message || "Failed to create quote repair" },
+      { status: 500 },
+    );
   }
 }

@@ -3,7 +3,14 @@ import { getCurrentUserWithRole } from "@/lib/authHelpers";
 import { prisma } from "@/lib/prisma";
 import { canEditQuoteRepair, toCurrencyDecimal } from "@/lib/quoteRepairs";
 
-export async function POST(_request: NextRequest, context: { params: Promise<{ id: string }> }) {
+function normalizeText(value: unknown) {
+  return typeof value === "string" ? value.trim() : "";
+}
+
+export async function POST(
+  request: NextRequest,
+  context: { params: Promise<{ id: string }> },
+) {
   try {
     const { id } = await context.params;
     const { user, appRole } = await getCurrentUserWithRole();
@@ -28,13 +35,23 @@ export async function POST(_request: NextRequest, context: { params: Promise<{ i
       return NextResponse.json({ error: "Not found" }, { status: 404 });
     }
 
-    const isOwner = repair.createdById === user.id || repair.salesRepId === user.id;
+    const isOwner =
+      repair.createdById === user.id || repair.salesRepId === user.id;
     if (!canEditQuoteRepair(appRole, isOwner)) {
       return NextResponse.json({ error: "Forbidden" }, { status: 403 });
     }
 
+    const body = await request.json().catch(() => ({}));
+    const sourceVersionId = normalizeText(body?.sourceVersionId);
+
     const nextVersionNumber = repair.nextVersionNumber;
-    const sourceItems = repair.currentVersion?.items ?? [];
+    const sourceVersion = sourceVersionId
+      ? await prisma.quoteRepairVersion.findFirst({
+          where: { id: sourceVersionId, quoteRepairId: id, deletedAt: null },
+          include: { items: { orderBy: { sortOrder: "asc" } } },
+        })
+      : repair.currentVersion;
+    const sourceItems = sourceVersion?.items ?? [];
 
     const created = await prisma.$transaction(async (tx) => {
       const version = await tx.quoteRepairVersion.create({
@@ -42,8 +59,8 @@ export async function POST(_request: NextRequest, context: { params: Promise<{ i
           quoteRepairId: id,
           versionNumber: nextVersionNumber,
           status: "DRAFT",
-          customerNotes: repair.currentVersion?.customerNotes || null,
-          internalNotes: repair.currentVersion?.internalNotes || null,
+          customerNotes: sourceVersion?.customerNotes || null,
+          internalNotes: sourceVersion?.internalNotes || null,
           createdById: user.id,
           total: toCurrencyDecimal(0),
         },
@@ -62,7 +79,10 @@ export async function POST(_request: NextRequest, context: { params: Promise<{ i
           })),
         });
 
-        const nextTotal = sourceItems.reduce((sum, item) => sum + Number(item.price || 0), 0);
+        const nextTotal = sourceItems.reduce(
+          (sum, item) => sum + Number(item.price || 0),
+          0,
+        );
         await tx.quoteRepairVersion.update({
           where: { id: version.id },
           data: { total: toCurrencyDecimal(nextTotal) },
@@ -85,17 +105,24 @@ export async function POST(_request: NextRequest, context: { params: Promise<{ i
           actorUserId: user.id,
           action: "CREATED_VERSION",
           afterSummary: `Version ${nextVersionNumber}`,
+          details: sourceVersionId ? { sourceVersionId } : undefined,
         },
       });
 
       return version;
     });
 
-    return NextResponse.json({
-      id: created.id,
-      versionNumber: created.versionNumber,
-    }, { status: 201 });
+    return NextResponse.json(
+      {
+        id: created.id,
+        versionNumber: created.versionNumber,
+      },
+      { status: 201 },
+    );
   } catch (error: any) {
-    return NextResponse.json({ error: error?.message || "Failed to create version" }, { status: 500 });
+    return NextResponse.json(
+      { error: error?.message || "Failed to create version" },
+      { status: 500 },
+    );
   }
 }
