@@ -31,6 +31,13 @@ model User {
   approvedQuotes              ClosetQuote[]          @relation("ApprovedQuotes")
   installerQuotes             ClosetQuote[]          @relation("InstallerQuotes")
   submittedQuotes             ClosetQuote[]          @relation("SubmittedQuotes")
+  quoteRepairsCreated         QuoteRepair[]          @relation("QuoteRepairsCreatedBy")
+  quoteRepairsSalesRep        QuoteRepair[]          @relation("QuoteRepairsSalesRep")
+  quoteRepairVersionsCreated  QuoteRepairVersion[]   @relation("QuoteRepairVersionsCreatedBy")
+  quoteRepairVersionsUpdated  QuoteRepairVersion[]   @relation("QuoteRepairVersionsUpdatedBy")
+  quoteRepairVersionsSubmitted QuoteRepairVersion[]  @relation("QuoteRepairVersionsSubmittedBy")
+  quoteRepairVersionsApproved QuoteRepairVersion[]   @relation("QuoteRepairVersionsApprovedBy")
+  quoteRepairActivities       QuoteRepairActivity[]
   sampleRequestsRequested     SampleRequest[]        @relation("SampleRequestRequestedBy")
   sampleRequestHistoryChanged SampleRequestHistory[] @relation("SampleRequestHistoryChangedBy")
   sessions                    Session[]
@@ -1255,6 +1262,149 @@ model CMSClosedInvoice {
   @@index([weekStart])
 }
 
+model QuoteRepair {
+  id                String               @id @default(cuid())
+  quoteRepairNumber String               @unique
+  customerName      String
+  customerPhone     String?
+  propertyAddress   String
+  pipedrivePersonId String?
+  pipedriveDealId   String?
+  pipedriveDealName String?
+  contractor        String?
+  areas             Json
+  salesRepId        String
+  createdById       String
+  status            QuoteRepairStatus    @default(DRAFT)
+  currentVersionId  String?              @unique
+  approvedVersionId String?              @unique
+  nextVersionNumber Int                  @default(2)
+  deletedAt         DateTime?
+  archivedAt        DateTime?
+  createdAt         DateTime             @default(now())
+  updatedAt         DateTime             @updatedAt
+  createdBy         User                 @relation("QuoteRepairsCreatedBy", fields: [createdById], references: [id])
+  salesRep          User                 @relation("QuoteRepairsSalesRep", fields: [salesRepId], references: [id])
+  currentVersion    QuoteRepairVersion?  @relation("QuoteRepairCurrentVersion", fields: [currentVersionId], references: [id], onDelete: SetNull)
+  approvedVersion   QuoteRepairVersion?  @relation("QuoteRepairApprovedVersion", fields: [approvedVersionId], references: [id], onDelete: SetNull)
+  versions          QuoteRepairVersion[]
+  activities        QuoteRepairActivity[]
+
+  @@index([salesRepId])
+  @@index([createdById])
+  @@index([status])
+  @@index([createdAt])
+  @@index([updatedAt])
+}
+
+model QuoteRepairVersion {
+  id               String               @id @default(cuid())
+  quoteRepairId    String
+  versionNumber    Int
+  status           QuoteRepairStatus    @default(DRAFT)
+  customerNotes    String?
+  internalNotes    String?
+  reviewComment    String?
+  total            Decimal              @default(0) @db.Decimal(12, 2)
+  createdById      String
+  updatedById      String?
+  submittedById    String?
+  submittedAt      DateTime?
+  approvedById     String?
+  approvedAt       DateTime?
+  deletedAt        DateTime?
+  createdAt        DateTime             @default(now())
+  updatedAt        DateTime             @updatedAt
+  quoteRepair      QuoteRepair          @relation(fields: [quoteRepairId], references: [id], onDelete: Cascade)
+  createdBy        User                 @relation("QuoteRepairVersionsCreatedBy", fields: [createdById], references: [id])
+  updatedBy        User?                @relation("QuoteRepairVersionsUpdatedBy", fields: [updatedById], references: [id])
+  submittedBy      User?                @relation("QuoteRepairVersionsSubmittedBy", fields: [submittedById], references: [id])
+  approvedBy       User?                @relation("QuoteRepairVersionsApprovedBy", fields: [approvedById], references: [id])
+  currentRepair    QuoteRepair?         @relation("QuoteRepairCurrentVersion")
+  approvedRepair   QuoteRepair?         @relation("QuoteRepairApprovedVersion")
+  items            QuoteRepairItem[]
+  activities       QuoteRepairActivity[]
+
+  @@unique([quoteRepairId, versionNumber])
+  @@index([quoteRepairId, status])
+  @@index([createdById])
+  @@index([updatedById])
+  @@index([submittedById])
+  @@index([approvedById])
+}
+
+model QuoteRepairItem {
+  id                   String               @id @default(cuid())
+  quoteRepairVersionId String
+  sortOrder            Int
+  serviceId            String?
+  service              QuoteRepairService?  @relation(fields: [serviceId], references: [id], onDelete: SetNull)
+  serviceNameSnapshot  String
+  description          String
+  price                Decimal?             @db.Decimal(12, 2)
+  internalNote         String?
+  createdAt            DateTime             @default(now())
+  updatedAt            DateTime             @updatedAt
+  version              QuoteRepairVersion    @relation(fields: [quoteRepairVersionId], references: [id], onDelete: Cascade)
+
+  @@index([quoteRepairVersionId, sortOrder])
+  @@index([serviceId])
+}
+
+model QuoteRepairSequence {
+  id         String   @id @default(cuid())
+  year       Int
+  month      Int
+  lastNumber Int
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+
+  @@unique([year, month])
+}
+
+model QuoteRepairService {
+  id         String   @id @default(cuid())
+  name       String   @unique
+  active     Boolean  @default(true)
+  sortOrder  Int      @default(0)
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+  items      QuoteRepairItem[]
+
+  @@index([active])
+  @@index([sortOrder])
+}
+
+model QuoteRepairActivity {
+  id                   String               @id @default(cuid())
+  quoteRepairId        String
+  quoteRepairVersionId String?
+  actorUserId          String?
+  action               String
+  beforeSummary        String?
+  afterSummary         String?
+  details              Json?
+  createdAt            DateTime             @default(now())
+  quoteRepair          QuoteRepair          @relation(fields: [quoteRepairId], references: [id], onDelete: Cascade)
+  version              QuoteRepairVersion?  @relation(fields: [quoteRepairVersionId], references: [id], onDelete: SetNull)
+  actor                User?                @relation(fields: [actorUserId], references: [id], onDelete: SetNull)
+
+  @@index([quoteRepairId, createdAt])
+  @@index([quoteRepairVersionId])
+  @@index([actorUserId])
+  @@index([action])
+}
+
+model QuoteRepairSettings {
+  id                   String   @id @default(cuid())
+  authorizationText    String   @default("I, ______________________________, authorize the charge amount of $____________ for the services described above.")
+  hoaPermitNote        String   @default("HOA approval and permit are the customer's responsibility when applicable.")
+  defaultCustomerTerms String?
+  footerText           String?
+  createdAt            DateTime @default(now())
+  updatedAt            DateTime @updatedAt
+}
+
 enum Role {
   ADMIN
   SALES
@@ -1436,4 +1586,14 @@ enum CMSInvoiceStatus {
   BOTH_PAYMENTS
   HOLD
   HOLD_SIGNATURE
+}
+
+enum QuoteRepairStatus {
+  DRAFT
+  SUBMITTED
+  UNDER_REVIEW
+  CHANGES_REQUESTED
+  APPROVED
+  VOIDED
+  ARCHIVED
 }

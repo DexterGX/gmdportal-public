@@ -118,6 +118,7 @@ export type ProgramId =
   | "settings"
   | "users"
   | "closetJobs"
+  | "quoteRepairs"
   | "customers"
   | "accessories"
   | "samplesRequest"
@@ -371,6 +372,23 @@ export const programs: ProgramConfig[] = [
         icon: Settings2,
         name: "Estimate Settings",
         path: "/closet-jobs/admin/settings",
+        adminOnly: true,
+      },
+    ],
+    othersItems: [],
+  },
+  {
+    id: "quoteRepairs",
+    name: "Quote Repair",
+    basePath: "/quote-repairs",
+    description: "Create and manage quote repair jobs and versions.",
+    allowedRoles: ["admin", "sales", "office", "finance"],
+    navItems: [
+      { icon: FileText, name: "Quote Repairs", path: "/quote-repairs" },
+      {
+        icon: Settings2,
+        name: "Settings",
+        path: "/quote-repairs/settings",
         adminOnly: true,
       },
     ],
