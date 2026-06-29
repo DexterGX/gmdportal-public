@@ -4,11 +4,11 @@ import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
 import { Plus, Search, Printer, Pencil, Eye, RefreshCw, X } from "lucide-react";
+import type { QuoteRepairStatus } from "@prisma/client";
 import FilterMultiSelect from "@/components/filters/FilterMultiSelect";
 import {
   QUOTE_REPAIR_STATUS_LABELS,
   formatQuoteRepairAreas,
-  type QuoteRepairStatus,
 } from "@/lib/quoteRepairs";
 
 type SalesUser = { id: string; name: string | null; email: string | null };
