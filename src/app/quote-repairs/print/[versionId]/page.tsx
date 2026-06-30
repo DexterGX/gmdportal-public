@@ -45,16 +45,23 @@ export default async function QuoteRepairPrintPage({
   return (
     <div className="quote-print-layout bg-white text-black p-6 print:p-0 print:bg-white print:min-h-0">
       <AutoPrintClient />
-      <div className="max-w-[8.5in] mx-auto space-y-5 print:space-y-4">
+      <div className="w-full max-w-[7.6in] mx-auto space-y-5">
         <section className="border border-gray-900 p-5 print:border-black">
-          <div className="flex items-start justify-between gap-6">
+          <div className="flex items-center justify-between gap-6">
             <div className="flex items-center gap-4">
               <img
                 src="/logo.svg"
                 alt="GM Design"
-                className="w-28 h-28 object-contain"
+                className="w-32 h-32 object-contain shrink-0"
               />
-              <h1 className="text-2xl font-bold">GM Design</h1>
+              <div className="flex h-32 flex-col justify-center leading-tight">
+                <div className="m-0 text-[26px] font-bold leading-none print:text-[26px]">
+                  GM Design
+                </div>
+                <div className="m-0 text-[26px] font-bold leading-none print:text-[26px]">
+                  Quote Repair
+                </div>
+              </div>
             </div>
             <div className="text-sm space-y-1 text-right">
               <p>
