@@ -35,8 +35,8 @@ export function formatUsPhone(value: string | null | undefined) {
 }
 
 export const QUOTE_REPAIR_AREA_OPTIONS = [
-  { value: "MASTER", label: "Master Closet" },
-  { value: "GUEST", label: "Guest Closet" },
+  { value: "MASTER", label: "Master" },
+  { value: "GUEST", label: "Guest" },
   { value: "KITCHEN", label: "Kitchen" },
   { value: "WALL_UNIT", label: "Wall Unit" },
   { value: "GARAGE", label: "Garage" },
