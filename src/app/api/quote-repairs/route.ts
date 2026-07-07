@@ -7,7 +7,6 @@ import {
   formatQuoteRepairNumber,
   normalizeQuoteRepairAreas,
   normalizeQuoteRepairText,
-  toCurrencyDecimal,
 } from "@/lib/quoteRepairs";
 
 type CreatePayload = {
@@ -221,8 +220,6 @@ export async function POST(request: NextRequest) {
     const contractor =
       normalizeQuoteRepairText(body.contractor) ||
       normalizeQuoteRepairText(selectedCustomer.contractor);
-    const customerNotes = normalizeQuoteRepairText(body.customerNotes);
-
     let repairId = "";
     const created = await prisma.$transaction(
       async (tx) => {
@@ -256,7 +253,6 @@ export async function POST(request: NextRequest) {
           now,
           sequenceRow.lastNumber,
         );
-        const total = toCurrencyDecimal(0);
         const repair = await tx.quoteRepair.create({
           data: {
             quoteRepairNumber,
@@ -271,27 +267,9 @@ export async function POST(request: NextRequest) {
             salesRepId,
             createdById: user.id,
             status: "DRAFT",
+            nextVersionNumber: 1,
           },
           select: { id: true },
-        });
-
-        const version = await tx.quoteRepairVersion.create({
-          data: {
-            quoteRepairId: repair.id,
-            versionNumber: 1,
-            status: "DRAFT",
-            customerNotes: customerNotes || null,
-            createdById: user.id,
-            total,
-          },
-          select: { id: true },
-        });
-
-        await tx.quoteRepair.update({
-          where: { id: repair.id },
-          data: {
-            currentVersionId: version.id,
-          },
         });
 
         repairId = repair.id;

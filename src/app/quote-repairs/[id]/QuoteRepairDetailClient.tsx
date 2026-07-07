@@ -175,7 +175,94 @@ export default function QuoteRepairDetailClient({
         <div className="px-5 py-4 border-b border-gray-200 dark:border-gray-700 font-semibold">
           Version History
         </div>
-        <div className="overflow-x-auto">
+        <div className="p-4 space-y-3 md:hidden">
+          {repair.versions.map((version: any) => (
+            <article
+              key={version.id}
+              className={`rounded-lg border border-gray-200 dark:border-gray-700 p-3 space-y-2 ${
+                version.id === repair.currentVersion?.id
+                  ? "bg-blue-50/70 dark:bg-blue-950/20"
+                  : "bg-white dark:bg-gray-900"
+              }`}
+            >
+              <div className="flex items-start justify-between gap-2">
+                <p className="font-semibold text-sm">
+                  Version {version.versionNumber}
+                </p>
+                <span
+                  className={`inline-flex rounded-full px-2 py-0.5 text-xs font-semibold ${statusBadgeClass(version.status as QuoteRepairStatus)}`}
+                >
+                  {
+                    QUOTE_REPAIR_STATUS_LABELS[
+                      normalizeQuoteRepairDisplayStatus(
+                        version.status as QuoteRepairStatus,
+                      )
+                    ]
+                  }
+                </span>
+              </div>
+
+              <div className="grid grid-cols-2 gap-2 text-xs text-gray-600 dark:text-gray-400">
+                <p>
+                  <span className="font-semibold">Created By:</span>{" "}
+                  {version.createdBy?.name || version.createdBy?.email || "-"}
+                </p>
+                <p>
+                  <span className="font-semibold">Updated By:</span>{" "}
+                  {version.updatedBy?.name || version.updatedBy?.email || "-"}
+                </p>
+                <p>
+                  <span className="font-semibold">Created:</span>{" "}
+                  {new Date(version.createdAt).toLocaleString()}
+                </p>
+                <p>
+                  <span className="font-semibold">Total:</span>{" "}
+                  {formatUsd(version.total)}
+                </p>
+                <p className="col-span-2">
+                  <span className="font-semibold">Approved By:</span>{" "}
+                  {version.approvedBy?.name || version.approvedBy?.email || "-"}
+                  {version.approvedAt
+                    ? ` • ${new Date(version.approvedAt).toLocaleDateString()}`
+                    : ""}
+                </p>
+              </div>
+
+              <div className="flex items-center gap-2 flex-wrap">
+                <Link
+                  href={`/quote-repairs/${repair.id}/versions/${version.id}`}
+                  className="inline-flex items-center gap-1 px-2.5 py-1.5 rounded bg-blue-100 text-blue-700 hover:bg-blue-200 text-xs"
+                >
+                  <Eye className="w-3.5 h-3.5" />
+                  View Details
+                </Link>
+                <Link
+                  href={`/quote-repairs/print/${version.id}`}
+                  target="_blank"
+                  className="inline-flex items-center gap-1 px-2.5 py-1.5 rounded bg-slate-100 text-slate-700 hover:bg-slate-200 text-xs"
+                >
+                  <Printer className="w-3.5 h-3.5" />
+                  Print
+                </Link>
+                {userRole === "admin" && (
+                  <button
+                    type="button"
+                    disabled={deletingVersionId === version.id}
+                    onClick={() =>
+                      deleteVersion(version.id, version.versionNumber)
+                    }
+                    className="inline-flex items-center gap-1 px-2.5 py-1.5 rounded bg-red-100 text-red-700 hover:bg-red-200 disabled:opacity-50 text-xs"
+                  >
+                    <Trash2 className="w-3.5 h-3.5" />
+                    {deletingVersionId === version.id ? "Deleting" : "Delete"}
+                  </button>
+                )}
+              </div>
+            </article>
+          ))}
+        </div>
+
+        <div className="hidden md:block overflow-x-auto">
           <table className="w-full min-w-[900px] text-sm">
             <thead className="bg-gray-50 dark:bg-gray-900">
               <tr>
@@ -297,6 +384,11 @@ export default function QuoteRepairDetailClient({
             >
               <div>
                 <div className="font-medium">{entry.action}</div>
+                {entry.afterSummary && (
+                  <div className="text-xs text-gray-600 dark:text-gray-400">
+                    {entry.afterSummary}
+                  </div>
+                )}
                 <div className="text-gray-500">
                   {entry.actor?.name || entry.actor?.email || "-"}
                 </div>
