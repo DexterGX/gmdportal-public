@@ -65,14 +65,6 @@ export async function GET(
     if (!repair)
       return NextResponse.json({ error: "Not found" }, { status: 404 });
 
-    if (
-      appRole === "sales" &&
-      repair.salesRepId !== user.id &&
-      repair.createdById !== user.id
-    ) {
-      return NextResponse.json({ error: "Forbidden" }, { status: 403 });
-    }
-
     return NextResponse.json(repair);
   } catch (error: any) {
     return NextResponse.json(
@@ -171,15 +163,12 @@ export async function DELETE(
     const { user, appRole } = await getCurrentUserWithRole();
     if (!user || appRole === "unassigned")
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+    if (appRole !== "admin")
+      return NextResponse.json({ error: "Forbidden" }, { status: 403 });
 
     const repair = await prisma.quoteRepair.findUnique({ where: { id } });
     if (!repair)
       return NextResponse.json({ error: "Not found" }, { status: 404 });
-
-    const isOwner =
-      repair.createdById === user.id || repair.salesRepId === user.id;
-    if (!canEditQuoteRepair(appRole, isOwner))
-      return NextResponse.json({ error: "Forbidden" }, { status: 403 });
 
     await prisma.quoteRepair.update({
       where: { id },

@@ -56,14 +56,6 @@ export default async function QuoteRepairVersionPage({ params }: PageProps) {
 
   if (!repair) notFound();
 
-  if (
-    appRole === "sales" &&
-    repair.salesRepId !== user.id &&
-    repair.createdById !== user.id
-  ) {
-    redirect("/quote-repairs");
-  }
-
   const requestedVersion = repair.versions.find(
     (entry) => entry.id === versionId,
   );

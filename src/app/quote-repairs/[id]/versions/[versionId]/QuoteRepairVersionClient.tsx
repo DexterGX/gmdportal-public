@@ -8,6 +8,7 @@ import {
   Pencil,
   Plus,
   Printer,
+  RotateCcw,
   Save,
   Trash2,
 } from "lucide-react";
@@ -36,7 +37,24 @@ type VersionFormRow = {
   serviceNameSnapshot: string;
   description: string;
   price: string;
+  internalNote: string;
 };
+
+const REMOVED_ITEM_NOTE_PREFIX = "__REMOVED_ITEM__:";
+
+function getRemovedItemReason(internalNote: string | null | undefined) {
+  const note = String(internalNote || "").trim();
+  if (!note.startsWith(REMOVED_ITEM_NOTE_PREFIX)) return "";
+  return note.slice(REMOVED_ITEM_NOTE_PREFIX.length).trim();
+}
+
+function toRemovedItemNote(reason: string) {
+  return `${REMOVED_ITEM_NOTE_PREFIX}${reason.trim()}`;
+}
+
+function isRemovedRow(row: VersionFormRow) {
+  return Boolean(getRemovedItemReason(row.internalNote));
+}
 
 function buildRowsFromVersion(version: any | null): VersionFormRow[] {
   const sourceItems = Array.isArray(version?.items) ? version.items : [];
@@ -50,6 +68,7 @@ function buildRowsFromVersion(version: any | null): VersionFormRow[] {
         item.price !== null && item.price !== undefined
           ? String(item.price)
           : "",
+      internalNote: item.internalNote || "",
     }),
   );
 
@@ -60,6 +79,7 @@ function buildRowsFromVersion(version: any | null): VersionFormRow[] {
       serviceNameSnapshot: "",
       description: "",
       price: "",
+      internalNote: "",
     });
   }
 
@@ -150,7 +170,9 @@ export default function QuoteRepairVersionClient({
     selectedVersion?.id === repair.currentVersion?.id &&
     selectedVersion?.status === "DRAFT";
   const canApproveSelectedVersion =
-    userRole === "admin" &&
+    (userRole === "admin" ||
+      (userRole === "sales" &&
+        (repair.salesRepId === userId || repair.createdById === userId))) &&
     selectedVersion?.id === repair.currentVersion?.id &&
     selectedVersion?.status !== "APPROVED";
 
@@ -162,7 +184,8 @@ export default function QuoteRepairVersionClient({
 
   const versionTotal = useMemo(() => {
     return rows.reduce(
-      (sum, row) => sum + parsePriceToNumber(row.price || ""),
+      (sum, row) =>
+        sum + (isRemovedRow(row) ? 0 : parsePriceToNumber(row.price || "")),
       0,
     );
   }, [rows]);
@@ -184,11 +207,41 @@ export default function QuoteRepairVersionClient({
         serviceNameSnapshot: "",
         description: "",
         price: "",
+        internalNote: "",
       },
     ]);
   };
 
   const deleteRow = (index: number) => {
+    const row = rows[index];
+    if (!row) return;
+
+    const rowHasContent =
+      Boolean(row.serviceId || row.serviceNameSnapshot || row.description) ||
+      Boolean(parsePriceToNumber(row.price || "") !== 0);
+
+    if (isRemovedRow(row)) {
+      updateRow(index, { internalNote: "" });
+      return;
+    }
+
+    if (rowHasContent) {
+      const reason = window
+        .prompt("Reason for deleting this item:", "")
+        ?.trim();
+      if (!reason) return;
+
+      const serviceLabel =
+        row.serviceNameSnapshot ||
+        services.find((service) => service.id === row.serviceId)?.name ||
+        `Item ${index + 1}`;
+      const noteLine = `Deleted item #${index + 1} (${serviceLabel}): ${reason}`;
+
+      updateRow(index, { internalNote: toRemovedItemNote(reason) });
+      setCustomerNotes((prev) => (prev ? `${prev}\n${noteLine}` : noteLine));
+      return;
+    }
+
     setRows((prev) => {
       if (prev.length <= MIN_ROWS) {
         const next = [...prev];
@@ -198,6 +251,7 @@ export default function QuoteRepairVersionClient({
           serviceNameSnapshot: "",
           description: "",
           price: "",
+          internalNote: "",
         };
         return next;
       }
@@ -220,10 +274,12 @@ export default function QuoteRepairVersionClient({
             customerNotes,
             internalNotes,
             items: rows.map((row) => ({
+              id: row.id,
               serviceId: row.serviceId || null,
               serviceNameSnapshot: row.serviceNameSnapshot,
               description: row.description,
               price: row.price,
+              internalNote: row.internalNote || null,
             })),
           }),
         },
@@ -253,10 +309,12 @@ export default function QuoteRepairVersionClient({
           customerNotes,
           internalNotes,
           items: rows.map((row) => ({
+            id: row.id,
             serviceId: row.serviceId || null,
             serviceNameSnapshot: row.serviceNameSnapshot,
             description: row.description,
             price: row.price,
+            internalNote: row.internalNote || null,
           })),
         }),
       });
@@ -433,7 +491,144 @@ export default function QuoteRepairVersionClient({
             </div>
           )}
 
-          <div className="overflow-x-auto rounded-lg border border-gray-300 dark:border-gray-600">
+          <div className="space-y-3 md:hidden">
+            {rows.map((row, index) => (
+              <article
+                key={row.id}
+                className={`rounded-lg border border-gray-300 dark:border-gray-600 p-3 space-y-3 ${isRemovedRow(row) ? "opacity-70 bg-gray-50 dark:bg-gray-900" : "bg-white dark:bg-gray-900"}`}
+              >
+                <div className="flex items-center justify-between">
+                  <p className="text-sm font-semibold">Item #{index + 1}</p>
+                  {canEditSelectedVersion ? (
+                    <button
+                      type="button"
+                      onClick={() => deleteRow(index)}
+                      className={`inline-flex items-center justify-center w-8 h-8 rounded ${isRemovedRow(row) ? "bg-green-100 text-green-700 hover:bg-green-200" : "bg-red-100 text-red-700 hover:bg-red-200"}`}
+                      aria-label={`${isRemovedRow(row) ? "Undo delete" : "Delete row"} ${index + 1}`}
+                    >
+                      {isRemovedRow(row) ? (
+                        <RotateCcw className="w-4 h-4" />
+                      ) : (
+                        <Trash2 className="w-4 h-4" />
+                      )}
+                    </button>
+                  ) : (
+                    <span className="text-xs text-gray-400">Read only</span>
+                  )}
+                </div>
+
+                <div>
+                  <label className="block text-xs font-semibold mb-1">
+                    Service
+                  </label>
+                  {canEditSelectedVersion && !isRemovedRow(row) ? (
+                    <select
+                      value={row.serviceId}
+                      onChange={(event) => {
+                        const value = event.target.value;
+                        const selectedService = services.find(
+                          (service) => service.id === value,
+                        );
+                        updateRow(index, {
+                          serviceId: value,
+                          serviceNameSnapshot: selectedService?.name || "",
+                        });
+                      }}
+                      className="w-full rounded-md border border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-900 px-2 py-2"
+                    >
+                      <option value="">Select service</option>
+                      {services.map((service) => (
+                        <option key={service.id} value={service.id}>
+                          {service.name}
+                        </option>
+                      ))}
+                    </select>
+                  ) : (
+                    <div
+                      className={`rounded-md border border-gray-200 dark:border-gray-700 px-2 py-2 text-sm ${isRemovedRow(row) ? "line-through text-gray-500" : ""}`}
+                    >
+                      {row.serviceNameSnapshot || "-"}
+                    </div>
+                  )}
+                </div>
+
+                <div>
+                  <label className="block text-xs font-semibold mb-1">
+                    Description
+                  </label>
+                  {canEditSelectedVersion && !isRemovedRow(row) ? (
+                    <textarea
+                      value={row.description}
+                      onChange={(event) => {
+                        updateRow(index, {
+                          description: event.target.value,
+                        });
+                        event.currentTarget.style.height = "auto";
+                        event.currentTarget.style.height = `${event.currentTarget.scrollHeight}px`;
+                      }}
+                      rows={2}
+                      className="w-full rounded-md border border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-900 px-2 py-2 resize-none overflow-hidden"
+                    />
+                  ) : (
+                    <div
+                      className={`rounded-md border border-gray-200 dark:border-gray-700 px-2 py-2 text-sm whitespace-pre-wrap break-words ${isRemovedRow(row) ? "line-through text-gray-500" : ""}`}
+                    >
+                      {row.description || "-"}
+                    </div>
+                  )}
+                </div>
+
+                <div>
+                  <label className="block text-xs font-semibold mb-1">
+                    Price
+                  </label>
+                  {canEditSelectedVersion && !isRemovedRow(row) ? (
+                    <div className="relative">
+                      <span className="absolute left-2 top-1/2 -translate-y-1/2 text-gray-500">
+                        $
+                      </span>
+                      <input
+                        type="text"
+                        inputMode="decimal"
+                        value={row.price}
+                        onChange={(event) =>
+                          updateRow(index, {
+                            price: formatPriceInput(event.target.value),
+                          })
+                        }
+                        onBlur={() => {
+                          if (!row.price.trim()) {
+                            updateRow(index, { price: "" });
+                            return;
+                          }
+                          updateRow(index, {
+                            price: formatPriceInput(
+                              parsePriceToNumber(row.price).toFixed(2),
+                            ),
+                          });
+                        }}
+                        className="w-full rounded-md border border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-900 pl-6 pr-2 py-2"
+                        placeholder="0.00"
+                      />
+                    </div>
+                  ) : (
+                    <div
+                      className={`rounded-md border border-gray-200 dark:border-gray-700 px-2 py-2 text-sm ${isRemovedRow(row) ? "line-through text-gray-500" : ""}`}
+                    >
+                      {formatUsd(parsePriceToNumber(row.price || "0"))}
+                    </div>
+                  )}
+                </div>
+              </article>
+            ))}
+
+            <div className="rounded-lg border border-gray-300 dark:border-gray-600 bg-gray-50 dark:bg-gray-900 px-3 py-2 flex items-center justify-between font-semibold text-sm">
+              <span>Total</span>
+              <span>{formatUsd(versionTotal)}</span>
+            </div>
+          </div>
+
+          <div className="hidden md:block overflow-x-auto rounded-lg border border-gray-300 dark:border-gray-600">
             <table className="w-full min-w-[980px] text-sm border-collapse">
               <thead className="bg-blue-900 text-white">
                 <tr>
@@ -456,7 +651,10 @@ export default function QuoteRepairVersionClient({
               </thead>
               <tbody>
                 {rows.map((row, index) => (
-                  <tr key={row.id} className="bg-white dark:bg-gray-900">
+                  <tr
+                    key={row.id}
+                    className={`bg-white dark:bg-gray-900 ${isRemovedRow(row) ? "opacity-70" : ""}`}
+                  >
                     <td className="px-3 py-2 text-gray-500 border border-gray-300 dark:border-gray-600 align-top">
                       {index + 1}
                     </td>
@@ -465,17 +663,21 @@ export default function QuoteRepairVersionClient({
                         <button
                           type="button"
                           onClick={() => deleteRow(index)}
-                          className="inline-flex items-center justify-center w-7 h-7 rounded bg-red-100 text-red-700 hover:bg-red-200"
-                          aria-label={`Delete row ${index + 1}`}
+                          className={`inline-flex items-center justify-center w-7 h-7 rounded ${isRemovedRow(row) ? "bg-green-100 text-green-700 hover:bg-green-200" : "bg-red-100 text-red-700 hover:bg-red-200"}`}
+                          aria-label={`${isRemovedRow(row) ? "Undo delete" : "Delete row"} ${index + 1}`}
                         >
-                          <Trash2 className="w-4 h-4" />
+                          {isRemovedRow(row) ? (
+                            <RotateCcw className="w-4 h-4" />
+                          ) : (
+                            <Trash2 className="w-4 h-4" />
+                          )}
                         </button>
                       ) : (
                         <span className="text-gray-300">-</span>
                       )}
                     </td>
                     <td className="px-3 py-2 border border-gray-300 dark:border-gray-600 align-top">
-                      {canEditSelectedVersion ? (
+                      {canEditSelectedVersion && !isRemovedRow(row) ? (
                         <select
                           value={row.serviceId}
                           onChange={(event) => {
@@ -498,13 +700,15 @@ export default function QuoteRepairVersionClient({
                           ))}
                         </select>
                       ) : (
-                        <div className="py-1">
+                        <div
+                          className={`py-1 ${isRemovedRow(row) ? "line-through text-gray-500" : ""}`}
+                        >
                           {row.serviceNameSnapshot || "-"}
                         </div>
                       )}
                     </td>
                     <td className="px-3 py-2 border border-gray-300 dark:border-gray-600 align-top">
-                      {canEditSelectedVersion ? (
+                      {canEditSelectedVersion && !isRemovedRow(row) ? (
                         <textarea
                           value={row.description}
                           onChange={(event) => {
@@ -518,13 +722,15 @@ export default function QuoteRepairVersionClient({
                           className="w-full rounded-md border border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-900 px-2 py-1 resize-none overflow-hidden"
                         />
                       ) : (
-                        <div className="py-1 whitespace-pre-wrap break-words">
+                        <div
+                          className={`py-1 whitespace-pre-wrap break-words ${isRemovedRow(row) ? "line-through text-gray-500" : ""}`}
+                        >
                           {row.description || "-"}
                         </div>
                       )}
                     </td>
                     <td className="px-3 py-2 border border-gray-300 dark:border-gray-600 align-top">
-                      {canEditSelectedVersion ? (
+                      {canEditSelectedVersion && !isRemovedRow(row) ? (
                         <div className="relative">
                           <span className="absolute left-2 top-1/2 -translate-y-1/2 text-gray-500">
                             $
@@ -554,7 +760,9 @@ export default function QuoteRepairVersionClient({
                           />
                         </div>
                       ) : (
-                        <div className="py-1">
+                        <div
+                          className={`py-1 ${isRemovedRow(row) ? "line-through text-gray-500" : ""}`}
+                        >
                           {formatUsd(parsePriceToNumber(row.price || "0"))}
                         </div>
                       )}

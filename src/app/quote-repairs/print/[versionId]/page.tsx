@@ -8,6 +8,14 @@ import {
 } from "@/lib/quoteRepairs";
 import AutoPrintClient from "./AutoPrintClient";
 
+const REMOVED_ITEM_NOTE_PREFIX = "__REMOVED_ITEM__:";
+
+function isRemovedItem(note: unknown) {
+  return String(note ?? "")
+    .trim()
+    .startsWith(REMOVED_ITEM_NOTE_PREFIX);
+}
+
 export default async function QuoteRepairPrintPage({
   params,
 }: {
@@ -129,17 +137,30 @@ export default async function QuoteRepairPrintPage({
             </thead>
             <tbody>
               {version.items.map((item, index) => (
-                <tr key={item.id}>
-                  <td className="border border-gray-900 align-top px-2 py-2">
+                <tr
+                  key={item.id}
+                  className={
+                    isRemovedItem(item.internalNote) ? "text-gray-500" : ""
+                  }
+                >
+                  <td
+                    className={`border border-gray-900 align-top px-2 py-2 ${isRemovedItem(item.internalNote) ? "line-through" : ""}`}
+                  >
                     {index + 1}
                   </td>
-                  <td className="border border-gray-900 align-top px-2 py-2">
+                  <td
+                    className={`border border-gray-900 align-top px-2 py-2 ${isRemovedItem(item.internalNote) ? "line-through" : ""}`}
+                  >
                     {item.serviceNameSnapshot}
                   </td>
-                  <td className="border border-gray-900 align-top px-2 py-2 whitespace-pre-wrap break-words">
+                  <td
+                    className={`border border-gray-900 align-top px-2 py-2 whitespace-pre-wrap break-words ${isRemovedItem(item.internalNote) ? "line-through" : ""}`}
+                  >
                     {item.description}
                   </td>
-                  <td className="border border-gray-900 align-top px-2 py-2 whitespace-nowrap">
+                  <td
+                    className={`border border-gray-900 align-top px-2 py-2 whitespace-nowrap ${isRemovedItem(item.internalNote) ? "line-through" : ""}`}
+                  >
                     {item.price
                       ? formatUsd(item.price as unknown as number)
                       : ""}

@@ -279,100 +279,185 @@ export default function QuoteRepairsClient({
           No quote repairs match your filters.
         </div>
       ) : (
-        <div className="rounded-xl border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800 overflow-hidden">
-          <table className="w-full text-sm">
-            <thead className="bg-gray-50 dark:bg-gray-900 border-b border-gray-200 dark:border-gray-700">
-              <tr>
-                {[
-                  "QR #",
-                  "Customer",
-                  "Address",
-                  "Areas",
-                  "Sales Rep",
-                  "Current Version",
-                  "Status",
-                  "Total",
-                  "Created",
-                  "Actions",
-                ].map((label) => (
-                  <th
-                    key={label}
-                    className="px-4 py-3 text-left text-xs font-semibold text-gray-600 dark:text-gray-400 uppercase tracking-wide"
+        <>
+          <div className="space-y-3 md:hidden">
+            {rows.map((row) => (
+              <article
+                key={row.id}
+                className="rounded-xl border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800 p-4 space-y-3"
+              >
+                <div className="flex items-start justify-between gap-3">
+                  <div>
+                    <p className="font-semibold text-gray-900 dark:text-gray-100">
+                      {row.quoteRepairNumber}
+                    </p>
+                    <p className="text-sm text-gray-700 dark:text-gray-300">
+                      {row.customerName}
+                    </p>
+                  </div>
+                  <span
+                    className={`rounded-full px-2 py-1 text-xs font-semibold ${getStatusPillClass(toDisplayStatus(row.status))}`}
                   >
-                    {label}
-                  </th>
-                ))}
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-gray-100 dark:divide-gray-700">
-              {rows.map((row) => (
-                <tr
-                  key={row.id}
-                  className="hover:bg-gray-50 dark:hover:bg-gray-900/50"
-                >
-                  <td className="px-4 py-4 font-semibold text-gray-900 dark:text-gray-100 whitespace-nowrap">
-                    {row.quoteRepairNumber}
-                  </td>
-                  <td className="px-4 py-4 text-gray-900 dark:text-gray-100 whitespace-nowrap">
-                    {row.customerName}
-                  </td>
-                  <td className="px-4 py-4 text-gray-700 dark:text-gray-300">
+                    {QUOTE_REPAIR_STATUS_LABELS[toDisplayStatus(row.status)]}
+                  </span>
+                </div>
+
+                <div className="text-sm space-y-1 text-gray-700 dark:text-gray-300">
+                  <p>
+                    <span className="font-semibold">Address:</span>{" "}
                     {row.propertyAddress}
-                  </td>
-                  <td className="px-4 py-4 text-gray-700 dark:text-gray-300">
+                  </p>
+                  <p>
+                    <span className="font-semibold">Areas:</span>{" "}
                     {formatQuoteRepairAreas(row.areas)}
-                  </td>
-                  <td className="px-4 py-4 text-gray-700 dark:text-gray-300 whitespace-nowrap">
+                  </p>
+                  <p>
+                    <span className="font-semibold">Sales Rep:</span>{" "}
                     {row.salesRep?.name || row.salesRep?.email || "-"}
-                  </td>
-                  <td className="px-4 py-4 text-gray-700 dark:text-gray-300">
-                    {row.currentVersionNumber ?? "-"}
-                  </td>
-                  <td className="px-4 py-4">
-                    <span
-                      className={`rounded-full px-2 py-1 text-xs font-semibold ${getStatusPillClass(toDisplayStatus(row.status))}`}
+                  </p>
+                </div>
+
+                <div className="grid grid-cols-3 gap-2 text-xs text-gray-600 dark:text-gray-400">
+                  <div>
+                    <p className="font-semibold">Version</p>
+                    <p>{row.currentVersionNumber ?? "-"}</p>
+                  </div>
+                  <div>
+                    <p className="font-semibold">Total</p>
+                    <p>{formatCurrency(row.total)}</p>
+                  </div>
+                  <div>
+                    <p className="font-semibold">Created</p>
+                    <p>{new Date(row.createdAt).toLocaleDateString()}</p>
+                  </div>
+                </div>
+
+                <div className="flex items-center gap-2">
+                  <button
+                    type="button"
+                    onClick={() => router.push(`/quote-repairs/${row.id}`)}
+                    className="inline-flex flex-1 items-center justify-center gap-1 rounded-md bg-blue-100 text-blue-700 px-3 py-2 hover:bg-blue-200"
+                  >
+                    <Eye className="w-4 h-4" />
+                    View Details
+                  </button>
+                  {userRole === "admin" && (
+                    <button
+                      type="button"
+                      disabled={deletingId === row.id}
+                      onClick={() =>
+                        deleteRepair(row.id, row.quoteRepairNumber)
+                      }
+                      className="inline-flex items-center justify-center gap-1 rounded-md bg-red-100 text-red-700 px-3 py-2 hover:bg-red-200 disabled:opacity-50"
                     >
-                      {QUOTE_REPAIR_STATUS_LABELS[toDisplayStatus(row.status)]}
-                    </span>
-                  </td>
-                  <td className="px-4 py-4 text-gray-700 dark:text-gray-300 whitespace-nowrap">
-                    {formatCurrency(row.total)}
-                  </td>
-                  <td className="px-4 py-4 text-gray-500 whitespace-nowrap">
-                    {new Date(row.createdAt).toLocaleDateString()}
-                  </td>
-                  <td className="px-4 py-4 whitespace-nowrap">
-                    <div className="flex items-center gap-2">
-                      <button
-                        type="button"
-                        onClick={() => router.push(`/quote-repairs/${row.id}`)}
-                        className="inline-flex items-center gap-1 rounded-md bg-blue-100 text-blue-700 px-3 py-1.5 hover:bg-blue-200"
+                      <Trash2 className="w-4 h-4" />
+                      {deletingId === row.id ? "Deleting..." : "Delete"}
+                    </button>
+                  )}
+                </div>
+              </article>
+            ))}
+          </div>
+
+          <div className="hidden md:block rounded-xl border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800 overflow-hidden">
+            <table className="w-full text-sm">
+              <thead className="bg-gray-50 dark:bg-gray-900 border-b border-gray-200 dark:border-gray-700">
+                <tr>
+                  {[
+                    "QR #",
+                    "Customer",
+                    "Address",
+                    "Areas",
+                    "Sales Rep",
+                    "Current Version",
+                    "Status",
+                    "Total",
+                    "Created",
+                    "Actions",
+                  ].map((label) => (
+                    <th
+                      key={label}
+                      className="px-4 py-3 text-left text-xs font-semibold text-gray-600 dark:text-gray-400 uppercase tracking-wide"
+                    >
+                      {label}
+                    </th>
+                  ))}
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-gray-100 dark:divide-gray-700">
+                {rows.map((row) => (
+                  <tr
+                    key={row.id}
+                    className="hover:bg-gray-50 dark:hover:bg-gray-900/50"
+                  >
+                    <td className="px-4 py-4 font-semibold text-gray-900 dark:text-gray-100 whitespace-nowrap">
+                      {row.quoteRepairNumber}
+                    </td>
+                    <td className="px-4 py-4 text-gray-900 dark:text-gray-100 whitespace-nowrap">
+                      {row.customerName}
+                    </td>
+                    <td className="px-4 py-4 text-gray-700 dark:text-gray-300">
+                      {row.propertyAddress}
+                    </td>
+                    <td className="px-4 py-4 text-gray-700 dark:text-gray-300">
+                      {formatQuoteRepairAreas(row.areas)}
+                    </td>
+                    <td className="px-4 py-4 text-gray-700 dark:text-gray-300 whitespace-nowrap">
+                      {row.salesRep?.name || row.salesRep?.email || "-"}
+                    </td>
+                    <td className="px-4 py-4 text-gray-700 dark:text-gray-300">
+                      {row.currentVersionNumber ?? "-"}
+                    </td>
+                    <td className="px-4 py-4">
+                      <span
+                        className={`rounded-full px-2 py-1 text-xs font-semibold ${getStatusPillClass(toDisplayStatus(row.status))}`}
                       >
-                        <Eye className="w-4 h-4" />
-                        View Details
-                      </button>
-                      {(userRole === "admin" ||
-                        (userRole === "sales" &&
-                          row.salesRep?.id === userId)) && (
+                        {
+                          QUOTE_REPAIR_STATUS_LABELS[
+                            toDisplayStatus(row.status)
+                          ]
+                        }
+                      </span>
+                    </td>
+                    <td className="px-4 py-4 text-gray-700 dark:text-gray-300 whitespace-nowrap">
+                      {formatCurrency(row.total)}
+                    </td>
+                    <td className="px-4 py-4 text-gray-500 whitespace-nowrap">
+                      {new Date(row.createdAt).toLocaleDateString()}
+                    </td>
+                    <td className="px-4 py-4 whitespace-nowrap">
+                      <div className="flex items-center gap-2">
                         <button
                           type="button"
-                          disabled={deletingId === row.id}
                           onClick={() =>
-                            deleteRepair(row.id, row.quoteRepairNumber)
+                            router.push(`/quote-repairs/${row.id}`)
                           }
-                          className="inline-flex items-center gap-1 rounded-md bg-red-100 text-red-700 px-3 py-1.5 hover:bg-red-200 disabled:opacity-50"
+                          className="inline-flex items-center gap-1 rounded-md bg-blue-100 text-blue-700 px-3 py-1.5 hover:bg-blue-200"
                         >
-                          <Trash2 className="w-4 h-4" />
-                          {deletingId === row.id ? "Deleting..." : "Delete"}
+                          <Eye className="w-4 h-4" />
+                          View Details
                         </button>
-                      )}
-                    </div>
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
+                        {userRole === "admin" && (
+                          <button
+                            type="button"
+                            disabled={deletingId === row.id}
+                            onClick={() =>
+                              deleteRepair(row.id, row.quoteRepairNumber)
+                            }
+                            className="inline-flex items-center gap-1 rounded-md bg-red-100 text-red-700 px-3 py-1.5 hover:bg-red-200 disabled:opacity-50"
+                          >
+                            <Trash2 className="w-4 h-4" />
+                            {deletingId === row.id ? "Deleting..." : "Delete"}
+                          </button>
+                        )}
+                      </div>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </>
       )}
 
       <div className="flex items-center justify-between text-sm text-gray-500">

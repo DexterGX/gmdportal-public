@@ -10,10 +10,12 @@ import {
 } from "@/lib/quoteRepairs";
 
 type UpdateVersionItem = {
+  id?: string | null;
   serviceId?: string | null;
   serviceNameSnapshot?: string;
   description?: string;
   price?: string | number | null;
+  internalNote?: string | null;
 };
 
 type UpdateVersionPayload = {
@@ -21,6 +23,14 @@ type UpdateVersionPayload = {
   internalNotes?: string;
   items?: UpdateVersionItem[];
 };
+
+const REMOVED_ITEM_NOTE_PREFIX = "__REMOVED_ITEM__:";
+
+function getRemovedItemReason(note: unknown) {
+  const value = normalizeQuoteRepairText(note);
+  if (!value.startsWith(REMOVED_ITEM_NOTE_PREFIX)) return "";
+  return value.slice(REMOVED_ITEM_NOTE_PREFIX.length).trim();
+}
 
 function toOptionalDecimal(value: unknown): Prisma.Decimal | null {
   if (value === null || value === undefined || String(value).trim() === "") {
@@ -114,6 +124,9 @@ export async function PATCH(
           normalizeQuoteRepairText(item.serviceNameSnapshot);
         const description = normalizeQuoteRepairText(item.description);
         const price = toOptionalDecimal(item.price);
+        const internalNote =
+          normalizeQuoteRepairText(item.internalNote) || null;
+        const removedReason = getRemovedItemReason(internalNote);
 
         if (
           !isQuoteRepairItemMeaningful({
@@ -126,25 +139,45 @@ export async function PATCH(
         }
 
         return {
+          sourceRowId: normalizeQuoteRepairText(item.id) || null,
           serviceId,
           serviceNameSnapshot,
           description,
           price,
+          internalNote,
+          removedReason,
         };
       })
       .filter(
         (
           item,
         ): item is {
+          sourceRowId: string | null;
           serviceId: string | null;
           serviceNameSnapshot: string;
           description: string;
           price: Prisma.Decimal | null;
+          internalNote: string | null;
+          removedReason: string;
         } => Boolean(item),
       );
 
+    const previousRemovedById = new Map(
+      version.items
+        .map(
+          (item) => [item.id, getRemovedItemReason(item.internalNote)] as const,
+        )
+        .filter(([, reason]) => Boolean(reason)),
+    );
+    const newlyRemovedRows = meaningfulRows.filter(
+      (row) =>
+        Boolean(row.removedReason) &&
+        Boolean(row.sourceRowId) &&
+        !previousRemovedById.has(row.sourceRowId as string),
+    );
+
     const total = meaningfulRows.reduce(
-      (sum, row) => sum + Number(row.price || 0),
+      (sum, row) => sum + (row.removedReason ? 0 : Number(row.price || 0)),
       0,
     );
 
@@ -162,6 +195,7 @@ export async function PATCH(
             serviceNameSnapshot: row.serviceNameSnapshot,
             description: row.description,
             price: row.price,
+            internalNote: row.internalNote,
           })),
         });
       }
@@ -190,6 +224,23 @@ export async function PATCH(
           action: "UPDATED_VERSION",
         },
       });
+
+      if (newlyRemovedRows.length > 0) {
+        await tx.quoteRepairActivity.createMany({
+          data: newlyRemovedRows.map((row) => ({
+            quoteRepairId: id,
+            quoteRepairVersionId: versionId,
+            actorUserId: user.id,
+            action: "REMOVED_ITEM",
+            afterSummary: `${row.serviceNameSnapshot || "Item"}: ${row.removedReason}`,
+            details: {
+              service: row.serviceNameSnapshot || null,
+              description: row.description || null,
+              reason: row.removedReason,
+            },
+          })),
+        });
+      }
     });
 
     return NextResponse.json({ ok: true });
