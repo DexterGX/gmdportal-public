@@ -238,7 +238,9 @@ export default function QuoteRepairVersionClient({
       const noteLine = `Deleted item #${index + 1} (${serviceLabel}): ${reason}`;
 
       updateRow(index, { internalNote: toRemovedItemNote(reason) });
-      setCustomerNotes((prev) => (prev ? `${prev}\n${noteLine}` : noteLine));
+      setCustomerNotes((prev: string) =>
+        prev ? `${prev}\n${noteLine}` : noteLine,
+      );
       return;
     }
 
