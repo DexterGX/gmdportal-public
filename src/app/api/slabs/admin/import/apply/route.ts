@@ -5,33 +5,124 @@ import { getCurrentUserWithRole } from "@/lib/authHelpers";
 import { prisma } from "@/lib/prisma";
 import { Decimal } from "@prisma/client/runtime/library";
 import type { NormalizedImportSlab } from "@/lib/slabsImport";
-import { mapThicknessToEnum } from "@/lib/slabsImport";
 import type { SlabFinish, SlabThickness, SlabStatus } from "@prisma/client";
 
 function mapFinishToEnum(finish: string): SlabFinish {
-  const upper = finish.toUpperCase().replace(/\s/g, "_");
-  return upper as SlabFinish;
+  const normalized = finish.toUpperCase().replace(/[^A-Z0-9]+/g, "_").replace(/^_+|_+$/g, "");
+
+  const knownFinishes = new Set<SlabFinish>([
+    "CONCRETE",
+    "DUAL",
+    "HONED",
+    "LEATHER",
+    "MATTE",
+    "NATURAL",
+    "OTHER",
+    "POLISHED",
+    "ROUGH",
+    "STONE",
+    "ULTRA_ROUGH",
+    "SATIN",
+    "SATIN_HONED",
+    "PATINATO",
+    "LEVIGATO_PEARL",
+    "GLAM",
+    "GINZA",
+    "HOLOS",
+    "TWILL",
+    "JUTA",
+    "DENIM",
+    "DAMIER",
+    "LAVA",
+    "SILK",
+    "LUXE",
+    "BRUSHED",
+    "TEXTURED",
+    "SMOOTH_MATTE",
+    "TEXTURED_MATTE",
+    "VELVET",
+    "TEXTURED_VELVET",
+    "SATIN_RIDGE",
+    "SUEDE",
+    "DECOR_POLISHED",
+    "NANOTECH_POLISHED",
+    "NATURAL_TOUCH",
+    "RIVERWASHED",
+    "SLATE",
+    "ULTRASOFT",
+    "SOFT_TOUCH",
+    "BOOKMATCH",
+  ]);
+
+  if (knownFinishes.has(normalized as SlabFinish)) {
+    return normalized as SlabFinish;
+  }
+
+  // Common vendor prefixes/suffixes should still map to an existing enum.
+  if (normalized.includes("SOFT_TOUCH")) return "SOFT_TOUCH";
+  if (normalized.includes("MATTE")) return "MATTE";
+  if (normalized.includes("POLISHED")) return "POLISHED";
+  if (normalized.includes("HONED")) return "HONED";
+  if (normalized.includes("LEATHER")) return "LEATHER";
+  if (normalized.includes("NATURAL")) return "NATURAL";
+
+  // Unknown finish values are accepted by mapping to OTHER.
+  return "OTHER";
 }
 
 function mapStatusToEnum(status: string): SlabStatus {
   const upper = status.toUpperCase().replace(/\s/g, "_");
-  return upper as SlabStatus;
+  switch (upper) {
+    case "AVAILABLE":
+      return "AVAILABLE";
+    case "DISCONTINUED":
+      return "DISCONTINUED";
+    case "UNAVAILABLE":
+      return "UNAVAILABLE";
+    default:
+      return "AVAILABLE";
+  }
 }
 
 function mapThicknessStringToEnum(thickness: string): SlabThickness {
   const lower = thickness.toLowerCase().replace(/\s/g, "");
-  switch (lower) {
-    case "2cm":
-      return "TWO_CM";
-    case "3cm":
-      return "THREE_CM";
-    case "8mm":
-      return "EIGHT_MM";
-    case "12mm":
-      return "TWELVE_MM";
-    default:
-      return "TWO_CM";
+
+  if (
+    lower.includes("2cm") ||
+    lower.includes("20mm") ||
+    lower === "two_cm" ||
+    lower === "twocm"
+  ) {
+    return "TWO_CM";
   }
+
+  if (
+    lower.includes("3cm") ||
+    lower.includes("30mm") ||
+    lower === "three_cm" ||
+    lower === "threecm"
+  ) {
+    return "THREE_CM";
+  }
+
+  if (
+    lower.includes("15mm") ||
+    lower === "fifteen_mm" ||
+    lower === "fifteenmm"
+  ) {
+    return "FIFTEEN_MM";
+  }
+
+  if (lower.includes("12mm") || lower === "twelve_mm" || lower === "twelvemm") {
+    return "TWELVE_MM";
+  }
+
+  if (lower.includes("8mm") || lower === "eight_mm" || lower === "eightmm") {
+    return "EIGHT_MM";
+  }
+
+  // Unknown thickness values are accepted by mapping to a safe default.
+  return "TWO_CM";
 }
 
 type ApplyPayload = {

@@ -323,6 +323,9 @@ Daltile,Q1,OQ30,Elegant White,POLISHED,136,79,3cm,,2800.00,AVAILABLE`;
                     {summary.newCount} new, {summary.changedCount} updated,{" "}
                     {summary.discontinuedCount} discontinued
                   </p>
+                  <p className="text-xs text-gray-500 dark:text-gray-400">
+                    {summary.totalProcessed} rows parsed from file
+                  </p>
                 </div>
               </div>
               <div className="flex gap-2">
@@ -390,6 +393,7 @@ Daltile,Q1,OQ30,Elegant White,POLISHED,136,79,3cm,,2800.00,AVAILABLE`;
                 <table className="w-full text-sm">
                   <thead className="text-left text-gray-700 dark:text-gray-300 border-b border-gray-200 dark:border-gray-700">
                     <tr>
+                      <th className="pb-2 pr-4 font-medium">#</th>
                       <th className="pb-2 pr-4 font-medium">Brand</th>
                       <th className="pb-2 pr-4 font-medium">Color</th>
                       <th className="pb-2 pr-4 font-medium">Finish</th>
@@ -409,13 +413,18 @@ Daltile,Q1,OQ30,Elegant White,POLISHED,136,79,3cm,,2800.00,AVAILABLE`;
                         key={idx}
                         className="border-b border-gray-100 dark:border-gray-800"
                       >
+                        <td className="py-2 pr-4 text-gray-500 dark:text-gray-400">
+                          {idx + 1}
+                        </td>
                         <td className="py-2 pr-4">{slab.brand}</td>
                         <td className="py-2 pr-4">{slab.color}</td>
-                        <td className="py-2 pr-4">{slab.finish}</td>
+                        <td className="py-2 pr-4">{slab.sourceFinish || slab.finish}</td>
                         <td className="py-2 pr-4">
                           {slab.heightIn}x{slab.widthIn}
                         </td>
-                        <td className="py-2 pr-4">{slab.thickness}</td>
+                        <td className="py-2 pr-4">
+                          {slab.sourceThickness || slab.thickness}
+                        </td>
                         <td className="py-2 pr-4">
                           {slab.squareFeet.toFixed(1)}
                         </td>
@@ -451,6 +460,7 @@ Daltile,Q1,OQ30,Elegant White,POLISHED,136,79,3cm,,2800.00,AVAILABLE`;
                       className="border border-gray-200 dark:border-gray-700 rounded-lg p-4"
                     >
                       <h4 className="text-sm font-semibold text-gray-900 dark:text-white mb-2">
+                        #{idx + 1} -
                         {change.existing.brand} - {change.existing.color} (
                         {change.existing.finish}, {change.existing.thickness})
                       </h4>
@@ -481,6 +491,9 @@ Daltile,Q1,OQ30,Elegant White,POLISHED,136,79,3cm,,2800.00,AVAILABLE`;
                             New Values
                           </p>
                           <div className="space-y-1 text-gray-900 dark:text-white font-medium">
+                            <p>
+                              Finish: {change.incoming.sourceFinish || change.incoming.finish}
+                            </p>
                             <p
                               className={
                                 change.changes.includes("heightIn") ||
@@ -530,6 +543,9 @@ Daltile,Q1,OQ30,Elegant White,POLISHED,136,79,3cm,,2800.00,AVAILABLE`;
                             >
                               Status: {change.incoming.status}
                             </p>
+                            <p>
+                              Thickness: {change.incoming.sourceThickness || change.incoming.thickness}
+                            </p>
                           </div>
                         </div>
                       </div>
@@ -543,6 +559,7 @@ Daltile,Q1,OQ30,Elegant White,POLISHED,136,79,3cm,,2800.00,AVAILABLE`;
                 <table className="w-full text-sm">
                   <thead className="text-left text-gray-700 dark:text-gray-300 border-b border-gray-200 dark:border-gray-700">
                     <tr>
+                      <th className="pb-2 pr-4 font-medium">#</th>
                       <th className="pb-2 pr-4 font-medium">Brand</th>
                       <th className="pb-2 pr-4 font-medium">Color</th>
                       <th className="pb-2 pr-4 font-medium">Finish</th>
@@ -552,11 +569,14 @@ Daltile,Q1,OQ30,Elegant White,POLISHED,136,79,3cm,,2800.00,AVAILABLE`;
                     </tr>
                   </thead>
                   <tbody className="text-gray-900 dark:text-gray-100">
-                    {diff.discontinuedSlabs.map((slab) => (
+                    {diff.discontinuedSlabs.map((slab, idx) => (
                       <tr
                         key={slab.id}
                         className="border-b border-gray-100 dark:border-gray-800"
                       >
+                        <td className="py-2 pr-4 text-gray-500 dark:text-gray-400">
+                          {idx + 1}
+                        </td>
                         <td className="py-2 pr-4">{slab.brand}</td>
                         <td className="py-2 pr-4">{slab.color}</td>
                         <td className="py-2 pr-4">{slab.finish}</td>
