@@ -39,9 +39,11 @@ export type NormalizedImportSlab = {
   series: string | null;
   code: string | null;
   color: string;
+  sourceFinish: string; // raw value from file for preview display
   finish: string; // normalized
   heightIn: number;
   widthIn: number;
+  sourceThickness: string; // raw value from file for preview display
   thickness: string; // normalized
   squareFeet: number; // one decimal
   sfPrice: number | null;
@@ -94,14 +96,84 @@ export function normalizeThickness(input: string): string {
     return "12mm";
   }
 
-  return lower; // fallback
+  if (
+    lower.includes("15mm") ||
+    lower === "fifteen_mm" ||
+    lower === "fifteenmm"
+  ) {
+    return "15mm";
+  }
+
+  // Unknown values are accepted by mapping to a safe canonical default.
+  return "2cm";
 }
 
 /**
  * Normalize finish string to uppercase enum format
  */
 export function normalizeFinish(input: string): string {
-  return input.trim().toUpperCase().replace(/\s+/g, "_");
+  const normalized = input
+    .trim()
+    .toUpperCase()
+    .replace(/[^A-Z0-9]+/g, "_")
+    .replace(/^_+|_+$/g, "");
+
+  const knownFinishes = new Set<string>([
+    "CONCRETE",
+    "DUAL",
+    "HONED",
+    "LEATHER",
+    "MATTE",
+    "NATURAL",
+    "OTHER",
+    "POLISHED",
+    "ROUGH",
+    "STONE",
+    "ULTRA_ROUGH",
+    "SATIN",
+    "SATIN_HONED",
+    "PATINATO",
+    "LEVIGATO_PEARL",
+    "GLAM",
+    "GINZA",
+    "HOLOS",
+    "TWILL",
+    "JUTA",
+    "DENIM",
+    "DAMIER",
+    "LAVA",
+    "SILK",
+    "LUXE",
+    "BRUSHED",
+    "TEXTURED",
+    "SMOOTH_MATTE",
+    "TEXTURED_MATTE",
+    "VELVET",
+    "TEXTURED_VELVET",
+    "SATIN_RIDGE",
+    "SUEDE",
+    "DECOR_POLISHED",
+    "NANOTECH_POLISHED",
+    "NATURAL_TOUCH",
+    "RIVERWASHED",
+    "SLATE",
+    "ULTRASOFT",
+    "SOFT_TOUCH",
+    "BOOKMATCH",
+  ]);
+
+  if (knownFinishes.has(normalized)) {
+    return normalized;
+  }
+
+  if (normalized.includes("SOFT_TOUCH")) return "SOFT_TOUCH";
+  if (normalized.includes("MATTE")) return "MATTE";
+  if (normalized.includes("POLISHED")) return "POLISHED";
+  if (normalized.includes("HONED")) return "HONED";
+  if (normalized.includes("LEATHER")) return "LEATHER";
+  if (normalized.includes("NATURAL")) return "NATURAL";
+
+  return "OTHER";
 }
 
 /**
@@ -117,6 +189,8 @@ export function thicknessEnumToString(thickness: SlabThickness): string {
       return "8mm";
     case "TWELVE_MM":
       return "12mm";
+    case "FIFTEEN_MM":
+      return "15mm";
     default:
       return "2cm";
   }
@@ -179,9 +253,11 @@ export function normalizeImportRow(
     series: row.series,
     code: row.code,
     color: row.color.trim(),
+    sourceFinish: row.finish.trim(),
     finish: normalizedFinish,
     heightIn: row.heightIn,
     widthIn: row.widthIn,
+    sourceThickness: row.thickness.trim(),
     thickness: normalizedThickness,
     squareFeet,
     sfPrice: row.sfPrice,
@@ -317,8 +393,10 @@ export function mapThicknessToEnum(thickness: string): string {
       return "EIGHT_MM";
     case "12mm":
       return "TWELVE_MM";
+    case "15mm":
+      return "FIFTEEN_MM";
     case "20mm":
-      return "TWENTY_MM";
+      return "TWO_CM";
     default:
       return "TWO_CM"; // default fallback
   }
