@@ -6,11 +6,11 @@ import {
   encodeClientName,
   fetchStateFromDb,
   loadState,
-  saveStateToDb,
   splitClientName,
   updateSlab,
 } from "./storage";
 import FilterMultiSelect from "@/components/filters/FilterMultiSelect";
+import type { CustomerSuggestion } from "./customerSuggestions";
 
 type InventorySortKey =
   | "id"
@@ -114,6 +114,7 @@ const formatFinishOption = (value: string) =>
     .join(" ");
 
 export default function InventoryClient({ userName }: { userName: string }) {
+  const rowStorageKey = "slabbay:last-row:inventory";
   const [state, setState] = useState<SlabBayState>(() => loadState());
   const [slabSearchTerm, setSlabSearchTerm] = useState("");
   const [clientSearchTerm, setClientSearchTerm] = useState("");
@@ -143,17 +144,23 @@ export default function InventoryClient({ userName }: { userName: string }) {
   const [editBatchSize, setEditBatchSize] = useState("");
   const [editClientName, setEditClientName] = useState("");
   const [editOriginalClientName, setEditOriginalClientName] = useState("");
+  const [editClientSubtitle, setEditClientSubtitle] = useState<string | null>(
+    null,
+  );
+  const [editOriginalClientSubtitle, setEditOriginalClientSubtitle] = useState<
+    string | null
+  >(null);
   const [editNotes, setEditNotes] = useState("");
   const [editJobId, setEditJobId] = useState("");
   const [editRackId, setEditRackId] = useState("");
   const [editClientSearchTerm, setEditClientSearchTerm] = useState("");
   const [editOriginalClientSearchTerm, setEditOriginalClientSearchTerm] =
     useState("");
-  const [editClientSuggestions, setEditClientSuggestions] = useState<string[]>(
-    [],
-  );
+  const [editClientSuggestions, setEditClientSuggestions] = useState<
+    CustomerSuggestion[]
+  >([]);
   const [editOriginalClientSuggestions, setEditOriginalClientSuggestions] =
-    useState<string[]>([]);
+    useState<CustomerSuggestion[]>([]);
   const [showEditClientDropdown, setShowEditClientDropdown] = useState(false);
   const [showEditOriginalClientDropdown, setShowEditOriginalClientDropdown] =
     useState(false);
@@ -161,8 +168,18 @@ export default function InventoryClient({ userName }: { userName: string }) {
   const [loadingEditOriginalClients, setLoadingEditOriginalClients] =
     useState(false);
   const [editError, setEditError] = useState<string | null>(null);
+  const [lastClickedSlabId, setLastClickedSlabId] = useState("");
+  const [clientSubtitleByName, setClientSubtitleByName] = useState<
+    Record<string, string | null>
+  >({});
   const editClientDropdownRef = useRef<HTMLDivElement | null>(null);
   const editOriginalClientDropdownRef = useRef<HTMLDivElement | null>(null);
+
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    const stored = window.localStorage.getItem(rowStorageKey);
+    setLastClickedSlabId(stored || "");
+  }, []);
 
   const parseSize = (value: string) => {
     const [h = "", w = ""] = value.split("x").map((part) => part.trim());
@@ -380,9 +397,15 @@ export default function InventoryClient({ userName }: { userName: string }) {
 
   const renderClientCell = (slab: (typeof rows)[number]) => {
     const { clientName, originalClientName } = splitClientName(slab.clientName);
+    const subtitle = clientSubtitleByName[clientName.trim().toLowerCase()];
     return (
       <div className="space-y-1">
         <div>{clientName || "-"}</div>
+        {subtitle ? (
+          <div className="text-xs text-gray-500 dark:text-gray-400">
+            {subtitle}
+          </div>
+        ) : null}
         {slab.type === "GMD" && originalClientName ? (
           <div className="text-xs text-gray-500 dark:text-gray-400">
             Original Client: {originalClientName}
@@ -428,6 +451,45 @@ export default function InventoryClient({ userName }: { userName: string }) {
       document.removeEventListener("visibilitychange", handleVisibility);
     };
   }, [hasLoaded, isSavingEdit]);
+
+  useEffect(() => {
+    const clientNames = Array.from(
+      new Set(
+        state.slabs
+          .map((slab) => splitClientName(slab.clientName).clientName.trim())
+          .filter(Boolean),
+      ),
+    );
+
+    if (clientNames.length === 0) {
+      setClientSubtitleByName({});
+      return;
+    }
+
+    let active = true;
+    fetch("/api/slab-rack-display/client-subtitles", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ names: clientNames }),
+    })
+      .then((response) => (response.ok ? response.json() : null))
+      .then((payload) => {
+        if (!active) return;
+        const subtitles =
+          payload && typeof payload === "object" && payload.subtitles
+            ? (payload.subtitles as Record<string, string | null>)
+            : {};
+        setClientSubtitleByName(subtitles);
+      })
+      .catch(() => {
+        if (!active) return;
+        setClientSubtitleByName({});
+      });
+
+    return () => {
+      active = false;
+    };
+  }, [state.slabs]);
 
   useEffect(() => {
     if (!editClientSearchTerm.trim()) {
@@ -530,6 +592,10 @@ export default function InventoryClient({ userName }: { userName: string }) {
     setEditBatchSize(slab.batchSize ? String(slab.batchSize) : "");
     setEditClientName(clientName);
     setEditOriginalClientName(originalClientName || "");
+    setEditClientSubtitle(
+      clientSubtitleByName[clientName.trim().toLowerCase()] ?? null,
+    );
+    setEditOriginalClientSubtitle(null);
     setEditNotes(slab.notes || "");
     setEditJobId(slab.jobId || "");
     setEditRackId(slab.rackId);
@@ -540,6 +606,12 @@ export default function InventoryClient({ userName }: { userName: string }) {
     setShowEditClientDropdown(false);
     setShowEditOriginalClientDropdown(false);
     setEditError(null);
+  };
+
+  const handleRowClick = (slabId: string) => {
+    setLastClickedSlabId(slabId);
+    if (typeof window === "undefined") return;
+    window.localStorage.setItem(rowStorageKey, slabId);
   };
 
   const closeEditModal = () => {
@@ -620,7 +692,6 @@ export default function InventoryClient({ userName }: { userName: string }) {
 
     try {
       setIsSavingEdit(true);
-      await saveStateToDb(next);
       setState(next);
       closeEditModal();
     } catch {
@@ -880,7 +951,12 @@ export default function InventoryClient({ userName }: { userName: string }) {
                 {rows.map((slab) => (
                   <tr
                     key={slab.id}
-                    className="border-t border-gray-100 dark:border-gray-800"
+                    onClick={() => handleRowClick(slab.id)}
+                    className={`border-t border-gray-100 dark:border-gray-800 cursor-pointer transition-colors ${
+                      lastClickedSlabId === slab.id
+                        ? "bg-amber-50 dark:bg-amber-900/20"
+                        : "hover:bg-gray-50 dark:hover:bg-gray-800/40"
+                    }`}
                   >
                     <td className="py-3 pr-4 text-gray-600 dark:text-gray-300">
                       <a
@@ -1154,10 +1230,16 @@ export default function InventoryClient({ userName }: { userName: string }) {
                         const value = e.target.value;
                         setEditClientName(value);
                         setEditClientSearchTerm(value);
+                        setEditClientSubtitle(null);
                         setShowEditClientDropdown(true);
                       }}
                       className="mt-1 w-full rounded-lg border border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-800 px-3 py-2 text-sm"
                     />
+                    {editClientSubtitle ? (
+                      <div className="mt-1 text-xs text-gray-500 dark:text-gray-400">
+                        {editClientSubtitle}
+                      </div>
+                    ) : null}
                     {showEditClientDropdown && (
                       <div className="absolute z-20 mt-1 max-h-48 w-full overflow-auto rounded-lg border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-900 shadow-lg">
                         {loadingEditClients ? (
@@ -1167,16 +1249,22 @@ export default function InventoryClient({ userName }: { userName: string }) {
                         ) : editClientSuggestions.length > 0 ? (
                           editClientSuggestions.map((suggestion) => (
                             <button
-                              key={suggestion}
+                              key={suggestion.id}
                               type="button"
                               onClick={() => {
-                                setEditClientName(suggestion);
-                                setEditClientSearchTerm(suggestion);
+                                setEditClientName(suggestion.displayName);
+                                setEditClientSubtitle(suggestion.subtitle);
+                                setEditClientSearchTerm(suggestion.displayName);
                                 setShowEditClientDropdown(false);
                               }}
                               className="block w-full px-3 py-2 text-left text-sm hover:bg-gray-50 dark:hover:bg-gray-800"
                             >
-                              {suggestion}
+                              <div className="font-medium text-gray-900 dark:text-gray-100">
+                                {suggestion.displayName}
+                              </div>
+                              <div className="text-xs text-gray-500 dark:text-gray-400">
+                                {suggestion.subtitle || "Customer"}
+                              </div>
                             </button>
                           ))
                         ) : editClientSearchTerm.trim() ? (
@@ -1202,6 +1290,7 @@ export default function InventoryClient({ userName }: { userName: string }) {
                           const value = e.target.value;
                           setEditOriginalClientName(value);
                           setEditOriginalClientSearchTerm(value);
+                          setEditOriginalClientSubtitle(null);
                           setShowEditOriginalClientDropdown(true);
                         }}
                         className="mt-1 w-full rounded-lg border border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-800 px-3 py-2 text-sm"
@@ -1215,16 +1304,28 @@ export default function InventoryClient({ userName }: { userName: string }) {
                           ) : editOriginalClientSuggestions.length > 0 ? (
                             editOriginalClientSuggestions.map((suggestion) => (
                               <button
-                                key={suggestion}
+                                key={suggestion.id}
                                 type="button"
                                 onClick={() => {
-                                  setEditOriginalClientName(suggestion);
-                                  setEditOriginalClientSearchTerm(suggestion);
+                                  setEditOriginalClientName(
+                                    suggestion.displayName,
+                                  );
+                                  setEditOriginalClientSubtitle(
+                                    suggestion.subtitle,
+                                  );
+                                  setEditOriginalClientSearchTerm(
+                                    suggestion.displayName,
+                                  );
                                   setShowEditOriginalClientDropdown(false);
                                 }}
                                 className="block w-full px-3 py-2 text-left text-sm hover:bg-gray-50 dark:hover:bg-gray-800"
                               >
-                                {suggestion}
+                                <div className="font-medium text-gray-900 dark:text-gray-100">
+                                  {suggestion.displayName}
+                                </div>
+                                <div className="text-xs text-gray-500 dark:text-gray-400">
+                                  {suggestion.subtitle || "Customer"}
+                                </div>
                               </button>
                             ))
                           ) : editOriginalClientSearchTerm.trim() ? (

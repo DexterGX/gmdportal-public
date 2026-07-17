@@ -9,7 +9,22 @@ const connectionString =
   process.env.DIRECT_URL || process.env.DATABASE_URL || "";
 const sql = postgres(connectionString, {
   ssl: "require",
+  onnotice: () => {
+    // Ignore IF NOT EXISTS notices in development logs.
+  },
 });
+
+let ensureTablePromise: Promise<void> | null = null;
+
+const ensureTableOnce = async () => {
+  if (!ensureTablePromise) {
+    ensureTablePromise = ensureTable().catch((error) => {
+      ensureTablePromise = null;
+      throw error;
+    });
+  }
+  await ensureTablePromise;
+};
 
 const ensureTable = async () => {
   await sql`
@@ -53,7 +68,7 @@ export async function GET() {
     return NextResponse.json([], { status: 401 });
   }
 
-  await ensureTable();
+  await ensureTableOnce();
 
   const rows = (await sql`
     SELECT *
@@ -128,7 +143,7 @@ export async function POST(request: Request) {
     );
   }
 
-  await ensureTable();
+  await ensureTableOnce();
 
   const createdBy = session.user.name || session.user.email || "Unknown User";
   const created = {

@@ -28,6 +28,7 @@ const TYPE_LABEL: Record<string, string> = {
 
 export default function SlabLabelClient({ slab }: { slab: SlabLabelData }) {
   const [origin, setOrigin] = useState("");
+  const [resolvedClientSubtitle, setResolvedClientSubtitle] = useState("");
   useEffect(() => {
     setOrigin(window.location.origin);
   }, []);
@@ -37,7 +38,53 @@ export default function SlabLabelClient({ slab }: { slab: SlabLabelData }) {
   // Decode clientName (may contain "||" separator for GMD slabs)
   const sepIdx = slab.clientName.indexOf("||");
   const displayClient =
-    sepIdx !== -1 ? slab.clientName.slice(0, sepIdx) : slab.clientName;
+    sepIdx !== -1 ? slab.clientName.slice(0, sepIdx).trim() : slab.clientName;
+  const originalClientName =
+    sepIdx !== -1 ? slab.clientName.slice(sepIdx + 2).trim() : "";
+
+  useEffect(() => {
+    const normalizedClient = displayClient.trim();
+    if (!normalizedClient) {
+      setResolvedClientSubtitle("");
+      return;
+    }
+
+    let active = true;
+    fetch("/api/slab-rack-display/client-subtitles", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ names: [normalizedClient] }),
+    })
+      .then((response) => (response.ok ? response.json() : null))
+      .then((payload) => {
+        if (!active) return;
+        const subtitles =
+          payload && typeof payload === "object" && payload.subtitles
+            ? (payload.subtitles as Record<string, string | null>)
+            : {};
+        setResolvedClientSubtitle(
+          subtitles[normalizedClient.toLowerCase()]?.trim() || "",
+        );
+      })
+      .catch(() => {
+        if (!active) return;
+        setResolvedClientSubtitle("");
+      });
+
+    return () => {
+      active = false;
+    };
+  }, [displayClient]);
+
+  const fallbackSubtitle = originalClientName
+    ? `via ${originalClientName}`
+    : "";
+  const subtitleForLabel = resolvedClientSubtitle || fallbackSubtitle;
+  const displayClientWithContractor = subtitleForLabel
+    ? subtitleForLabel.toLowerCase().startsWith("via ")
+      ? `${displayClient} ${subtitleForLabel}`
+      : `${displayClient} (${subtitleForLabel})`
+    : displayClient;
 
   const typeLabel = TYPE_LABEL[slab.type] ?? slab.type;
 
@@ -48,7 +95,7 @@ export default function SlabLabelClient({ slab }: { slab: SlabLabelData }) {
     ["Finish", slab.finish || "-"],
     ["Thickness", slab.thickness || "-"],
     ["Size", slab.size || "-"],
-    ["Client Name", displayClient || "-"],
+    ["Client Name", displayClientWithContractor || "-"],
     ["Notes", slab.notes || "-"],
     ["Slab Type", typeLabel || "-"],
     ["Job ID", slab.jobId || "-"],

@@ -8,6 +8,7 @@ import {
   type SlabDeliveryExpectation,
   type SlabDeliveryType,
 } from "../ui/expectedDeliveries";
+import type { CustomerSuggestion } from "../ui/customerSuggestions";
 
 const OTHER_OPTION = "OTHER";
 
@@ -109,14 +110,20 @@ export default function SlabDeliveryClient({ userName }: { userName: string }) {
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [clientName, setClientName] = useState("");
+  const [clientSubtitle, setClientSubtitle] = useState<string | null>(null);
   const [clientSearchTerm, setClientSearchTerm] = useState("");
-  const [clientSuggestions, setClientSuggestions] = useState<string[]>([]);
+  const [clientSuggestions, setClientSuggestions] = useState<
+    CustomerSuggestion[]
+  >([]);
   const [showClientDropdown, setShowClientDropdown] = useState(false);
   const [loadingClients, setLoadingClients] = useState(false);
   const [originalClientName, setOriginalClientName] = useState("");
+  const [originalClientSubtitle, setOriginalClientSubtitle] = useState<
+    string | null
+  >(null);
   const [originalClientSearchTerm, setOriginalClientSearchTerm] = useState("");
   const [originalClientSuggestions, setOriginalClientSuggestions] = useState<
-    string[]
+    CustomerSuggestion[]
   >([]);
   const [showOriginalClientDropdown, setShowOriginalClientDropdown] =
     useState(false);
@@ -505,6 +512,7 @@ export default function SlabDeliveryClient({ userName }: { userName: string }) {
                         setShowClientDropdown(true);
                         if (!event.target.value) {
                           setClientName("");
+                          setClientSubtitle(null);
                         }
                       }}
                       onFocus={() => setShowClientDropdown(true)}
@@ -527,16 +535,22 @@ export default function SlabDeliveryClient({ userName }: { userName: string }) {
                         ) : (
                           clientSuggestions.map((client) => (
                             <button
-                              key={client}
+                              key={client.id}
                               type="button"
                               onClick={() => {
-                                setClientName(client);
-                                setClientSearchTerm(client);
+                                setClientName(client.displayName);
+                                setClientSubtitle(client.subtitle);
+                                setClientSearchTerm(client.displayName);
                                 setShowClientDropdown(false);
                               }}
                               className="w-full border-b border-gray-100 px-4 py-3 text-left text-sm text-gray-900 hover:bg-gray-50 last:border-b-0 dark:border-gray-700 dark:text-gray-100 dark:hover:bg-gray-700"
                             >
-                              {client}
+                              <div className="font-medium">
+                                {client.displayName}
+                              </div>
+                              <div className="text-xs text-gray-500 dark:text-gray-400">
+                                {client.subtitle || "Customer"}
+                              </div>
                             </button>
                           ))
                         )}
@@ -545,13 +559,21 @@ export default function SlabDeliveryClient({ userName }: { userName: string }) {
                   </div>
                   {clientName && (
                     <div className="mt-2 flex items-center justify-between rounded-md border border-blue-200 bg-blue-50 px-3 py-2 dark:border-blue-800 dark:bg-blue-900/20">
-                      <div className="text-sm font-semibold text-gray-900 dark:text-gray-100">
-                        {clientName}
+                      <div>
+                        <div className="text-sm font-semibold text-gray-900 dark:text-gray-100">
+                          {clientName}
+                        </div>
+                        {clientSubtitle && (
+                          <div className="text-xs text-gray-500 dark:text-gray-400">
+                            {clientSubtitle}
+                          </div>
+                        )}
                       </div>
                       <button
                         type="button"
                         onClick={() => {
                           setClientName("");
+                          setClientSubtitle(null);
                           setClientSearchTerm("");
                         }}
                         className="text-sm text-blue-600 hover:text-blue-700 dark:text-blue-400"
@@ -628,6 +650,7 @@ export default function SlabDeliveryClient({ userName }: { userName: string }) {
                         setShowOriginalClientDropdown(true);
                         if (!event.target.value) {
                           setOriginalClientName("");
+                          setOriginalClientSubtitle(null);
                         }
                       }}
                       onFocus={() => setShowOriginalClientDropdown(true)}
@@ -651,16 +674,24 @@ export default function SlabDeliveryClient({ userName }: { userName: string }) {
                           ) : (
                             originalClientSuggestions.map((client) => (
                               <button
-                                key={client}
+                                key={client.id}
                                 type="button"
                                 onClick={() => {
-                                  setOriginalClientName(client);
-                                  setOriginalClientSearchTerm(client);
+                                  setOriginalClientName(client.displayName);
+                                  setOriginalClientSubtitle(client.subtitle);
+                                  setOriginalClientSearchTerm(
+                                    client.displayName,
+                                  );
                                   setShowOriginalClientDropdown(false);
                                 }}
                                 className="w-full border-b border-gray-100 px-4 py-3 text-left text-sm text-gray-900 hover:bg-gray-50 last:border-b-0 dark:border-gray-700 dark:text-gray-100 dark:hover:bg-gray-700"
                               >
-                                {client}
+                                <div className="font-medium">
+                                  {client.displayName}
+                                </div>
+                                <div className="text-xs text-gray-500 dark:text-gray-400">
+                                  {client.subtitle || "Customer"}
+                                </div>
                               </button>
                             ))
                           )}
@@ -669,13 +700,21 @@ export default function SlabDeliveryClient({ userName }: { userName: string }) {
                   </div>
                   {originalClientName && (
                     <div className="mt-2 flex items-center justify-between rounded-md border border-blue-200 bg-blue-50 px-3 py-2 dark:border-blue-800 dark:bg-blue-900/20">
-                      <div className="text-sm font-semibold text-gray-900 dark:text-gray-100">
-                        {originalClientName}
+                      <div>
+                        <div className="text-sm font-semibold text-gray-900 dark:text-gray-100">
+                          {originalClientName}
+                        </div>
+                        {originalClientSubtitle && (
+                          <div className="text-xs text-gray-500 dark:text-gray-400">
+                            {originalClientSubtitle}
+                          </div>
+                        )}
                       </div>
                       <button
                         type="button"
                         onClick={() => {
                           setOriginalClientName("");
+                          setOriginalClientSubtitle(null);
                           setOriginalClientSearchTerm("");
                         }}
                         className="text-sm text-blue-600 hover:text-blue-700 dark:text-blue-400"

@@ -63,6 +63,7 @@ const formatHistoryTimestamp = (value: string) => {
 };
 
 export default function HistoryClient({ userName }: { userName: string }) {
+  const rowStorageKey = "slabbay:last-row:history";
   const [state, setState] = useState<SlabBayState>(() => loadState());
   const [mounted, setMounted] = useState(false);
   const [isLoading, setIsLoading] = useState(true);
@@ -82,6 +83,16 @@ export default function HistoryClient({ userName }: { userName: string }) {
   >(null);
   const [recoveryRackId, setRecoveryRackId] = useState("");
   const [recoveryError, setRecoveryError] = useState<string | null>(null);
+  const [lastClickedHistoryId, setLastClickedHistoryId] = useState("");
+  const [clientSubtitleByName, setClientSubtitleByName] = useState<
+    Record<string, string | null>
+  >({});
+
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    const stored = window.localStorage.getItem(rowStorageKey);
+    setLastClickedHistoryId(stored || "");
+  }, []);
 
   const brandOptions = useMemo(
     () =>
@@ -170,6 +181,45 @@ export default function HistoryClient({ userName }: { userName: string }) {
     selectedBrands,
     actionFilter,
   ]);
+
+  useEffect(() => {
+    const clientNames = Array.from(
+      new Set(
+        state.history
+          .map((entry) => splitClientName(entry.clientName).clientName.trim())
+          .filter(Boolean),
+      ),
+    );
+
+    if (clientNames.length === 0) {
+      setClientSubtitleByName({});
+      return;
+    }
+
+    let active = true;
+    fetch("/api/slab-rack-display/client-subtitles", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ names: clientNames }),
+    })
+      .then((response) => (response.ok ? response.json() : null))
+      .then((payload) => {
+        if (!active) return;
+        const subtitles =
+          payload && typeof payload === "object" && payload.subtitles
+            ? (payload.subtitles as Record<string, string | null>)
+            : {};
+        setClientSubtitleByName(subtitles);
+      })
+      .catch(() => {
+        if (!active) return;
+        setClientSubtitleByName({});
+      });
+
+    return () => {
+      active = false;
+    };
+  }, [state.history]);
 
   const compareValues = (
     left: string | number,
@@ -408,6 +458,12 @@ export default function HistoryClient({ userName }: { userName: string }) {
   const handlePrint = (mode: "filtered" | "all") => {
     setPrintMode(mode);
     setTimeout(() => window.print(), 50);
+  };
+
+  const handleRowClick = (historyId: string) => {
+    setLastClickedHistoryId(historyId);
+    if (typeof window === "undefined") return;
+    window.localStorage.setItem(rowStorageKey, historyId);
   };
 
   useEffect(() => {
@@ -709,7 +765,12 @@ export default function HistoryClient({ userName }: { userName: string }) {
                 {displayRows.map((entry) => (
                   <tr
                     key={entry.id}
-                    className="border-t border-gray-100 dark:border-gray-800"
+                    onClick={() => handleRowClick(entry.id)}
+                    className={`border-t border-gray-100 dark:border-gray-800 cursor-pointer transition-colors ${
+                      lastClickedHistoryId === entry.id
+                        ? "bg-amber-50 dark:bg-amber-900/20"
+                        : "hover:bg-gray-50 dark:hover:bg-gray-800/40"
+                    }`}
                   >
                     <td className="py-3 pr-4 text-gray-600 dark:text-gray-300">
                       {(() => {
@@ -791,9 +852,16 @@ export default function HistoryClient({ userName }: { userName: string }) {
                       {(() => {
                         const { clientName, originalClientName } =
                           splitClientName(entry.clientName);
+                        const subtitle =
+                          clientSubtitleByName[clientName.trim().toLowerCase()];
                         return (
                           <div className="space-y-1">
                             <div>{clientName || "-"}</div>
+                            {subtitle ? (
+                              <div className="text-xs text-gray-500 dark:text-gray-400">
+                                {subtitle}
+                              </div>
+                            ) : null}
                             {entry.slabType === "GMD" && originalClientName ? (
                               <div className="text-xs text-gray-500 dark:text-gray-400">
                                 Original Client: {originalClientName}

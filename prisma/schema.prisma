@@ -9,38 +9,38 @@ datasource db {
 }
 
 model User {
-  id                          String                 @id @default(cuid())
-  name                        String?
-  email                       String?                @unique
-  emailVerified               DateTime?
-  image                       String?
-  username                    String?                @unique
-  passwordHash                String?
-  resetToken                  String?                @unique
-  resetTokenExpiry            DateTime?
-  role                        Role                   @default(UNASSIGNED)
-  active                      Boolean                @default(false)
-  roles                       String[]               @default([])
-  accessoryItemsAssigned      AccessoryItem[]        @relation("AccessoryItemAssignedTo")
-  accessoryItemsCreated       AccessoryItem[]        @relation("AccessoryItemCreatedBy")
-  accessoryItemsUpdated       AccessoryItem[]        @relation("AccessoryItemUpdatedBy")
-  accessoryItemEventsChanged  AccessoryItemEvent[]   @relation("AccessoryItemEventChangedBy")
-  accessoryTrackersCreated    AccessoryTracker[]     @relation("AccessoryTrackerCreatedBy")
-  accessoryTrackersUpdated    AccessoryTracker[]     @relation("AccessoryTrackerUpdatedBy")
-  accounts                    Account[]
-  approvedQuotes              ClosetQuote[]          @relation("ApprovedQuotes")
-  installerQuotes             ClosetQuote[]          @relation("InstallerQuotes")
-  submittedQuotes             ClosetQuote[]          @relation("SubmittedQuotes")
-  quoteRepairsCreated         QuoteRepair[]          @relation("QuoteRepairsCreatedBy")
-  quoteRepairsSalesRep        QuoteRepair[]          @relation("QuoteRepairsSalesRep")
-  quoteRepairVersionsCreated  QuoteRepairVersion[]   @relation("QuoteRepairVersionsCreatedBy")
-  quoteRepairVersionsUpdated  QuoteRepairVersion[]   @relation("QuoteRepairVersionsUpdatedBy")
-  quoteRepairVersionsSubmitted QuoteRepairVersion[]  @relation("QuoteRepairVersionsSubmittedBy")
-  quoteRepairVersionsApproved QuoteRepairVersion[]   @relation("QuoteRepairVersionsApprovedBy")
-  quoteRepairActivities       QuoteRepairActivity[]
-  sampleRequestsRequested     SampleRequest[]        @relation("SampleRequestRequestedBy")
-  sampleRequestHistoryChanged SampleRequestHistory[] @relation("SampleRequestHistoryChangedBy")
-  sessions                    Session[]
+  id                           String                 @id @default(cuid())
+  name                         String?
+  email                        String?                @unique
+  emailVerified                DateTime?
+  image                        String?
+  username                     String?                @unique
+  passwordHash                 String?
+  resetToken                   String?                @unique
+  resetTokenExpiry             DateTime?
+  role                         Role                   @default(UNASSIGNED)
+  active                       Boolean                @default(false)
+  roles                        String[]               @default([])
+  accessoryItemsAssigned       AccessoryItem[]        @relation("AccessoryItemAssignedTo")
+  accessoryItemsCreated        AccessoryItem[]        @relation("AccessoryItemCreatedBy")
+  accessoryItemsUpdated        AccessoryItem[]        @relation("AccessoryItemUpdatedBy")
+  accessoryItemEventsChanged   AccessoryItemEvent[]   @relation("AccessoryItemEventChangedBy")
+  accessoryTrackersCreated     AccessoryTracker[]     @relation("AccessoryTrackerCreatedBy")
+  accessoryTrackersUpdated     AccessoryTracker[]     @relation("AccessoryTrackerUpdatedBy")
+  accounts                     Account[]
+  approvedQuotes               ClosetQuote[]          @relation("ApprovedQuotes")
+  installerQuotes              ClosetQuote[]          @relation("InstallerQuotes")
+  submittedQuotes              ClosetQuote[]          @relation("SubmittedQuotes")
+  quoteRepairsCreated          QuoteRepair[]          @relation("QuoteRepairsCreatedBy")
+  quoteRepairsSalesRep         QuoteRepair[]          @relation("QuoteRepairsSalesRep")
+  quoteRepairActivities        QuoteRepairActivity[]
+  quoteRepairVersionsApproved  QuoteRepairVersion[]   @relation("QuoteRepairVersionsApprovedBy")
+  quoteRepairVersionsCreated   QuoteRepairVersion[]   @relation("QuoteRepairVersionsCreatedBy")
+  quoteRepairVersionsSubmitted QuoteRepairVersion[]   @relation("QuoteRepairVersionsSubmittedBy")
+  quoteRepairVersionsUpdated   QuoteRepairVersion[]   @relation("QuoteRepairVersionsUpdatedBy")
+  sampleRequestsRequested      SampleRequest[]        @relation("SampleRequestRequestedBy")
+  sampleRequestHistoryChanged  SampleRequestHistory[] @relation("SampleRequestHistoryChangedBy")
+  sessions                     Session[]
 }
 
 model Account {
@@ -104,21 +104,21 @@ model StockTransaction {
 }
 
 model SlabBrandConfig {
-  id            String    @id @default(cuid())
+  id            String          @id @default(cuid())
   name          String
   gmdBrandId    String?
-  profitFactor  Decimal   @db.Decimal(10, 4)
-  taxRate       Decimal   @db.Decimal(5, 4)
-  deliveryFee   Decimal   @db.Decimal(10, 2)
-  discount      Decimal   @db.Decimal(10, 4)
-  lastUpdate    DateTime? @db.Timestamptz(6)
+  profitFactor  Decimal         @db.Decimal(10, 4)
+  taxRate       Decimal         @db.Decimal(5, 4)
+  deliveryFee   Decimal         @db.Decimal(10, 2)
+  discount      Decimal         @db.Decimal(10, 4)
+  lastUpdate    DateTime?       @db.Timestamptz(6)
   contactName   String?
   contactNumber String?
   contactCell   String?
   contactEmail  String?
-  createdAt     DateTime  @default(now()) @db.Timestamptz(6)
-  updatedAt     DateTime  @updatedAt @db.Timestamptz(6)
-  brandNumber   Int?      @unique
+  createdAt     DateTime        @default(now()) @db.Timestamptz(6)
+  updatedAt     DateTime        @updatedAt @db.Timestamptz(6)
+  brandNumber   Int?            @unique
   logoUrl       String?
   slabs         Slab[]
   notes         SlabBrandNote[]
@@ -158,33 +158,33 @@ model Slab {
 }
 
 model SinkBrand {
-  id           String   @id @default(cuid())
-  name         String   @unique
+  id           String           @id @default(cuid())
+  name         String           @unique
   logoUrl      String?
-  factor       Decimal  @default(1) @db.Decimal(10, 4)
-  taxFactor    Decimal  @default(1) @db.Decimal(10, 4)
-  freight      Decimal  @default(0) @db.Decimal(10, 2)
-  discount     Decimal  @default(0) @db.Decimal(10, 4)
+  factor       Decimal          @default(1) @db.Decimal(10, 4)
+  taxFactor    Decimal          @default(1) @db.Decimal(10, 4)
+  freight      Decimal          @default(0) @db.Decimal(10, 2)
+  discount     Decimal          @default(0) @db.Decimal(10, 4)
   contactName  String?
   contactCell  String?
   contactPhone String?
   contactEmail String?
-  createdAt    DateTime @default(now())
-  updatedAt    DateTime @updatedAt
+  createdAt    DateTime         @default(now())
+  updatedAt    DateTime         @updatedAt
   sinks        Sink[]
   notes        SinkBrandNote[]
   modelImages  SinkModelImage[]
 }
 
 model SinkBrandNote {
-  id          String    @id @default(cuid())
-  brandId     String
-  title       String
-  content     String
-  catalogUrl  String?
-  createdAt   DateTime  @default(now())
-  updatedAt   DateTime  @updatedAt
-  brand       SinkBrand @relation(fields: [brandId], references: [id], onDelete: Cascade)
+  id         String    @id @default(cuid())
+  brandId    String
+  title      String
+  content    String
+  catalogUrl String?
+  createdAt  DateTime  @default(now())
+  updatedAt  DateTime  @updatedAt
+  brand      SinkBrand @relation(fields: [brandId], references: [id], onDelete: Cascade)
 
   @@index([brandId, createdAt])
 }
@@ -192,7 +192,6 @@ model SinkBrandNote {
 model Sink {
   id               String     @id @default(cuid())
   brandId          String
-  series           String?
   model            String
   description      String?
   dimensions       String
@@ -204,7 +203,8 @@ model Sink {
   imageUrl         String?
   createdAt        DateTime   @default(now())
   updatedAt        DateTime   @updatedAt
-  brand            SinkBrand  @relation(fields: [brandId], references: [id], onDelete: Restrict)
+  series           String?
+  brand            SinkBrand  @relation(fields: [brandId], references: [id])
 
   @@unique([brandId, model, dimensions, description])
   @@index([brandId])
@@ -356,16 +356,16 @@ model ClosetEstimateSettings {
 }
 
 model CompanyDocumentSettings {
-  id          String   @id @default(cuid())
-  companyName String   @default("GM Design")
-  phoneNumber String?  @default("(305) XXX-XXXX")
-  email       String?
-  website     String?
-  address     String?
-  logoUrl     String   @default("/logo.svg")
-  showPrintGuides Boolean @default(false)
-  createdAt   DateTime @default(now())
-  updatedAt   DateTime @updatedAt
+  id              String   @id @default(cuid())
+  companyName     String   @default("GM Design")
+  phoneNumber     String?  @default("(305) XXX-XXXX")
+  address         String?
+  logoUrl         String   @default("/logo.svg")
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+  email           String?
+  website         String?
+  showPrintGuides Boolean  @default(false)
 }
 
 model AgreementFormTemplate {
@@ -591,30 +591,30 @@ model JobArtifact {
 }
 
 model MiscEstimate {
-  id          String               @id @default(cuid())
-  estimateNo  String?              @unique
-  title       String
-  clientName  String?
-  clientId    String?
-  dealName    String?
-  dealId      String?
-  date        DateTime
-  salesRep    String
-  status      String               @default("DRAFT")
-  subtotal    Decimal              @default(0) @db.Decimal(12, 2)
-  discount    Decimal              @default(0) @db.Decimal(12, 2)
-  total       Decimal              @default(0) @db.Decimal(12, 2)
-  createdById String?
-  createdAt   DateTime             @default(now())
-  updatedAt   DateTime             @updatedAt
-  ledRows     MiscEstimateLedRow[]
-  ledSheetRows MiscEstimateLedSheetRow[]
+  id                 String                          @id @default(cuid())
+  estimateNo         String?                         @unique
+  title              String
+  clientName         String?
+  clientId           String?
+  dealName           String?
+  dealId             String?
+  date               DateTime
+  salesRep           String
+  status             String                          @default("DRAFT")
+  subtotal           Decimal                         @default(0) @db.Decimal(12, 2)
+  discount           Decimal                         @default(0) @db.Decimal(12, 2)
+  total              Decimal                         @default(0) @db.Decimal(12, 2)
+  createdById        String?
+  createdAt          DateTime                        @default(now())
+  updatedAt          DateTime                        @updatedAt
   glassDoorShelfRows MiscEstimateGlassDoorShelfRow[]
-  mirrorRows  MiscEstimateMirrorRow[]
-  islandPanelRows MiscEstimateIslandPanelRow[]
-  wallUnitRows MiscEstimateWallUnitRow[]
-  mirrorFrameRows MiscEstimateMirrorFrameRow[]
-  mirrorRemovalRows MiscEstimateMirrorRemovalRow[]
+  islandPanelRows    MiscEstimateIslandPanelRow[]
+  ledRows            MiscEstimateLedRow[]
+  ledSheetRows       MiscEstimateLedSheetRow[]
+  mirrorFrameRows    MiscEstimateMirrorFrameRow[]
+  mirrorRemovalRows  MiscEstimateMirrorRemovalRow[]
+  mirrorRows         MiscEstimateMirrorRow[]
+  wallUnitRows       MiscEstimateWallUnitRow[]
 
   @@index([estimateNo])
   @@index([clientId])
@@ -624,19 +624,19 @@ model MiscEstimate {
 model MiscEstimateLedSheetRow {
   id            String              @id @default(cuid())
   estimateId    String
-  estimate      MiscEstimate        @relation(fields: [estimateId], references: [id], onDelete: Cascade)
   roomId        String?
-  room          MiscLedRoom?        @relation(fields: [roomId], references: [id], onDelete: SetNull)
   sheetTypeId   String?
-  sheetType     MiscLedSheetType?   @relation(fields: [sheetTypeId], references: [id])
   controlTypeId String?
-  controlType   MiscLedControlType? @relation(fields: [controlTypeId], references: [id])
   widthIn       Decimal             @default(0) @db.Decimal(12, 2)
   heightIn      Decimal             @default(0) @db.Decimal(12, 2)
   squareFeet    Int                 @default(0)
   subtotal      Decimal             @default(0) @db.Decimal(12, 2)
   createdAt     DateTime            @default(now())
   updatedAt     DateTime            @updatedAt
+  controlType   MiscLedControlType? @relation(fields: [controlTypeId], references: [id])
+  estimate      MiscEstimate        @relation(fields: [estimateId], references: [id], onDelete: Cascade)
+  room          MiscLedRoom?        @relation(fields: [roomId], references: [id])
+  sheetType     MiscLedSheetType?   @relation(fields: [sheetTypeId], references: [id])
 
   @@index([estimateId])
   @@index([roomId])
@@ -645,44 +645,44 @@ model MiscEstimateLedSheetRow {
 }
 
 model MiscEstimateGlassDoorShelfRow {
-  id            String                 @id @default(cuid())
-  estimateId    String
-  estimate      MiscEstimate           @relation(fields: [estimateId], references: [id], onDelete: Cascade)
-  glassTypeId   String?
-  glassType     MiscGlassDoorShelfType? @relation(fields: [glassTypeId], references: [id], onDelete: SetNull)
-  widthIn       Decimal                @default(0) @db.Decimal(12, 2)
-  heightIn      Decimal                @default(0) @db.Decimal(12, 2)
-  squareFeet    Decimal                @default(0) @db.Decimal(12, 2)
-  quantity      Int                    @default(0)
-  note          String?
-  subtotal      Decimal                @default(0) @db.Decimal(12, 2)
-  createdAt     DateTime               @default(now())
-  updatedAt     DateTime               @updatedAt
+  id          String                  @id @default(cuid())
+  estimateId  String
+  glassTypeId String?
+  widthIn     Decimal                 @default(0) @db.Decimal(12, 2)
+  heightIn    Decimal                 @default(0) @db.Decimal(12, 2)
+  squareFeet  Decimal                 @default(0) @db.Decimal(12, 2)
+  quantity    Int                     @default(0)
+  note        String?
+  subtotal    Decimal                 @default(0) @db.Decimal(12, 2)
+  createdAt   DateTime                @default(now())
+  updatedAt   DateTime                @updatedAt
+  estimate    MiscEstimate            @relation(fields: [estimateId], references: [id], onDelete: Cascade)
+  glassType   MiscGlassDoorShelfType? @relation(fields: [glassTypeId], references: [id])
 
   @@index([estimateId])
   @@index([glassTypeId])
 }
 
 model MiscEstimateMirrorRow {
-  id            String           @id @default(cuid())
-  estimateId    String
-  estimate      MiscEstimate     @relation(fields: [estimateId], references: [id], onDelete: Cascade)
-  roomId        String?
-  room          MiscLedRoom?     @relation(fields: [roomId], references: [id], onDelete: SetNull)
-  colorId       String?
-  color         MiscMirrorColor? @relation(fields: [colorId], references: [id])
+  id              String                 @id @default(cuid())
+  estimateId      String
+  roomId          String?
+  colorId         String?
+  widthIn         Decimal                @default(0) @db.Decimal(12, 2)
+  heightIn        Decimal                @default(0) @db.Decimal(12, 2)
+  squareFeet      Decimal                @default(0) @db.Decimal(12, 2)
+  outlets         Int                    @default(0)
+  lightCutouts    Int                    @default(0)
+  beveled         Boolean                @default(false)
+  note            String?
+  subtotal        Decimal                @default(0) @db.Decimal(12, 2)
+  createdAt       DateTime               @default(now())
+  updatedAt       DateTime               @updatedAt
   beveledOptionId String?
-  beveledOption MiscMirrorBevelOption? @relation(fields: [beveledOptionId], references: [id])
-  widthIn       Decimal          @default(0) @db.Decimal(12, 2)
-  heightIn      Decimal          @default(0) @db.Decimal(12, 2)
-  squareFeet    Decimal          @default(0) @db.Decimal(12, 2)
-  outlets       Int              @default(0)
-  lightCutouts  Int              @default(0)
-  beveled       Boolean          @default(false)
-  note          String?
-  subtotal      Decimal          @default(0) @db.Decimal(12, 2)
-  createdAt     DateTime         @default(now())
-  updatedAt     DateTime         @updatedAt
+  beveledOption   MiscMirrorBevelOption? @relation(fields: [beveledOptionId], references: [id])
+  color           MiscMirrorColor?       @relation(fields: [colorId], references: [id])
+  estimate        MiscEstimate           @relation(fields: [estimateId], references: [id], onDelete: Cascade)
+  room            MiscLedRoom?           @relation(fields: [roomId], references: [id])
 
   @@index([estimateId])
   @@index([roomId])
@@ -691,20 +691,20 @@ model MiscEstimateMirrorRow {
 }
 
 model MiscEstimateIslandPanelRow {
-  id            String            @id @default(cuid())
-  estimateId    String
-  estimate      MiscEstimate      @relation(fields: [estimateId], references: [id], onDelete: Cascade)
-  roomId        String?
-  room          MiscLedRoom?      @relation(fields: [roomId], references: [id], onDelete: SetNull)
-  panelModelId  String?
-  panelModel    MiscIslandPanelModel? @relation(fields: [panelModelId], references: [id], onDelete: SetNull)
-  widthIn       Decimal           @default(0) @db.Decimal(12, 2)
-  heightIn      Decimal           @default(0) @db.Decimal(12, 2)
-  squareFeet    Decimal           @default(0) @db.Decimal(12, 2)
-  boxQty        Int               @default(0)
-  subtotal      Decimal           @default(0) @db.Decimal(12, 2)
-  createdAt     DateTime          @default(now())
-  updatedAt     DateTime          @updatedAt
+  id           String                @id @default(cuid())
+  estimateId   String
+  roomId       String?
+  panelModelId String?
+  widthIn      Decimal               @default(0) @db.Decimal(12, 2)
+  heightIn     Decimal               @default(0) @db.Decimal(12, 2)
+  squareFeet   Decimal               @default(0) @db.Decimal(12, 2)
+  boxQty       Int                   @default(0)
+  subtotal     Decimal               @default(0) @db.Decimal(12, 2)
+  createdAt    DateTime              @default(now())
+  updatedAt    DateTime              @updatedAt
+  estimate     MiscEstimate          @relation(fields: [estimateId], references: [id], onDelete: Cascade)
+  panelModel   MiscIslandPanelModel? @relation(fields: [panelModelId], references: [id])
+  room         MiscLedRoom?          @relation(fields: [roomId], references: [id])
 
   @@index([estimateId])
   @@index([roomId])
@@ -712,39 +712,39 @@ model MiscEstimateIslandPanelRow {
 }
 
 model MiscEstimateWallUnitRow {
-  id            String       @id @default(cuid())
-  estimateId    String
-  estimate      MiscEstimate @relation(fields: [estimateId], references: [id], onDelete: Cascade)
-  roomId        String?
-  room          MiscLedRoom? @relation(fields: [roomId], references: [id], onDelete: SetNull)
-  widthIn       Decimal      @default(0) @db.Decimal(12, 2)
-  heightIn      Decimal      @default(0) @db.Decimal(12, 2)
-  squareFeet    Decimal      @default(0) @db.Decimal(12, 2)
-  note          String?
-  subtotal      Decimal      @default(0) @db.Decimal(12, 2)
-  createdAt     DateTime     @default(now())
-  updatedAt     DateTime     @updatedAt
+  id         String       @id @default(cuid())
+  estimateId String
+  roomId     String?
+  widthIn    Decimal      @default(0) @db.Decimal(12, 2)
+  heightIn   Decimal      @default(0) @db.Decimal(12, 2)
+  squareFeet Decimal      @default(0) @db.Decimal(12, 2)
+  note       String?
+  subtotal   Decimal      @default(0) @db.Decimal(12, 2)
+  createdAt  DateTime     @default(now())
+  updatedAt  DateTime     @updatedAt
+  estimate   MiscEstimate @relation(fields: [estimateId], references: [id], onDelete: Cascade)
+  room       MiscLedRoom? @relation(fields: [roomId], references: [id])
 
   @@index([estimateId])
   @@index([roomId])
 }
 
 model MiscEstimateMirrorFrameRow {
-  id            String                 @id @default(cuid())
-  estimateId    String
-  estimate      MiscEstimate           @relation(fields: [estimateId], references: [id], onDelete: Cascade)
-  roomId        String?
-  room          MiscLedRoom?           @relation(fields: [roomId], references: [id], onDelete: SetNull)
-  finishId      String?
-  finish        MiscMirrorFrameFinish? @relation(fields: [finishId], references: [id], onDelete: SetNull)
-  widthIn       Decimal                @default(0) @db.Decimal(12, 2)
-  heightIn      Decimal                @default(0) @db.Decimal(12, 2)
-  linearInches  Decimal                @default(0) @db.Decimal(12, 2)
-  painted       Boolean                @default(false)
-  color         String?
-  subtotal      Decimal                @default(0) @db.Decimal(12, 2)
-  createdAt     DateTime               @default(now())
-  updatedAt     DateTime               @updatedAt
+  id           String                 @id @default(cuid())
+  estimateId   String
+  roomId       String?
+  finishId     String?
+  widthIn      Decimal                @default(0) @db.Decimal(12, 2)
+  heightIn     Decimal                @default(0) @db.Decimal(12, 2)
+  linearInches Decimal                @default(0) @db.Decimal(12, 2)
+  painted      Boolean                @default(false)
+  color        String?
+  subtotal     Decimal                @default(0) @db.Decimal(12, 2)
+  createdAt    DateTime               @default(now())
+  updatedAt    DateTime               @updatedAt
+  estimate     MiscEstimate           @relation(fields: [estimateId], references: [id], onDelete: Cascade)
+  finish       MiscMirrorFrameFinish? @relation(fields: [finishId], references: [id])
+  room         MiscLedRoom?           @relation(fields: [roomId], references: [id])
 
   @@index([estimateId])
   @@index([roomId])
@@ -754,7 +754,6 @@ model MiscEstimateMirrorFrameRow {
 model MiscEstimateMirrorRemovalRow {
   id                 String       @id @default(cuid())
   estimateId         String
-  estimate           MiscEstimate @relation(fields: [estimateId], references: [id], onDelete: Cascade)
   widthIn            Decimal      @default(0) @db.Decimal(12, 2)
   heightIn           Decimal      @default(0) @db.Decimal(12, 2)
   squareFeet         Decimal      @default(0) @db.Decimal(12, 2)
@@ -764,6 +763,7 @@ model MiscEstimateMirrorRemovalRow {
   total              Decimal      @default(0) @db.Decimal(12, 2)
   createdAt          DateTime     @default(now())
   updatedAt          DateTime     @updatedAt
+  estimate           MiscEstimate @relation(fields: [estimateId], references: [id], onDelete: Cascade)
 
   @@index([estimateId])
 }
@@ -771,20 +771,20 @@ model MiscEstimateMirrorRemovalRow {
 model MiscEstimateLedRow {
   id            String              @id @default(cuid())
   estimateId    String
-  estimate      MiscEstimate        @relation(fields: [estimateId], references: [id], onDelete: Cascade)
   roomId        String?
-  room          MiscLedRoom?        @relation(fields: [roomId], references: [id], onDelete: SetNull)
   ledTypeId     String?
-  ledType       MiscLedType?        @relation(fields: [ledTypeId], references: [id])
   controlTypeId String?
-  controlType   MiscLedControlType? @relation(fields: [controlTypeId], references: [id])
   profileId     String?
-  profile       MiscLedProfile?     @relation(fields: [profileId], references: [id])
   linearFeet    Decimal             @default(0) @db.Decimal(12, 2)
   profileQty    Int                 @default(0)
   subtotal      Decimal             @default(0) @db.Decimal(12, 2)
   createdAt     DateTime            @default(now())
   updatedAt     DateTime            @updatedAt
+  controlType   MiscLedControlType? @relation(fields: [controlTypeId], references: [id])
+  estimate      MiscEstimate        @relation(fields: [estimateId], references: [id], onDelete: Cascade)
+  ledType       MiscLedType?        @relation(fields: [ledTypeId], references: [id])
+  profile       MiscLedProfile?     @relation(fields: [profileId], references: [id])
+  room          MiscLedRoom?        @relation(fields: [roomId], references: [id])
 
   @@index([estimateId])
   @@index([roomId])
@@ -794,57 +794,57 @@ model MiscEstimateLedRow {
 }
 
 model MiscLedRoom {
-  id        String               @id @default(cuid())
-  name      String               @unique
-  sortOrder Int                  @default(0)
-  active    Boolean              @default(true)
-  rows      MiscEstimateLedRow[]
-  sheetRows MiscEstimateLedSheetRow[]
+  id              String                       @id @default(cuid())
+  name            String                       @unique
+  sortOrder       Int                          @default(0)
+  active          Boolean                      @default(true)
+  createdAt       DateTime                     @default(now())
+  updatedAt       DateTime                     @updatedAt
   islandPanelRows MiscEstimateIslandPanelRow[]
-  wallUnitRows MiscEstimateWallUnitRow[]
+  rows            MiscEstimateLedRow[]
+  sheetRows       MiscEstimateLedSheetRow[]
   mirrorFrameRows MiscEstimateMirrorFrameRow[]
-  mirrorRows MiscEstimateMirrorRow[]
-  createdAt DateTime             @default(now())
-  updatedAt DateTime             @updatedAt
+  mirrorRows      MiscEstimateMirrorRow[]
+  wallUnitRows    MiscEstimateWallUnitRow[]
 }
 
 model MiscMirrorColor {
-  id        String                 @id @default(cuid())
-  name      String                 @unique
-  venda     Decimal                @default(0) @db.Decimal(12, 2)
-  custo     Decimal                @default(0) @db.Decimal(12, 2)
-  active    Boolean                @default(true)
-  sortOrder Int                    @default(0)
+  id        String                  @id @default(cuid())
+  name      String                  @unique
+  venda     Decimal                 @default(0) @db.Decimal(12, 2)
+  custo     Decimal                 @default(0) @db.Decimal(12, 2)
+  active    Boolean                 @default(true)
+  sortOrder Int                     @default(0)
+  createdAt DateTime                @default(now())
+  updatedAt DateTime                @updatedAt
   rows      MiscEstimateMirrorRow[]
-  createdAt DateTime               @default(now())
-  updatedAt DateTime               @updatedAt
 }
 
 model MiscGlassDoorShelfType {
-  id        String   @id @default(cuid())
-  name      String   @unique
-  venda     Decimal  @default(0) @db.Decimal(12, 2)
-  custo     Decimal  @default(0) @db.Decimal(12, 2)
-  active    Boolean  @default(true)
-  sortOrder Int      @default(0)
+  id        String                          @id @default(cuid())
+  name      String                          @unique
+  venda     Decimal                         @default(0) @db.Decimal(12, 2)
+  custo     Decimal                         @default(0) @db.Decimal(12, 2)
+  active    Boolean                         @default(true)
+  sortOrder Int                             @default(0)
+  createdAt DateTime                        @default(now())
+  updatedAt DateTime                        @updatedAt
   rows      MiscEstimateGlassDoorShelfRow[]
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
 }
 
 model MiscIslandPanelModel {
-  id         String                    @id @default(cuid())
-  name       String                    @unique
-  sfPerBox   Decimal                   @default(0) @db.Decimal(12, 2)
-  cost       Decimal                   @default(0) @db.Decimal(12, 2)
-  salesPrice Decimal                   @default(0) @db.Decimal(12, 2)
+  id         String                       @id @default(cuid())
+  name       String                       @unique
+  sfPerBox   Decimal                      @default(0) @db.Decimal(12, 2)
+  cost       Decimal                      @default(0) @db.Decimal(12, 2)
+  salesPrice Decimal                      @default(0) @db.Decimal(12, 2)
   link       String?
   imageUrl   String?
-  active     Boolean                   @default(true)
-  sortOrder  Int                       @default(0)
+  active     Boolean                      @default(true)
+  sortOrder  Int                          @default(0)
+  createdAt  DateTime                     @default(now())
+  updatedAt  DateTime                     @updatedAt
   rows       MiscEstimateIslandPanelRow[]
-  createdAt  DateTime                  @default(now())
-  updatedAt  DateTime                  @updatedAt
 }
 
 model MiscWallUnitSetting {
@@ -855,14 +855,14 @@ model MiscWallUnitSetting {
 }
 
 model MiscMirrorFrameFinish {
-  id               String                      @id @default(cuid())
-  name             String                      @unique
-  pricePerLinearFt Decimal                     @default(0) @db.Decimal(12, 2)
-  active           Boolean                     @default(true)
-  sortOrder        Int                         @default(0)
+  id               String                       @id @default(cuid())
+  name             String                       @unique
+  pricePerLinearFt Decimal                      @default(0) @db.Decimal(12, 2)
+  active           Boolean                      @default(true)
+  sortOrder        Int                          @default(0)
+  createdAt        DateTime                     @default(now())
+  updatedAt        DateTime                     @updatedAt
   rows             MiscEstimateMirrorFrameRow[]
-  createdAt        DateTime                    @default(now())
-  updatedAt        DateTime                    @updatedAt
 }
 
 model MiscMirrorFrameSetting {
@@ -883,87 +883,87 @@ model MiscProgramNote {
 }
 
 model MiscMirrorBevelOption {
-  id        String                 @id @default(cuid())
-  name      String                 @unique
-  venda     Decimal                @default(0) @db.Decimal(12, 2)
-  custo     Decimal                @default(0) @db.Decimal(12, 2)
-  active    Boolean                @default(true)
-  sortOrder Int                    @default(0)
+  id        String                  @id @default(cuid())
+  name      String                  @unique
+  venda     Decimal                 @default(0) @db.Decimal(12, 2)
+  custo     Decimal                 @default(0) @db.Decimal(12, 2)
+  active    Boolean                 @default(true)
+  sortOrder Int                     @default(0)
+  createdAt DateTime                @default(now())
+  updatedAt DateTime                @updatedAt
   rows      MiscEstimateMirrorRow[]
-  createdAt DateTime               @default(now())
-  updatedAt DateTime               @updatedAt
 }
 
 model MiscMirrorSetting {
-  id                        String   @id @default(cuid())
-  cuttingFee                Decimal  @default(0) @db.Decimal(12, 2)
-  outletCost                Decimal  @default(0) @db.Decimal(12, 2)
-  outletSale                Decimal  @default(0) @db.Decimal(12, 2)
-  lightCutoutCost           Decimal  @default(0) @db.Decimal(12, 2)
-  lightCutoutSale           Decimal  @default(0) @db.Decimal(12, 2)
-  beveledPerInchCost        Decimal  @default(0) @db.Decimal(12, 2)
-  beveledPerInchSale        Decimal  @default(0) @db.Decimal(12, 2)
-  outOfSquareBeveledCost    Decimal  @default(0) @db.Decimal(12, 2)
-  outOfSquareBeveledSale    Decimal  @default(0) @db.Decimal(12, 2)
-  removalPricePerSqFt       Decimal  @default(0) @db.Decimal(12, 2)
-  repairWallMultiplier      Decimal  @default(0.7) @db.Decimal(12, 4)
-  createdAt                 DateTime @default(now())
-  updatedAt                 DateTime @updatedAt
+  id                     String   @id @default(cuid())
+  cuttingFee             Decimal  @default(0) @db.Decimal(12, 2)
+  outletCost             Decimal  @default(0) @db.Decimal(12, 2)
+  outletSale             Decimal  @default(0) @db.Decimal(12, 2)
+  lightCutoutCost        Decimal  @default(0) @db.Decimal(12, 2)
+  lightCutoutSale        Decimal  @default(0) @db.Decimal(12, 2)
+  beveledPerInchCost     Decimal  @default(0) @db.Decimal(12, 2)
+  beveledPerInchSale     Decimal  @default(0) @db.Decimal(12, 2)
+  outOfSquareBeveledCost Decimal  @default(0) @db.Decimal(12, 2)
+  outOfSquareBeveledSale Decimal  @default(0) @db.Decimal(12, 2)
+  removalPricePerSqFt    Decimal  @default(0) @db.Decimal(12, 2)
+  repairWallMultiplier   Decimal  @default(0.7) @db.Decimal(12, 4)
+  createdAt              DateTime @default(now())
+  updatedAt              DateTime @updatedAt
 }
 
 model MiscLedSheetType {
-  id        String                    @id @default(cuid())
-  name      String                    @unique
-  minimumPrice Decimal                @default(0) @db.Decimal(12, 2)
-  unitPrice Decimal                   @default(0) @db.Decimal(12, 2)
-  active    Boolean                   @default(true)
-  sortOrder Int                       @default(0)
-  rows      MiscEstimateLedSheetRow[]
-  createdAt DateTime                  @default(now())
-  updatedAt DateTime                  @updatedAt
+  id           String                    @id @default(cuid())
+  name         String                    @unique
+  unitPrice    Decimal                   @default(0) @db.Decimal(12, 2)
+  active       Boolean                   @default(true)
+  sortOrder    Int                       @default(0)
+  createdAt    DateTime                  @default(now())
+  updatedAt    DateTime                  @updatedAt
+  minimumPrice Decimal                   @default(0) @db.Decimal(12, 2)
+  rows         MiscEstimateLedSheetRow[]
 }
 
 model MiscLedSheetSetting {
-  id              String   @id @default(cuid())
-  minimumSheetPrice Decimal @default(0) @db.Decimal(12, 2)
-  createdAt       DateTime @default(now())
-  updatedAt       DateTime @updatedAt
+  id                String   @id @default(cuid())
+  minimumSheetPrice Decimal  @default(0) @db.Decimal(12, 2)
+  createdAt         DateTime @default(now())
+  updatedAt         DateTime @updatedAt
 }
 
 model MiscLedType {
-  id         String               @id @default(cuid())
-  name       String               @unique
-  minimumPriceUnder25Ft Decimal   @default(0) @db.Decimal(12, 2)
-  pricePerFt Decimal              @default(0) @db.Decimal(12, 2)
-  active     Boolean              @default(true)
-  sortOrder  Int                  @default(0)
-  rows       MiscEstimateLedRow[]
-  createdAt  DateTime             @default(now())
-  updatedAt  DateTime             @updatedAt
+  id                    String               @id @default(cuid())
+  name                  String               @unique
+  pricePerFt            Decimal              @default(0) @db.Decimal(12, 2)
+  active                Boolean              @default(true)
+  sortOrder             Int                  @default(0)
+  createdAt             DateTime             @default(now())
+  updatedAt             DateTime             @updatedAt
+  minimumPriceUnder25Ft Decimal              @default(0) @db.Decimal(12, 2)
+  rows                  MiscEstimateLedRow[]
 }
 
 model MiscLedControlType {
-  id        String               @id @default(cuid())
-  name      String               @unique
-  unitPrice Decimal              @default(0) @db.Decimal(12, 2)
-  active    Boolean              @default(true)
-  sortOrder Int                  @default(0)
+  id        String                    @id @default(cuid())
+  name      String                    @unique
+  unitPrice Decimal                   @default(0) @db.Decimal(12, 2)
+  active    Boolean                   @default(true)
+  sortOrder Int                       @default(0)
+  createdAt DateTime                  @default(now())
+  updatedAt DateTime                  @updatedAt
   rows      MiscEstimateLedRow[]
   sheetRows MiscEstimateLedSheetRow[]
-  createdAt DateTime             @default(now())
-  updatedAt DateTime             @updatedAt
 }
 
 model MiscLedProfile {
-  id        String               @id @default(cuid())
-  name      String               @unique
-  unitPrice Decimal              @default(0) @db.Decimal(12, 2)
-  groovePricePerFt Decimal       @default(0) @db.Decimal(12, 2)
-  active    Boolean              @default(true)
-  sortOrder Int                  @default(0)
-  rows      MiscEstimateLedRow[]
-  createdAt DateTime             @default(now())
-  updatedAt DateTime             @updatedAt
+  id               String               @id @default(cuid())
+  name             String               @unique
+  unitPrice        Decimal              @default(0) @db.Decimal(12, 2)
+  active           Boolean              @default(true)
+  sortOrder        Int                  @default(0)
+  createdAt        DateTime             @default(now())
+  updatedAt        DateTime             @updatedAt
+  groovePricePerFt Decimal              @default(0) @db.Decimal(12, 2)
+  rows             MiscEstimateLedRow[]
 }
 
 model SampleRequestProvider {
@@ -1127,27 +1127,30 @@ model AccessoryItemEvent {
 
 /// This model contains row level security and requires additional setup for migrations. Visit https://pris.ly/d/row-level-security for more info.
 model PromotionalSlab {
-  id               String    @id
-  slabBaySlabId    String    @unique
-  price            Decimal   @default(0) @db.Decimal
-  isPriceTbd       Boolean   @default(false)
-  status           String    @default("AVAILABLE")
-  soldToClientName String?
-  holdUntil        DateTime? @db.Timestamptz(6)
-  holdByUserId     String?
-  holdByUserName   String?
-  holdCustomerId   String?
-  holdCustomerName String?
-  holdJobId        String?
-  holdJobName      String?
-  soldByUserId     String?
-  soldByUserName   String?
-  soldCustomerId   String?
-  soldCustomerName String?
-  soldJobId        String?
-  soldJobName      String?
-  addedAt          DateTime  @default(now()) @db.Timestamptz(6)
-  updatedAt        DateTime  @default(now()) @db.Timestamptz(6)
+  id                 String    @id
+  slabBaySlabId      String    @unique
+  price              Decimal   @default(0) @db.Decimal
+  isPriceTbd         Boolean   @default(false)
+  status             String    @default("AVAILABLE")
+  soldToClientName   String?
+  holdUntil          DateTime? @db.Timestamptz(6)
+  holdByUserId       String?
+  holdByUserName     String?
+  holdCustomerId     String?
+  holdCustomerName   String?
+  holdJobId          String?
+  holdJobName        String?
+  soldByUserId       String?
+  soldByUserName     String?
+  soldCustomerId     String?
+  soldCustomerName   String?
+  soldJobId          String?
+  soldJobName        String?
+  addedAt            DateTime  @default(now()) @db.Timestamptz(6)
+  updatedAt          DateTime  @default(now()) @db.Timestamptz(6)
+  previousClientName String?
+  previousJobId      String?
+  previousNotes      String?
 }
 
 /// This model contains row level security and requires additional setup for migrations. Visit https://pris.ly/d/row-level-security for more info.
@@ -1168,21 +1171,19 @@ model SlabBayExpectedDelivery {
   createdBy          String
 }
 
-// ─── Sales Commission V2 ───────────────────────────────────────────
-
 model CMSSettings {
-  id                    String   @id @default(cuid())
-  firstPaymentPercent   Float    @default(60)
-  secondPaymentPercent  Float    @default(40)
-  colorPending          String   @default("#FFFFFF")
-  colorFirstPayment     String   @default("#BFDBFE")
-  colorFirstPaid        String   @default("#F0F9FF")
-  colorClosing          String   @default("#BBF7D0")
-  colorHold             String   @default("#FEF08A")
-  colorHoldSignature    String   @default("#FBCFE8")
-  colorError            String   @default("#FECACA")
-  createdAt             DateTime @default(now())
-  updatedAt             DateTime @updatedAt
+  id                   String   @id @default(cuid())
+  firstPaymentPercent  Float    @default(60)
+  secondPaymentPercent Float    @default(40)
+  colorPending         String   @default("#FFFFFF")
+  colorFirstPayment    String   @default("#BFDBFE")
+  colorFirstPaid       String   @default("#F0F9FF")
+  colorClosing         String   @default("#BBF7D0")
+  colorHold            String   @default("#FEF08A")
+  colorHoldSignature   String   @default("#FBCFE8")
+  colorError           String   @default("#FECACA")
+  createdAt            DateTime @default(now())
+  updatedAt            DateTime @updatedAt
 }
 
 model CMSWeek {
@@ -1201,33 +1202,33 @@ model CMSWeek {
 }
 
 model CMSInvoice {
-  id                   String             @id @default(cuid())
+  id                   String           @id @default(cuid())
   weekId               String
-  week                 CMSWeek            @relation(fields: [weekId], references: [id], onDelete: Cascade)
   salesRep             String
-  invoiceDate          DateTime           @db.Date
+  invoiceDate          DateTime         @db.Date
   invoiceNumber        String
   customer             String
   commissionRate       Float
-  amount               Decimal            @db.Decimal(12, 2)
-  calculatedCommission Decimal            @db.Decimal(12, 2)
-  firstPaymentAmount   Decimal            @db.Decimal(12, 2)
-  secondPaymentAmount  Decimal            @db.Decimal(12, 2)
-  payFirst             Boolean            @default(false)
-  paySecond            Boolean            @default(false)
-  firstPaid            Boolean            @default(false)
-  firstPaidDate        DateTime?          @db.Date
-  secondPaid           Boolean            @default(false)
-  secondPaidDate       DateTime?          @db.Date
-  thirdPartyAmount     Decimal?           @db.Decimal(12, 2)
-  refundAmount         Decimal?           @db.Decimal(12, 2)
+  amount               Decimal          @db.Decimal(12, 2)
+  calculatedCommission Decimal          @db.Decimal(12, 2)
+  firstPaymentAmount   Decimal          @db.Decimal(12, 2)
+  secondPaymentAmount  Decimal          @db.Decimal(12, 2)
+  payFirst             Boolean          @default(false)
+  paySecond            Boolean          @default(false)
+  firstPaid            Boolean          @default(false)
+  firstPaidDate        DateTime?        @db.Date
+  secondPaid           Boolean          @default(false)
+  secondPaidDate       DateTime?        @db.Date
+  thirdPartyAmount     Decimal?         @db.Decimal(12, 2)
+  refundAmount         Decimal?         @db.Decimal(12, 2)
   notes                String?
-  isNew                Boolean            @default(true)
-  status               CMSInvoiceStatus   @default(PENDING)
+  isNew                Boolean          @default(true)
+  status               CMSInvoiceStatus @default(PENDING)
   originalInvoiceId    String?
-  sortOrder            Int                @default(0)
-  createdAt            DateTime           @default(now())
-  updatedAt            DateTime           @updatedAt
+  sortOrder            Int              @default(0)
+  createdAt            DateTime         @default(now())
+  updatedAt            DateTime         @updatedAt
+  week                 CMSWeek          @relation(fields: [weekId], references: [id], onDelete: Cascade)
 
   @@index([weekId])
   @@index([salesRep])
@@ -1236,26 +1237,26 @@ model CMSInvoice {
 }
 
 model CMSClosedInvoice {
-  id                   String   @id @default(cuid())
+  id                   String    @id @default(cuid())
   salesRep             String
-  invoiceDate          DateTime @db.Date
+  invoiceDate          DateTime  @db.Date
   invoiceNumber        String
   customer             String
   commissionRate       Float
-  amount               Decimal  @db.Decimal(12, 2)
-  calculatedCommission Decimal  @db.Decimal(12, 2)
-  firstPaymentAmount   Decimal  @db.Decimal(12, 2)
-  secondPaymentAmount  Decimal  @db.Decimal(12, 2)
-  thirdPartyAmount     Decimal? @db.Decimal(12, 2)
-  refundAmount         Decimal? @db.Decimal(12, 2)
+  amount               Decimal   @db.Decimal(12, 2)
+  calculatedCommission Decimal   @db.Decimal(12, 2)
+  firstPaymentAmount   Decimal   @db.Decimal(12, 2)
+  secondPaymentAmount  Decimal   @db.Decimal(12, 2)
+  thirdPartyAmount     Decimal?  @db.Decimal(12, 2)
+  refundAmount         Decimal?  @db.Decimal(12, 2)
   firstPaidDate        DateTime? @db.Date
   secondPaidDate       DateTime? @db.Date
   notes                String?
-  weekStart            DateTime @db.Date
-  weekEnd              DateTime @db.Date
-  checkDate            DateTime @db.Date
+  weekStart            DateTime  @db.Date
+  weekEnd              DateTime  @db.Date
+  checkDate            DateTime  @db.Date
   originalInvoiceId    String?
-  closedAt             DateTime @default(now())
+  closedAt             DateTime  @default(now())
 
   @@index([salesRep])
   @@index([invoiceNumber])
@@ -1263,8 +1264,8 @@ model CMSClosedInvoice {
 }
 
 model QuoteRepair {
-  id                String               @id @default(cuid())
-  quoteRepairNumber String               @unique
+  id                String                @id @default(cuid())
+  quoteRepairNumber String                @unique
   customerName      String
   customerPhone     String?
   propertyAddress   String
@@ -1275,20 +1276,20 @@ model QuoteRepair {
   areas             Json
   salesRepId        String
   createdById       String
-  status            QuoteRepairStatus    @default(DRAFT)
-  currentVersionId  String?              @unique
-  approvedVersionId String?              @unique
-  nextVersionNumber Int                  @default(2)
+  status            QuoteRepairStatus     @default(DRAFT)
+  currentVersionId  String?               @unique
+  approvedVersionId String?               @unique
+  nextVersionNumber Int                   @default(2)
   deletedAt         DateTime?
   archivedAt        DateTime?
-  createdAt         DateTime             @default(now())
-  updatedAt         DateTime             @updatedAt
-  createdBy         User                 @relation("QuoteRepairsCreatedBy", fields: [createdById], references: [id])
-  salesRep          User                 @relation("QuoteRepairsSalesRep", fields: [salesRepId], references: [id])
-  currentVersion    QuoteRepairVersion?  @relation("QuoteRepairCurrentVersion", fields: [currentVersionId], references: [id], onDelete: SetNull)
-  approvedVersion   QuoteRepairVersion?  @relation("QuoteRepairApprovedVersion", fields: [approvedVersionId], references: [id], onDelete: SetNull)
-  versions          QuoteRepairVersion[]
+  createdAt         DateTime              @default(now())
+  updatedAt         DateTime              @updatedAt
+  approvedVersion   QuoteRepairVersion?   @relation("QuoteRepairApprovedVersion", fields: [approvedVersionId], references: [id])
+  createdBy         User                  @relation("QuoteRepairsCreatedBy", fields: [createdById], references: [id])
+  currentVersion    QuoteRepairVersion?   @relation("QuoteRepairCurrentVersion", fields: [currentVersionId], references: [id])
+  salesRep          User                  @relation("QuoteRepairsSalesRep", fields: [salesRepId], references: [id])
   activities        QuoteRepairActivity[]
+  versions          QuoteRepairVersion[]
 
   @@index([salesRepId])
   @@index([createdById])
@@ -1298,32 +1299,32 @@ model QuoteRepair {
 }
 
 model QuoteRepairVersion {
-  id               String               @id @default(cuid())
-  quoteRepairId    String
-  versionNumber    Int
-  status           QuoteRepairStatus    @default(DRAFT)
-  customerNotes    String?
-  internalNotes    String?
-  reviewComment    String?
-  total            Decimal              @default(0) @db.Decimal(12, 2)
-  createdById      String
-  updatedById      String?
-  submittedById    String?
-  submittedAt      DateTime?
-  approvedById     String?
-  approvedAt       DateTime?
-  deletedAt        DateTime?
-  createdAt        DateTime             @default(now())
-  updatedAt        DateTime             @updatedAt
-  quoteRepair      QuoteRepair          @relation(fields: [quoteRepairId], references: [id], onDelete: Cascade)
-  createdBy        User                 @relation("QuoteRepairVersionsCreatedBy", fields: [createdById], references: [id])
-  updatedBy        User?                @relation("QuoteRepairVersionsUpdatedBy", fields: [updatedById], references: [id])
-  submittedBy      User?                @relation("QuoteRepairVersionsSubmittedBy", fields: [submittedById], references: [id])
-  approvedBy       User?                @relation("QuoteRepairVersionsApprovedBy", fields: [approvedById], references: [id])
-  currentRepair    QuoteRepair?         @relation("QuoteRepairCurrentVersion")
-  approvedRepair   QuoteRepair?         @relation("QuoteRepairApprovedVersion")
-  items            QuoteRepairItem[]
-  activities       QuoteRepairActivity[]
+  id             String                @id @default(cuid())
+  quoteRepairId  String
+  versionNumber  Int
+  status         QuoteRepairStatus     @default(DRAFT)
+  customerNotes  String?
+  internalNotes  String?
+  reviewComment  String?
+  total          Decimal               @default(0) @db.Decimal(12, 2)
+  createdById    String
+  updatedById    String?
+  submittedById  String?
+  submittedAt    DateTime?
+  approvedById   String?
+  approvedAt     DateTime?
+  deletedAt      DateTime?
+  createdAt      DateTime              @default(now())
+  updatedAt      DateTime              @updatedAt
+  approvedRepair QuoteRepair?          @relation("QuoteRepairApprovedVersion")
+  currentRepair  QuoteRepair?          @relation("QuoteRepairCurrentVersion")
+  activities     QuoteRepairActivity[]
+  items          QuoteRepairItem[]
+  approvedBy     User?                 @relation("QuoteRepairVersionsApprovedBy", fields: [approvedById], references: [id])
+  createdBy      User                  @relation("QuoteRepairVersionsCreatedBy", fields: [createdById], references: [id])
+  quoteRepair    QuoteRepair           @relation(fields: [quoteRepairId], references: [id], onDelete: Cascade)
+  submittedBy    User?                 @relation("QuoteRepairVersionsSubmittedBy", fields: [submittedById], references: [id])
+  updatedBy      User?                 @relation("QuoteRepairVersionsUpdatedBy", fields: [updatedById], references: [id])
 
   @@unique([quoteRepairId, versionNumber])
   @@index([quoteRepairId, status])
@@ -1334,18 +1335,18 @@ model QuoteRepairVersion {
 }
 
 model QuoteRepairItem {
-  id                   String               @id @default(cuid())
+  id                   String              @id @default(cuid())
   quoteRepairVersionId String
   sortOrder            Int
   serviceId            String?
-  service              QuoteRepairService?  @relation(fields: [serviceId], references: [id], onDelete: SetNull)
   serviceNameSnapshot  String
   description          String
-  price                Decimal?             @db.Decimal(12, 2)
+  price                Decimal?            @db.Decimal(12, 2)
   internalNote         String?
-  createdAt            DateTime             @default(now())
-  updatedAt            DateTime             @updatedAt
-  version              QuoteRepairVersion    @relation(fields: [quoteRepairVersionId], references: [id], onDelete: Cascade)
+  createdAt            DateTime            @default(now())
+  updatedAt            DateTime            @updatedAt
+  version              QuoteRepairVersion  @relation(fields: [quoteRepairVersionId], references: [id], onDelete: Cascade)
+  service              QuoteRepairService? @relation(fields: [serviceId], references: [id])
 
   @@index([quoteRepairVersionId, sortOrder])
   @@index([serviceId])
@@ -1363,20 +1364,20 @@ model QuoteRepairSequence {
 }
 
 model QuoteRepairService {
-  id         String   @id @default(cuid())
-  name       String   @unique
-  active     Boolean  @default(true)
-  sortOrder  Int      @default(0)
-  createdAt  DateTime @default(now())
-  updatedAt  DateTime @updatedAt
-  items      QuoteRepairItem[]
+  id        String            @id @default(cuid())
+  name      String            @unique
+  active    Boolean           @default(true)
+  sortOrder Int               @default(0)
+  createdAt DateTime          @default(now())
+  updatedAt DateTime          @updatedAt
+  items     QuoteRepairItem[]
 
   @@index([active])
   @@index([sortOrder])
 }
 
 model QuoteRepairActivity {
-  id                   String               @id @default(cuid())
+  id                   String              @id @default(cuid())
   quoteRepairId        String
   quoteRepairVersionId String?
   actorUserId          String?
@@ -1384,10 +1385,10 @@ model QuoteRepairActivity {
   beforeSummary        String?
   afterSummary         String?
   details              Json?
-  createdAt            DateTime             @default(now())
-  quoteRepair          QuoteRepair          @relation(fields: [quoteRepairId], references: [id], onDelete: Cascade)
-  version              QuoteRepairVersion?  @relation(fields: [quoteRepairVersionId], references: [id], onDelete: SetNull)
-  actor                User?                @relation(fields: [actorUserId], references: [id], onDelete: SetNull)
+  createdAt            DateTime            @default(now())
+  actor                User?               @relation(fields: [actorUserId], references: [id])
+  quoteRepair          QuoteRepair         @relation(fields: [quoteRepairId], references: [id], onDelete: Cascade)
+  version              QuoteRepairVersion? @relation(fields: [quoteRepairVersionId], references: [id])
 
   @@index([quoteRepairId, createdAt])
   @@index([quoteRepairVersionId])
@@ -1403,6 +1404,11 @@ model QuoteRepairSettings {
   footerText           String?
   createdAt            DateTime @default(now())
   updatedAt            DateTime @updatedAt
+}
+
+model SlabBayStateMeta {
+  id      Int @id
+  version Int
 }
 
 enum Role {

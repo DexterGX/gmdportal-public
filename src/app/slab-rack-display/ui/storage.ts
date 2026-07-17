@@ -51,10 +51,22 @@ const getNextSlabId = (state: SlabBayState) => {
 };
 
 const getDefaultState = (): SlabBayState => ({
+  version: 1,
   racks: [],
   slabs: [],
   history: [],
 });
+
+let latestKnownVersion = 1;
+let queuedState: SlabBayState | null = null;
+let syncLoopPromise: Promise<void> | null = null;
+const normalizeVersion = (value: unknown) => {
+  const parsed = Number(value);
+  return Number.isFinite(parsed) && parsed > 0 ? parsed : 1;
+};
+
+const pickRequestVersion = (stateVersion?: number) =>
+  Math.max(normalizeVersion(stateVersion), latestKnownVersion);
 
 export const loadState = (): SlabBayState => {
   if (typeof window === "undefined") return getDefaultState();
@@ -63,12 +75,15 @@ export const loadState = (): SlabBayState => {
 
 export const saveState = (state: SlabBayState) => {
   if (typeof window === "undefined") return;
-  void syncStateToDb(state);
+  void enqueueStateSync(state).catch((error) => {
+    // Keep async saves non-blocking but visible during debugging.
+    console.error("Failed to sync SlabBay state.", error);
+  });
 };
 
 export const saveStateToDb = async (state: SlabBayState) => {
   if (typeof window === "undefined") return;
-  await syncStateToDb(state);
+  await enqueueStateSync(state);
 };
 
 export const fetchStateFromDb = async (): Promise<SlabBayState | null> => {
@@ -77,21 +92,83 @@ export const fetchStateFromDb = async (): Promise<SlabBayState | null> => {
       cache: "no-store",
     });
     if (!response.ok) return null;
-    return (await response.json()) as SlabBayState;
+    const payload = (await response.json()) as SlabBayState;
+    const version = normalizeVersion(payload.version);
+    latestKnownVersion = version;
+    return {
+      ...payload,
+      version,
+    };
   } catch {
     return null;
   }
 };
 
 export const syncStateToDb = async (state: SlabBayState) => {
+  const requestVersion = pickRequestVersion(state.version);
   const response = await fetch("/api/slab-rack-display/state", {
     method: "PUT",
-    headers: { "Content-Type": "application/json" },
+    headers: {
+      "Content-Type": "application/json",
+      "x-slabbay-version": String(requestVersion),
+    },
     body: JSON.stringify(state),
   });
 
   if (!response.ok) {
+    if (response.status === 409) {
+      const conflictBody = (await response.json().catch(() => null)) as {
+        currentVersion?: number;
+      } | null;
+      if (conflictBody?.currentVersion) {
+        latestKnownVersion = normalizeVersion(conflictBody.currentVersion);
+      }
+      throw new Error(
+        "SlabBay data was updated elsewhere. Refresh the page and retry.",
+      );
+    }
+
     throw new Error("Failed to sync SlabBay state.");
+  }
+
+  const result = (await response.json().catch(() => null)) as {
+    version?: number;
+  } | null;
+  if (result?.version) {
+    latestKnownVersion = normalizeVersion(result.version);
+  }
+};
+
+const runQueuedSync = async () => {
+  while (queuedState) {
+    const next = queuedState;
+    queuedState = null;
+    const stateToPersist = {
+      ...next,
+      version: pickRequestVersion(next.version),
+    };
+    await syncStateToDb(stateToPersist);
+  }
+};
+
+const enqueueStateSync = async (state: SlabBayState) => {
+  queuedState = {
+    ...state,
+    version: pickRequestVersion(state.version),
+  };
+
+  if (!syncLoopPromise) {
+    syncLoopPromise = runQueuedSync().finally(() => {
+      syncLoopPromise = null;
+    });
+  }
+
+  try {
+    await syncLoopPromise;
+  } catch (error) {
+    throw error instanceof Error
+      ? error
+      : new Error("Failed to sync SlabBay state.");
   }
 };
 
