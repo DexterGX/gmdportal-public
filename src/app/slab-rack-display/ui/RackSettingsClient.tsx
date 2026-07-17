@@ -3,7 +3,6 @@
 import { useEffect, useMemo, useState } from "react";
 import type { Rack, SlabBayState } from "./mockData";
 import {
-  addDefaultRacks,
   addRack,
   deleteRackWithReassignment,
   fetchStateFromDb,
@@ -17,7 +16,10 @@ export default function RackSettingsClient() {
   const [selectedRackId, setSelectedRackId] = useState(
     state.racks[0]?.id ?? "",
   );
+  const [draftRack, setDraftRack] = useState<Rack | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [successMessage, setSuccessMessage] = useState<string | null>(null);
+  const [isSaving, setIsSaving] = useState(false);
   const [newRackName, setNewRackName] = useState("");
   const [newRackCapacity, setNewRackCapacity] = useState("7");
   const [newRackTargetFill, setNewRackTargetFill] = useState("5");
@@ -42,6 +44,12 @@ export default function RackSettingsClient() {
     [state.racks, selectedRackId],
   );
 
+  useEffect(() => {
+    setDraftRack(selectedRack ? { ...selectedRack } : null);
+    setError(null);
+    setSuccessMessage(null);
+  }, [selectedRack]);
+
   const sortedRacks = useMemo(
     () =>
       [...state.racks].sort((a, b) =>
@@ -61,25 +69,62 @@ export default function RackSettingsClient() {
   );
 
   const handleUpdate = (updates: Partial<Rack>) => {
-    if (!selectedRack) return;
-    if (
-      updates.capacity !== undefined &&
-      updates.capacity < slabsInRack.length
-    ) {
-      setError(
-        `Capacity must be at least ${slabsInRack.length} to fit existing slabs.`,
-      );
+    setError(null);
+    setSuccessMessage(null);
+    setDraftRack((current) => (current ? { ...current, ...updates } : current));
+  };
+
+  const validateDraftRack = (rack: Rack) => {
+    const name = rack.name.trim();
+    if (!name) return "Rack name is required.";
+    if (!Number.isFinite(rack.capacity) || rack.capacity <= 0) {
+      return "Capacity must be greater than 0.";
+    }
+    if (rack.capacity < slabsInRack.length) {
+      return `Capacity must be at least ${slabsInRack.length} to fit existing slabs.`;
+    }
+    if (!Number.isFinite(rack.targetFill) || rack.targetFill <= 0) {
+      return "Target fill must be greater than 0.";
+    }
+    if (rack.targetFill > rack.capacity) {
+      return "Target fill cannot exceed rack capacity.";
+    }
+    return null;
+  };
+
+  const handleSaveRack = () => {
+    if (!selectedRack || !draftRack) {
+      setError("Select a rack before saving changes.");
       return;
     }
 
-    const nextCapacity = updates.capacity ?? selectedRack.capacity;
-    if (updates.targetFill !== undefined && updates.targetFill > nextCapacity) {
-      setError("Target fill cannot exceed rack capacity.");
+    const validationError = validateDraftRack(draftRack);
+    if (validationError) {
+      setError(validationError);
       return;
     }
+
+    setIsSaving(true);
+    try {
+      const next = updateRack(state, selectedRack.id, {
+        name: draftRack.name.trim(),
+        capacity: draftRack.capacity,
+        note: draftRack.note ?? "",
+        countTowardInventory: draftRack.countTowardInventory,
+        targetFill: draftRack.targetFill,
+      });
+      setState(next);
+      setError(null);
+      setSuccessMessage("Rack settings saved.");
+    } finally {
+      setIsSaving(false);
+    }
+  };
+
+  const handleCancelRackEdits = () => {
+    setDraftRack(selectedRack ? { ...selectedRack } : null);
     setError(null);
-    const next = updateRack(state, selectedRack.id, updates);
-    setState(next);
+    setSuccessMessage(null);
   };
 
   const handleCreateRack = () => {
@@ -126,13 +171,6 @@ export default function RackSettingsClient() {
     setNewRackCountToward(true);
   };
 
-  const handleCreateDefaults = () => {
-    const next = addDefaultRacks(state);
-    setState(next);
-    setSelectedRackId(next.racks[0]?.id ?? "");
-    setError(null);
-  };
-
   const handleDeleteRack = () => {
     if (!selectedRack) {
       setError("Select a rack to delete.");
@@ -157,6 +195,8 @@ export default function RackSettingsClient() {
     const nextSelected = result.nextState.racks[0]?.id ?? "";
     setSelectedRackId(nextSelected);
   };
+
+  const draftRackValue = draftRack ?? selectedRack;
 
   return (
     <div className="space-y-6">
@@ -248,13 +288,6 @@ export default function RackSettingsClient() {
               >
                 Create rack
               </button>
-              <button
-                type="button"
-                onClick={handleCreateDefaults}
-                className="px-3 py-2 text-sm font-medium text-gray-700 dark:text-gray-300 bg-white dark:bg-gray-700 border border-gray-300 dark:border-gray-600 rounded-lg hover:bg-gray-50 dark:hover:bg-gray-600 transition-colors"
-              >
-                Create default racks
-              </button>
             </div>
           </div>
 
@@ -305,16 +338,25 @@ export default function RackSettingsClient() {
         </div>
 
         <div className="bg-white dark:bg-gray-900 rounded-xl border border-gray-200 dark:border-gray-800 p-6 space-y-4">
+          {successMessage && (
+            <div className="rounded-lg border border-green-200 bg-green-50 px-3 py-2 text-sm text-green-700 dark:border-green-900 dark:bg-green-950/30 dark:text-green-300">
+              {successMessage}
+            </div>
+          )}
+          {error && (
+            <div className="rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700 dark:border-red-900 dark:bg-red-950/30 dark:text-red-300">
+              {error}
+            </div>
+          )}
           <div>
             <label className="text-xs font-medium text-gray-500">
               Rack name
             </label>
             <input
-              value={selectedRack?.name ?? ""}
-              onChange={(event) =>
-                handleUpdate({ name: event.target.value || "" })
-              }
+              value={draftRackValue?.name ?? ""}
+              onChange={(event) => handleUpdate({ name: event.target.value })}
               className="mt-1 w-full rounded-lg border border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-800 px-3 py-2 text-sm"
+              disabled={!draftRackValue}
             />
           </div>
           <div>
@@ -324,11 +366,12 @@ export default function RackSettingsClient() {
             <input
               type="number"
               min={1}
-              value={selectedRack?.capacity ?? 0}
+              value={draftRackValue?.capacity ?? 0}
               onChange={(event) =>
                 handleUpdate({ capacity: Number(event.target.value) })
               }
               className="mt-1 w-full rounded-lg border border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-800 px-3 py-2 text-sm"
+              disabled={!draftRackValue}
             />
           </div>
           <div>
@@ -338,12 +381,13 @@ export default function RackSettingsClient() {
             <input
               type="number"
               min={1}
-              max={selectedRack?.capacity ?? 7}
-              value={selectedRack?.targetFill ?? 5}
+              max={draftRackValue?.capacity ?? 7}
+              value={draftRackValue?.targetFill ?? 5}
               onChange={(event) =>
                 handleUpdate({ targetFill: Number(event.target.value) })
               }
               className="mt-1 w-full rounded-lg border border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-800 px-3 py-2 text-sm"
+              disabled={!draftRackValue}
             />
           </div>
           <div>
@@ -351,26 +395,43 @@ export default function RackSettingsClient() {
               Rack note
             </label>
             <textarea
-              value={selectedRack?.note ?? ""}
+              value={draftRackValue?.note ?? ""}
               onChange={(event) => handleUpdate({ note: event.target.value })}
               rows={3}
               className="mt-1 w-full rounded-lg border border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-800 px-3 py-2 text-sm"
+              disabled={!draftRackValue}
             />
           </div>
           <label className="flex items-center gap-2 text-sm text-gray-600 dark:text-gray-300">
             <input
               type="checkbox"
-              checked={selectedRack?.countTowardInventory ?? false}
+              checked={draftRackValue?.countTowardInventory ?? true}
               onChange={(event) =>
                 handleUpdate({ countTowardInventory: event.target.checked })
               }
               className="h-4 w-4 rounded border-gray-300"
+              disabled={!draftRackValue}
             />
             Count toward total inventory
           </label>
-          {error && (
-            <p className="text-sm text-red-600 dark:text-red-400">{error}</p>
-          )}
+          <div className="flex flex-wrap gap-2">
+            <button
+              type="button"
+              onClick={handleSaveRack}
+              disabled={!draftRackValue || isSaving}
+              className="px-4 py-2 text-sm font-medium text-white bg-blue-600 rounded-lg hover:bg-blue-700 disabled:cursor-not-allowed disabled:opacity-60 transition-colors"
+            >
+              Save changes
+            </button>
+            <button
+              type="button"
+              onClick={handleCancelRackEdits}
+              disabled={!draftRackValue || isSaving}
+              className="px-4 py-2 text-sm font-medium text-gray-700 dark:text-gray-300 bg-white dark:bg-gray-700 border border-gray-300 dark:border-gray-600 rounded-lg hover:bg-gray-50 dark:hover:bg-gray-600 disabled:cursor-not-allowed disabled:opacity-60 transition-colors"
+            >
+              Cancel
+            </button>
+          </div>
         </div>
       </div>
     </div>

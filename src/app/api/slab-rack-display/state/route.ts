@@ -25,6 +25,17 @@ const ensureTablesOnce = async () => {
 
 const ensureTables = async () => {
   await sql`
+    CREATE TABLE IF NOT EXISTS "SlabBayStateMeta" (
+      "id" INTEGER PRIMARY KEY,
+      "version" INTEGER NOT NULL
+    );
+  `;
+  await sql`
+    INSERT INTO "SlabBayStateMeta" ("id", "version")
+    VALUES (1, 1)
+    ON CONFLICT ("id") DO NOTHING;
+  `;
+  await sql`
     CREATE TABLE IF NOT EXISTS "SlabBayRack" (
       "id" TEXT PRIMARY KEY,
       "name" TEXT NOT NULL,
@@ -107,6 +118,17 @@ const ensureTables = async () => {
       ADD COLUMN IF NOT EXISTS "batchSize" INTEGER,
       ADD COLUMN IF NOT EXISTS "recoveredFromHistoryId" TEXT;
   `;
+};
+
+const getCurrentVersion = async (db: typeof sql): Promise<number> => {
+  const rows = (await db`
+    SELECT "version"
+    FROM "SlabBayStateMeta"
+    WHERE "id" = 1
+    LIMIT 1
+  `) as Array<{ version: number }>;
+
+  return rows[0]?.version ?? 1;
 };
 
 const buildDefaultRacks = () => {
@@ -233,6 +255,7 @@ const mapState = (state: SlabBayState) => {
 
 export async function GET() {
   await ensureTablesOnce();
+  const version = await getCurrentVersion(sql);
 
   const racks = await sql`
     SELECT * FROM "SlabBayRack" ORDER BY "name" ASC
@@ -282,6 +305,7 @@ export async function GET() {
   }
 
   return NextResponse.json({
+    version,
     racks: finalRacks.map((rack) => ({
       id: rack.id,
       name: rack.name,
@@ -358,6 +382,24 @@ export async function PUT(request: Request) {
   const mapped = mapState(body);
   await ensureTablesOnce();
 
+  const expectedVersionHeader = request.headers.get("x-slabbay-version");
+  const expectedVersion = expectedVersionHeader
+    ? Number(expectedVersionHeader)
+    : NaN;
+  const currentVersion = await getCurrentVersion(sql);
+
+  if (Number.isFinite(expectedVersion) && expectedVersion !== currentVersion) {
+    return NextResponse.json(
+      {
+        ok: false,
+        error:
+          "SlabBay state changed by another request. Please refresh and try again.",
+        currentVersion,
+      },
+      { status: 409 },
+    );
+  }
+
   const existingSlabs = (await sql`
     SELECT "id", "createdAt" FROM "SlabBaySlab"
   `) as Array<{ id: string; createdAt: Date | string }>;
@@ -383,6 +425,8 @@ export async function PUT(request: Request) {
       existingCreatedAtById.get(slab.id) ??
       slab.createdAt,
   }));
+
+  let nextVersion = currentVersion + 1;
 
   await sql.begin(async (trx) => {
     await trx`TRUNCATE TABLE "SlabBayHistory", "SlabBaySlab", "SlabBayRack" CASCADE`;
@@ -459,7 +503,16 @@ export async function PUT(request: Request) {
         )}
       `;
     }
+
+    const versionRows = (await trx`
+      UPDATE "SlabBayStateMeta"
+      SET "version" = "version" + 1
+      WHERE "id" = 1
+      RETURNING "version"
+    `) as Array<{ version: number }>;
+
+    nextVersion = versionRows[0]?.version ?? nextVersion;
   });
 
-  return NextResponse.json({ ok: true });
+  return NextResponse.json({ ok: true, version: nextVersion });
 }

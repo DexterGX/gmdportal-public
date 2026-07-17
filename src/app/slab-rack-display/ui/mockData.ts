@@ -56,6 +56,7 @@ export type HistoryEntry = {
 };
 
 export type SlabBayState = {
+  version?: number;
   racks: Rack[];
   slabs: Slab[];
   history: HistoryEntry[];

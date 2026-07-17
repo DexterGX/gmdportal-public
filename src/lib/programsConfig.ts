@@ -345,6 +345,7 @@ export const programs: ProgramConfig[] = [
         icon: Settings2,
         name: "Rack Settings",
         path: "/slab-rack-display/settings",
+        adminOnly: true,
       },
     ],
     othersItems: [],

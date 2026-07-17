@@ -22,9 +22,20 @@ export default function RackDetailClient({ userName }: { userName: string }) {
   const params = useParams();
   const router = useRouter();
   const rackId = String(params?.rackId ?? "").toLowerCase();
+  const rowStorageKey = `slabbay:last-row:rack:${rackId || "unknown"}`;
   const [state, setState] = useState<SlabBayState>(() => loadState());
   const [isLoading, setIsLoading] = useState(true);
   const [hasLoaded, setHasLoaded] = useState(false);
+  const [lastClickedSlabId, setLastClickedSlabId] = useState("");
+  const [clientSubtitleByName, setClientSubtitleByName] = useState<
+    Record<string, string | null>
+  >({});
+
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    const stored = window.localStorage.getItem(rowStorageKey);
+    setLastClickedSlabId(stored || "");
+  }, [rowStorageKey]);
 
   useEffect(() => {
     let active = true;
@@ -52,6 +63,45 @@ export default function RackDetailClient({ userName }: { userName: string }) {
     [state, rack],
   );
 
+  useEffect(() => {
+    const clientNames = Array.from(
+      new Set(
+        slabs
+          .map((slab) => splitClientName(slab.clientName).clientName.trim())
+          .filter(Boolean),
+      ),
+    );
+
+    if (clientNames.length === 0) {
+      setClientSubtitleByName({});
+      return;
+    }
+
+    let active = true;
+    fetch("/api/slab-rack-display/client-subtitles", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ names: clientNames }),
+    })
+      .then((response) => (response.ok ? response.json() : null))
+      .then((payload) => {
+        if (!active) return;
+        const subtitles =
+          payload && typeof payload === "object" && payload.subtitles
+            ? (payload.subtitles as Record<string, string | null>)
+            : {};
+        setClientSubtitleByName(subtitles);
+      })
+      .catch(() => {
+        if (!active) return;
+        setClientSubtitleByName({});
+      });
+
+    return () => {
+      active = false;
+    };
+  }, [slabs]);
+
   const formatTimestamp = (value: string) => {
     const date = new Date(value);
     if (Number.isNaN(date.getTime())) return { datePart: value, timePart: "" };
@@ -63,9 +113,15 @@ export default function RackDetailClient({ userName }: { userName: string }) {
 
   const renderClientCell = (clientValue: string, slabType: string) => {
     const { clientName, originalClientName } = splitClientName(clientValue);
+    const subtitle = clientSubtitleByName[clientName.trim().toLowerCase()];
     return (
       <div className="space-y-1">
         <div>{clientName || "-"}</div>
+        {subtitle ? (
+          <div className="text-xs text-gray-500 dark:text-gray-400">
+            {subtitle}
+          </div>
+        ) : null}
         {slabType === "GMD" && originalClientName ? (
           <div className="text-xs text-gray-500 dark:text-gray-400">
             Original Client: {originalClientName}
@@ -73,6 +129,12 @@ export default function RackDetailClient({ userName }: { userName: string }) {
         ) : null}
       </div>
     );
+  };
+
+  const handleRowClick = (slabId: string) => {
+    setLastClickedSlabId(slabId);
+    if (typeof window === "undefined") return;
+    window.localStorage.setItem(rowStorageKey, slabId);
   };
 
   if (!rack && !hasLoaded) {
@@ -166,7 +228,12 @@ export default function RackDetailClient({ userName }: { userName: string }) {
                 {slabs.map((slab) => (
                   <tr
                     key={slab.id}
-                    className="border-t border-gray-100 dark:border-gray-800"
+                    onClick={() => handleRowClick(slab.id)}
+                    className={`border-t border-gray-100 dark:border-gray-800 cursor-pointer transition-colors ${
+                      lastClickedSlabId === slab.id
+                        ? "bg-amber-50 dark:bg-amber-900/20"
+                        : "hover:bg-gray-50 dark:hover:bg-gray-800/40"
+                    }`}
                   >
                     <td className="py-3 pr-4 font-medium text-gray-800 dark:text-gray-100">
                       {slab.id}

@@ -4,6 +4,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { AlertTriangle } from "lucide-react";
 import type { Slab, SlabBayState } from "./mockData";
 import type { SlabDeliveryExpectation } from "./expectedDeliveries";
+import type { CustomerSuggestion } from "./customerSuggestions";
 import {
   addMultipleSlabs,
   encodeClientName,
@@ -43,13 +44,17 @@ export default function SlabActions({
   const [showClientDropdown, setShowClientDropdown] = useState(false);
   const [loadingClients, setLoadingClients] = useState(false);
   const [clientName, setClientName] = useState("");
+  const [clientSubtitle, setClientSubtitle] = useState<string | null>(null);
   const [originalClientName, setOriginalClientName] = useState("");
+  const [originalClientSubtitle, setOriginalClientSubtitle] = useState<
+    string | null
+  >(null);
   const [originalClientSearchTerm, setOriginalClientSearchTerm] = useState("");
   const [showOriginalClientDropdown, setShowOriginalClientDropdown] =
     useState(false);
   const [loadingOriginalClients, setLoadingOriginalClients] = useState(false);
   const [originalClientSuggestions, setOriginalClientSuggestions] = useState<
-    string[]
+    CustomerSuggestion[]
   >([]);
   const [scannerId, setScannerId] = useState("");
   const [scannerIds, setScannerIds] = useState<string[]>([]);
@@ -82,8 +87,12 @@ export default function SlabActions({
   const [exitNote, setExitNote] = useState("");
   const [exitSlabIdSearch, setExitSlabIdSearch] = useState("");
   const [exitScannerIdSearch, setExitScannerIdSearch] = useState("");
-  const [activeExitSearchField, setActiveExitSearchField] = useState<"slabId" | "scannerId" | null>(null);
-  const [clientSuggestions, setClientSuggestions] = useState<string[]>([]);
+  const [activeExitSearchField, setActiveExitSearchField] = useState<
+    "slabId" | "scannerId" | null
+  >(null);
+  const [clientSuggestions, setClientSuggestions] = useState<
+    CustomerSuggestion[]
+  >([]);
   const [slabSuggestions, setSlabSuggestions] = useState<string[]>([]);
   const [slabSearchTerm, setSlabSearchTerm] = useState("");
   const [showSlabDropdown, setShowSlabDropdown] = useState(false);
@@ -291,13 +300,6 @@ export default function SlabActions({
   }, [state, quantity, clientName, selectedRackId]);
 
   useEffect(() => {
-    if (action !== "add") return;
-    if (defaultRackId) return;
-    if (!recommendedRack) return;
-    setSelectedRackId(recommendedRack.id);
-  }, [action, defaultRackId, recommendedRack]);
-
-  useEffect(() => {
     if (!fromRackId) return;
     setSelectedSlabId("");
   }, [fromRackId]);
@@ -461,12 +463,14 @@ export default function SlabActions({
     if (action === "exit") {
       if (exitSlabIdSearch.trim()) {
         filtered = filtered.filter((slab) =>
-          slab.id.toLowerCase().includes(exitSlabIdSearch.toLowerCase())
+          slab.id.toLowerCase().includes(exitSlabIdSearch.toLowerCase()),
         );
       }
       if (exitScannerIdSearch.trim()) {
         filtered = filtered.filter((slab) =>
-          slab.scannerId.toLowerCase().includes(exitScannerIdSearch.toLowerCase())
+          slab.scannerId
+            .toLowerCase()
+            .includes(exitScannerIdSearch.toLowerCase()),
         );
       }
     }
@@ -500,7 +504,9 @@ export default function SlabActions({
     setShowClientDropdown(false);
     setClientSuggestions([]);
     setClientName("");
+    setClientSubtitle(null);
     setOriginalClientName("");
+    setOriginalClientSubtitle(null);
     setOriginalClientSearchTerm("");
     setShowOriginalClientDropdown(false);
     setOriginalClientSuggestions([]);
@@ -550,8 +556,10 @@ export default function SlabActions({
     setSelectedDeliveryId(delivery.id);
     setClientName(delivery.clientName);
     setClientSearchTerm(delivery.clientName);
+    setClientSubtitle(null);
     setOriginalClientName(delivery.originalClientName ?? "");
     setOriginalClientSearchTerm(delivery.originalClientName ?? "");
+    setOriginalClientSubtitle(null);
     setSlabName(delivery.slabName);
     setSlabSearchTerm(delivery.slabName);
     setBrand(
@@ -1045,20 +1053,21 @@ export default function SlabActions({
                                 </div>
                                 {clientSuggestions.map((client) => (
                                   <button
-                                    key={client}
+                                    key={client.id}
                                     type="button"
                                     onClick={() => {
-                                      setClientName(client);
-                                      setClientSearchTerm(client);
+                                      setClientName(client.displayName);
+                                      setClientSubtitle(client.subtitle);
+                                      setClientSearchTerm(client.displayName);
                                       setShowClientDropdown(false);
                                     }}
                                     className="w-full text-left px-4 py-3 hover:bg-gray-50 dark:hover:bg-gray-700 border-b border-gray-100 dark:border-gray-700 last:border-b-0"
                                   >
                                     <div className="font-medium text-gray-900 dark:text-gray-100">
-                                      {client}
+                                      {client.displayName}
                                     </div>
                                     <div className="text-sm text-gray-600 dark:text-gray-400">
-                                      Customer
+                                      {client.subtitle || "Customer"}
                                     </div>
                                   </button>
                                 ))}
@@ -1073,6 +1082,11 @@ export default function SlabActions({
                             <div className="text-sm font-semibold text-gray-900 dark:text-gray-100">
                               {clientName}
                             </div>
+                            {clientSubtitle && (
+                              <div className="text-xs text-gray-500 dark:text-gray-400">
+                                {clientSubtitle}
+                              </div>
+                            )}
                             <div className="text-xs text-gray-500 dark:text-gray-400">
                               Selected customer
                             </div>
@@ -1081,6 +1095,7 @@ export default function SlabActions({
                             type="button"
                             onClick={() => {
                               setClientName("");
+                              setClientSubtitle(null);
                               setClientSearchTerm("");
                             }}
                             className="text-sm text-blue-600 hover:text-blue-700 dark:text-blue-400 dark:hover:text-blue-300"
@@ -1109,6 +1124,7 @@ export default function SlabActions({
                             setShowOriginalClientDropdown(true);
                             if (!event.target.value) {
                               setOriginalClientName("");
+                              setOriginalClientSubtitle(null);
                             }
                           }}
                           onFocus={() => setShowOriginalClientDropdown(true)}
@@ -1142,20 +1158,27 @@ export default function SlabActions({
                                   </div>
                                   {originalClientSuggestions.map((client) => (
                                     <button
-                                      key={client}
+                                      key={client.id}
                                       type="button"
                                       onClick={() => {
-                                        setOriginalClientName(client);
-                                        setOriginalClientSearchTerm(client);
+                                        setOriginalClientName(
+                                          client.displayName,
+                                        );
+                                        setOriginalClientSubtitle(
+                                          client.subtitle,
+                                        );
+                                        setOriginalClientSearchTerm(
+                                          client.displayName,
+                                        );
                                         setShowOriginalClientDropdown(false);
                                       }}
                                       className="w-full text-left px-4 py-3 hover:bg-gray-50 dark:hover:bg-gray-700 border-b border-gray-100 dark:border-gray-700 last:border-b-0"
                                     >
                                       <div className="font-medium text-gray-900 dark:text-gray-100">
-                                        {client}
+                                        {client.displayName}
                                       </div>
                                       <div className="text-sm text-gray-600 dark:text-gray-400">
-                                        Customer
+                                        {client.subtitle || "Customer"}
                                       </div>
                                     </button>
                                   ))}
@@ -1170,6 +1193,11 @@ export default function SlabActions({
                             <div className="text-sm font-semibold text-gray-900 dark:text-gray-100">
                               {originalClientName}
                             </div>
+                            {originalClientSubtitle && (
+                              <div className="text-xs text-gray-500 dark:text-gray-400">
+                                {originalClientSubtitle}
+                              </div>
+                            )}
                             <div className="text-xs text-gray-500 dark:text-gray-400">
                               Selected customer
                             </div>
@@ -1178,6 +1206,7 @@ export default function SlabActions({
                             type="button"
                             onClick={() => {
                               setOriginalClientName("");
+                              setOriginalClientSubtitle(null);
                               setOriginalClientSearchTerm("");
                             }}
                             className="text-sm text-blue-600 hover:text-blue-700 dark:text-blue-400 dark:hover:text-blue-300"
@@ -1826,6 +1855,7 @@ export default function SlabActions({
                           setSlabType((current) => {
                             if (option !== "GMD" && current === "GMD") {
                               setOriginalClientName("");
+                              setOriginalClientSubtitle(null);
                               setOriginalClientSearchTerm("");
                               setOriginalClientSuggestions([]);
                             }
@@ -2112,29 +2142,35 @@ export default function SlabActions({
                     <input
                       type="text"
                       value={exitSlabIdSearch}
-                      onChange={(event) => setExitSlabIdSearch(event.target.value)}
+                      onChange={(event) =>
+                        setExitSlabIdSearch(event.target.value)
+                      }
                       onFocus={() => setActiveExitSearchField("slabId")}
-                      onBlur={() => setTimeout(() => setActiveExitSearchField(null), 150)}
+                      onBlur={() =>
+                        setTimeout(() => setActiveExitSearchField(null), 150)
+                      }
                       placeholder="e.g. slab-1001"
                       className="mt-1 w-full rounded-lg border border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-800 px-3 py-2 text-sm"
                     />
-                    {activeExitSearchField === "slabId" && exitSlabIdSearch.trim() && slabOptions.length > 0 && (
-                      <div className="absolute top-full left-0 right-0 mt-1 z-10 rounded-lg border border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-800 shadow-lg max-h-48 overflow-y-auto">
-                        {slabOptions.map((slab) => (
-                          <button
-                            key={slab.id}
-                            type="button"
-                            onMouseDown={(e) => {
-                              e.preventDefault();
-                              handleExitSlabSelect(slab.id);
-                            }}
-                            className="w-full text-left px-3 py-2 text-sm text-gray-900 dark:text-gray-100 hover:bg-gray-100 dark:hover:bg-gray-700 first:rounded-t-lg last:rounded-b-lg"
-                          >
-                            {slab.label}
-                          </button>
-                        ))}
-                      </div>
-                    )}
+                    {activeExitSearchField === "slabId" &&
+                      exitSlabIdSearch.trim() &&
+                      slabOptions.length > 0 && (
+                        <div className="absolute top-full left-0 right-0 mt-1 z-10 rounded-lg border border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-800 shadow-lg max-h-48 overflow-y-auto">
+                          {slabOptions.map((slab) => (
+                            <button
+                              key={slab.id}
+                              type="button"
+                              onMouseDown={(e) => {
+                                e.preventDefault();
+                                handleExitSlabSelect(slab.id);
+                              }}
+                              className="w-full text-left px-3 py-2 text-sm text-gray-900 dark:text-gray-100 hover:bg-gray-100 dark:hover:bg-gray-700 first:rounded-t-lg last:rounded-b-lg"
+                            >
+                              {slab.label}
+                            </button>
+                          ))}
+                        </div>
+                      )}
                   </div>
                   <div className="relative">
                     <label className="text-xs font-medium text-gray-500">
@@ -2143,29 +2179,35 @@ export default function SlabActions({
                     <input
                       type="text"
                       value={exitScannerIdSearch}
-                      onChange={(event) => setExitScannerIdSearch(event.target.value)}
+                      onChange={(event) =>
+                        setExitScannerIdSearch(event.target.value)
+                      }
                       onFocus={() => setActiveExitSearchField("scannerId")}
-                      onBlur={() => setTimeout(() => setActiveExitSearchField(null), 150)}
+                      onBlur={() =>
+                        setTimeout(() => setActiveExitSearchField(null), 150)
+                      }
                       placeholder="e.g. scanner-123"
                       className="mt-1 w-full rounded-lg border border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-800 px-3 py-2 text-sm"
                     />
-                    {activeExitSearchField === "scannerId" && exitScannerIdSearch.trim() && slabOptions.length > 0 && (
-                      <div className="absolute top-full left-0 right-0 mt-1 z-10 rounded-lg border border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-800 shadow-lg max-h-48 overflow-y-auto">
-                        {slabOptions.map((slab) => (
-                          <button
-                            key={slab.id}
-                            type="button"
-                            onMouseDown={(e) => {
-                              e.preventDefault();
-                              handleExitSlabSelect(slab.id);
-                            }}
-                            className="w-full text-left px-3 py-2 text-sm text-gray-900 dark:text-gray-100 hover:bg-gray-100 dark:hover:bg-gray-700 first:rounded-t-lg last:rounded-b-lg"
-                          >
-                            {slab.label}
-                          </button>
-                        ))}
-                      </div>
-                    )}
+                    {activeExitSearchField === "scannerId" &&
+                      exitScannerIdSearch.trim() &&
+                      slabOptions.length > 0 && (
+                        <div className="absolute top-full left-0 right-0 mt-1 z-10 rounded-lg border border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-800 shadow-lg max-h-48 overflow-y-auto">
+                          {slabOptions.map((slab) => (
+                            <button
+                              key={slab.id}
+                              type="button"
+                              onMouseDown={(e) => {
+                                e.preventDefault();
+                                handleExitSlabSelect(slab.id);
+                              }}
+                              className="w-full text-left px-3 py-2 text-sm text-gray-900 dark:text-gray-100 hover:bg-gray-100 dark:hover:bg-gray-700 first:rounded-t-lg last:rounded-b-lg"
+                            >
+                              {slab.label}
+                            </button>
+                          ))}
+                        </div>
+                      )}
                   </div>
                 </div>
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
