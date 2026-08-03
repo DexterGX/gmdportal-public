@@ -159,7 +159,7 @@ export default function ItemFormModal({ item, departments, groups, providers, on
           </div>
           {item && (
             <p className="text-[11px] text-gray-500 dark:text-gray-500 -mt-2">
-              Quantity can only change through Check Out or a received Restock Request, so it can't be edited here.
+              Quantity can only change through Check Out or a received Restock Request, so it can&apos;t be edited here.
             </p>
           )}
 
