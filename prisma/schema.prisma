@@ -41,6 +41,9 @@ model User {
   sampleRequestsRequested      SampleRequest[]        @relation("SampleRequestRequestedBy")
   sampleRequestHistoryChanged  SampleRequestHistory[] @relation("SampleRequestHistoryChangedBy")
   sessions                     Session[]
+  storeInventoryTransactions   StoreInventoryTransaction[] @relation("StoreInventoryTransactionUser")
+  storeRestockRequestsMade     StoreRestockRequest[]  @relation("StoreRestockRequestRequestedBy")
+  storeRestockRequestsActioned StoreRestockRequest[]  @relation("StoreRestockRequestActionedBy")
 }
 
 model Account {
@@ -1411,6 +1414,135 @@ model SlabBayStateMeta {
   version Int
 }
 
+model StoreDepartment {
+  id        String      @id @default(cuid())
+  key       String      @unique
+  label     String
+  isActive  Boolean     @default(true)
+  sortOrder Int         @default(0)
+  createdAt DateTime    @default(now())
+  updatedAt DateTime    @updatedAt
+  items     StoreItem[]
+
+  @@index([isActive])
+  @@index([sortOrder])
+}
+
+model StoreGroup {
+  id        String      @id @default(cuid())
+  key       String      @unique
+  label     String
+  isActive  Boolean     @default(true)
+  sortOrder Int         @default(0)
+  createdAt DateTime    @default(now())
+  updatedAt DateTime    @updatedAt
+  items     StoreItem[]
+
+  @@index([isActive])
+  @@index([sortOrder])
+}
+
+model StoreProvider {
+  id           String              @id @default(cuid())
+  name         String              @unique
+  contactName  String?
+  contactPhone String?
+  contactEmail String?
+  website      String?
+  address      String?
+  notes        String?
+  isActive     Boolean             @default(true)
+  createdAt    DateTime            @default(now())
+  updatedAt    DateTime            @updatedAt
+  items        StoreItemProvider[]
+
+  @@index([isActive])
+}
+
+model StoreItem {
+  id                  String                      @id @default(cuid())
+  name                String
+  departmentId        String?
+  groupId             String?
+  unit                String                       @default("each")
+  quantity            Int                          @default(0)
+  minQuantity         Int                          @default(0)
+  recommendedQuantity Int                          @default(0)
+  purchaseLink        String?
+  notes               String?
+  isActive            Boolean                      @default(true)
+  createdAt           DateTime                     @default(now())
+  updatedAt           DateTime                     @updatedAt
+  department          StoreDepartment?             @relation(fields: [departmentId], references: [id])
+  group               StoreGroup?                  @relation(fields: [groupId], references: [id])
+  providers           StoreItemProvider[]
+  transactions        StoreInventoryTransaction[]
+  restockRequests     StoreRestockRequest[]
+
+  @@index([departmentId])
+  @@index([groupId])
+  @@index([isActive])
+  @@index([name])
+}
+
+model StoreItemProvider {
+  id           String        @id @default(cuid())
+  itemId       String
+  providerId   String
+  purchaseLink String?
+  providerSku  String?
+  cost         Decimal?      @db.Decimal(10, 2)
+  isPreferred  Boolean       @default(false)
+  createdAt    DateTime      @default(now())
+  updatedAt    DateTime      @updatedAt
+  item         StoreItem     @relation(fields: [itemId], references: [id], onDelete: Cascade)
+  provider     StoreProvider @relation(fields: [providerId], references: [id], onDelete: Cascade)
+
+  @@unique([itemId, providerId])
+  @@index([itemId])
+  @@index([providerId])
+}
+
+model StoreInventoryTransaction {
+  id           String               @id @default(cuid())
+  itemId       String
+  type         StoreTransactionType
+  change       Int
+  oldQuantity  Int
+  newQuantity  Int
+  reason       String?
+  jobReference String?
+  userId       String?
+  createdAt    DateTime             @default(now())
+  item         StoreItem            @relation(fields: [itemId], references: [id], onDelete: Cascade)
+  user         User?                @relation("StoreInventoryTransactionUser", fields: [userId], references: [id])
+
+  @@index([itemId])
+  @@index([type])
+  @@index([createdAt])
+  @@index([userId])
+}
+
+model StoreRestockRequest {
+  id                String                    @id @default(cuid())
+  itemId            String
+  requestedQty      Int
+  status            StoreRestockRequestStatus @default(REQUESTED)
+  notes             String?
+  requestedByUserId String?
+  actionedByUserId  String?
+  actionedAt        DateTime?
+  createdAt         DateTime                  @default(now())
+  updatedAt         DateTime                  @updatedAt
+  item              StoreItem                 @relation(fields: [itemId], references: [id], onDelete: Cascade)
+  requestedByUser   User?                     @relation("StoreRestockRequestRequestedBy", fields: [requestedByUserId], references: [id])
+  actionedByUser    User?                     @relation("StoreRestockRequestActionedBy", fields: [actionedByUserId], references: [id])
+
+  @@index([itemId])
+  @@index([status])
+  @@index([createdAt])
+}
+
 enum Role {
   ADMIN
   SALES
@@ -1602,4 +1734,18 @@ enum QuoteRepairStatus {
   APPROVED
   VOIDED
   ARCHIVED
+}
+
+enum StoreTransactionType {
+  CHECKOUT
+  RESTOCK_RECEIVED
+  ADJUSTMENT
+  INITIAL
+}
+
+enum StoreRestockRequestStatus {
+  REQUESTED
+  ORDERED
+  RECEIVED
+  CANCELED
 }
