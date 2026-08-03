@@ -1,2 +1,0 @@
--- Initial migration (applied directly to database)
--- This migration was applied to the database before local migrations were tracked

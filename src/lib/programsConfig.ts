@@ -20,6 +20,9 @@ import {
   Package,
   FileText,
   ImageIcon,
+  ShoppingCart,
+  Truck,
+  ClipboardList,
 } from "lucide-react";
 import { UserCheck } from "lucide-react";
 import type { Role } from "@prisma/client"; // Prisma enum
@@ -125,7 +128,8 @@ export type ProgramId =
   | "customersV2"
   | "miscEstimates"
   | "paymentTerms"
-  | "salesCommission";
+  | "salesCommission"
+  | "storeInventory";
 
 export interface ProgramConfig {
   id: ProgramId;
@@ -184,6 +188,45 @@ export const programs: ProgramConfig[] = [
       { icon: ListIcon, name: "Movements", path: "/store-stock/movements" },
       { icon: ListIcon, name: "Adjust Stock", path: "/store-stock/adjust" },
       { icon: CopyIcon, name: "Purchase Orders", path: "/store-stock/po" },
+    ],
+    othersItems: [],
+  },
+  {
+    id: "storeInventory",
+    name: "Store Inventory",
+    basePath: "/store-inventory",
+    description:
+      "Track work items (LEDs, propane, blades, hardware) — check out stock and request restocks.",
+    allowedRoles: ["admin", "sales", "office", "specialist", "installer"],
+    navItems: [
+      { icon: GridIcon, name: "Overview", path: "/store-inventory" },
+      {
+        icon: ShoppingCart,
+        name: "Check Out Items",
+        path: "/store-inventory/checkout",
+      },
+      {
+        icon: ClipboardList,
+        name: "Restock Requests",
+        path: "/store-inventory/requests",
+      },
+      {
+        icon: ListIcon,
+        name: "Movements Log",
+        path: "/store-inventory/movements",
+      },
+      {
+        icon: Truck,
+        name: "Providers",
+        path: "/store-inventory/providers",
+        allowedRoles: ["admin", "specialist"],
+      },
+      {
+        icon: Settings2,
+        name: "Settings",
+        path: "/store-inventory/settings",
+        adminOnly: true,
+      },
     ],
     othersItems: [],
   },
