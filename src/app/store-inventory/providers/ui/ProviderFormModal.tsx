@@ -13,8 +13,12 @@ export type ProviderFormValues = {
   notes: string;
 };
 
+type ProviderFormInitial = {
+  [K in keyof ProviderFormValues]?: ProviderFormValues[K] | null;
+};
+
 interface Props {
-  provider: Partial<ProviderFormValues> | null;
+  provider: ProviderFormInitial | null;
   onClose: () => void;
   onSave: (values: ProviderFormValues) => Promise<void> | void;
 }
