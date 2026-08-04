@@ -85,6 +85,7 @@ type AreaPayload = {
   name?: string;
   sortOrder?: number;
   sinkTypeText?: string | null;
+  sinkQty?: number | string | null;
   faucetText?: string | null;
   stoneName?: string | null;
   stoneThickness?: string | null;
@@ -194,6 +195,7 @@ async function buildAreaCreateData(
       name: area.name?.trim() || "Untitled Area",
       sortOrder: area.sortOrder ?? 0,
       sinkTypeText: area.sinkTypeText || null,
+      sinkQty: area.sinkQty != null && area.sinkQty !== "" ? Number(area.sinkQty) : null,
       faucetText: area.faucetText || null,
       stoneName: area.stoneName || null,
       stoneThickness: (area.stoneThickness as any) || null,
@@ -329,8 +331,12 @@ export async function POST(request: NextRequest) {
     const resolved = await Promise.all(built);
     const orderTotal = resolved.reduce((sum, r) => sum + r.areaTotal, 0);
 
+    const orderDate = body.date ? new Date(body.date) : new Date();
+
     const order = await prismaAny.fabricationOrder.create({
       data: {
+        orderNumber: body.orderNumber?.trim() || null,
+        date: Number.isNaN(orderDate.getTime()) ? new Date() : orderDate,
         clientName,
         clientId: body.clientId || null,
         dealId: body.dealId || null,

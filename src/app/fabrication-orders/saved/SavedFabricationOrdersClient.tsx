@@ -8,6 +8,7 @@ import { formatCurrency } from "@/lib/fabricationCalc";
 type OrderRow = {
   id: string;
   orderNumber: string | null;
+  date: string;
   clientName: string;
   salesRep: string;
   isActive: boolean;
@@ -128,14 +129,15 @@ export default function SavedFabricationOrdersClient({ isAdmin }: { isAdmin: boo
   }
 
   function exportCsv() {
-    const header = ["Client", "Sales Rep", "Areas", "Total", "Status", "Created"];
+    const header = ["FO #", "Client", "Sales Rep", "Areas", "Total", "Status", "Date"];
     const rows = orders.map((o) => [
+      o.orderNumber || o.id.slice(0, 8).toUpperCase(),
       o.clientName,
       o.salesRep,
       String(o.areas.length),
       String(o.total.toFixed(2)),
       o.isActive ? "Active" : "Archived",
-      new Date(o.createdAt).toLocaleDateString(),
+      new Date(o.date || o.createdAt).toLocaleDateString(),
     ]);
     const csv = [header, ...rows]
       .map((r) => r.map((cell) => `"${String(cell).replace(/"/g, '""')}"`).join(","))
@@ -246,31 +248,35 @@ export default function SavedFabricationOrdersClient({ isAdmin }: { isAdmin: boo
         <table className="w-full text-left text-sm">
           <thead>
             <tr className="border-b border-gray-200 text-xs uppercase text-gray-500 dark:border-gray-700 dark:text-gray-400">
+              <th className="px-4 py-3">FO #</th>
               <th className="px-4 py-3">Client</th>
               <th className="px-4 py-3">Sales Rep</th>
               <th className="px-4 py-3">Areas</th>
               <th className="px-4 py-3">Total</th>
               <th className="px-4 py-3">Status</th>
-              <th className="px-4 py-3">Created</th>
+              <th className="px-4 py-3">Date</th>
               <th className="px-4 py-3">Actions</th>
             </tr>
           </thead>
           <tbody>
             {loading ? (
               <tr>
-                <td colSpan={7} className="px-4 py-8 text-center text-sm text-gray-500 dark:text-gray-400">
+                <td colSpan={8} className="px-4 py-8 text-center text-sm text-gray-500 dark:text-gray-400">
                   Loading fabrication orders...
                 </td>
               </tr>
             ) : orders.length === 0 ? (
               <tr>
-                <td colSpan={7} className="px-4 py-8 text-center text-sm text-gray-500 dark:text-gray-400">
+                <td colSpan={8} className="px-4 py-8 text-center text-sm text-gray-500 dark:text-gray-400">
                   No fabrication orders found for these filters.
                 </td>
               </tr>
             ) : (
               orders.map((order) => (
                 <tr key={order.id} className="border-b border-gray-100 dark:border-gray-700/60">
+                  <td className="px-4 py-3 text-gray-600 dark:text-gray-400">
+                    {order.orderNumber || order.id.slice(0, 8).toUpperCase()}
+                  </td>
                   <td className="px-4 py-3 font-medium">{order.clientName}</td>
                   <td className="px-4 py-3">{order.salesRep}</td>
                   <td className="px-4 py-3">{order.areas.map((a) => a.name).join(", ")}</td>
@@ -286,7 +292,7 @@ export default function SavedFabricationOrdersClient({ isAdmin }: { isAdmin: boo
                       </span>
                     )}
                   </td>
-                  <td className="px-4 py-3">{new Date(order.createdAt).toLocaleDateString()}</td>
+                  <td className="px-4 py-3">{new Date(order.date || order.createdAt).toLocaleDateString()}</td>
                   <td className="px-4 py-3 whitespace-nowrap">
                     <Link
                       href={`/fabrication-orders?orderId=${order.id}`}

@@ -38,23 +38,5 @@ export default async function FabricationSettingsPage() {
     }));
   });
 
-  const priceLogRows = await prismaAny.fabricationPriceChangeLog.findMany({
-    orderBy: { createdAt: "desc" },
-    take: 200,
-    include: {
-      changedByUser: { select: { name: true, email: true } },
-    },
-  });
-
-  const initialPriceLog = priceLogRows.map((row: any) => ({
-    ...row,
-    createdAt: row.createdAt.toISOString(),
-  }));
-
-  return (
-    <FabricationSettingsClient
-      initialItems={initialItems as any}
-      initialPriceLog={initialPriceLog}
-    />
-  );
+  return <FabricationSettingsClient initialItems={initialItems as any} />;
 }

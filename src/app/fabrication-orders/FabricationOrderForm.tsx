@@ -2,13 +2,12 @@
 
 import { useEffect, useMemo, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
-import { Plus, Trash2, AlertTriangle, Image as ImageIcon, PenLine } from "lucide-react";
+import { Plus, Trash2, AlertTriangle, Save, Table2 } from "lucide-react";
 import {
   computeAreaTotals,
   formatCurrency,
   type CalcAreaInput,
 } from "@/lib/fabricationCalc";
-import CanvasDrawing, { type CanvasShape } from "./CanvasDrawing";
 import AreaImageUploader, {
   type ExistingImage,
   type PendingImage,
@@ -23,6 +22,8 @@ const STONE_THICKNESS_OPTIONS: { value: string; label: string }[] = [
   { value: "THREE_CM", label: "3cm" },
   { value: "FIFTEEN_MM", label: "15mm" },
 ];
+
+const DEFAULT_ROWS_PER_TABLE = 5;
 
 interface RowState {
   key: string;
@@ -41,6 +42,7 @@ interface AreaState {
   id?: string;
   name: string;
   sinkTypeText: string;
+  sinkQty: string;
   faucetText: string;
   stoneName: string;
   stoneThickness: string;
@@ -67,7 +69,7 @@ interface AreaState {
   leftoverNote: string;
   sections: SectionState[];
   drawingMode: "CANVAS" | "IMAGE";
-  canvasShapes: CanvasShape[];
+  canvasShapes: unknown[];
   existingImages: ExistingImage[];
   pendingImages: PendingImage[];
   removedImageIds: string[];
@@ -100,7 +102,11 @@ function emptyRow(): RowState {
 }
 
 function emptySection(): SectionState {
-  return { key: nextKey(), edgeTypeId: "", rows: [emptyRow()] };
+  return {
+    key: nextKey(),
+    edgeTypeId: "",
+    rows: Array.from({ length: DEFAULT_ROWS_PER_TABLE }, () => emptyRow()),
+  };
 }
 
 function emptyArea(name = ""): AreaState {
@@ -108,6 +114,7 @@ function emptyArea(name = ""): AreaState {
     key: nextKey(),
     name,
     sinkTypeText: "",
+    sinkQty: "",
     faucetText: "",
     stoneName: "",
     stoneThickness: "",
@@ -133,7 +140,7 @@ function emptyArea(name = ""): AreaState {
     removalOptionId: "",
     leftoverNote: "",
     sections: [emptySection()],
-    drawingMode: "CANVAS",
+    drawingMode: "IMAGE",
     canvasShapes: [],
     existingImages: [],
     pendingImages: [],
@@ -146,9 +153,18 @@ function num(v: string): number {
   return Number.isFinite(n) ? n : 0;
 }
 
-const inputClass =
-  "w-full rounded-md border border-gray-300 bg-white px-3 py-2 text-sm dark:border-gray-600 dark:bg-gray-900";
-const labelClass = "mb-1 block text-xs font-medium text-gray-600 dark:text-gray-400";
+function todayIso() {
+  return new Date().toISOString().slice(0, 10);
+}
+
+const fieldInput =
+  "w-full border border-gray-300 dark:border-gray-600 rounded-lg px-3 py-2 text-sm bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100 focus:outline-none focus:ring-2 focus:ring-blue-500";
+const compactInput =
+  "w-full border border-gray-300 dark:border-gray-600 rounded-md px-2 py-1.5 text-xs bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100 focus:outline-none focus:ring-2 focus:ring-blue-500";
+const fieldLabel = "block text-xs font-medium text-gray-600 dark:text-gray-400 mb-1";
+const compactLabel = "block text-[11px] font-medium text-gray-500 dark:text-gray-400 mb-0.5";
+const card =
+  "bg-white dark:bg-gray-800 rounded-xl shadow-sm border border-gray-200 dark:border-gray-700 p-5";
 
 export default function FabricationOrderForm(props: Props) {
   const router = useRouter();
@@ -156,7 +172,10 @@ export default function FabricationOrderForm(props: Props) {
   const editOrderId = searchParams.get("orderId");
 
   const [orderId, setOrderId] = useState<string | null>(editOrderId);
+  const [orderNumber, setOrderNumber] = useState("");
+  const [orderDate, setOrderDate] = useState(todayIso());
   const [clientName, setClientName] = useState("");
+  const [dealName, setDealName] = useState("");
   const [salesRep, setSalesRep] = useState(props.currentUserName);
   const [notes, setNotes] = useState("");
   const [areas, setAreas] = useState<AreaState[]>([emptyArea("Area 1")]);
@@ -187,7 +206,10 @@ export default function FabricationOrderForm(props: Props) {
         const json = await res.json();
         if (!res.ok) throw new Error(json?.error || "Failed to load order");
 
+        setOrderNumber(json.orderNumber || "");
+        setOrderDate(json.date ? String(json.date).slice(0, 10) : todayIso());
         setClientName(json.clientName || "");
+        setDealName(json.dealName || "");
         setSalesRep(json.salesRep || "");
         setNotes(json.notes || "");
         setAreas(
@@ -196,6 +218,7 @@ export default function FabricationOrderForm(props: Props) {
             id: a.id,
             name: a.name || "",
             sinkTypeText: a.sinkTypeText || "",
+            sinkQty: a.sinkQty != null ? String(a.sinkQty) : "",
             faucetText: a.faucetText || "",
             stoneName: a.stoneName || "",
             stoneThickness: a.stoneThickness || "",
@@ -407,7 +430,10 @@ export default function FabricationOrderForm(props: Props) {
       if (areas.length === 0) throw new Error("Add at least one area.");
 
       const payload = {
+        orderNumber,
+        date: orderDate,
         clientName: clientName.trim(),
+        dealName,
         salesRep: salesRep.trim(),
         notes,
         areas: areas.map((a, idx) => ({
@@ -415,6 +441,7 @@ export default function FabricationOrderForm(props: Props) {
           name: a.name.trim() || `Area ${idx + 1}`,
           sortOrder: idx,
           sinkTypeText: a.sinkTypeText,
+          sinkQty: a.sinkQty,
           faucetText: a.faucetText,
           stoneName: a.stoneName,
           stoneThickness: a.stoneThickness || null,
@@ -439,7 +466,7 @@ export default function FabricationOrderForm(props: Props) {
           otherChargeOptionId: a.otherChargeOptionId || null,
           removalOptionId: a.removalOptionId || null,
           leftoverNote: a.leftoverNote,
-          drawingMode: a.drawingMode,
+          drawingMode: "IMAGE",
           canvasData: { shapes: a.canvasShapes },
           sections: a.sections.map((s, sIdx) => ({
             edgeTypeId: s.edgeTypeId || null,
@@ -492,57 +519,105 @@ export default function FabricationOrderForm(props: Props) {
   }
 
   return (
-    <div className="space-y-6 pb-24">
+    <div className="space-y-6 pb-10">
       <div className="flex items-start justify-between gap-4">
         <div>
-          <h1 className="text-3xl font-bold">
+          <h1 className="text-2xl font-bold text-gray-900 dark:text-gray-100">
             {orderId ? "Edit Fabrication Order" : "New Fabrication Order"}
           </h1>
           <p className="mt-1 text-sm text-gray-600 dark:text-gray-400">
             Draw or upload each area&apos;s layout, pick finishes, and the price calculates automatically.
           </p>
         </div>
-        <div className="text-right">
-          <div className="text-xs uppercase text-gray-500 dark:text-gray-400">Order Total</div>
-          <div className="text-2xl font-bold text-gray-900 dark:text-gray-100">
-            {formatCurrency(orderTotal)}
+        <div className="flex items-center gap-3">
+          <div className="text-right">
+            <div className="text-xs uppercase text-gray-500 dark:text-gray-400">Order Total</div>
+            <div className="text-xl font-bold text-gray-900 dark:text-gray-100">
+              {formatCurrency(orderTotal)}
+            </div>
           </div>
+          <button
+            type="button"
+            onClick={handleSave}
+            disabled={saving}
+            className="inline-flex items-center gap-2 rounded-lg bg-blue-600 px-4 py-2 text-sm font-medium text-white hover:bg-blue-700 disabled:opacity-60"
+          >
+            {saving ? (
+              "Saving..."
+            ) : (
+              <>
+                <Save className="h-4 w-4" /> Save
+              </>
+            )}
+          </button>
         </div>
       </div>
 
       {(error || message) && (
         <div
-          className={`rounded-md border p-3 text-sm ${
+          className={`rounded-lg border px-4 py-2 text-sm ${
             error
-              ? "border-red-200 bg-red-50 text-red-700"
-              : "border-green-200 bg-green-50 text-green-700"
+              ? "border-red-300 bg-red-50 text-red-700 dark:border-red-800 dark:bg-red-950/40 dark:text-red-300"
+              : "border-green-300 bg-green-50 text-green-700 dark:border-green-800 dark:bg-green-950/40 dark:text-green-300"
           }`}
         >
           {error || message}
         </div>
       )}
 
-      <div className="grid grid-cols-1 gap-4 rounded-lg border border-gray-200 bg-white p-4 dark:border-gray-700 dark:bg-gray-800 md:grid-cols-3">
-        <div>
-          <label className={labelClass}>Client Name</label>
-          <input
-            value={clientName}
-            onChange={(e) => setClientName(e.target.value)}
-            className={inputClass}
-            placeholder="Last, First"
-          />
-        </div>
-        <div>
-          <label className={labelClass}>Sales Rep</label>
-          <input
-            value={salesRep}
-            onChange={(e) => setSalesRep(e.target.value)}
-            className={inputClass}
-          />
-        </div>
-        <div>
-          <label className={labelClass}>Notes</label>
-          <input value={notes} onChange={(e) => setNotes(e.target.value)} className={inputClass} />
+      {/* ── TOP: compact client / job info ── */}
+      <div className={card}>
+        <h2 className="mb-4 text-xs font-semibold uppercase tracking-wider text-gray-500 dark:text-gray-400">
+          Client &amp; Job Information
+        </h2>
+        <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-5">
+          <div className="sm:col-span-2">
+            <label className={fieldLabel}>Customer Name</label>
+            <input
+              value={clientName}
+              onChange={(e) => setClientName(e.target.value)}
+              className={fieldInput}
+              placeholder="Last, First"
+            />
+          </div>
+          <div>
+            <label className={fieldLabel}>Job / Deal</label>
+            <input
+              value={dealName}
+              onChange={(e) => setDealName(e.target.value)}
+              className={fieldInput}
+            />
+          </div>
+          <div>
+            <label className={fieldLabel}>Sales Rep</label>
+            <input
+              value={salesRep}
+              onChange={(e) => setSalesRep(e.target.value)}
+              className={fieldInput}
+            />
+          </div>
+          <div>
+            <label className={fieldLabel}>Date</label>
+            <input
+              type="date"
+              value={orderDate}
+              onChange={(e) => setOrderDate(e.target.value)}
+              className={fieldInput}
+            />
+          </div>
+          <div>
+            <label className={fieldLabel}>FO #</label>
+            <input
+              value={orderNumber}
+              onChange={(e) => setOrderNumber(e.target.value)}
+              className={fieldInput}
+              placeholder="Assign manually"
+            />
+          </div>
+          <div className="sm:col-span-2 lg:col-span-4">
+            <label className={fieldLabel}>Notes</label>
+            <input value={notes} onChange={(e) => setNotes(e.target.value)} className={fieldInput} />
+          </div>
         </div>
       </div>
 
@@ -554,15 +629,12 @@ export default function FabricationOrderForm(props: Props) {
         areas.map((area, areaIdx) => {
           const result = areaResults[areaIdx];
           return (
-            <div
-              key={area.key}
-              className="space-y-4 rounded-lg border border-gray-200 bg-white p-4 dark:border-gray-700 dark:bg-gray-800"
-            >
+            <div key={area.key} className={`${card} space-y-4`}>
               <div className="flex items-center justify-between gap-4">
                 <input
                   value={area.name}
                   onChange={(e) => updateArea(area.key, { name: e.target.value })}
-                  className="w-64 rounded-md border border-gray-300 bg-white px-3 py-1.5 text-lg font-semibold dark:border-gray-600 dark:bg-gray-900"
+                  className="w-64 rounded-lg border border-gray-300 bg-white px-3 py-1.5 text-base font-semibold focus:outline-none focus:ring-2 focus:ring-blue-500 dark:border-gray-600 dark:bg-gray-700"
                   placeholder="Area name (e.g. Master Bathroom)"
                 />
                 <div className="flex items-center gap-3">
@@ -583,82 +655,38 @@ export default function FabricationOrderForm(props: Props) {
                 </div>
               </div>
 
-              {/* Header fields */}
-              <div className="grid grid-cols-1 gap-3 md:grid-cols-4">
-                <div>
-                  <label className={labelClass}>Sink Type</label>
-                  <input
-                    value={area.sinkTypeText}
-                    onChange={(e) => updateArea(area.key, { sinkTypeText: e.target.value })}
-                    className={inputClass}
-                  />
-                </div>
-                <div>
-                  <label className={labelClass}>Faucet</label>
-                  <input
-                    value={area.faucetText}
-                    onChange={(e) => updateArea(area.key, { faucetText: e.target.value })}
-                    className={inputClass}
-                  />
-                </div>
-                <div>
-                  <label className={labelClass}>Stone</label>
-                  <input
-                    value={area.stoneName}
-                    onChange={(e) => updateArea(area.key, { stoneName: e.target.value })}
-                    className={inputClass}
-                    list={`stone-list-${area.key}`}
-                  />
-                  <datalist id={`stone-list-${area.key}`}>
-                    {props.stoneSuggestions.map((s) => (
-                      <option key={s} value={s} />
-                    ))}
-                  </datalist>
-                </div>
-                <div>
-                  <label className={labelClass}>Thickness</label>
-                  <select
-                    value={area.stoneThickness}
-                    onChange={(e) => updateArea(area.key, { stoneThickness: e.target.value })}
-                    className={inputClass}
-                  >
-                    <option value="">-</option>
-                    {STONE_THICKNESS_OPTIONS.map((o) => (
-                      <option key={o.value} value={o.value}>
-                        {o.label}
-                      </option>
-                    ))}
-                  </select>
-                </div>
-                <div>
-                  <label className={labelClass}>WH #</label>
-                  <input
-                    value={area.whNumber}
-                    onChange={(e) => updateArea(area.key, { whNumber: e.target.value })}
-                    className={inputClass}
-                  />
-                </div>
-                <div>
-                  <label className={labelClass}>Backsplash (in)</label>
-                  <input
-                    type="number"
-                    value={area.backsplashIn}
-                    onChange={(e) => updateArea(area.key, { backsplashIn: e.target.value })}
-                    className={inputClass}
-                  />
-                </div>
-              </div>
-
-              {/* Slab */}
-              <div className="rounded-md border border-gray-200 p-3 dark:border-gray-700">
-                <h3 className="mb-2 text-sm font-semibold text-gray-900 dark:text-gray-100">Slab</h3>
-                <div className="grid grid-cols-2 gap-3 md:grid-cols-6">
+              {/* Compact info bar: slab + sink + faucet */}
+              <div className="rounded-lg border border-gray-200 bg-gray-50/60 p-3 dark:border-gray-700 dark:bg-gray-900/20">
+                <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-5">
                   <div>
-                    <label className={labelClass}>Supplier</label>
+                    <label className={compactLabel}>Stone Name</label>
+                    <input
+                      value={area.stoneName}
+                      onChange={(e) => updateArea(area.key, { stoneName: e.target.value })}
+                      className={compactInput}
+                      list={`stone-list-${area.key}`}
+                    />
+                    <datalist id={`stone-list-${area.key}`}>
+                      {props.stoneSuggestions.map((s) => (
+                        <option key={s} value={s} />
+                      ))}
+                    </datalist>
+                  </div>
+                  <div>
+                    <label className={compactLabel}>Slab Qty</label>
+                    <input
+                      type="number"
+                      value={area.slabQty}
+                      onChange={(e) => updateArea(area.key, { slabQty: e.target.value })}
+                      className={compactInput}
+                    />
+                  </div>
+                  <div>
+                    <label className={compactLabel}>Provider</label>
                     <select
                       value={area.slabSupplierId}
                       onChange={(e) => updateArea(area.key, { slabSupplierId: e.target.value })}
-                      className={inputClass}
+                      className={compactInput}
                     >
                       <option value="">-</option>
                       {props.slabSuppliers.map((s) => (
@@ -669,29 +697,26 @@ export default function FabricationOrderForm(props: Props) {
                     </select>
                   </div>
                   <div>
-                    <label className={labelClass}>Slab Length (in)</label>
-                    <input
-                      type="number"
-                      value={area.slabLengthIn}
-                      onChange={(e) => updateArea(area.key, { slabLengthIn: e.target.value })}
-                      className={inputClass}
-                    />
+                    <label className={compactLabel}>Thickness</label>
+                    <select
+                      value={area.stoneThickness}
+                      onChange={(e) => updateArea(area.key, { stoneThickness: e.target.value })}
+                      className={compactInput}
+                    >
+                      <option value="">-</option>
+                      {STONE_THICKNESS_OPTIONS.map((o) => (
+                        <option key={o.value} value={o.value}>
+                          {o.label}
+                        </option>
+                      ))}
+                    </select>
                   </div>
                   <div>
-                    <label className={labelClass}>Slab Width (in)</label>
-                    <input
-                      type="number"
-                      value={area.slabWidthIn}
-                      onChange={(e) => updateArea(area.key, { slabWidthIn: e.target.value })}
-                      className={inputClass}
-                    />
-                  </div>
-                  <div>
-                    <label className={labelClass}>Type</label>
+                    <label className={compactLabel}>Slab Type</label>
                     <select
                       value={area.slabTypeId}
                       onChange={(e) => updateArea(area.key, { slabTypeId: e.target.value })}
-                      className={inputClass}
+                      className={compactInput}
                     >
                       <option value="">-</option>
                       {props.slabTypes.map((s) => (
@@ -702,294 +727,88 @@ export default function FabricationOrderForm(props: Props) {
                     </select>
                   </div>
                   <div>
-                    <label className={labelClass}>Slab Qty (entered)</label>
+                    <label className={compactLabel}>Slab Length (in)</label>
                     <input
                       type="number"
-                      value={area.slabQty}
-                      onChange={(e) => updateArea(area.key, { slabQty: e.target.value })}
-                      className={inputClass}
+                      value={area.slabLengthIn}
+                      onChange={(e) => updateArea(area.key, { slabLengthIn: e.target.value })}
+                      className={compactInput}
                     />
                   </div>
                   <div>
-                    <label className={labelClass}>Slab Amount ($ sold for)</label>
+                    <label className={compactLabel}>Slab Width (in)</label>
                     <input
                       type="number"
-                      value={area.slabAmount}
-                      onChange={(e) => updateArea(area.key, { slabAmount: e.target.value })}
-                      className={inputClass}
+                      value={area.slabWidthIn}
+                      onChange={(e) => updateArea(area.key, { slabWidthIn: e.target.value })}
+                      className={compactInput}
+                    />
+                  </div>
+                  <div>
+                    <label className={compactLabel}>Backsplash (in)</label>
+                    <input
+                      type="number"
+                      value={area.backsplashIn}
+                      onChange={(e) => updateArea(area.key, { backsplashIn: e.target.value })}
+                      className={compactInput}
+                    />
+                  </div>
+                  <div>
+                    <label className={compactLabel}>Sink Type</label>
+                    <input
+                      value={area.sinkTypeText}
+                      onChange={(e) => updateArea(area.key, { sinkTypeText: e.target.value })}
+                      className={compactInput}
+                    />
+                  </div>
+                  <div>
+                    <label className={compactLabel}>Sink Qty</label>
+                    <input
+                      type="number"
+                      value={area.sinkQty}
+                      onChange={(e) => updateArea(area.key, { sinkQty: e.target.value })}
+                      className={compactInput}
+                    />
+                  </div>
+                  <div>
+                    <label className={compactLabel}>Faucet</label>
+                    <input
+                      value={area.faucetText}
+                      onChange={(e) => updateArea(area.key, { faucetText: e.target.value })}
+                      className={compactInput}
+                    />
+                  </div>
+                  <div>
+                    <label className={compactLabel}>WH #</label>
+                    <input
+                      value={area.whNumber}
+                      onChange={(e) => updateArea(area.key, { whNumber: e.target.value })}
+                      className={compactInput}
                     />
                   </div>
                 </div>
                 {result.slabPieceSqft > 0 && (
                   <div
-                    className={`mt-2 flex items-center gap-2 rounded-md p-2 text-sm ${
+                    className={`mt-2 flex items-center gap-2 rounded-md p-2 text-xs ${
                       result.slabQtyFlagged
                         ? "bg-red-50 text-red-700 dark:bg-red-900/30 dark:text-red-300"
                         : "bg-green-50 text-green-700 dark:bg-green-900/30 dark:text-green-300"
                     }`}
                   >
-                    {result.slabQtyFlagged && <AlertTriangle className="h-4 w-4 shrink-0" />}
-                    Recommended slabs: <strong>{result.slabRecommendedQty}</strong> (job {(result.jobSqft + result.buildUpSqft).toFixed(2)} sqft incl. 15% waste, {result.slabPieceSqft.toFixed(2)} sqft/slab).
-                    {result.slabQtyFlagged
-                      ? " Entered quantity looks insufficient."
-                      : " Entered quantity looks sufficient."}
+                    {result.slabQtyFlagged && <AlertTriangle className="h-3.5 w-3.5 shrink-0" />}
+                    Recommended slabs: <strong>{result.slabRecommendedQty}</strong> ({(result.jobSqft + result.buildUpSqft).toFixed(2)} sqft incl. 15% waste ÷ {result.slabPieceSqft.toFixed(2)} sqft/slab).
+                    {result.slabQtyFlagged ? " Entered quantity looks insufficient." : " Looks sufficient."}
                   </div>
                 )}
               </div>
 
-              {/* Sections / edge & build-up grids */}
-              <div className="space-y-3">
-                <div className="flex items-center justify-between">
-                  <h3 className="text-sm font-semibold text-gray-900 dark:text-gray-100">
-                    Countertop Pieces (Length x Width)
+              {/* LEFT: layout image (half width) | RIGHT: sales price + edge/finish side by side */}
+              <div className="grid grid-cols-1 gap-4 xl:grid-cols-2">
+                {/* LEFT: layout */}
+                <div className="rounded-lg border border-gray-200 p-3 dark:border-gray-700">
+                  <h3 className="mb-2 text-xs font-semibold uppercase tracking-wider text-gray-500 dark:text-gray-400">
+                    Layout
                   </h3>
-                  <button
-                    type="button"
-                    onClick={() => addSection(area.key)}
-                    className="inline-flex items-center gap-1 rounded-md border border-gray-300 px-2 py-1 text-xs dark:border-gray-600"
-                  >
-                    <Plus className="h-3 w-3" /> Add Section
-                  </button>
-                </div>
-                {area.sections.map((section) => {
-                  const edgeType = edgeTypeById.get(section.edgeTypeId);
-                  const sectionSqft = section.rows.reduce((sum, r) => {
-                    const l = num(r.lengthIn);
-                    const w = num(r.widthIn);
-                    return l > 0 && w > 0 ? sum + (l * w) / 144 : sum;
-                  }, 0);
-                  return (
-                    <div
-                      key={section.key}
-                      className="rounded-md border border-gray-200 p-3 dark:border-gray-700"
-                    >
-                      <div className="mb-2 flex flex-wrap items-end justify-between gap-2">
-                        <div className="w-64">
-                          <label className={labelClass}>
-                            Edge / Finish Type{" "}
-                            {edgeType?.isBuildUp ? (
-                              <span className="text-amber-600">(Build-Up)</span>
-                            ) : null}
-                          </label>
-                          <select
-                            value={section.edgeTypeId}
-                            onChange={(e) =>
-                              updateSection(area.key, section.key, { edgeTypeId: e.target.value })
-                            }
-                            className={inputClass}
-                          >
-                            <option value="">-</option>
-                            {props.edgeTypes.map((e) => (
-                              <option key={e.id} value={e.id}>
-                                {e.name} (${Number(e.pricePerSqft).toFixed(2)}/sqft{e.isBuildUp ? ", build-up" : ""})
-                              </option>
-                            ))}
-                          </select>
-                        </div>
-                        <div className="flex items-center gap-3">
-                          <span className="text-sm text-gray-600 dark:text-gray-400">
-                            {sectionSqft.toFixed(2)} sqft
-                          </span>
-                          {area.sections.length > 1 && (
-                            <button
-                              type="button"
-                              onClick={() => removeSection(area.key, section.key)}
-                              className="text-red-600 hover:underline"
-                            >
-                              <Trash2 className="h-4 w-4" />
-                            </button>
-                          )}
-                        </div>
-                      </div>
-                      <table className="w-full text-left text-sm">
-                        <thead>
-                          <tr className="text-xs uppercase text-gray-500 dark:text-gray-400">
-                            <th className="py-1 pr-2">Length (in)</th>
-                            <th className="py-1 pr-2">Width (in)</th>
-                            <th className="py-1 pr-2">SqFt</th>
-                            <th className="py-1 pr-2" />
-                          </tr>
-                        </thead>
-                        <tbody>
-                          {section.rows.map((row) => {
-                            const l = num(row.lengthIn);
-                            const w = num(row.widthIn);
-                            const sqft = l > 0 && w > 0 ? (l * w) / 144 : 0;
-                            return (
-                              <tr key={row.key}>
-                                <td className="py-1 pr-2">
-                                  <input
-                                    type="number"
-                                    value={row.lengthIn}
-                                    onChange={(e) =>
-                                      updateRow(area.key, section.key, row.key, {
-                                        lengthIn: e.target.value,
-                                      })
-                                    }
-                                    className={inputClass}
-                                  />
-                                </td>
-                                <td className="py-1 pr-2">
-                                  <input
-                                    type="number"
-                                    value={row.widthIn}
-                                    onChange={(e) =>
-                                      updateRow(area.key, section.key, row.key, {
-                                        widthIn: e.target.value,
-                                      })
-                                    }
-                                    className={inputClass}
-                                  />
-                                </td>
-                                <td className="py-1 pr-2 text-gray-600 dark:text-gray-400">
-                                  {sqft.toFixed(2)}
-                                </td>
-                                <td className="py-1 pr-2">
-                                  {section.rows.length > 1 && (
-                                    <button
-                                      type="button"
-                                      onClick={() => removeRow(area.key, section.key, row.key)}
-                                      className="text-red-600 hover:underline"
-                                    >
-                                      <Trash2 className="h-3.5 w-3.5" />
-                                    </button>
-                                  )}
-                                </td>
-                              </tr>
-                            );
-                          })}
-                        </tbody>
-                      </table>
-                      <button
-                        type="button"
-                        onClick={() => addRow(area.key, section.key)}
-                        className="mt-1 inline-flex items-center gap-1 text-xs text-blue-600 hover:underline"
-                      >
-                        <Plus className="h-3 w-3" /> Add row
-                      </button>
-                    </div>
-                  );
-                })}
-                <div className="grid grid-cols-2 gap-4 text-sm text-gray-700 dark:text-gray-300 md:grid-cols-4">
-                  <div>Job SqFt: <strong>{result.jobSqft.toFixed(2)}</strong></div>
-                  <div>Labor: <strong>{formatCurrency(result.labor)}</strong></div>
-                  <div>Build-Up SqFt: <strong>{result.buildUpSqft.toFixed(2)}</strong></div>
-                  <div>Build-Up: <strong>{formatCurrency(result.buildUp)}</strong></div>
-                </div>
-              </div>
-
-              {/* Line items */}
-              <div className="grid grid-cols-1 gap-3 rounded-md border border-gray-200 p-3 dark:border-gray-700 md:grid-cols-2 lg:grid-cols-4">
-                <LineItemQty
-                  label="Sink Cutout"
-                  options={props.sinkCutouts}
-                  optionId={area.sinkCutoutOptionId}
-                  qty={area.sinkCutoutQty}
-                  onOptionChange={(v) => updateArea(area.key, { sinkCutoutOptionId: v })}
-                  onQtyChange={(v) => updateArea(area.key, { sinkCutoutQty: v })}
-                  total={result.sinkCutoutTotal}
-                />
-                <LineItemQty
-                  label="Cooktop Cutout"
-                  options={props.cooktops}
-                  optionId={area.cooktopOptionId}
-                  qty={area.cooktopQty}
-                  onOptionChange={(v) => updateArea(area.key, { cooktopOptionId: v })}
-                  onQtyChange={(v) => updateArea(area.key, { cooktopQty: v })}
-                  total={result.cooktopTotal}
-                />
-                <LineItemQty
-                  label="Bump Out"
-                  options={props.bumpOuts}
-                  optionId={area.bumpOutOptionId}
-                  qty={area.bumpOutQty}
-                  onOptionChange={(v) => updateArea(area.key, { bumpOutOptionId: v })}
-                  onQtyChange={(v) => updateArea(area.key, { bumpOutQty: v })}
-                  total={result.bumpOutTotal}
-                />
-                <LineItemQty
-                  label="Cutting Board"
-                  options={props.cuttingBoards}
-                  optionId={area.cuttingBoardOptionId}
-                  qty={area.cuttingBoardQty}
-                  onOptionChange={(v) => updateArea(area.key, { cuttingBoardOptionId: v })}
-                  onQtyChange={(v) => updateArea(area.key, { cuttingBoardQty: v })}
-                  total={result.cuttingBoardTotal}
-                />
-                <LineItemFlat
-                  label="Windowsill"
-                  options={props.windowsills}
-                  optionId={area.windowsillOptionId}
-                  onOptionChange={(v) => updateArea(area.key, { windowsillOptionId: v })}
-                  total={result.windowsillTotal}
-                />
-                <LineItemFlat
-                  label="Power Station"
-                  options={props.powerStations}
-                  optionId={area.powerStationOptionId}
-                  onOptionChange={(v) => updateArea(area.key, { powerStationOptionId: v })}
-                  total={result.powerStationTotal}
-                />
-                <LineItemFlat
-                  label="Others"
-                  options={props.otherCharges}
-                  optionId={area.otherChargeOptionId}
-                  onOptionChange={(v) => updateArea(area.key, { otherChargeOptionId: v })}
-                  total={result.otherChargeTotal}
-                />
-                <LineItemFlat
-                  label="Removal"
-                  options={props.removals}
-                  optionId={area.removalOptionId}
-                  onOptionChange={(v) => updateArea(area.key, { removalOptionId: v })}
-                  total={result.removalTotal}
-                />
-              </div>
-
-              <div>
-                <label className={labelClass}>Leftover (notes only, no $ effect)</label>
-                <input
-                  value={area.leftoverNote}
-                  onChange={(e) => updateArea(area.key, { leftoverNote: e.target.value })}
-                  className={inputClass}
-                />
-              </div>
-
-              {/* Drawing */}
-              <div className="rounded-md border border-gray-200 p-3 dark:border-gray-700">
-                <div className="mb-2 flex items-center justify-between">
-                  <h3 className="text-sm font-semibold text-gray-900 dark:text-gray-100">Layout</h3>
-                  <div className="flex gap-2">
-                    <button
-                      type="button"
-                      onClick={() => updateArea(area.key, { drawingMode: "CANVAS" })}
-                      className={`inline-flex items-center gap-1 rounded-md px-2 py-1 text-xs ${
-                        area.drawingMode === "CANVAS"
-                          ? "bg-blue-600 text-white"
-                          : "border border-gray-300 text-gray-600 dark:border-gray-600"
-                      }`}
-                    >
-                      <PenLine className="h-3 w-3" /> Draw
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => updateArea(area.key, { drawingMode: "IMAGE" })}
-                      className={`inline-flex items-center gap-1 rounded-md px-2 py-1 text-xs ${
-                        area.drawingMode === "IMAGE"
-                          ? "bg-blue-600 text-white"
-                          : "border border-gray-300 text-gray-600 dark:border-gray-600"
-                      }`}
-                    >
-                      <ImageIcon className="h-3 w-3" /> Upload Image
-                    </button>
-                  </div>
-                </div>
-                {area.drawingMode === "CANVAS" ? (
-                  <CanvasDrawing
-                    value={area.canvasShapes}
-                    onChange={(shapes) => updateArea(area.key, { canvasShapes: shapes })}
-                  />
-                ) : (
                   <AreaImageUploader
                     existingImages={area.existingImages}
                     pendingImages={area.pendingImages}
@@ -1007,7 +826,250 @@ export default function FabricationOrderForm(props: Props) {
                       })
                     }
                   />
-                )}
+                </div>
+
+                {/* RIGHT: sales price + edge/finish tables, side by side */}
+                <div className="grid grid-cols-1 gap-3 lg:grid-cols-2">
+                  <div className="rounded-lg border border-gray-200 p-3 dark:border-gray-700">
+                    <h3 className="mb-2 text-xs font-semibold uppercase tracking-wider text-gray-500 dark:text-gray-400">
+                      Sales Price
+                    </h3>
+                    <div className="grid grid-cols-2 gap-x-3 gap-y-2 text-xs">
+                      <div className="col-span-2 flex justify-between border-b border-gray-100 pb-1 dark:border-gray-700">
+                        <span className="text-gray-500 dark:text-gray-400">Job SqFt</span>
+                        <strong>{result.jobSqft.toFixed(2)}</strong>
+                      </div>
+                      <div className="col-span-2 flex justify-between">
+                        <span className="text-gray-500 dark:text-gray-400">Labor</span>
+                        <strong>{formatCurrency(result.labor)}</strong>
+                      </div>
+                      <div className="col-span-2 flex justify-between">
+                        <span className="text-gray-500 dark:text-gray-400">
+                          Build-Up ({result.buildUpSqft.toFixed(2)} sqft)
+                        </span>
+                        <strong>{formatCurrency(result.buildUp)}</strong>
+                      </div>
+
+                      <LineItemCompact
+                        label="Sink Cutout"
+                        options={props.sinkCutouts}
+                        optionId={area.sinkCutoutOptionId}
+                        qty={area.sinkCutoutQty}
+                        onOptionChange={(v) => updateArea(area.key, { sinkCutoutOptionId: v })}
+                        onQtyChange={(v) => updateArea(area.key, { sinkCutoutQty: v })}
+                        total={result.sinkCutoutTotal}
+                      />
+                      <LineItemCompact
+                        label="Cooktop"
+                        options={props.cooktops}
+                        optionId={area.cooktopOptionId}
+                        qty={area.cooktopQty}
+                        onOptionChange={(v) => updateArea(area.key, { cooktopOptionId: v })}
+                        onQtyChange={(v) => updateArea(area.key, { cooktopQty: v })}
+                        total={result.cooktopTotal}
+                      />
+                      <LineItemCompact
+                        label="Bump Out"
+                        options={props.bumpOuts}
+                        optionId={area.bumpOutOptionId}
+                        qty={area.bumpOutQty}
+                        onOptionChange={(v) => updateArea(area.key, { bumpOutOptionId: v })}
+                        onQtyChange={(v) => updateArea(area.key, { bumpOutQty: v })}
+                        total={result.bumpOutTotal}
+                      />
+                      <LineItemCompact
+                        label="Cutting Board"
+                        options={props.cuttingBoards}
+                        optionId={area.cuttingBoardOptionId}
+                        qty={area.cuttingBoardQty}
+                        onOptionChange={(v) => updateArea(area.key, { cuttingBoardOptionId: v })}
+                        onQtyChange={(v) => updateArea(area.key, { cuttingBoardQty: v })}
+                        total={result.cuttingBoardTotal}
+                      />
+                      <LineItemFlatCompact
+                        label="Windowsill"
+                        options={props.windowsills}
+                        optionId={area.windowsillOptionId}
+                        onOptionChange={(v) => updateArea(area.key, { windowsillOptionId: v })}
+                        total={result.windowsillTotal}
+                      />
+                      <LineItemFlatCompact
+                        label="Power Station"
+                        options={props.powerStations}
+                        optionId={area.powerStationOptionId}
+                        onOptionChange={(v) => updateArea(area.key, { powerStationOptionId: v })}
+                        total={result.powerStationTotal}
+                      />
+                      <LineItemFlatCompact
+                        label="Others"
+                        options={props.otherCharges}
+                        optionId={area.otherChargeOptionId}
+                        onOptionChange={(v) => updateArea(area.key, { otherChargeOptionId: v })}
+                        total={result.otherChargeTotal}
+                      />
+                      <LineItemFlatCompact
+                        label="Removal"
+                        options={props.removals}
+                        optionId={area.removalOptionId}
+                        onOptionChange={(v) => updateArea(area.key, { removalOptionId: v })}
+                        total={result.removalTotal}
+                      />
+
+                      <div className="col-span-2 flex justify-between border-t border-gray-100 pt-1 dark:border-gray-700">
+                        <span className="text-gray-500 dark:text-gray-400">Slab Amount</span>
+                        <input
+                          type="number"
+                          value={area.slabAmount}
+                          onChange={(e) => updateArea(area.key, { slabAmount: e.target.value })}
+                          className="w-24 rounded-md border border-gray-300 bg-white px-2 py-1 text-right text-xs dark:border-gray-600 dark:bg-gray-700"
+                        />
+                      </div>
+                      <div className="col-span-2">
+                        <label className={compactLabel}>Leftover (notes only)</label>
+                        <input
+                          value={area.leftoverNote}
+                          onChange={(e) => updateArea(area.key, { leftoverNote: e.target.value })}
+                          className={compactInput}
+                        />
+                      </div>
+                      <div className="col-span-2 flex justify-between border-t-2 border-gray-200 pt-2 text-sm dark:border-gray-600">
+                        <span className="font-semibold text-gray-700 dark:text-gray-300">Area Total</span>
+                        <strong className="text-base">{formatCurrency(result.areaTotal)}</strong>
+                      </div>
+                    </div>
+                  </div>
+
+                  <div className="space-y-3">
+                  {/* Length x Width tables */}
+                  {area.sections.map((section) => {
+                    const edgeType = edgeTypeById.get(section.edgeTypeId);
+                    const sectionSqft = section.rows.reduce((sum, r) => {
+                      const l = num(r.lengthIn);
+                      const w = num(r.widthIn);
+                      return l > 0 && w > 0 ? sum + (l * w) / 144 : sum;
+                    }, 0);
+                    return (
+                      <div
+                        key={section.key}
+                        className="rounded-lg border border-gray-200 p-3 dark:border-gray-700"
+                      >
+                        <div className="mb-2 flex flex-wrap items-end justify-between gap-2">
+                          <div className="flex-1 min-w-[160px]">
+                            <label className={compactLabel}>
+                              Edge / Finish{" "}
+                              {edgeType?.isBuildUp ? (
+                                <span className="text-amber-600">(Build-Up)</span>
+                              ) : null}
+                            </label>
+                            <select
+                              value={section.edgeTypeId}
+                              onChange={(e) =>
+                                updateSection(area.key, section.key, { edgeTypeId: e.target.value })
+                              }
+                              className={compactInput}
+                            >
+                              <option value="">-</option>
+                              {props.edgeTypes.map((e) => (
+                                <option key={e.id} value={e.id}>
+                                  {e.name} (${Number(e.pricePerSqft).toFixed(2)}/sqft)
+                                </option>
+                              ))}
+                            </select>
+                          </div>
+                          <div className="flex items-center gap-2">
+                            <span className="whitespace-nowrap text-xs text-gray-600 dark:text-gray-400">
+                              {sectionSqft.toFixed(2)} sqft
+                            </span>
+                            {area.sections.length > 1 && (
+                              <button
+                                type="button"
+                                onClick={() => removeSection(area.key, section.key)}
+                                className="text-red-600 hover:underline"
+                                title="Remove table"
+                              >
+                                <Trash2 className="h-3.5 w-3.5" />
+                              </button>
+                            )}
+                          </div>
+                        </div>
+                        <table className="w-full text-left text-xs">
+                          <thead>
+                            <tr className="text-[10px] uppercase text-gray-500 dark:text-gray-400">
+                              <th className="w-1/3 py-1 pr-1">Length</th>
+                              <th className="w-1/3 py-1 pr-1">Width</th>
+                              <th className="py-1 pr-1">SqFt</th>
+                              <th className="w-4" />
+                            </tr>
+                          </thead>
+                          <tbody>
+                            {section.rows.map((row) => {
+                              const l = num(row.lengthIn);
+                              const w = num(row.widthIn);
+                              const sqft = l > 0 && w > 0 ? (l * w) / 144 : 0;
+                              return (
+                                <tr key={row.key}>
+                                  <td className="py-0.5 pr-1">
+                                    <input
+                                      type="number"
+                                      value={row.lengthIn}
+                                      onChange={(e) =>
+                                        updateRow(area.key, section.key, row.key, {
+                                          lengthIn: e.target.value,
+                                        })
+                                      }
+                                      className={compactInput}
+                                    />
+                                  </td>
+                                  <td className="py-0.5 pr-1">
+                                    <input
+                                      type="number"
+                                      value={row.widthIn}
+                                      onChange={(e) =>
+                                        updateRow(area.key, section.key, row.key, {
+                                          widthIn: e.target.value,
+                                        })
+                                      }
+                                      className={compactInput}
+                                    />
+                                  </td>
+                                  <td className="py-0.5 pr-1 text-gray-600 dark:text-gray-400">
+                                    {sqft.toFixed(2)}
+                                  </td>
+                                  <td className="py-0.5">
+                                    {section.rows.length > 1 && (
+                                      <button
+                                        type="button"
+                                        onClick={() => removeRow(area.key, section.key, row.key)}
+                                        className="text-red-600 hover:underline"
+                                      >
+                                        <Trash2 className="h-3 w-3" />
+                                      </button>
+                                    )}
+                                  </td>
+                                </tr>
+                              );
+                            })}
+                          </tbody>
+                        </table>
+                        <button
+                          type="button"
+                          onClick={() => addRow(area.key, section.key)}
+                          className="mt-1 inline-flex items-center gap-1 text-[11px] text-blue-600 hover:underline"
+                        >
+                          <Plus className="h-3 w-3" /> Add Row
+                        </button>
+                      </div>
+                    );
+                  })}
+                  <button
+                    type="button"
+                    onClick={() => addSection(area.key)}
+                    className="inline-flex items-center gap-1 rounded-md border border-dashed border-gray-300 px-2.5 py-1.5 text-xs text-gray-600 hover:border-blue-400 hover:text-blue-600 dark:border-gray-600 dark:text-gray-400"
+                  >
+                    <Table2 className="h-3.5 w-3.5" /> Add Table
+                  </button>
+                  </div>
+                </div>
               </div>
             </div>
           );
@@ -1017,30 +1079,15 @@ export default function FabricationOrderForm(props: Props) {
       <button
         type="button"
         onClick={addArea}
-        className="inline-flex items-center gap-1 rounded-md border border-dashed border-gray-300 px-3 py-2 text-sm text-gray-600 hover:border-blue-400 hover:text-blue-600 dark:border-gray-600 dark:text-gray-400"
+        className="inline-flex items-center gap-1 rounded-lg border border-dashed border-gray-300 px-3 py-2 text-sm text-gray-600 hover:border-blue-400 hover:text-blue-600 dark:border-gray-600 dark:text-gray-400"
       >
         <Plus className="h-4 w-4" /> Add Area
       </button>
-
-      <div className="sticky bottom-0 flex items-center justify-between rounded-lg border border-gray-200 bg-white/95 p-4 shadow-lg backdrop-blur dark:border-gray-700 dark:bg-gray-800/95">
-        <div>
-          <div className="text-xs uppercase text-gray-500 dark:text-gray-400">Order Total</div>
-          <div className="text-2xl font-bold">{formatCurrency(orderTotal)}</div>
-        </div>
-        <button
-          type="button"
-          onClick={handleSave}
-          disabled={saving}
-          className="rounded-md bg-blue-600 px-5 py-2.5 text-sm font-semibold text-white hover:bg-blue-700 disabled:opacity-50"
-        >
-          {saving ? "Saving..." : orderId ? "Save Changes" : "Save Fabrication Order"}
-        </button>
-      </div>
     </div>
   );
 }
 
-function LineItemQty({
+function LineItemCompact({
   label,
   options,
   optionId,
@@ -1058,34 +1105,32 @@ function LineItemQty({
   total: number;
 }) {
   return (
-    <div>
-      <label className={labelClass}>{label}</label>
-      <select value={optionId} onChange={(e) => onOptionChange(e.target.value)} className={inputClass}>
-        <option value="">-</option>
-        {options.map((o) => (
-          <option key={o.id} value={o.id}>
-            {o.name} (${Number(o.price ?? 0).toFixed(2)})
-          </option>
-        ))}
-      </select>
-      <div className="mt-1 flex items-center gap-2">
-        <input
-          type="number"
-          min="0"
-          value={qty}
-          onChange={(e) => onQtyChange(e.target.value)}
-          className={inputClass}
-          placeholder="Qty"
-        />
-        <span className="whitespace-nowrap text-xs text-gray-500 dark:text-gray-400">
-          {formatCurrency(total)}
-        </span>
+    <div className="col-span-2 grid grid-cols-[1fr_44px_60px] items-end gap-1.5">
+      <div>
+        <label className={compactLabel}>{label}</label>
+        <select value={optionId} onChange={(e) => onOptionChange(e.target.value)} className={compactInput}>
+          <option value="">-</option>
+          {options.map((o) => (
+            <option key={o.id} value={o.id}>
+              {o.name} (${Number(o.price ?? 0).toFixed(2)})
+            </option>
+          ))}
+        </select>
       </div>
+      <input
+        type="number"
+        min="0"
+        value={qty}
+        onChange={(e) => onQtyChange(e.target.value)}
+        className={compactInput}
+        placeholder="Qty"
+      />
+      <span className="pb-1.5 text-right text-gray-500 dark:text-gray-400">{formatCurrency(total)}</span>
     </div>
   );
 }
 
-function LineItemFlat({
+function LineItemFlatCompact({
   label,
   options,
   optionId,
@@ -1099,17 +1144,19 @@ function LineItemFlat({
   total: number;
 }) {
   return (
-    <div>
-      <label className={labelClass}>{label}</label>
-      <select value={optionId} onChange={(e) => onOptionChange(e.target.value)} className={inputClass}>
-        <option value="">-</option>
-        {options.map((o) => (
-          <option key={o.id} value={o.id}>
-            {o.name} (${Number(o.price ?? 0).toFixed(2)})
-          </option>
-        ))}
-      </select>
-      <div className="mt-1 text-xs text-gray-500 dark:text-gray-400">{formatCurrency(total)}</div>
+    <div className="col-span-2 grid grid-cols-[1fr_60px] items-end gap-1.5">
+      <div>
+        <label className={compactLabel}>{label}</label>
+        <select value={optionId} onChange={(e) => onOptionChange(e.target.value)} className={compactInput}>
+          <option value="">-</option>
+          {options.map((o) => (
+            <option key={o.id} value={o.id}>
+              {o.name} (${Number(o.price ?? 0).toFixed(2)})
+            </option>
+          ))}
+        </select>
+      </div>
+      <span className="pb-1.5 text-right text-gray-500 dark:text-gray-400">{formatCurrency(total)}</span>
     </div>
   );
 }

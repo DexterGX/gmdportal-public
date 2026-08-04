@@ -123,7 +123,7 @@ export default async function FabricationOrderPrintPage({
         </div>
         <div className="text-right text-sm text-gray-600">
           <p>Order #{order.orderNumber || order.id.slice(0, 8).toUpperCase()}</p>
-          <p>{new Date(order.createdAt).toLocaleDateString()}</p>
+          <p>{new Date(order.date || order.createdAt).toLocaleDateString()}</p>
           <p className="mt-1 text-lg font-bold text-gray-900">{formatCurrency(toNumber(order.total))}</p>
         </div>
       </div>
@@ -136,7 +136,10 @@ export default async function FabricationOrderPrintPage({
           </div>
 
           <div className="grid grid-cols-2 gap-x-4 gap-y-1 text-sm text-gray-700 md:grid-cols-4">
-            <div>Sink Type: {area.sinkTypeText || "-"}</div>
+            <div>
+              Sink Type: {area.sinkTypeText || "-"}
+              {area.sinkQty ? ` (Qty ${area.sinkQty})` : ""}
+            </div>
             <div>Faucet: {area.faucetText || "-"}</div>
             <div>
               Stone: {area.stoneName || "-"}{" "}

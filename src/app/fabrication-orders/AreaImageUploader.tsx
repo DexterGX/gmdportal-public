@@ -44,6 +44,7 @@ export default function AreaImageUploader({
 }: Props) {
   const inputRef = useRef<HTMLInputElement | null>(null);
   const totalCount = existingImages.length + pendingImages.length;
+  const hasImages = totalCount > 0;
 
   async function handleFiles(fileList: FileList | null) {
     if (!fileList || fileList.length === 0) return;
@@ -60,46 +61,74 @@ export default function AreaImageUploader({
   }
 
   return (
-    <div className="space-y-2">
-      <div className="flex flex-wrap gap-3">
-        {existingImages.map((img) => (
-          <div key={img.id} className="relative h-24 w-24 overflow-hidden rounded-md border border-gray-200 dark:border-gray-700">
-            {/* Uploaded photos of user-drawn or Chief Architect layouts; not decorative UI chrome. */}
-            {/* eslint-disable-next-line @next/next/no-img-element */}
-            <img src={img.fileUrl} alt={img.caption || "Layout image"} className="h-full w-full object-cover" />
-            <button
-              type="button"
-              onClick={() => onRemoveExisting(img.id)}
-              className="absolute right-1 top-1 rounded-full bg-black/60 p-0.5 text-white hover:bg-black/80"
+    <div className="space-y-3">
+      {hasImages ? (
+        <div className="space-y-3">
+          {existingImages.map((img) => (
+            <div
+              key={img.id}
+              className="relative overflow-hidden rounded-md border border-gray-200 bg-gray-50 dark:border-gray-700 dark:bg-gray-900"
             >
-              <X className="h-3 w-3" />
-            </button>
-          </div>
-        ))}
-        {pendingImages.map((img, idx) => (
-          <div key={idx} className="relative h-24 w-24 overflow-hidden rounded-md border border-gray-200 dark:border-gray-700">
-            {/* eslint-disable-next-line @next/next/no-img-element */}
-            <img src={img.dataUrl} alt={img.fileName} className="h-full w-full object-cover" />
-            <button
-              type="button"
-              onClick={() => onRemovePending(idx)}
-              className="absolute right-1 top-1 rounded-full bg-black/60 p-0.5 text-white hover:bg-black/80"
+              {/* eslint-disable-next-line @next/next/no-img-element */}
+              <img
+                src={img.fileUrl}
+                alt={img.caption || "Layout image"}
+                className="max-h-[480px] w-full object-contain"
+              />
+              <button
+                type="button"
+                onClick={() => onRemoveExisting(img.id)}
+                className="absolute right-2 top-2 rounded-full bg-black/60 p-1 text-white hover:bg-black/80"
+                title="Remove image"
+              >
+                <X className="h-3.5 w-3.5" />
+              </button>
+            </div>
+          ))}
+          {pendingImages.map((img, idx) => (
+            <div
+              key={idx}
+              className="relative overflow-hidden rounded-md border border-gray-200 bg-gray-50 dark:border-gray-700 dark:bg-gray-900"
             >
-              <X className="h-3 w-3" />
-            </button>
-          </div>
-        ))}
-        {totalCount < MAX_IMAGES && (
-          <button
-            type="button"
-            onClick={() => inputRef.current?.click()}
-            className="flex h-24 w-24 flex-col items-center justify-center gap-1 rounded-md border border-dashed border-gray-300 text-gray-500 hover:border-blue-400 hover:text-blue-600 dark:border-gray-600 dark:text-gray-400"
-          >
-            <Upload className="h-5 w-5" />
-            <span className="text-xs">Upload</span>
-          </button>
-        )}
-      </div>
+              {/* eslint-disable-next-line @next/next/no-img-element */}
+              <img
+                src={img.dataUrl}
+                alt={img.fileName}
+                className="max-h-[480px] w-full object-contain"
+              />
+              <button
+                type="button"
+                onClick={() => onRemovePending(idx)}
+                className="absolute right-2 top-2 rounded-full bg-black/60 p-1 text-white hover:bg-black/80"
+                title="Remove image"
+              >
+                <X className="h-3.5 w-3.5" />
+              </button>
+            </div>
+          ))}
+        </div>
+      ) : (
+        <button
+          type="button"
+          onClick={() => inputRef.current?.click()}
+          className="flex h-64 w-full flex-col items-center justify-center gap-2 rounded-md border border-dashed border-gray-300 text-gray-500 hover:border-blue-400 hover:text-blue-600 dark:border-gray-600 dark:text-gray-400"
+        >
+          <Upload className="h-8 w-8" />
+          <span className="text-sm font-medium">Upload layout image</span>
+          <span className="text-xs">Photo or Chief Architect export</span>
+        </button>
+      )}
+
+      {hasImages && totalCount < MAX_IMAGES && (
+        <button
+          type="button"
+          onClick={() => inputRef.current?.click()}
+          className="flex w-full items-center justify-center gap-2 rounded-md border border-dashed border-gray-300 px-3 py-2 text-xs text-gray-500 hover:border-blue-400 hover:text-blue-600 dark:border-gray-600 dark:text-gray-400"
+        >
+          <Upload className="h-3.5 w-3.5" /> Add another image
+        </button>
+      )}
+
       <input
         ref={inputRef}
         type="file"
@@ -109,7 +138,7 @@ export default function AreaImageUploader({
         onChange={(e) => void handleFiles(e.target.files)}
       />
       <p className="text-xs text-gray-500 dark:text-gray-400">
-        Upload photos or Chief Architect exports. Up to {MAX_IMAGES} images, 10MB each.
+        Up to {MAX_IMAGES} images, 10MB each.
       </p>
     </div>
   );

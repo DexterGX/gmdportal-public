@@ -119,6 +119,7 @@ function resolveArea(area: any, maps: Awaited<ReturnType<typeof loadSettingsMaps
     name: area.name?.trim() || "Untitled Area",
     sortOrder: area.sortOrder ?? 0,
     sinkTypeText: area.sinkTypeText || null,
+    sinkQty: area.sinkQty != null && area.sinkQty !== "" ? Number(area.sinkQty) : null,
     faucetText: area.faucetText || null,
     stoneName: area.stoneName || null,
     stoneThickness: (area.stoneThickness as any) || null,
@@ -379,9 +380,13 @@ export async function PUT(
         }
       }
 
+      const orderDate = body.date ? new Date(body.date) : undefined;
+
       await tx.fabricationOrder.update({
         where: { id },
         data: {
+          orderNumber: body.orderNumber?.trim() || null,
+          ...(orderDate && !Number.isNaN(orderDate.getTime()) ? { date: orderDate } : {}),
           clientName,
           clientId: body.clientId || null,
           dealId: body.dealId || null,

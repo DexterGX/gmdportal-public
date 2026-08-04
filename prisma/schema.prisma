@@ -1855,6 +1855,7 @@ model FabricationRemovalOption {
 model FabricationOrder {
   id            String   @id @default(cuid())
   orderNumber   String?  @unique
+  date          DateTime @default(now())
   clientName    String
   clientId      String?
   dealId        String?
@@ -1886,6 +1887,7 @@ model FabricationOrderArea {
 
   // Header fields (mirror the old per-tab header block)
   sinkTypeText   String?
+  sinkQty        Int?
   faucetText     String?
   stoneName      String?
   stoneThickness SlabThickness?
