@@ -5,19 +5,21 @@ import AppSidebar from "@/components/organisms/Sidebar/Sidebar";
 import NavbarClient from "@/components/organisms/Navbar/NavbarClient";
 import { SidebarProvider } from "@/context/SidebarContext";
 import { getCurrentUserWithRole } from "@/lib/authHelpers";
-import { canAccessProgramId, getAccessibleProgramIds } from "@/lib/programAccess";
+import {
+  canAccessProgramId,
+  getAccessibleProgramIds,
+} from "@/lib/programAccess";
 
-export default async function StoreStockLayout({
+export default async function FabricationOrdersLayout({
   children,
 }: {
   children: React.ReactNode;
 }) {
   const session = await getServerSession(authOptions);
   if (!session) {
-    redirect("/api/auth/signin?callbackUrl=/store-stock");
+    redirect("/api/auth/signin?callbackUrl=/fabrication-orders");
   }
 
-  // Check if user is inactive or unassigned
   const { appRole, appRoles, isActive } = await getCurrentUserWithRole();
 
   if (!isActive) {
@@ -28,8 +30,15 @@ export default async function StoreStockLayout({
     redirect("/auth/status?reason=unassigned");
   }
 
-  const hasAccess = await canAccessProgramId("storeStock", appRoles, isActive);
-  const accessibleProgramIds = await getAccessibleProgramIds(appRoles, isActive);
+  const hasAccess = await canAccessProgramId(
+    "fabricationOrders",
+    appRoles,
+    isActive,
+  );
+  const accessibleProgramIds = await getAccessibleProgramIds(
+    appRoles,
+    isActive,
+  );
 
   if (!hasAccess) {
     redirect("/dashboard");
@@ -40,10 +49,17 @@ export default async function StoreStockLayout({
   return (
     <SidebarProvider>
       <div className="min-h-screen flex bg-gray-50 dark:bg-gray-900 w-full">
-        <AppSidebar />
+        <div className="print:hidden">
+          <AppSidebar userRole={appRole} />
+        </div>
         <div className="flex-1 flex flex-col min-w-0">
-          <NavbarClient user={user} accessibleProgramIds={accessibleProgramIds} />
-          <main className="p-6 overflow-auto min-w-0 bg-gray-50 dark:bg-gray-900">
+          <div className="print:hidden">
+            <NavbarClient
+              user={user}
+              accessibleProgramIds={accessibleProgramIds}
+            />
+          </div>
+          <main className="p-6 overflow-x-auto min-w-0 bg-gray-50 dark:bg-gray-900 print:p-0 print:overflow-visible print:bg-white">
             {children}
           </main>
         </div>

@@ -49,7 +49,9 @@ export type StoreUserRef = { id: string; name: string | null; email: string | nu
 
 export type StoreTransaction = {
   id: string;
-  itemId: string;
+  itemId: string | null;
+  itemName: string | null;
+  itemUnit: string | null;
   type: "CHECKOUT" | "RESTOCK_RECEIVED" | "ADJUSTMENT" | "INITIAL";
   change: number;
   oldQuantity: number;
@@ -64,7 +66,7 @@ export type StoreTransaction = {
     unit: string;
     department?: { id: string; label: string } | null;
     group?: { id: string; label: string } | null;
-  };
+  } | null;
 };
 
 export type StoreRestockRequest = {

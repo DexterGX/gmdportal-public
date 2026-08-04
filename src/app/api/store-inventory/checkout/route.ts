@@ -42,6 +42,8 @@ export async function POST(request: NextRequest) {
         await tx.storeInventoryTransaction.create({
           data: {
             itemId: item.id,
+            itemName: item.name,
+            itemUnit: item.unit,
             type: "CHECKOUT",
             change: -qty,
             oldQuantity: item.quantity,

@@ -95,6 +95,8 @@ export async function POST(request: NextRequest) {
     await prisma.storeInventoryTransaction.create({
       data: {
         itemId: created.id,
+        itemName: created.name,
+        itemUnit: created.unit,
         type: "INITIAL",
         change: quantity,
         oldQuantity: 0,

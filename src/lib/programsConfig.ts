@@ -2,7 +2,6 @@ import { NavItem } from "./navigationTypes";
 import {
   GridIcon,
   ShootingStarIcon,
-  CopyIcon,
   ListIcon,
   TableIcon,
   PageIcon,
@@ -23,6 +22,7 @@ import {
   ShoppingCart,
   Truck,
   ClipboardList,
+  Ruler,
 } from "lucide-react";
 import { UserCheck } from "lucide-react";
 import type { Role } from "@prisma/client"; // Prisma enum
@@ -114,7 +114,6 @@ export function getPrimaryAppRoleFromRoles(roles: AppRole[]): AppRole {
 
 export type ProgramId =
   | "main"
-  | "storeStock"
   | "slabRack"
   | "slabs"
   | "sinks"
@@ -129,7 +128,8 @@ export type ProgramId =
   | "miscEstimates"
   | "paymentTerms"
   | "salesCommission"
-  | "storeInventory";
+  | "storeInventory"
+  | "fabricationOrders";
 
 export interface ProgramConfig {
   id: ProgramId;
@@ -176,20 +176,6 @@ export const programs: ProgramConfig[] = [
         path: "/samples-request",
       },
     ],
-  },
-  {
-    id: "storeStock",
-    name: "Store Stock",
-    basePath: "/store-stock",
-    description: "Manage LEDs, propane, tape, transformers and other items.",
-    allowedRoles: ["admin", "specialist"],
-    navItems: [
-      { icon: GridIcon, name: "Overview", path: "/store-stock" },
-      { icon: ListIcon, name: "Movements", path: "/store-stock/movements" },
-      { icon: ListIcon, name: "Adjust Stock", path: "/store-stock/adjust" },
-      { icon: CopyIcon, name: "Purchase Orders", path: "/store-stock/po" },
-    ],
-    othersItems: [],
   },
   {
     id: "storeInventory",
@@ -592,6 +578,33 @@ export const programs: ProgramConfig[] = [
         icon: Settings2,
         name: "Settings",
         path: "/sales-commission/settings",
+      },
+    ],
+    othersItems: [],
+  },
+  {
+    id: "fabricationOrders",
+    name: "Fabrication Orders",
+    basePath: "/fabrication-orders",
+    description:
+      "Draw layouts, calculate slab fabrication pricing, and save fabrication orders for the countertop department.",
+    allowedRoles: ["admin", "sales", "office"],
+    navItems: [
+      {
+        icon: Ruler,
+        name: "New Fabrication Order",
+        path: "/fabrication-orders",
+      },
+      {
+        icon: ListIcon,
+        name: "Saved Fab. Orders",
+        path: "/fabrication-orders/saved",
+      },
+      {
+        icon: Settings2,
+        name: "Settings",
+        path: "/fabrication-orders/settings",
+        adminOnly: true,
       },
     ],
     othersItems: [],

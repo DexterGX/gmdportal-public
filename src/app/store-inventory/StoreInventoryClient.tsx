@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState, useCallback } from "react";
+import { useEffect, useMemo, useRef, useState, useCallback } from "react";
 import Link from "next/link";
 import Papa from "papaparse";
 import {
@@ -10,6 +10,7 @@ import {
   AlertTriangle,
   ClipboardList,
   Printer,
+  ChevronDown,
   Download,
   X,
   ShoppingCart,
@@ -25,8 +26,10 @@ import ItemFormModal, { type StoreItemFormValues, type ProviderOption } from "./
 import RequestRestockModal from "./ui/RequestRestockModal";
 import AddToCartModal from "./ui/AddToCartModal";
 import { useCart } from "./CartContext";
-import type { StoreItem, StoreTaxonomy } from "./types";
-import { STOCK_STATUS_STYLES as STATUS_STYLES } from "./types";
+import type { StoreItem, StoreTaxonomy, StoreRestockRequest } from "./types";
+import { STOCK_STATUS_STYLES as STATUS_STYLES, RESTOCK_STATUS_STYLES } from "./types";
+
+type PrintMode = "items" | "lowStock" | "requests";
 
 export type { StoreItem, StoreTaxonomy } from "./types";
 
@@ -63,6 +66,12 @@ export default function StoreInventoryClient({ userRole, userId, canManage }: Pr
   const [restockTarget, setRestockTarget] = useState<StoreItem | null>(null);
   const [toast, setToast] = useState<{ type: "success" | "error"; message: string } | null>(null);
 
+  const [showPrintMenu, setShowPrintMenu] = useState(false);
+  const [printMode, setPrintMode] = useState<PrintMode | null>(null);
+  const [printRequests, setPrintRequests] = useState<StoreRestockRequest[]>([]);
+  const [printLoading, setPrintLoading] = useState(false);
+  const printMenuRef = useRef<HTMLDivElement>(null);
+
   const showToast = useCallback((type: "success" | "error", message: string) => {
     setToast({ type, message });
     setTimeout(() => setToast(null), 3500);
@@ -72,6 +81,31 @@ export default function StoreInventoryClient({ userRole, userId, canManage }: Pr
     const handle = setTimeout(() => setSearchTerm(searchInput.trim()), 350);
     return () => clearTimeout(handle);
   }, [searchInput]);
+
+  useEffect(() => {
+    if (!showPrintMenu) return;
+    function handleClickOutside(event: MouseEvent) {
+      if (printMenuRef.current && !printMenuRef.current.contains(event.target as Node)) {
+        setShowPrintMenu(false);
+      }
+    }
+    document.addEventListener("mousedown", handleClickOutside);
+    return () => document.removeEventListener("mousedown", handleClickOutside);
+  }, [showPrintMenu]);
+
+  useEffect(() => {
+    if (!printMode) return;
+    const handle = setTimeout(() => window.print(), 50);
+    return () => clearTimeout(handle);
+  }, [printMode]);
+
+  useEffect(() => {
+    function handleAfterPrint() {
+      setPrintMode(null);
+    }
+    window.addEventListener("afterprint", handleAfterPrint);
+    return () => window.removeEventListener("afterprint", handleAfterPrint);
+  }, []);
 
   const fetchTaxonomy = useCallback(async () => {
     try {
@@ -278,6 +312,31 @@ export default function StoreInventoryClient({ userRole, userId, canManage }: Pr
     }
   }
 
+  const printItems = useMemo(() => {
+    if (printMode === "lowStock") {
+      return items.filter((item) => item.stockStatus === "low" || item.stockStatus === "critical");
+    }
+    return visibleItems;
+  }, [printMode, items, visibleItems]);
+
+  async function runPrint(mode: PrintMode) {
+    setShowPrintMenu(false);
+    if (mode === "requests") {
+      setPrintLoading(true);
+      try {
+        const res = await fetch("/api/store-inventory/restock-requests");
+        const data = await res.json();
+        setPrintRequests(Array.isArray(data) ? data : []);
+      } catch (error) {
+        showToast("error", "Failed to load restock requests for printing");
+        setPrintLoading(false);
+        return;
+      }
+      setPrintLoading(false);
+    }
+    setPrintMode(mode);
+  }
+
   function exportCsv() {
     const csv = Papa.unparse(
       visibleItems.map((item) => ({
@@ -327,7 +386,7 @@ export default function StoreInventoryClient({ userRole, userId, canManage }: Pr
       )}
 
       {/* Header */}
-      <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 mb-6">
+      <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 mb-6 print:hidden">
         <div>
           <h1 className="text-3xl font-bold">Store Inventory</h1>
           <p className="text-gray-600 dark:text-gray-400 mt-1">
@@ -354,13 +413,40 @@ export default function StoreInventoryClient({ userRole, userId, canManage }: Pr
             <Download className="w-4 h-4" />
             Export
           </button>
-          <button
-            onClick={() => window.print()}
-            className="inline-flex items-center gap-2 px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-md text-sm text-gray-700 dark:text-gray-200 hover:bg-gray-50 dark:hover:bg-gray-800"
-          >
-            <Printer className="w-4 h-4" />
-            Print
-          </button>
+          <div className="relative" ref={printMenuRef}>
+            <button
+              onClick={() => setShowPrintMenu((prev) => !prev)}
+              disabled={printLoading}
+              className="inline-flex items-center gap-2 px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-md text-sm text-gray-700 dark:text-gray-200 hover:bg-gray-50 dark:hover:bg-gray-800 disabled:opacity-50"
+            >
+              <Printer className="w-4 h-4" />
+              {printLoading ? "Preparing..." : "Print"}
+              <ChevronDown className={`w-3.5 h-3.5 transition-transform ${showPrintMenu ? "rotate-180" : ""}`} />
+            </button>
+
+            {showPrintMenu && (
+              <div className="absolute top-full left-0 mt-1 w-56 bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-lg shadow-lg z-50 py-1">
+                <button
+                  onClick={() => runPrint("items")}
+                  className="w-full text-left px-3 py-2 text-sm text-gray-700 dark:text-gray-200 hover:bg-gray-100 dark:hover:bg-gray-700"
+                >
+                  All Items
+                </button>
+                <button
+                  onClick={() => runPrint("lowStock")}
+                  className="w-full text-left px-3 py-2 text-sm text-gray-700 dark:text-gray-200 hover:bg-gray-100 dark:hover:bg-gray-700"
+                >
+                  Low / Critical Stock
+                </button>
+                <button
+                  onClick={() => runPrint("requests")}
+                  className="w-full text-left px-3 py-2 text-sm text-gray-700 dark:text-gray-200 hover:bg-gray-100 dark:hover:bg-gray-700"
+                >
+                  Restock Requests
+                </button>
+              </div>
+            )}
+          </div>
           {canManage && (
             <button
               onClick={openNew}
@@ -374,7 +460,7 @@ export default function StoreInventoryClient({ userRole, userId, canManage }: Pr
       </div>
 
       {/* Stat cards */}
-      <div className="grid grid-cols-2 lg:grid-cols-4 gap-4 mb-6">
+      <div className="grid grid-cols-2 lg:grid-cols-4 gap-4 mb-6 print:hidden">
         <div className="bg-white dark:bg-gray-800 rounded-lg shadow-sm p-4">
           <div className="flex items-center gap-3">
             <div className="p-2 rounded-md bg-blue-100 dark:bg-blue-900/30">
@@ -425,7 +511,7 @@ export default function StoreInventoryClient({ userRole, userId, canManage }: Pr
       </div>
 
       {/* Filters */}
-      <div className="bg-white dark:bg-gray-800 rounded-lg shadow-sm p-4 mb-6">
+      <div className="bg-white dark:bg-gray-800 rounded-lg shadow-sm p-4 mb-6 print:hidden">
         {isFetching && hasLoaded && (
           <div className="text-xs text-gray-500 dark:text-gray-400 mb-2">Updating results...</div>
         )}
@@ -478,6 +564,7 @@ export default function StoreInventoryClient({ userRole, userId, canManage }: Pr
       </div>
 
       {/* Items */}
+      <div className="print:hidden">
       {visibleItems.length === 0 ? (
         <div className="text-center py-12 bg-white dark:bg-gray-800 rounded-lg shadow">
           <Package className="w-12 h-12 text-gray-400 mx-auto mb-4" />
@@ -732,6 +819,90 @@ export default function StoreInventoryClient({ userRole, userId, canManage }: Pr
           </div>
         </>
       )}
+      </div>
+
+      {/* Print-only content */}
+      <div id="print-area" className="hidden print:block">
+        <div className="mb-4">
+          <h1 className="text-xl font-bold text-black">
+            {printMode === "requests"
+              ? "Store Inventory — Restock Requests"
+              : printMode === "lowStock"
+                ? "Store Inventory — Low & Critical Stock"
+                : "Store Inventory — Item List"}
+          </h1>
+          <p className="text-xs text-gray-600">Printed {new Date().toLocaleString()}</p>
+        </div>
+
+        {printMode === "requests" ? (
+          printRequests.length === 0 ? (
+            <p className="text-sm text-gray-600">No restock requests to show.</p>
+          ) : (
+            <table className="w-full text-sm">
+              <thead>
+                <tr>
+                  <th className="text-left">Item</th>
+                  <th className="text-left">Qty Requested</th>
+                  <th className="text-left">Status</th>
+                  <th className="text-left">Requested By</th>
+                  <th className="text-left">Requested On</th>
+                  <th className="text-left">Notes</th>
+                </tr>
+              </thead>
+              <tbody>
+                {printRequests.map((r) => (
+                  <tr key={r.id}>
+                    <td>{r.item?.name ?? "Item"}</td>
+                    <td>
+                      {r.requestedQty} {r.item?.unit ?? ""}
+                    </td>
+                    <td>{RESTOCK_STATUS_STYLES[r.status].label}</td>
+                    <td>{r.requestedByUser?.name ?? "—"}</td>
+                    <td>{new Date(r.createdAt).toLocaleDateString()}</td>
+                    <td>{r.notes ?? ""}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          )
+        ) : printItems.length === 0 ? (
+          <p className="text-sm text-gray-600">No items to show.</p>
+        ) : (
+          <table className="w-full text-sm">
+            <thead>
+              <tr>
+                <th className="text-left">Item</th>
+                <th className="text-left">Department</th>
+                <th className="text-left">Group</th>
+                <th className="text-left">Qty</th>
+                <th className="text-left">Min</th>
+                <th className="text-left">Rec.</th>
+                <th className="text-left">Status</th>
+                <th className="text-left">Provider</th>
+              </tr>
+            </thead>
+            <tbody>
+              {printItems.map((item) => {
+                const preferredProvider = item.providers.find((p) => p.isPreferred) ?? item.providers[0] ?? null;
+                return (
+                  <tr key={item.id}>
+                    <td>{item.name}</td>
+                    <td>{item.department?.label ?? "—"}</td>
+                    <td>{item.group?.label ?? "—"}</td>
+                    <td>
+                      {item.quantity} {item.unit}
+                    </td>
+                    <td>{item.minQuantity}</td>
+                    <td>{item.recommendedQuantity}</td>
+                    <td>{STATUS_STYLES[item.stockStatus].label}</td>
+                    <td>{preferredProvider?.provider.name ?? "—"}</td>
+                  </tr>
+                );
+              })}
+            </tbody>
+          </table>
+        )}
+      </div>
 
       {showItemModal && (
         <ItemFormModal
