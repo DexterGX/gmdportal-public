@@ -15,15 +15,16 @@ export type FabricationSettingsCategory =
   | "windowsill"
   | "powerStation"
   | "otherCharges"
-  | "removal";
+  | "removal"
+  | "sinkTypes";
 
 export interface FabricationSettingsCategoryConfig {
   category: FabricationSettingsCategory;
   label: string;
   description: string;
   modelKey: string; // property name on the Prisma client
-  dbField: string; // the numeric field name in the database
-  valueLabel: string; // human label for the numeric field
+  dbField?: string; // the numeric field name in the database (omit for name-only lists)
+  valueLabel?: string; // human label for the numeric field
   valuePrefix?: string; // e.g. "$"
   valueSuffix?: string; // e.g. "/ sqft"
   hasBuildUpFlag?: boolean; // only Edge Types
@@ -134,6 +135,14 @@ export const FABRICATION_SETTINGS_CATEGORIES: FabricationSettingsCategoryConfig[
     valueLabel: "Price",
     valuePrefix: "$",
     entityType: "Removal",
+  },
+  {
+    category: "sinkTypes",
+    label: "Sink Types",
+    description:
+      "e.g. Undermount, Vessel, Drop In. Name-only list — no price, used to drive the Sink Type dropdown on each area.",
+    modelKey: "fabricationSinkTypeOption",
+    entityType: "SinkType",
   },
 ];
 

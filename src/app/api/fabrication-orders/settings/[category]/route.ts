@@ -47,10 +47,11 @@ export async function GET(
   });
 
   return NextResponse.json(
-    items.map((item: any) => ({
-      ...item,
-      [config.dbField]: Number(item[config.dbField]),
-    })),
+    items.map((item: any) =>
+      config.dbField
+        ? { ...item, [config.dbField]: Number(item[config.dbField]) }
+        : item,
+    ),
   );
 }
 
@@ -85,10 +86,11 @@ export async function POST(
         where: { id },
         data: { active: action === "activate" },
       });
-      return NextResponse.json({
-        ...updated,
-        [config.dbField]: Number(updated[config.dbField]),
-      });
+      return NextResponse.json(
+        config.dbField
+          ? { ...updated, [config.dbField]: Number(updated[config.dbField]) }
+          : updated,
+      );
     }
 
     // Permanent delete - only when not referenced by any existing order area
@@ -139,10 +141,12 @@ export async function POST(
 
     const data: Record<string, unknown> = {
       name,
-      [config.dbField]: value,
       sortOrder,
       active,
     };
+    if (config.dbField) {
+      data[config.dbField] = value;
+    }
     if (config.hasBuildUpFlag) {
       data.isBuildUp = Boolean(body.isBuildUp);
     }
@@ -152,6 +156,7 @@ export async function POST(
       const updated = await model.update({ where: { id }, data });
 
       if (
+        config.dbField &&
         existing &&
         Number(existing[config.dbField]) !== value
       ) {
@@ -168,30 +173,34 @@ export async function POST(
         });
       }
 
-      return NextResponse.json({
-        ...updated,
-        [config.dbField]: Number(updated[config.dbField]),
-      });
+      return NextResponse.json(
+        config.dbField
+          ? { ...updated, [config.dbField]: Number(updated[config.dbField]) }
+          : updated,
+      );
     }
 
     const created = await model.create({ data });
 
-    await prismaAny.fabricationPriceChangeLog.create({
-      data: {
-        entityType: config.entityType,
-        entityId: created.id,
-        entityName: created.name,
-        fieldName: config.dbField,
-        oldValue: null,
-        newValue: String(value),
-        changedById: auth.user.id,
-      },
-    });
+    if (config.dbField) {
+      await prismaAny.fabricationPriceChangeLog.create({
+        data: {
+          entityType: config.entityType,
+          entityId: created.id,
+          entityName: created.name,
+          fieldName: config.dbField,
+          oldValue: null,
+          newValue: String(value),
+          changedById: auth.user.id,
+        },
+      });
+    }
 
-    return NextResponse.json({
-      ...created,
-      [config.dbField]: Number(created[config.dbField]),
-    });
+    return NextResponse.json(
+      config.dbField
+        ? { ...created, [config.dbField]: Number(created[config.dbField]) }
+        : created,
+    );
   } catch (error: any) {
     const message =
       error?.code === "P2002"

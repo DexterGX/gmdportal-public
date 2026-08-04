@@ -87,6 +87,10 @@ function resolveArea(area: any, maps: Awaited<ReturnType<typeof loadSettingsMaps
   const powerStation = area.powerStationOptionId ? maps.powerStations.get(area.powerStationOptionId) : null;
   const otherCharge = area.otherChargeOptionId ? maps.otherCharges.get(area.otherChargeOptionId) : null;
   const removal = area.removalOptionId ? maps.removals.get(area.removalOptionId) : null;
+  const hasCustomOtherCharge = Boolean(area.otherChargeCustomName?.trim());
+  const otherChargePrice = hasCustomOtherCharge
+    ? toNumber(area.otherChargeCustomPrice)
+    : toNumber(otherCharge?.price);
 
   const calcInput: CalcAreaInput = {
     sections: sections.map((s: any) => ({
@@ -105,7 +109,7 @@ function resolveArea(area: any, maps: Awaited<ReturnType<typeof loadSettingsMaps
     cuttingBoardPrice: toNumber(cuttingBoard?.price),
     windowsillPrice: windowsill ? toNumber(windowsill.price) : 0,
     powerStationPrice: powerStation ? toNumber(powerStation.price) : 0,
-    otherChargePrice: otherCharge ? toNumber(otherCharge.price) : 0,
+    otherChargePrice,
     removalPrice: removal ? toNumber(removal.price) : 0,
     slabAmount: toNumber(area.slabAmount),
     slabLengthIn: toNumber(area.slabLengthIn),
@@ -118,14 +122,17 @@ function resolveArea(area: any, maps: Awaited<ReturnType<typeof loadSettingsMaps
   const scalarData = {
     name: area.name?.trim() || "Untitled Area",
     sortOrder: area.sortOrder ?? 0,
+    sinkTypeOptionId: area.sinkTypeOptionId || null,
     sinkTypeText: area.sinkTypeText || null,
     sinkQty: area.sinkQty != null && area.sinkQty !== "" ? Number(area.sinkQty) : null,
     faucetText: area.faucetText || null,
     stoneName: area.stoneName || null,
     stoneThickness: (area.stoneThickness as any) || null,
     whNumber: area.whNumber || null,
-    backsplashIn: area.backsplashIn ? toNumber(area.backsplashIn) : null,
+    backsplashHas: Boolean(area.backsplashHas),
+    backsplashIn: area.backsplashHas && area.backsplashIn ? toNumber(area.backsplashIn) : null,
     slabSupplierId: area.slabSupplierId || null,
+    slabSupplierCustomName: area.slabSupplierCustomName || null,
     slabAreaLabel:
       calcInput.slabLengthIn && calcInput.slabWidthIn
         ? `1) ${calcInput.slabLengthIn} X ${calcInput.slabWidthIn} = ${result.slabPieceSqft.toFixed(2)}`
@@ -154,7 +161,9 @@ function resolveArea(area: any, maps: Awaited<ReturnType<typeof loadSettingsMaps
     windowsillTotal: result.windowsillTotal,
     powerStationOptionId: area.powerStationOptionId || null,
     powerStationTotal: result.powerStationTotal,
-    otherChargeOptionId: area.otherChargeOptionId || null,
+    otherChargeOptionId: hasCustomOtherCharge ? null : area.otherChargeOptionId || null,
+    otherChargeCustomName: hasCustomOtherCharge ? area.otherChargeCustomName!.trim() : null,
+    otherChargeCustomPrice: hasCustomOtherCharge ? toNumber(area.otherChargeCustomPrice) : null,
     otherChargeTotal: result.otherChargeTotal,
     removalOptionId: area.removalOptionId || null,
     removalTotal: result.removalTotal,
@@ -385,7 +394,8 @@ export async function PUT(
       await tx.fabricationOrder.update({
         where: { id },
         data: {
-          orderNumber: body.orderNumber?.trim() || null,
+          // orderNumber is intentionally omitted — FO# is assigned once at
+          // creation and never changes on update.
           ...(orderDate && !Number.isNaN(orderDate.getTime()) ? { date: orderDate } : {}),
           clientName,
           clientId: body.clientId || null,

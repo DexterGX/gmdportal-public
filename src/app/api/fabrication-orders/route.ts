@@ -24,6 +24,44 @@ function toNumber(value: unknown): number {
   return Number.isFinite(parsed) ? parsed : 0;
 }
 
+const FAB_ORDER_NUMBER_PREFIX = "FO";
+
+function isOrderNumberUniqueConstraintError(error: any) {
+  if (error?.code !== "P2002") return false;
+  const target = error?.meta?.target;
+  if (Array.isArray(target)) return target.includes("orderNumber");
+  if (typeof target === "string") return target.includes("orderNumber");
+  return false;
+}
+
+// Auto-generates "FOYYMMXXX" — same convention as Payment Term, but derived
+// from the max existing sequence in the month (not a raw count) so a deleted
+// or archived order mid-month can't cause a collision.
+async function generateMonthlyFabOrderNumber() {
+  const now = new Date();
+  const yy = String(now.getFullYear()).slice(-2);
+  const mm = String(now.getMonth() + 1).padStart(2, "0");
+  const monthToken = `${FAB_ORDER_NUMBER_PREFIX}${yy}${mm}`;
+
+  const monthOrders = await prismaAny.fabricationOrder.findMany({
+    where: { orderNumber: { startsWith: monthToken } },
+    select: { orderNumber: true },
+    take: 5000,
+  });
+
+  let maxSequence = 0;
+  const pattern = new RegExp(`^${monthToken}(\\d+)$`);
+  for (const order of monthOrders) {
+    const match = String(order.orderNumber ?? "").match(pattern);
+    if (!match) continue;
+    const parsed = Number(match[1]);
+    if (Number.isFinite(parsed)) maxSequence = Math.max(maxSequence, parsed);
+  }
+
+  const seq = String(maxSequence + 1).padStart(3, "0");
+  return `${monthToken}${seq}`;
+}
+
 async function loadSettingsMaps() {
   const [
     edgeTypes,
@@ -84,14 +122,17 @@ type AreaPayload = {
   id?: string;
   name?: string;
   sortOrder?: number;
+  sinkTypeOptionId?: string | null;
   sinkTypeText?: string | null;
   sinkQty?: number | string | null;
   faucetText?: string | null;
   stoneName?: string | null;
   stoneThickness?: string | null;
   whNumber?: string | null;
+  backsplashHas?: boolean;
   backsplashIn?: number | null;
   slabSupplierId?: string | null;
+  slabSupplierCustomName?: string | null;
   slabLengthIn?: number;
   slabWidthIn?: number;
   slabQty?: number;
@@ -108,6 +149,8 @@ type AreaPayload = {
   windowsillOptionId?: string | null;
   powerStationOptionId?: string | null;
   otherChargeOptionId?: string | null;
+  otherChargeCustomName?: string | null;
+  otherChargeCustomPrice?: number | null;
   removalOptionId?: string | null;
   leftoverNote?: string | null;
   drawingMode?: "CANVAS" | "IMAGE";
@@ -162,6 +205,10 @@ async function buildAreaCreateData(
   const removal = area.removalOptionId
     ? maps.removals.get(area.removalOptionId)
     : null;
+  const hasCustomOtherCharge = Boolean(area.otherChargeCustomName?.trim());
+  const otherChargePrice = hasCustomOtherCharge
+    ? toNumber(area.otherChargeCustomPrice)
+    : toNumber(otherCharge?.price);
 
   const calcInput: CalcAreaInput = {
     sections: sections.map((s) => ({
@@ -180,7 +227,7 @@ async function buildAreaCreateData(
     cuttingBoardPrice: toNumber(cuttingBoard?.price),
     windowsillPrice: windowsill ? toNumber(windowsill.price) : 0,
     powerStationPrice: powerStation ? toNumber(powerStation.price) : 0,
-    otherChargePrice: otherCharge ? toNumber(otherCharge.price) : 0,
+    otherChargePrice,
     removalPrice: removal ? toNumber(removal.price) : 0,
     slabAmount: toNumber(area.slabAmount),
     slabLengthIn: toNumber(area.slabLengthIn),
@@ -194,14 +241,17 @@ async function buildAreaCreateData(
     data: {
       name: area.name?.trim() || "Untitled Area",
       sortOrder: area.sortOrder ?? 0,
+      sinkTypeOptionId: area.sinkTypeOptionId || null,
       sinkTypeText: area.sinkTypeText || null,
       sinkQty: area.sinkQty != null && area.sinkQty !== "" ? Number(area.sinkQty) : null,
       faucetText: area.faucetText || null,
       stoneName: area.stoneName || null,
       stoneThickness: (area.stoneThickness as any) || null,
       whNumber: area.whNumber || null,
-      backsplashIn: area.backsplashIn ? toNumber(area.backsplashIn) : null,
+      backsplashHas: Boolean(area.backsplashHas),
+      backsplashIn: area.backsplashHas && area.backsplashIn ? toNumber(area.backsplashIn) : null,
       slabSupplierId: area.slabSupplierId || null,
+      slabSupplierCustomName: area.slabSupplierCustomName || null,
       slabAreaLabel:
         calcInput.slabLengthIn && calcInput.slabWidthIn
           ? `1) ${calcInput.slabLengthIn} X ${calcInput.slabWidthIn} = ${result.slabPieceSqft.toFixed(2)}`
@@ -230,7 +280,9 @@ async function buildAreaCreateData(
       windowsillTotal: result.windowsillTotal,
       powerStationOptionId: area.powerStationOptionId || null,
       powerStationTotal: result.powerStationTotal,
-      otherChargeOptionId: area.otherChargeOptionId || null,
+      otherChargeOptionId: hasCustomOtherCharge ? null : area.otherChargeOptionId || null,
+      otherChargeCustomName: hasCustomOtherCharge ? area.otherChargeCustomName!.trim() : null,
+      otherChargeCustomPrice: hasCustomOtherCharge ? toNumber(area.otherChargeCustomPrice) : null,
       otherChargeTotal: result.otherChargeTotal,
       removalOptionId: area.removalOptionId || null,
       removalTotal: result.removalTotal,
@@ -333,24 +385,41 @@ export async function POST(request: NextRequest) {
 
     const orderDate = body.date ? new Date(body.date) : new Date();
 
-    const order = await prismaAny.fabricationOrder.create({
-      data: {
-        orderNumber: body.orderNumber?.trim() || null,
-        date: Number.isNaN(orderDate.getTime()) ? new Date() : orderDate,
-        clientName,
-        clientId: body.clientId || null,
-        dealId: body.dealId || null,
-        dealName: body.dealName || null,
-        salesRep,
-        notes: body.notes || null,
-        total: orderTotal,
-        createdById: auth.user.id,
-        areas: {
-          create: resolved.map((r) => r.data),
-        },
-      },
-      include: { areas: { orderBy: { sortOrder: "asc" } } },
-    });
+    // FO# is always server-generated — never trust a client-supplied value.
+    const maxAttempts = 3;
+    let order: any = null;
+    for (let attempt = 1; attempt <= maxAttempts; attempt += 1) {
+      const orderNumber = await generateMonthlyFabOrderNumber();
+      try {
+        order = await prismaAny.fabricationOrder.create({
+          data: {
+            orderNumber,
+            date: Number.isNaN(orderDate.getTime()) ? new Date() : orderDate,
+            clientName,
+            clientId: body.clientId || null,
+            dealId: body.dealId || null,
+            dealName: body.dealName || null,
+            salesRep,
+            notes: body.notes || null,
+            total: orderTotal,
+            createdById: auth.user.id,
+            areas: {
+              create: resolved.map((r) => r.data),
+            },
+          },
+          include: { areas: { orderBy: { sortOrder: "asc" } } },
+        });
+        break;
+      } catch (error: any) {
+        if (isOrderNumberUniqueConstraintError(error) && attempt < maxAttempts) {
+          continue;
+        }
+        throw error;
+      }
+    }
+    if (!order) {
+      throw new Error("Failed to generate a unique order number. Please try saving again.");
+    }
 
     await prismaAny.fabricationOrderHistory.create({
       data: {
@@ -373,7 +442,7 @@ export async function POST(request: NextRequest) {
       }
     }
 
-    return NextResponse.json({ id: order.id }, { status: 201 });
+    return NextResponse.json({ id: order.id, orderNumber: order.orderNumber }, { status: 201 });
   } catch (error: any) {
     console.error("Failed to create fabrication order", error);
     return NextResponse.json(

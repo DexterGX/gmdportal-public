@@ -1751,6 +1751,16 @@ model FabricationSlabTypeOption {
   areas      FabricationOrderArea[]
 }
 
+model FabricationSinkTypeOption {
+  id        String                 @id @default(cuid())
+  name      String                 @unique // "Undermount", "Vessel", "Drop In", etc.
+  active    Boolean                @default(true)
+  sortOrder Int                    @default(0)
+  createdAt DateTime               @default(now())
+  updatedAt DateTime               @updatedAt
+  areas     FabricationOrderArea[]
+}
+
 model FabricationEdgeType {
   id              String                   @id @default(cuid())
   name            String                   @unique
@@ -1886,16 +1896,20 @@ model FabricationOrderArea {
   sortOrder Int    @default(0)
 
   // Header fields (mirror the old per-tab header block)
-  sinkTypeText   String?
+  sinkTypeOptionId String?
+  sinkTypeOption   FabricationSinkTypeOption? @relation(fields: [sinkTypeOptionId], references: [id])
+  sinkTypeText   String? // Model, shown when sinkTypeOption is set and not "None"
   sinkQty        Int?
   faucetText     String?
   stoneName      String?
   stoneThickness SlabThickness?
   whNumber       String?
+  backsplashHas  Boolean         @default(false)
   backsplashIn   Decimal?        @db.Decimal(6, 2)
 
-  slabSupplierId String?
-  slabSupplier   SlabBrandConfig? @relation(fields: [slabSupplierId], references: [id])
+  slabSupplierId        String?
+  slabSupplier          SlabBrandConfig? @relation(fields: [slabSupplierId], references: [id])
+  slabSupplierCustomName String? // used when the provider isn't in the SlabBrandConfig list
   slabAreaLabel  String? // free text like "1) 127 X 64 = 50.80"
   slabQty        Int      @default(0)
   slabRecommendedQty Int  @default(0)
@@ -1936,15 +1950,17 @@ model FabricationOrderArea {
   powerStationOption   FabricationPowerStationOption? @relation(fields: [powerStationOptionId], references: [id])
   powerStationTotal    Decimal  @default(0) @db.Decimal(12, 2)
 
-  otherChargeOptionId String?
-  otherChargeOption   FabricationOtherChargeOption? @relation(fields: [otherChargeOptionId], references: [id])
+  otherChargeOptionId  String?
+  otherChargeOption    FabricationOtherChargeOption? @relation(fields: [otherChargeOptionId], references: [id])
+  otherChargeCustomName  String? // free-typed charge name when not one of the preset options
+  otherChargeCustomPrice Decimal? @db.Decimal(10, 2)
   otherChargeTotal    Decimal  @default(0) @db.Decimal(12, 2)
 
   removalOptionId String?
   removalOption   FabricationRemovalOption? @relation(fields: [removalOptionId], references: [id])
   removalTotal    Decimal  @default(0) @db.Decimal(12, 2)
 
-  leftoverNote String?
+  leftoverNote String? // "None" | "GMD" | "Client"
   areaTotal    Decimal @default(0) @db.Decimal(12, 2)
 
   drawingMode FabricationDrawingMode @default(CANVAS)

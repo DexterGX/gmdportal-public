@@ -92,6 +92,7 @@ export default async function FabricationOrderPrintPage({
           images: true,
           slabSupplier: { select: { name: true } },
           slabType: { select: { name: true } },
+          sinkTypeOption: { select: { name: true } },
           sinkCutoutOption: { select: { name: true } },
           cooktopOption: { select: { name: true } },
           bumpOutOption: { select: { name: true } },
@@ -137,7 +138,8 @@ export default async function FabricationOrderPrintPage({
 
           <div className="grid grid-cols-2 gap-x-4 gap-y-1 text-sm text-gray-700 md:grid-cols-4">
             <div>
-              Sink Type: {area.sinkTypeText || "-"}
+              Sink Type: {area.sinkTypeOption?.name || "None"}
+              {area.sinkTypeText ? ` — Model: ${area.sinkTypeText}` : ""}
               {area.sinkQty ? ` (Qty ${area.sinkQty})` : ""}
             </div>
             <div>Faucet: {area.faucetText || "-"}</div>
@@ -146,10 +148,11 @@ export default async function FabricationOrderPrintPage({
               {area.stoneThickness ? THICKNESS_LABELS[area.stoneThickness] || area.stoneThickness : ""}
             </div>
             <div>WH#: {area.whNumber || "-"}</div>
-            <div>Slab Supplier: {area.slabSupplier?.name || "-"}</div>
+            <div>Slab Supplier: {area.slabSupplier?.name || area.slabSupplierCustomName || "-"}</div>
             <div>Slab Area: {area.slabAreaLabel || "-"}</div>
             <div>Slab Qty: {area.slabQty} (recommended {area.slabRecommendedQty})</div>
             <div>Slab Type: {area.slabType?.name || "-"}</div>
+            <div>Backsplash: {area.backsplashHas ? `${toNumber(area.backsplashIn)} in` : "No"}</div>
           </div>
 
           {area.sections.map((section: any) => (
@@ -197,10 +200,15 @@ export default async function FabricationOrderPrintPage({
             </div>
             <div>Windowsill ({area.windowsillOption?.name || "-"}): {formatCurrency(toNumber(area.windowsillTotal))}</div>
             <div>Power Station ({area.powerStationOption?.name || "-"}): {formatCurrency(toNumber(area.powerStationTotal))}</div>
-            <div>Others ({area.otherChargeOption?.name || "-"}): {formatCurrency(toNumber(area.otherChargeTotal))}</div>
+            <div>
+              Others ({area.otherChargeOption?.name || area.otherChargeCustomName || "-"}):{" "}
+              {formatCurrency(toNumber(area.otherChargeTotal))}
+            </div>
             <div>Removal ({area.removalOption?.name || "-"}): {formatCurrency(toNumber(area.removalTotal))}</div>
             <div>Slab Amount: {formatCurrency(toNumber(area.slabAmount))}</div>
-            {area.leftoverNote && <div>Leftover: {area.leftoverNote}</div>}
+            {area.leftoverNote && area.leftoverNote !== "None" && (
+              <div>Leftover: {area.leftoverNote}</div>
+            )}
           </div>
 
           {area.drawingMode === "IMAGE" && area.images.length > 0 ? (

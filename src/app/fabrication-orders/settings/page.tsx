@@ -32,10 +32,11 @@ export default async function FabricationSettingsPage() {
 
   const initialItems: Record<string, any[]> = {};
   FABRICATION_SETTINGS_CATEGORIES.forEach((config, index) => {
-    initialItems[config.category] = lists[index].map((item: any) => ({
-      ...item,
-      [config.dbField]: toNumber(item[config.dbField]),
-    }));
+    initialItems[config.category] = lists[index].map((item: any) =>
+      config.dbField
+        ? { ...item, [config.dbField]: toNumber(item[config.dbField]) }
+        : item,
+    );
   });
 
   return <FabricationSettingsClient initialItems={initialItems as any} />;

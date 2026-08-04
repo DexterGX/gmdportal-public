@@ -69,7 +69,7 @@ export default function FabricationSettingsClient({ initialItems }: Props) {
   function startEdit(item: Item) {
     setEditingId(item.id);
     setName(item.name);
-    setValue(String(item[config.dbField] ?? 0));
+    setValue(config.dbField ? String(item[config.dbField] ?? 0) : "0");
     setIsBuildUp(Boolean(item.isBuildUp));
     setSortOrder(String(item.sortOrder ?? 0));
     setActive(Boolean(item.active));
@@ -238,17 +238,19 @@ export default function FabricationSettingsClient({ initialItems }: Props) {
               className={`${compactInput} w-full`}
             />
           </div>
-          <div className="w-24">
-            <label className={compactLabel}>{config.valueLabel}</label>
-            <input
-              type="number"
-              min="0"
-              step="0.0001"
-              value={value}
-              onChange={(e) => setValue(e.target.value)}
-              className={`${compactInput} w-full`}
-            />
-          </div>
+          {config.dbField && (
+            <div className="w-24">
+              <label className={compactLabel}>{config.valueLabel}</label>
+              <input
+                type="number"
+                min="0"
+                step="0.0001"
+                value={value}
+                onChange={(e) => setValue(e.target.value)}
+                className={`${compactInput} w-full`}
+              />
+            </div>
+          )}
           <div className="w-20">
             <label className={compactLabel}>Sort</label>
             <input
@@ -301,7 +303,7 @@ export default function FabricationSettingsClient({ initialItems }: Props) {
             <thead>
               <tr className="border-b border-gray-200 text-[10px] uppercase text-gray-500 dark:border-gray-700 dark:text-gray-400">
                 <th className="py-1.5 pr-3">Name</th>
-                <th className="py-1.5 pr-3">{config.valueLabel}</th>
+                {config.dbField && <th className="py-1.5 pr-3">{config.valueLabel}</th>}
                 {config.hasBuildUpFlag && <th className="py-1.5 pr-3">Build-Up</th>}
                 <th className="py-1.5 pr-3">Sort</th>
                 <th className="py-1.5 pr-3">Status</th>
@@ -311,7 +313,15 @@ export default function FabricationSettingsClient({ initialItems }: Props) {
             <tbody>
               {items[config.category].length === 0 ? (
                 <tr>
-                  <td colSpan={6} className="py-3 text-xs text-gray-500 dark:text-gray-400">
+                  <td
+                    colSpan={
+                      2 +
+                      (config.dbField ? 1 : 0) +
+                      (config.hasBuildUpFlag ? 1 : 0) +
+                      2
+                    }
+                    className="py-3 text-xs text-gray-500 dark:text-gray-400"
+                  >
                     No entries yet.
                   </td>
                 </tr>
@@ -325,9 +335,11 @@ export default function FabricationSettingsClient({ initialItems }: Props) {
                   .map((item) => (
                     <tr key={item.id} className="border-b border-gray-100 dark:border-gray-700/60">
                       <td className="py-1.5 pr-3">{item.name}</td>
-                      <td className="py-1.5 pr-3">
-                        {formatValue(item[config.dbField], config.valuePrefix, config.valueSuffix)}
-                      </td>
+                      {config.dbField && (
+                        <td className="py-1.5 pr-3">
+                          {formatValue(item[config.dbField], config.valuePrefix, config.valueSuffix)}
+                        </td>
+                      )}
                       {config.hasBuildUpFlag && (
                         <td className="py-1.5 pr-3">{item.isBuildUp ? "Yes" : "No"}</td>
                       )}

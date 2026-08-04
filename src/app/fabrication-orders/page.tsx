@@ -30,6 +30,7 @@ export default async function NewFabricationOrderPage() {
     removals,
     slabSuppliers,
     stoneRows,
+    sinkTypes,
   ] = await Promise.all([
     prismaAny.fabricationEdgeType.findMany({
       where: { active: true },
@@ -71,12 +72,19 @@ export default async function NewFabricationOrderPage() {
       where: { active: true },
       orderBy: [{ sortOrder: "asc" }, { name: "asc" }],
     }),
-    prismaAny.slabBrandConfig.findMany({ orderBy: { name: "asc" } }),
+    prismaAny.slabBrandConfig.findMany({
+      select: { id: true, name: true },
+      orderBy: { name: "asc" },
+    }),
     prismaAny.slab.findMany({
       distinct: ["color"],
       select: { color: true },
       take: 500,
       orderBy: { color: "asc" },
+    }),
+    prismaAny.fabricationSinkTypeOption.findMany({
+      where: { active: true },
+      orderBy: [{ sortOrder: "asc" }, { name: "asc" }],
     }),
   ]);
 
@@ -102,6 +110,7 @@ export default async function NewFabricationOrderPage() {
       removals={numify(removals, ["price"])}
       slabSuppliers={slabSuppliers}
       stoneSuggestions={stoneRows.map((r: any) => r.color).filter(Boolean)}
+      sinkTypes={sinkTypes}
     />
   );
 }
