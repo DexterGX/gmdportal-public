@@ -765,18 +765,67 @@ export default function FabricationOrderForm(props: Props) {
     <div className="fab-print-root space-y-6 pb-10 print:space-y-1 print:pb-0">
       <style>{`
         @media print {
-          @page { margin: 8mm; }
+          @page { margin: 6mm; }
           .fab-print-root, .fab-print-root * {
-            font-size: 9px !important;
-            line-height: 1.25 !important;
+            font-size: 10px !important;
+            line-height: 1.15 !important;
           }
-          .fab-print-root h1 { font-size: 14px !important; }
-          .fab-print-root h2, .fab-print-root h3 { font-size: 9px !important; }
-          .fab-print-root .fab-area-name { font-size: 12px !important; }
+          .fab-print-root h1 { font-size: 15px !important; }
+          .fab-print-root h2, .fab-print-root h3 { font-size: 10px !important; }
+          .fab-print-root .fab-area-name { font-size: 13px !important; }
           .fab-print-root input,
           .fab-print-root select,
-          .fab-print-root textarea {
-            padding: 1px 3px !important;
+          .fab-print-root textarea,
+          .fab-print-root .fab-readout {
+            padding: 0px 3px !important;
+            border: none !important;
+            background: transparent !important;
+            box-shadow: none !important;
+            border-radius: 0 !important;
+            appearance: none !important;
+          }
+          /* Placeholder/watermark example text (e.g. "80 1/4", "Stone name")
+             is on-screen typing guidance only — it must never render as if
+             it were a real entered value on a printed order. The one
+             exception is the Area name field: its placeholder ("Area N") is
+             the actual fallback heading text when no custom name was typed,
+             so it needs to stay visible. */
+          .fab-print-root input::placeholder,
+          .fab-print-root textarea::placeholder {
+            color: transparent !important;
+            opacity: 0 !important;
+          }
+          .fab-print-root .fab-area-name::placeholder {
+            color: #4338ca !important;
+            opacity: 1 !important;
+          }
+          .fab-print-root th,
+          .fab-print-root td {
+            padding: 0px 6px 0px 0px !important;
+          }
+          .fab-print-root .fab-area-card {
+            break-inside: auto !important;
+          }
+          /* Bound each layout image to a fixed, predictable height rather
+             than trying to match the (variable-height) Sales Price /
+             Edge-Finish column. Both CSS Grid stretch and a JS-measured
+             "match the sibling column's exact height" were tried and
+             reverted — either made the box taller than the space actually
+             left on page 1, so the whole Layout cell got kicked to its own
+             page 2. A fixed, safely-bounded max-height (divided evenly via
+             --print-img-count when there are multiple images) is what
+             reliably keeps everything on one sheet. */
+          .fab-print-root .fab-image-stack {
+            display: block !important;
+          }
+          .fab-print-root .fab-image-stack > div {
+            margin-bottom: 3px !important;
+          }
+          .fab-print-root .fab-image-stack img {
+            max-height: calc(320px / var(--print-img-count, 1)) !important;
+            height: auto !important;
+            width: 100% !important;
+            object-fit: contain !important;
           }
         }
       `}</style>
@@ -834,11 +883,11 @@ export default function FabricationOrderForm(props: Props) {
       )}
 
       {/* ── TOP: compact client / job info ── */}
-      <div className={`${card} border-t-4 border-t-blue-500`}>
-        <h2 className="mb-4 text-xs font-semibold uppercase tracking-wider text-blue-600 dark:text-blue-400">
+      <div className={`${card} border-t-4 border-t-blue-500 print:mb-1`}>
+        <h2 className="mb-4 print:mb-1 text-xs font-semibold uppercase tracking-wider text-blue-600 dark:text-blue-400">
           Client &amp; Job Information
         </h2>
-        <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-6">
+        <div className="grid grid-cols-1 gap-4 print:gap-1 sm:grid-cols-2 lg:grid-cols-6">
           <div className="relative sm:col-span-2 lg:col-span-2" ref={clientBoxRef}>
             <label className={fieldLabel}>Customer Name</label>
             <input
@@ -942,7 +991,7 @@ export default function FabricationOrderForm(props: Props) {
           </div>
         </div>
 
-        <div className="mt-4 flex items-end justify-between gap-4 border-t border-gray-100 pt-4 dark:border-gray-700">
+        <div className="mt-4 print:mt-1 flex items-end justify-between gap-4 border-t border-gray-100 pt-4 print:pt-1 dark:border-gray-700">
           <div className="max-w-md flex-1">
             <label className={fieldLabel}>Notes</label>
             <input value={notes} onChange={(e) => setNotes(e.target.value)} className={fieldInput} />
@@ -967,7 +1016,7 @@ export default function FabricationOrderForm(props: Props) {
           return (
             <div
               key={area.key}
-              className={`${card} space-y-4 break-inside-avoid border-t-4 border-t-indigo-400`}
+              className={`${card} fab-area-card space-y-4 print:space-y-1 border-t-4 border-t-indigo-400`}
             >
               <div className="flex items-center justify-between gap-4">
                 <input
@@ -997,8 +1046,8 @@ export default function FabricationOrderForm(props: Props) {
               </div>
 
               {/* Compact info bar: slab + sink + faucet, 2 rows */}
-              <div className="rounded-lg border border-gray-200 bg-gray-50/60 p-3 dark:border-gray-700 dark:bg-gray-900/20">
-                <div className="flex flex-wrap items-end gap-2">
+              <div className="rounded-lg border border-gray-200 bg-gray-50/60 p-3 print:p-1 dark:border-gray-700 dark:bg-gray-900/20">
+                <div className="flex flex-wrap items-end gap-2 print:gap-1">
                   <div className="w-64">
                     <label className={compactLabel}>Stone Name</label>
                     <Combobox
@@ -1041,7 +1090,7 @@ export default function FabricationOrderForm(props: Props) {
                   <div className="w-16">
                     <label className={compactLabel}>SqFt</label>
                     <div
-                      className={`${compactInput} bg-gray-100 text-center text-gray-600 dark:bg-gray-800 dark:text-gray-300`}
+                      className={`${compactInput} fab-readout bg-gray-100 text-center text-gray-600 dark:bg-gray-800 dark:text-gray-300`}
                     >
                       {result.slabPieceSqft > 0 ? result.slabPieceSqft.toFixed(2) : "-"}
                     </div>
@@ -1088,7 +1137,7 @@ export default function FabricationOrderForm(props: Props) {
                   </div>
                 </div>
 
-                <div className="mt-2 flex flex-wrap items-end gap-2">
+                <div className="mt-2 print:mt-1 flex flex-wrap items-end gap-2 print:gap-1">
                   <div className="w-20">
                     <label className={compactLabel}>Backsplash</label>
                     <select
@@ -1193,7 +1242,7 @@ export default function FabricationOrderForm(props: Props) {
 
                 {result.slabPieceSqft > 0 && (
                   <div
-                    className={`mt-2 flex items-center gap-2 rounded-md p-2 text-xs ${
+                    className={`mt-2 print:mt-1 flex items-center gap-2 rounded-md p-2 print:p-1 text-xs ${
                       result.slabQtyFlagged
                         ? "bg-red-50 text-red-700 dark:bg-red-900/30 dark:text-red-300"
                         : "bg-green-50 text-green-700 dark:bg-green-900/30 dark:text-green-300"
@@ -1212,20 +1261,20 @@ export default function FabricationOrderForm(props: Props) {
 
               {/* LEFT: layout image (half width) | RIGHT: sales price + edge/finish side by side */}
               <div
-                className={`grid grid-cols-1 gap-4 xl:grid-cols-2 print:gap-2 ${
+                className={`grid grid-cols-1 gap-4 xl:grid-cols-2 print:gap-1 print:items-start ${
                   hasImages ? "print:grid-cols-2" : "print:grid-cols-1"
                 }`}
               >
                 {/* LEFT: layout */}
                 <div
-                  className={`rounded-lg border border-gray-200 border-l-4 border-l-violet-400 p-3 dark:border-gray-700 print:flex print:h-full print:flex-col print:p-1 ${
+                  className={`rounded-lg border border-gray-200 border-l-4 border-l-violet-400 p-3 dark:border-gray-700 print:p-1 ${
                     hasImages ? "" : "print:hidden"
                   }`}
                 >
-                  <h3 className="mb-2 shrink-0 text-xs font-semibold uppercase tracking-wider text-violet-600 dark:text-violet-400">
+                  <h3 className="mb-2 print:mb-1 shrink-0 text-xs font-semibold uppercase tracking-wider text-violet-600 dark:text-violet-400">
                     Layout
                   </h3>
-                  <div className="print:h-0 print:min-h-0 print:flex-1">
+                  <div>
                     <AreaImageUploader
                       existingImages={area.existingImages}
                       pendingImages={area.pendingImages}
@@ -1247,12 +1296,12 @@ export default function FabricationOrderForm(props: Props) {
                 </div>
 
                 {/* RIGHT: sales price + edge/finish tables, side by side */}
-                <div className="grid grid-cols-1 gap-3 lg:grid-cols-2 print:grid-cols-2 print:gap-2">
+                <div className="grid grid-cols-1 gap-3 lg:grid-cols-2 print:grid-cols-2 print:gap-1">
                   <div className="rounded-lg border border-gray-200 border-l-4 border-l-emerald-400 p-3 dark:border-gray-700 print:p-1">
-                    <h3 className="mb-2 text-xs font-semibold uppercase tracking-wider text-emerald-600 dark:text-emerald-400">
+                    <h3 className="mb-2 print:mb-1 text-xs font-semibold uppercase tracking-wider text-emerald-600 dark:text-emerald-400">
                       Sales Price
                     </h3>
-                    <div className="grid grid-cols-2 gap-x-3 gap-y-2 text-xs">
+                    <div className="grid grid-cols-2 gap-x-3 gap-y-2 print:gap-y-0.5 text-xs">
                       <div className="col-span-2 flex justify-between border-b border-gray-100 pb-1 dark:border-gray-700">
                         <span className="text-gray-500 dark:text-gray-400">Job SqFt</span>
                         <strong>{result.jobSqft.toFixed(2)}</strong>
@@ -1413,7 +1462,7 @@ export default function FabricationOrderForm(props: Props) {
                     </div>
                   </div>
 
-                  <div className="space-y-3">
+                  <div className="space-y-3 print:space-y-1">
                   {/* Length x Width tables */}
                   {area.sections.map((section) => {
                     const edgeType = edgeTypeById.get(section.edgeTypeId);
@@ -1425,9 +1474,9 @@ export default function FabricationOrderForm(props: Props) {
                     return (
                       <div
                         key={section.key}
-                        className="rounded-lg border border-gray-200 border-l-4 border-l-amber-400 p-3 dark:border-gray-700"
+                        className="rounded-lg border border-gray-200 border-l-4 border-l-amber-400 p-3 print:p-1 dark:border-gray-700"
                       >
-                        <div className="mb-2 flex flex-wrap items-end justify-between gap-2">
+                        <div className="mb-2 print:mb-1 flex flex-wrap items-end justify-between gap-2">
                           <div className="flex-1 min-w-[160px]">
                             <label className="block text-[11px] font-medium text-amber-600 dark:text-amber-400 mb-0.5">
                               Edge / Finish{" "}

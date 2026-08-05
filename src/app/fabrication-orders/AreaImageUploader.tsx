@@ -1,6 +1,6 @@
 "use client";
 
-import { useRef, useState } from "react";
+import { useRef, useState, type CSSProperties } from "react";
 import { Upload, X, ZoomIn } from "lucide-react";
 
 export interface ExistingImage {
@@ -62,25 +62,28 @@ export default function AreaImageUploader({
   }
 
   return (
-    <div className="space-y-3 print:flex print:h-full print:flex-col print:space-y-0">
+    <div className="space-y-3 print:space-y-1">
       {hasImages ? (
-        <div className="space-y-3 print:flex print:h-full print:flex-1 print:min-h-0 print:flex-col print:justify-stretch print:gap-1 print:space-y-0">
+        <div
+          className="fab-image-stack space-y-3 print:space-y-1"
+          style={{ "--print-img-count": String(totalCount || 1) } as CSSProperties}
+        >
           {existingImages.map((img) => (
             <div
               key={img.id}
-              className="group relative overflow-hidden rounded-md border border-gray-200 bg-gray-50 dark:border-gray-700 dark:bg-gray-900 print:flex print:flex-1 print:min-h-0"
+              className="group relative overflow-hidden rounded-md border border-gray-200 bg-gray-50 dark:border-gray-700 dark:bg-gray-900"
             >
               <button
                 type="button"
                 onClick={() => setExpandedUrl(img.fileUrl)}
-                className="block w-full cursor-zoom-in print:flex print:h-full print:w-full print:flex-1"
+                className="block w-full cursor-zoom-in"
                 title="Click to expand"
               >
                 {/* eslint-disable-next-line @next/next/no-img-element */}
                 <img
                   src={img.fileUrl}
                   alt={img.caption || "Layout image"}
-                  className="max-h-[480px] w-full object-contain print:h-full print:max-h-none print:w-full print:flex-1"
+                  className="max-h-[480px] w-full object-contain"
                 />
                 <span className="pointer-events-none absolute inset-0 hidden items-center justify-center bg-black/0 transition group-hover:flex group-hover:bg-black/10 print:hidden">
                   <ZoomIn className="h-6 w-6 text-white drop-shadow" />
@@ -99,19 +102,19 @@ export default function AreaImageUploader({
           {pendingImages.map((img, idx) => (
             <div
               key={idx}
-              className="group relative overflow-hidden rounded-md border border-gray-200 bg-gray-50 dark:border-gray-700 dark:bg-gray-900 print:flex print:flex-1 print:min-h-0"
+              className="group relative overflow-hidden rounded-md border border-gray-200 bg-gray-50 dark:border-gray-700 dark:bg-gray-900"
             >
               <button
                 type="button"
                 onClick={() => setExpandedUrl(img.dataUrl)}
-                className="block w-full cursor-zoom-in print:flex print:h-full print:w-full print:flex-1"
+                className="block w-full cursor-zoom-in"
                 title="Click to expand"
               >
                 {/* eslint-disable-next-line @next/next/no-img-element */}
                 <img
                   src={img.dataUrl}
                   alt={img.fileName}
-                  className="max-h-[480px] w-full object-contain print:h-full print:max-h-none print:w-full print:flex-1"
+                  className="max-h-[480px] w-full object-contain"
                 />
                 <span className="pointer-events-none absolute inset-0 hidden items-center justify-center bg-black/0 transition group-hover:flex group-hover:bg-black/10 print:hidden">
                   <ZoomIn className="h-6 w-6 text-white drop-shadow" />
