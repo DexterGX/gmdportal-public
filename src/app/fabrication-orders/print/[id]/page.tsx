@@ -12,7 +12,9 @@ function toNumber(value: unknown) {
 }
 
 const THICKNESS_LABELS: Record<string, string> = {
+  SIX_MM: "6mm",
   EIGHT_MM: "8mm",
+  TEN_MM: "10mm",
   TWELVE_MM: "12mm",
   TWO_CM: "2cm",
   THREE_CM: "3cm",

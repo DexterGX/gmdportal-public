@@ -1,7 +1,7 @@
 "use client";
 
-import { useRef } from "react";
-import { Upload, X } from "lucide-react";
+import { useRef, useState } from "react";
+import { Upload, X, ZoomIn } from "lucide-react";
 
 export interface ExistingImage {
   id: string;
@@ -43,6 +43,7 @@ export default function AreaImageUploader({
   onRemovePending,
 }: Props) {
   const inputRef = useRef<HTMLInputElement | null>(null);
+  const [expandedUrl, setExpandedUrl] = useState<string | null>(null);
   const totalCount = existingImages.length + pendingImages.length;
   const hasImages = totalCount > 0;
 
@@ -61,24 +62,34 @@ export default function AreaImageUploader({
   }
 
   return (
-    <div className="space-y-3">
+    <div className="space-y-3 print:flex print:h-full print:flex-col print:space-y-0">
       {hasImages ? (
-        <div className="space-y-3">
+        <div className="space-y-3 print:flex print:h-full print:flex-1 print:min-h-0 print:flex-col print:justify-stretch print:gap-1 print:space-y-0">
           {existingImages.map((img) => (
             <div
               key={img.id}
-              className="relative overflow-hidden rounded-md border border-gray-200 bg-gray-50 dark:border-gray-700 dark:bg-gray-900"
+              className="group relative overflow-hidden rounded-md border border-gray-200 bg-gray-50 dark:border-gray-700 dark:bg-gray-900 print:flex print:flex-1 print:min-h-0"
             >
-              {/* eslint-disable-next-line @next/next/no-img-element */}
-              <img
-                src={img.fileUrl}
-                alt={img.caption || "Layout image"}
-                className="max-h-[480px] w-full object-contain"
-              />
+              <button
+                type="button"
+                onClick={() => setExpandedUrl(img.fileUrl)}
+                className="block w-full cursor-zoom-in print:flex print:h-full print:w-full print:flex-1"
+                title="Click to expand"
+              >
+                {/* eslint-disable-next-line @next/next/no-img-element */}
+                <img
+                  src={img.fileUrl}
+                  alt={img.caption || "Layout image"}
+                  className="max-h-[480px] w-full object-contain print:h-full print:max-h-none print:w-full print:flex-1"
+                />
+                <span className="pointer-events-none absolute inset-0 hidden items-center justify-center bg-black/0 transition group-hover:flex group-hover:bg-black/10 print:hidden">
+                  <ZoomIn className="h-6 w-6 text-white drop-shadow" />
+                </span>
+              </button>
               <button
                 type="button"
                 onClick={() => onRemoveExisting(img.id)}
-                className="absolute right-2 top-2 rounded-full bg-black/60 p-1 text-white hover:bg-black/80"
+                className="absolute right-2 top-2 rounded-full bg-black/60 p-1 text-white hover:bg-black/80 print:hidden"
                 title="Remove image"
               >
                 <X className="h-3.5 w-3.5" />
@@ -88,18 +99,28 @@ export default function AreaImageUploader({
           {pendingImages.map((img, idx) => (
             <div
               key={idx}
-              className="relative overflow-hidden rounded-md border border-gray-200 bg-gray-50 dark:border-gray-700 dark:bg-gray-900"
+              className="group relative overflow-hidden rounded-md border border-gray-200 bg-gray-50 dark:border-gray-700 dark:bg-gray-900 print:flex print:flex-1 print:min-h-0"
             >
-              {/* eslint-disable-next-line @next/next/no-img-element */}
-              <img
-                src={img.dataUrl}
-                alt={img.fileName}
-                className="max-h-[480px] w-full object-contain"
-              />
+              <button
+                type="button"
+                onClick={() => setExpandedUrl(img.dataUrl)}
+                className="block w-full cursor-zoom-in print:flex print:h-full print:w-full print:flex-1"
+                title="Click to expand"
+              >
+                {/* eslint-disable-next-line @next/next/no-img-element */}
+                <img
+                  src={img.dataUrl}
+                  alt={img.fileName}
+                  className="max-h-[480px] w-full object-contain print:h-full print:max-h-none print:w-full print:flex-1"
+                />
+                <span className="pointer-events-none absolute inset-0 hidden items-center justify-center bg-black/0 transition group-hover:flex group-hover:bg-black/10 print:hidden">
+                  <ZoomIn className="h-6 w-6 text-white drop-shadow" />
+                </span>
+              </button>
               <button
                 type="button"
                 onClick={() => onRemovePending(idx)}
-                className="absolute right-2 top-2 rounded-full bg-black/60 p-1 text-white hover:bg-black/80"
+                className="absolute right-2 top-2 rounded-full bg-black/60 p-1 text-white hover:bg-black/80 print:hidden"
                 title="Remove image"
               >
                 <X className="h-3.5 w-3.5" />
@@ -111,7 +132,7 @@ export default function AreaImageUploader({
         <button
           type="button"
           onClick={() => inputRef.current?.click()}
-          className="flex h-64 w-full flex-col items-center justify-center gap-2 rounded-md border border-dashed border-gray-300 text-gray-500 hover:border-blue-400 hover:text-blue-600 dark:border-gray-600 dark:text-gray-400"
+          className="flex h-64 w-full flex-col items-center justify-center gap-2 rounded-md border border-dashed border-gray-300 text-gray-500 hover:border-blue-400 hover:text-blue-600 dark:border-gray-600 dark:text-gray-400 print:hidden"
         >
           <Upload className="h-8 w-8" />
           <span className="text-sm font-medium">Upload layout image</span>
@@ -123,7 +144,7 @@ export default function AreaImageUploader({
         <button
           type="button"
           onClick={() => inputRef.current?.click()}
-          className="flex w-full items-center justify-center gap-2 rounded-md border border-dashed border-gray-300 px-3 py-2 text-xs text-gray-500 hover:border-blue-400 hover:text-blue-600 dark:border-gray-600 dark:text-gray-400"
+          className="flex w-full items-center justify-center gap-2 rounded-md border border-dashed border-gray-300 px-3 py-2 text-xs text-gray-500 hover:border-blue-400 hover:text-blue-600 dark:border-gray-600 dark:text-gray-400 print:hidden"
         >
           <Upload className="h-3.5 w-3.5" /> Add another image
         </button>
@@ -137,9 +158,32 @@ export default function AreaImageUploader({
         className="hidden"
         onChange={(e) => void handleFiles(e.target.files)}
       />
-      <p className="text-xs text-gray-500 dark:text-gray-400">
+      <p className="text-xs text-gray-500 dark:text-gray-400 print:hidden">
         Up to {MAX_IMAGES} images, 10MB each.
       </p>
+
+      {expandedUrl && (
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 p-6 print:hidden"
+          onClick={() => setExpandedUrl(null)}
+        >
+          <button
+            type="button"
+            onClick={() => setExpandedUrl(null)}
+            className="absolute right-4 top-4 rounded-full bg-white/10 p-2 text-white hover:bg-white/20"
+            title="Close"
+          >
+            <X className="h-5 w-5" />
+          </button>
+          {/* eslint-disable-next-line @next/next/no-img-element */}
+          <img
+            src={expandedUrl}
+            alt="Expanded layout"
+            className="max-h-full max-w-full rounded-md object-contain"
+            onClick={(e) => e.stopPropagation()}
+          />
+        </div>
+      )}
     </div>
   );
 }

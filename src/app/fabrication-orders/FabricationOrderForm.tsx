@@ -35,11 +35,12 @@ type LookupResult = {
 };
 
 const STONE_THICKNESS_OPTIONS: { value: string; label: string }[] = [
+  { value: "SIX_MM", label: "6mm" },
   { value: "EIGHT_MM", label: "8mm" },
+  { value: "TEN_MM", label: "10mm" },
   { value: "TWELVE_MM", label: "12mm" },
   { value: "TWO_CM", label: "2cm" },
   { value: "THREE_CM", label: "3cm" },
-  { value: "FIFTEEN_MM", label: "15mm" },
 ];
 
 const LEFTOVER_OPTIONS = ["None", "GMD", "Client"];
@@ -66,7 +67,8 @@ interface AreaState {
   sinkTypeOptionId: string;
   sinkTypeText: string; // Model, only meaningful when sinkTypeOptionId is set
   sinkQty: string;
-  faucetText: string;
+  faucetHas: boolean;
+  faucetText: string; // Model, only meaningful when faucetHas is true
   stoneName: string;
   stoneThickness: string;
   whNumber: string;
@@ -139,6 +141,7 @@ function emptyArea(): AreaState {
     sinkTypeOptionId: "",
     sinkTypeText: "",
     sinkQty: "",
+    faucetHas: false,
     faucetText: "",
     stoneName: "",
     stoneThickness: "",
@@ -152,13 +155,13 @@ function emptyArea(): AreaState {
     slabTypeId: "",
     slabAmount: "0",
     sinkCutoutOptionId: "",
-    sinkCutoutQty: "1",
+    sinkCutoutQty: "0",
     cooktopOptionId: "",
-    cooktopQty: "1",
+    cooktopQty: "0",
     bumpOutOptionId: "",
-    bumpOutQty: "1",
+    bumpOutQty: "0",
     cuttingBoardOptionId: "",
-    cuttingBoardQty: "1",
+    cuttingBoardQty: "0",
     windowsillOptionId: "",
     powerStationOptionId: "",
     othersText: "",
@@ -198,7 +201,48 @@ const compactInput =
 const fieldLabel = "block text-xs font-medium text-gray-600 dark:text-gray-400 mb-1";
 const compactLabel = "block text-[11px] font-medium text-gray-500 dark:text-gray-400 mb-0.5";
 const card =
-  "bg-white dark:bg-gray-800 rounded-xl shadow-sm border border-gray-200 dark:border-gray-700 p-5";
+  "bg-white dark:bg-gray-800 rounded-xl shadow-sm border border-gray-200 dark:border-gray-700 p-5 print:p-2 print:shadow-none print:border";
+// Strips the native up/down spinner arrows from number inputs.
+const noSpinner =
+  "[appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-outer-spin-button]:m-0 [&::-webkit-inner-spin-button]:appearance-none [&::-webkit-inner-spin-button]:m-0";
+const dividerClass = "hidden self-stretch w-px bg-gray-300 sm:block dark:bg-gray-600";
+
+// Formats a raw numeric string as "$1,234.5" live, without forcing decimal
+// places while the user is still typing them.
+function formatLiveCurrency(raw: string): string {
+  if (!raw) return "$0";
+  const [intPart, decPart] = raw.split(".");
+  const intNum = intPart ? parseInt(intPart, 10) : 0;
+  const intFormatted = (Number.isFinite(intNum) ? intNum : 0).toLocaleString("en-US");
+  return decPart !== undefined ? `$${intFormatted}.${decPart}` : `$${intFormatted}`;
+}
+
+function CurrencyInput({
+  value,
+  onChange,
+  className,
+}: {
+  value: string;
+  onChange: (v: string) => void;
+  className?: string;
+}) {
+  return (
+    <input
+      type="text"
+      inputMode="decimal"
+      value={formatLiveCurrency(value)}
+      onChange={(e) => {
+        let cleaned = e.target.value.replace(/[^0-9.]/g, "");
+        const firstDot = cleaned.indexOf(".");
+        if (firstDot !== -1) {
+          cleaned = cleaned.slice(0, firstDot + 1) + cleaned.slice(firstDot + 1).replace(/\./g, "");
+        }
+        onChange(cleaned);
+      }}
+      className={className}
+    />
+  );
+}
 
 export default function FabricationOrderForm(props: Props) {
   const router = useRouter();
@@ -214,6 +258,7 @@ export default function FabricationOrderForm(props: Props) {
   const [clientResults, setClientResults] = useState<LookupResult[]>([]);
   const [clientDropdownOpen, setClientDropdownOpen] = useState(false);
   const [clientSearching, setClientSearching] = useState(false);
+  const [selectedJobId, setSelectedJobId] = useState("");
   const [dealId, setDealId] = useState("");
   const [dealName, setDealName] = useState("");
   const [salesRep, setSalesRep] = useState(props.currentUserName);
@@ -276,13 +321,18 @@ export default function FabricationOrderForm(props: Props) {
     setClientName(result.displayName);
     setClientId(result.id);
     setClientJobs(result.jobs || []);
+    setSelectedJobId("");
     setDealId("");
     setDealName("");
     setClientDropdownOpen(false);
     setClientResults([]);
   }
 
+  // The <select> below is controlled by the job's own id (so its value always
+  // matches one of the rendered <option>s) — dealId/dealName are derived
+  // separately and are what actually gets saved on the order.
   function selectJob(jobId: string) {
+    setSelectedJobId(jobId);
     const job = clientJobs.find((j) => j.id === jobId);
     setDealId(job?.dealId || jobId || "");
     setDealName(job?.dealName || "");
@@ -322,6 +372,7 @@ export default function FabricationOrderForm(props: Props) {
               sinkTypeOptionId: a.sinkTypeOptionId || "",
               sinkTypeText: a.sinkTypeText || "",
               sinkQty: a.sinkQty != null ? String(a.sinkQty) : "",
+              faucetHas: Boolean(a.faucetText),
               faucetText: a.faucetText || "",
               stoneName: a.stoneName || "",
               stoneThickness: a.stoneThickness || "",
@@ -335,13 +386,13 @@ export default function FabricationOrderForm(props: Props) {
               slabTypeId: a.slabTypeId || "",
               slabAmount: a.slabAmount != null ? String(a.slabAmount) : "0",
               sinkCutoutOptionId: a.sinkCutoutOptionId || "",
-              sinkCutoutQty: a.sinkCutoutQty != null ? String(a.sinkCutoutQty) : "1",
+              sinkCutoutQty: a.sinkCutoutQty != null ? String(a.sinkCutoutQty) : "0",
               cooktopOptionId: a.cooktopOptionId || "",
-              cooktopQty: a.cooktopQty != null ? String(a.cooktopQty) : "1",
+              cooktopQty: a.cooktopQty != null ? String(a.cooktopQty) : "0",
               bumpOutOptionId: a.bumpOutOptionId || "",
-              bumpOutQty: a.bumpOutQty != null ? String(a.bumpOutQty) : "1",
+              bumpOutQty: a.bumpOutQty != null ? String(a.bumpOutQty) : "0",
               cuttingBoardOptionId: a.cuttingBoardOptionId || "",
-              cuttingBoardQty: a.cuttingBoardQty != null ? String(a.cuttingBoardQty) : "1",
+              cuttingBoardQty: a.cuttingBoardQty != null ? String(a.cuttingBoardQty) : "0",
               windowsillOptionId: a.windowsillOptionId || "",
               powerStationOptionId: a.powerStationOptionId || "",
               othersText: otherChargeOpt?.name || a.otherChargeCustomName || "",
@@ -386,7 +437,13 @@ export default function FabricationOrderForm(props: Props) {
             const match = (lookupJson.results || []).find(
               (r: LookupResult) => r.id === json.clientId,
             );
-            if (match) setClientJobs(match.jobs || []);
+            if (match) {
+              setClientJobs(match.jobs || []);
+              const matchedJob = (match.jobs || []).find(
+                (j: LookupJob) => j.dealId === json.dealId,
+              );
+              if (matchedJob) setSelectedJobId(matchedJob.id);
+            }
           } catch {
             // Non-critical — Job/Deal falls back to a plain text field.
           }
@@ -402,6 +459,22 @@ export default function FabricationOrderForm(props: Props) {
 
   function updateArea(key: string, patch: Partial<AreaState>) {
     setAreas((prev) => prev.map((a) => (a.key === key ? { ...a, ...patch } : a)));
+  }
+
+  // Used by the qty-driven Sales Price line items: picking an option bumps
+  // the quantity to 1 the first time (it starts at 0 until something is
+  // actually selected), without stomping a quantity the user already set.
+  function selectLineItemOption(
+    areaKey: string,
+    optionField: "sinkCutoutOptionId" | "cooktopOptionId" | "bumpOutOptionId" | "cuttingBoardOptionId",
+    qtyField: "sinkCutoutQty" | "cooktopQty" | "bumpOutQty" | "cuttingBoardQty",
+    value: string,
+    currentQty: string,
+  ) {
+    updateArea(areaKey, {
+      [optionField]: value,
+      [qtyField]: value && currentQty === "0" ? "1" : currentQty,
+    } as Partial<AreaState>);
   }
 
   function addArea() {
@@ -559,6 +632,7 @@ export default function FabricationOrderForm(props: Props) {
     setClientId("");
     setClientJobs([]);
     setClientResults([]);
+    setSelectedJobId("");
     setDealId("");
     setDealName("");
     setSalesRep(props.currentUserName);
@@ -605,7 +679,7 @@ export default function FabricationOrderForm(props: Props) {
             sinkTypeOptionId: a.sinkTypeOptionId || null,
             sinkTypeText: a.sinkTypeOptionId ? a.sinkTypeText : "",
             sinkQty: a.sinkTypeOptionId ? a.sinkQty : "",
-            faucetText: a.faucetText,
+            faucetText: a.faucetHas ? a.faucetText : "",
             stoneName: a.stoneName,
             stoneThickness: a.stoneThickness || null,
             whNumber: a.whNumber,
@@ -688,7 +762,24 @@ export default function FabricationOrderForm(props: Props) {
   }
 
   return (
-    <div className="space-y-6 pb-10">
+    <div className="fab-print-root space-y-6 pb-10 print:space-y-1 print:pb-0">
+      <style>{`
+        @media print {
+          @page { margin: 8mm; }
+          .fab-print-root, .fab-print-root * {
+            font-size: 9px !important;
+            line-height: 1.25 !important;
+          }
+          .fab-print-root h1 { font-size: 14px !important; }
+          .fab-print-root h2, .fab-print-root h3 { font-size: 9px !important; }
+          .fab-print-root .fab-area-name { font-size: 12px !important; }
+          .fab-print-root input,
+          .fab-print-root select,
+          .fab-print-root textarea {
+            padding: 1px 3px !important;
+          }
+        }
+      `}</style>
       <div className="flex items-start justify-between gap-4">
         <div>
           <h1 className="text-2xl font-bold text-gray-900 dark:text-gray-100">
@@ -743,8 +834,8 @@ export default function FabricationOrderForm(props: Props) {
       )}
 
       {/* ── TOP: compact client / job info ── */}
-      <div className={card}>
-        <h2 className="mb-4 text-xs font-semibold uppercase tracking-wider text-gray-500 dark:text-gray-400">
+      <div className={`${card} border-t-4 border-t-blue-500`}>
+        <h2 className="mb-4 text-xs font-semibold uppercase tracking-wider text-blue-600 dark:text-blue-400">
           Client &amp; Job Information
         </h2>
         <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-6">
@@ -780,8 +871,15 @@ export default function FabricationOrderForm(props: Props) {
                       }}
                       className="block w-full px-3 py-2 text-left hover:bg-blue-50 dark:hover:bg-gray-700"
                     >
-                      <div className="font-medium text-gray-900 dark:text-gray-100">
-                        {r.displayName}
+                      <div className="flex items-center justify-between gap-2">
+                        <span className="font-medium text-gray-900 dark:text-gray-100">
+                          {r.displayName}
+                        </span>
+                        {r.pipedriveId && (
+                          <span className="shrink-0 text-[11px] text-gray-400 dark:text-gray-500">
+                            PD #{r.pipedriveId}
+                          </span>
+                        )}
                       </div>
                       {(r.contractor || r.customerAddress) && (
                         <div className="text-xs text-gray-500 dark:text-gray-400">
@@ -796,7 +894,11 @@ export default function FabricationOrderForm(props: Props) {
           <div>
             <label className={fieldLabel}>Job / Deal</label>
             {clientJobs.length > 0 ? (
-              <select value={dealId} onChange={(e) => selectJob(e.target.value)} className={fieldInput}>
+              <select
+                value={selectedJobId}
+                onChange={(e) => selectJob(e.target.value)}
+                className={fieldInput}
+              >
                 <option value="">Select a job...</option>
                 {clientJobs.map((j) => (
                   <option key={j.id} value={j.id}>
@@ -832,22 +934,22 @@ export default function FabricationOrderForm(props: Props) {
           </div>
           <div>
             <label className={fieldLabel}>FO #</label>
-            <div
-              className={`${fieldInput} bg-gray-50 text-gray-500 dark:bg-gray-900/40 dark:text-gray-400`}
-            >
-              {orderNumber || "Assigned on save"}
-            </div>
+            <input
+              disabled
+              value={orderNumber || "Assigned on save"}
+              className={`${fieldInput} disabled:bg-gray-100 disabled:text-gray-400 disabled:cursor-not-allowed dark:disabled:bg-gray-900/40 dark:disabled:text-gray-500`}
+            />
           </div>
         </div>
 
-        <div className="mt-4 flex items-end gap-4 border-t border-gray-100 pt-4 dark:border-gray-700">
+        <div className="mt-4 flex items-end justify-between gap-4 border-t border-gray-100 pt-4 dark:border-gray-700">
           <div className="max-w-md flex-1">
             <label className={fieldLabel}>Notes</label>
             <input value={notes} onChange={(e) => setNotes(e.target.value)} className={fieldInput} />
           </div>
           <div className="shrink-0 text-right">
             <div className="text-xs uppercase text-gray-500 dark:text-gray-400">Order Total</div>
-            <div className="text-xl font-bold text-gray-900 dark:text-gray-100">
+            <div className="text-2xl font-bold text-emerald-600 dark:text-emerald-400">
               {formatCurrency(orderTotal)}
             </div>
           </div>
@@ -861,19 +963,25 @@ export default function FabricationOrderForm(props: Props) {
       ) : (
         areas.map((area, areaIdx) => {
           const result = areaResults[areaIdx];
+          const hasImages = area.existingImages.length > 0 || area.pendingImages.length > 0;
           return (
-            <div key={area.key} className={`${card} space-y-4 break-inside-avoid`}>
+            <div
+              key={area.key}
+              className={`${card} space-y-4 break-inside-avoid border-t-4 border-t-indigo-400`}
+            >
               <div className="flex items-center justify-between gap-4">
                 <input
                   value={area.name}
                   onChange={(e) => updateArea(area.key, { name: e.target.value })}
-                  className="w-64 rounded-lg border border-gray-300 bg-white px-3 py-1.5 text-base font-semibold focus:outline-none focus:ring-2 focus:ring-blue-500 dark:border-gray-600 dark:bg-gray-700"
+                  className="fab-area-name w-64 rounded-lg border border-gray-300 bg-white px-3 py-1.5 text-base font-semibold text-indigo-700 focus:outline-none focus:ring-2 focus:ring-blue-500 dark:border-gray-600 dark:bg-gray-700 dark:text-indigo-300"
                   placeholder={`Area ${areaIdx + 1}`}
                 />
                 <div className="flex items-center gap-3">
                   <div className="text-right">
                     <div className="text-xs uppercase text-gray-500 dark:text-gray-400">Area Total</div>
-                    <div className="text-lg font-bold">{formatCurrency(result.areaTotal)}</div>
+                    <div className="text-lg font-bold text-emerald-600 dark:text-emerald-400">
+                      {formatCurrency(result.areaTotal)}
+                    </div>
                   </div>
                   {areas.length > 1 && (
                     <button
@@ -891,7 +999,7 @@ export default function FabricationOrderForm(props: Props) {
               {/* Compact info bar: slab + sink + faucet, 2 rows */}
               <div className="rounded-lg border border-gray-200 bg-gray-50/60 p-3 dark:border-gray-700 dark:bg-gray-900/20">
                 <div className="flex flex-wrap items-end gap-2">
-                  <div className="w-40">
+                  <div className="w-64">
                     <label className={compactLabel}>Stone Name</label>
                     <Combobox
                       value={area.stoneName}
@@ -908,7 +1016,7 @@ export default function FabricationOrderForm(props: Props) {
                       min="0"
                       value={area.slabQty}
                       onChange={(e) => updateArea(area.key, { slabQty: e.target.value })}
-                      className={`${compactInput} text-center`}
+                      className={`${compactInput} ${noSpinner} text-center`}
                     />
                   </div>
                   <div className="w-16">
@@ -938,7 +1046,7 @@ export default function FabricationOrderForm(props: Props) {
                       {result.slabPieceSqft > 0 ? result.slabPieceSqft.toFixed(2) : "-"}
                     </div>
                   </div>
-                  <div className="w-36">
+                  <div className="w-64">
                     <label className={compactLabel}>Provider</label>
                     <Combobox
                       value={area.slabSupplierText}
@@ -986,10 +1094,7 @@ export default function FabricationOrderForm(props: Props) {
                     <select
                       value={area.backsplashHas ? "yes" : "no"}
                       onChange={(e) =>
-                        updateArea(area.key, {
-                          backsplashHas: e.target.value === "yes",
-                          backsplashIn: e.target.value === "yes" ? area.backsplashIn : "",
-                        })
+                        updateArea(area.key, { backsplashHas: e.target.value === "yes" })
                       }
                       className={compactInput}
                     >
@@ -997,17 +1102,19 @@ export default function FabricationOrderForm(props: Props) {
                       <option value="yes">Yes</option>
                     </select>
                   </div>
-                  {area.backsplashHas && (
-                    <div className="w-16">
-                      <label className={compactLabel}>Size (in)</label>
-                      <input
-                        value={area.backsplashIn}
-                        onChange={(e) => updateArea(area.key, { backsplashIn: e.target.value })}
-                        className={`${compactInput} text-center`}
-                        inputMode="decimal"
-                      />
-                    </div>
-                  )}
+                  <div className="w-16">
+                    <label className={compactLabel}>Size (in)</label>
+                    <input
+                      value={area.backsplashIn}
+                      onChange={(e) => updateArea(area.key, { backsplashIn: e.target.value })}
+                      className={`${compactInput} text-center`}
+                      inputMode="decimal"
+                      disabled={!area.backsplashHas}
+                    />
+                  </div>
+
+                  <div className={dividerClass} />
+
                   <div className="w-32">
                     <label className={compactLabel}>Sink Type</label>
                     <select
@@ -1044,18 +1151,36 @@ export default function FabricationOrderForm(props: Props) {
                       min="0"
                       value={area.sinkQty}
                       onChange={(e) => updateArea(area.key, { sinkQty: e.target.value })}
-                      className={`${compactInput} text-center`}
+                      className={`${compactInput} ${noSpinner} text-center`}
                       disabled={!area.sinkTypeOptionId}
                     />
                   </div>
-                  <div className="w-28">
+
+                  <div className={dividerClass} />
+
+                  <div className="w-20">
                     <label className={compactLabel}>Faucet</label>
+                    <select
+                      value={area.faucetHas ? "yes" : "no"}
+                      onChange={(e) => updateArea(area.key, { faucetHas: e.target.value === "yes" })}
+                      className={compactInput}
+                    >
+                      <option value="no">No</option>
+                      <option value="yes">Yes</option>
+                    </select>
+                  </div>
+                  <div className="w-28">
+                    <label className={compactLabel}>Faucet Model</label>
                     <input
                       value={area.faucetText}
                       onChange={(e) => updateArea(area.key, { faucetText: e.target.value })}
                       className={compactInput}
+                      disabled={!area.faucetHas}
                     />
                   </div>
+
+                  <div className={dividerClass} />
+
                   <div className="w-20">
                     <label className={compactLabel}>WH #</label>
                     <input
@@ -1075,42 +1200,56 @@ export default function FabricationOrderForm(props: Props) {
                     }`}
                   >
                     {result.slabQtyFlagged && <AlertTriangle className="h-3.5 w-3.5 shrink-0" />}
-                    Recommended slabs: <strong>{result.slabRecommendedQty}</strong> ({(result.jobSqft + result.buildUpSqft).toFixed(2)} sqft incl. 15% waste ÷ {result.slabPieceSqft.toFixed(2)} sqft/slab).
-                    {result.slabQtyFlagged ? " Entered quantity looks insufficient." : " Looks sufficient."}
+                    Recommended slabs: <strong>{result.slabRecommendedQty}</strong> — job area is{" "}
+                    {(result.jobSqft + result.buildUpSqft).toFixed(2)} sqft (plus 15% waste), and
+                    each slab you entered covers {result.slabPieceSqft.toFixed(2)} sqft.{" "}
+                    {result.slabQtyFlagged
+                      ? "The quantity entered above looks insufficient."
+                      : "The quantity entered above looks sufficient."}
                   </div>
                 )}
               </div>
 
               {/* LEFT: layout image (half width) | RIGHT: sales price + edge/finish side by side */}
-              <div className="grid grid-cols-1 gap-4 xl:grid-cols-2">
+              <div
+                className={`grid grid-cols-1 gap-4 xl:grid-cols-2 print:gap-2 ${
+                  hasImages ? "print:grid-cols-2" : "print:grid-cols-1"
+                }`}
+              >
                 {/* LEFT: layout */}
-                <div className="rounded-lg border border-gray-200 p-3 dark:border-gray-700">
-                  <h3 className="mb-2 text-xs font-semibold uppercase tracking-wider text-gray-500 dark:text-gray-400">
+                <div
+                  className={`rounded-lg border border-gray-200 border-l-4 border-l-violet-400 p-3 dark:border-gray-700 print:flex print:h-full print:flex-col print:p-1 ${
+                    hasImages ? "" : "print:hidden"
+                  }`}
+                >
+                  <h3 className="mb-2 shrink-0 text-xs font-semibold uppercase tracking-wider text-violet-600 dark:text-violet-400">
                     Layout
                   </h3>
-                  <AreaImageUploader
-                    existingImages={area.existingImages}
-                    pendingImages={area.pendingImages}
-                    onAddPending={(imgs) =>
-                      updateArea(area.key, { pendingImages: [...area.pendingImages, ...imgs] })
-                    }
-                    onRemovePending={(idx) =>
-                      updateArea(area.key, {
-                        pendingImages: area.pendingImages.filter((_, i) => i !== idx),
-                      })
-                    }
-                    onRemoveExisting={(id) =>
-                      updateArea(area.key, {
-                        existingImages: area.existingImages.filter((img) => img.id !== id),
-                      })
-                    }
-                  />
+                  <div className="print:h-0 print:min-h-0 print:flex-1">
+                    <AreaImageUploader
+                      existingImages={area.existingImages}
+                      pendingImages={area.pendingImages}
+                      onAddPending={(imgs) =>
+                        updateArea(area.key, { pendingImages: [...area.pendingImages, ...imgs] })
+                      }
+                      onRemovePending={(idx) =>
+                        updateArea(area.key, {
+                          pendingImages: area.pendingImages.filter((_, i) => i !== idx),
+                        })
+                      }
+                      onRemoveExisting={(id) =>
+                        updateArea(area.key, {
+                          existingImages: area.existingImages.filter((img) => img.id !== id),
+                        })
+                      }
+                    />
+                  </div>
                 </div>
 
                 {/* RIGHT: sales price + edge/finish tables, side by side */}
-                <div className="grid grid-cols-1 gap-3 lg:grid-cols-2">
-                  <div className="rounded-lg border border-gray-200 p-3 dark:border-gray-700">
-                    <h3 className="mb-2 text-xs font-semibold uppercase tracking-wider text-gray-500 dark:text-gray-400">
+                <div className="grid grid-cols-1 gap-3 lg:grid-cols-2 print:grid-cols-2 print:gap-2">
+                  <div className="rounded-lg border border-gray-200 border-l-4 border-l-emerald-400 p-3 dark:border-gray-700 print:p-1">
+                    <h3 className="mb-2 text-xs font-semibold uppercase tracking-wider text-emerald-600 dark:text-emerald-400">
                       Sales Price
                     </h3>
                     <div className="grid grid-cols-2 gap-x-3 gap-y-2 text-xs">
@@ -1120,10 +1259,9 @@ export default function FabricationOrderForm(props: Props) {
                       </div>
                       <div className="col-span-2 flex justify-between">
                         <span className="text-gray-500 dark:text-gray-400">Slab Amount</span>
-                        <input
-                          type="number"
+                        <CurrencyInput
                           value={area.slabAmount}
-                          onChange={(e) => updateArea(area.key, { slabAmount: e.target.value })}
+                          onChange={(v) => updateArea(area.key, { slabAmount: v })}
                           className="w-24 rounded-md border border-gray-300 bg-white px-2 py-1 text-right text-xs dark:border-gray-600 dark:bg-gray-700"
                         />
                       </div>
@@ -1143,7 +1281,15 @@ export default function FabricationOrderForm(props: Props) {
                         options={props.sinkCutouts}
                         optionId={area.sinkCutoutOptionId}
                         qty={area.sinkCutoutQty}
-                        onOptionChange={(v) => updateArea(area.key, { sinkCutoutOptionId: v })}
+                        onOptionChange={(v) =>
+                          selectLineItemOption(
+                            area.key,
+                            "sinkCutoutOptionId",
+                            "sinkCutoutQty",
+                            v,
+                            area.sinkCutoutQty,
+                          )
+                        }
                         onQtyChange={(v) => updateArea(area.key, { sinkCutoutQty: v })}
                         total={result.sinkCutoutTotal}
                       />
@@ -1152,7 +1298,15 @@ export default function FabricationOrderForm(props: Props) {
                         options={props.cooktops}
                         optionId={area.cooktopOptionId}
                         qty={area.cooktopQty}
-                        onOptionChange={(v) => updateArea(area.key, { cooktopOptionId: v })}
+                        onOptionChange={(v) =>
+                          selectLineItemOption(
+                            area.key,
+                            "cooktopOptionId",
+                            "cooktopQty",
+                            v,
+                            area.cooktopQty,
+                          )
+                        }
                         onQtyChange={(v) => updateArea(area.key, { cooktopQty: v })}
                         total={result.cooktopTotal}
                       />
@@ -1161,7 +1315,15 @@ export default function FabricationOrderForm(props: Props) {
                         options={props.bumpOuts}
                         optionId={area.bumpOutOptionId}
                         qty={area.bumpOutQty}
-                        onOptionChange={(v) => updateArea(area.key, { bumpOutOptionId: v })}
+                        onOptionChange={(v) =>
+                          selectLineItemOption(
+                            area.key,
+                            "bumpOutOptionId",
+                            "bumpOutQty",
+                            v,
+                            area.bumpOutQty,
+                          )
+                        }
                         onQtyChange={(v) => updateArea(area.key, { bumpOutQty: v })}
                         total={result.bumpOutTotal}
                       />
@@ -1170,7 +1332,15 @@ export default function FabricationOrderForm(props: Props) {
                         options={props.cuttingBoards}
                         optionId={area.cuttingBoardOptionId}
                         qty={area.cuttingBoardQty}
-                        onOptionChange={(v) => updateArea(area.key, { cuttingBoardOptionId: v })}
+                        onOptionChange={(v) =>
+                          selectLineItemOption(
+                            area.key,
+                            "cuttingBoardOptionId",
+                            "cuttingBoardQty",
+                            v,
+                            area.cuttingBoardQty,
+                          )
+                        }
                         onQtyChange={(v) => updateArea(area.key, { cuttingBoardQty: v })}
                         total={result.cuttingBoardTotal}
                       />
@@ -1207,17 +1377,10 @@ export default function FabricationOrderForm(props: Props) {
                             placeholder="Type or select"
                           />
                         </div>
-                        <span className="pb-1.5 text-right text-gray-500 dark:text-gray-400">
-                          {formatCurrency(result.otherChargeTotal)}
-                        </span>
-                      </div>
-                      <div className="col-span-2 flex items-center justify-end gap-1.5">
-                        <span className="text-gray-500 dark:text-gray-400">Others price</span>
-                        <input
-                          type="number"
+                        <CurrencyInput
                           value={area.othersPrice}
-                          onChange={(e) => updateArea(area.key, { othersPrice: e.target.value })}
-                          className="w-24 rounded-md border border-gray-300 bg-white px-2 py-1 text-right text-xs dark:border-gray-600 dark:bg-gray-700"
+                          onChange={(v) => updateArea(area.key, { othersPrice: v })}
+                          className="w-full rounded-md border border-gray-300 bg-white px-1.5 py-1.5 text-right text-xs dark:border-gray-600 dark:bg-gray-700"
                         />
                       </div>
 
@@ -1262,11 +1425,11 @@ export default function FabricationOrderForm(props: Props) {
                     return (
                       <div
                         key={section.key}
-                        className="rounded-lg border border-gray-200 p-3 dark:border-gray-700"
+                        className="rounded-lg border border-gray-200 border-l-4 border-l-amber-400 p-3 dark:border-gray-700"
                       >
                         <div className="mb-2 flex flex-wrap items-end justify-between gap-2">
                           <div className="flex-1 min-w-[160px]">
-                            <label className={compactLabel}>
+                            <label className="block text-[11px] font-medium text-amber-600 dark:text-amber-400 mb-0.5">
                               Edge / Finish{" "}
                               {edgeType?.isBuildUp ? (
                                 <span className="text-amber-600">(Build-Up)</span>

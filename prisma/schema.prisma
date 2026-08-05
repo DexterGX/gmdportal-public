@@ -1535,7 +1535,9 @@ enum Role {
 }
 
 enum SlabThickness {
+  SIX_MM
   EIGHT_MM
+  TEN_MM
   TWELVE_MM
   TWO_CM
   THREE_CM
