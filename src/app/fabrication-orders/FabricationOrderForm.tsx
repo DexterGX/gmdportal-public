@@ -183,6 +183,13 @@ function todayIso() {
   return new Date().toISOString().slice(0, 10);
 }
 
+function formatDateMDY(iso: string) {
+  const parts = iso.split("-");
+  if (parts.length !== 3) return iso;
+  const [y, m, d] = parts;
+  return `${m}/${d}/${y}`;
+}
+
 // slabAreaLabel is stored as free text like "1) 127 X 64 = 50.80" — the raw
 // length/width inches aren't persisted as their own columns, so re-derive
 // them on load. Without this, editing a saved order and re-saving without
@@ -248,6 +255,8 @@ export default function FabricationOrderForm(props: Props) {
   const router = useRouter();
   const searchParams = useSearchParams();
   const editOrderId = searchParams.get("orderId");
+  const autoprintRequested = searchParams.get("autoprint") === "1";
+  const autoprintTriggeredRef = useRef(false);
 
   const [orderId, setOrderId] = useState<string | null>(editOrderId);
   const [orderNumber, setOrderNumber] = useState("");
@@ -267,10 +276,16 @@ export default function FabricationOrderForm(props: Props) {
 
   const [loading, setLoading] = useState(Boolean(editOrderId));
   const [saving, setSaving] = useState(false);
+  const [printChoiceOpen, setPrintChoiceOpen] = useState(false);
+  const [printSelectFull, setPrintSelectFull] = useState(true);
+  const [printSelectNoSales, setPrintSelectNoSales] = useState(false);
+  const [printMode, setPrintMode] = useState<"full" | "no-sales" | null>(null);
+  const [printQueuePending, setPrintQueuePending] = useState<"full" | "no-sales" | null>(null);
   const [message, setMessage] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
 
   const clientBoxRef = useRef<HTMLDivElement>(null);
+  const printQueueRef = useRef<Array<"full" | "no-sales">>([]);
 
   const edgeTypeById = useMemo(
     () => new Map(props.edgeTypes.map((e) => [e.id, e])),
@@ -427,7 +442,17 @@ export default function FabricationOrderForm(props: Props) {
           }),
         );
 
-        // Best-effort: re-populate the Job/Deal dropdown for the linked customer.
+        // The order's real jobId (added so it can be linked into the
+        // Customers program's job Documents list) is the authoritative
+        // source for which job is selected — set it directly rather than
+        // waiting on the dealId re-match below, which can silently fail to
+        // find a match (e.g. the deal was renamed) and would otherwise
+        // unlink the order's Job on the next save even though nothing
+        // about the job actually changed.
+        if (json.jobId) setSelectedJobId(json.jobId);
+
+        // Best-effort: re-populate the Job/Deal dropdown options for the
+        // linked customer so the <select> shows the right list of jobs.
         if (json.clientId && json.clientName) {
           try {
             const lookupRes = await fetch(
@@ -439,10 +464,12 @@ export default function FabricationOrderForm(props: Props) {
             );
             if (match) {
               setClientJobs(match.jobs || []);
-              const matchedJob = (match.jobs || []).find(
-                (j: LookupJob) => j.dealId === json.dealId,
-              );
-              if (matchedJob) setSelectedJobId(matchedJob.id);
+              if (!json.jobId) {
+                const matchedJob = (match.jobs || []).find(
+                  (j: LookupJob) => j.dealId === json.dealId,
+                );
+                if (matchedJob) setSelectedJobId(matchedJob.id);
+              }
             }
           } catch {
             // Non-critical — Job/Deal falls back to a plain text field.
@@ -456,6 +483,16 @@ export default function FabricationOrderForm(props: Props) {
     })();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [editOrderId]);
+
+  // The Saved Fabrication Orders list's Print action links here with
+  // ?autoprint=1 so it can reuse this exact print flow (choice modal, page
+  // styling, print-both queue) instead of duplicating it on a separate page.
+  useEffect(() => {
+    if (autoprintRequested && !loading && orderId && !autoprintTriggeredRef.current) {
+      autoprintTriggeredRef.current = true;
+      setPrintChoiceOpen(true);
+    }
+  }, [autoprintRequested, loading, orderId]);
 
   function updateArea(key: string, patch: Partial<AreaState>) {
     setAreas((prev) => prev.map((a) => (a.key === key ? { ...a, ...patch } : a)));
@@ -620,7 +657,56 @@ export default function FabricationOrderForm(props: Props) {
   const orderTotal = areaResults.reduce((sum, r) => sum + r.areaTotal, 0);
 
   function handlePrint() {
-    window.print();
+    setPrintChoiceOpen(true);
+  }
+
+  // Runs one print job per selected checkbox. There's no way to combine
+  // "with sales info" and "without" into a single print dialog since
+  // they're the same DOM re-styled via a class toggle — so instead we queue
+  // the modes and, once the browser reports the previous print job is done
+  // (afterprint), prompt the user to click to open the next one.
+  function confirmPrint() {
+    const modes: Array<"full" | "no-sales"> = [];
+    if (printSelectFull) modes.push("full");
+    if (printSelectNoSales) modes.push("no-sales");
+    if (modes.length === 0) return;
+    setPrintChoiceOpen(false);
+    printQueueRef.current = modes.slice(1);
+    setPrintMode(modes[0]);
+  }
+
+  // Wait for the chosen mode's class to actually land on .fab-print-root
+  // before calling window.print() — calling it in the same tick as
+  // setPrintMode would still be printing last render's DOM.
+  useEffect(() => {
+    if (printMode) {
+      window.print();
+    }
+  }, [printMode]);
+
+  useEffect(() => {
+    function handleAfterPrint() {
+      setPrintMode(null);
+      if (printQueueRef.current.length > 0) {
+        const [next, ...rest] = printQueueRef.current;
+        printQueueRef.current = rest;
+        // Chrome's own print preview isn't a blocking native dialog, so
+        // firing window.print() again right away (even from afterprint)
+        // was unreliable — the second dialog just silently never opened.
+        // Instead, surface a "Print next" prompt tied to a fresh click,
+        // which the browser always honors.
+        setPrintQueuePending(next);
+      }
+    }
+    window.addEventListener("afterprint", handleAfterPrint);
+    return () => window.removeEventListener("afterprint", handleAfterPrint);
+  }, []);
+
+  function printQueuedNext() {
+    if (!printQueuePending) return;
+    const mode = printQueuePending;
+    setPrintQueuePending(null);
+    setPrintMode(mode);
   }
 
   function handleReset() {
@@ -658,6 +744,10 @@ export default function FabricationOrderForm(props: Props) {
         clientId: clientId || null,
         dealId: dealId || null,
         dealName: dealName || null,
+        // The real Job.id (distinct from dealId, which is the Pipedrive
+        // deal id) — lets the server link this order into the Customers
+        // program's job Documents list.
+        jobId: selectedJobId || null,
         salesRep: salesRep.trim(),
         notes,
         areas: areas.map((a, idx) => {
@@ -762,7 +852,11 @@ export default function FabricationOrderForm(props: Props) {
   }
 
   return (
-    <div className="fab-print-root space-y-6 pb-10 print:space-y-1 print:pb-0">
+    <div
+      className={`fab-print-root space-y-6 pb-10 print:space-y-1 print:pb-0 ${
+        printMode === "no-sales" ? "fab-hide-sales" : ""
+      }`}
+    >
       <style>{`
         @media print {
           @page { margin: 6mm; }
@@ -773,16 +867,24 @@ export default function FabricationOrderForm(props: Props) {
           .fab-print-root h1 { font-size: 15px !important; }
           .fab-print-root h2, .fab-print-root h3 { font-size: 10px !important; }
           .fab-print-root .fab-area-name { font-size: 13px !important; }
+          /* A thin, subtle box around each field (matching the Edge/Finish
+             table cells) reads as an organized printed form; a plain
+             underline looked too sparse, and the original heavy
+             rounded/shadowed input box looked too "boxy". This splits the
+             difference: a light 1px outline, square corners, no fill. */
           .fab-print-root input,
           .fab-print-root select,
           .fab-print-root textarea,
           .fab-print-root .fab-readout {
             padding: 0px 3px !important;
-            border: none !important;
+            border: 1px solid #d1d5db !important;
             background: transparent !important;
             box-shadow: none !important;
-            border-radius: 0 !important;
+            border-radius: 2px !important;
             appearance: none !important;
+          }
+          .fab-print-root .fab-area-name {
+            border: none !important;
           }
           /* Placeholder/watermark example text (e.g. "80 1/4", "Stone name")
              is on-screen typing guidance only — it must never render as if
@@ -803,8 +905,28 @@ export default function FabricationOrderForm(props: Props) {
           .fab-print-root td {
             padding: 0px 6px 0px 0px !important;
           }
+          /* Customer-facing print mode: pricing stays off the page entirely
+             (Order Total, Area Total, Sales Price, Edge/Finish), leaving
+             just Client info, the Area info bar, and the Layout image. The
+             Layout box expands to fill the row once its sibling is gone. */
+          .fab-print-root.fab-hide-sales .fab-order-total,
+          .fab-print-root.fab-hide-sales .fab-area-total,
+          .fab-print-root.fab-hide-sales .fab-right-col {
+            display: none !important;
+          }
+          .fab-print-root.fab-hide-sales .fab-lr-grid {
+            grid-template-columns: 1fr !important;
+          }
           .fab-print-root .fab-area-card {
             break-inside: auto !important;
+          }
+          /* Every area after the first starts on its own fresh page, rather
+             than continuing wherever the previous area happened to end —
+             otherwise a new area can start a few lines from the bottom of a
+             page and look cramped/cut off. */
+          .fab-print-root .fab-area-page-break {
+            break-before: page !important;
+            page-break-before: always !important;
           }
           /* Bound each layout image to a fixed, predictable height rather
              than trying to match the (variable-height) Sales Price /
@@ -829,7 +951,7 @@ export default function FabricationOrderForm(props: Props) {
           }
         }
       `}</style>
-      <div className="flex items-start justify-between gap-4">
+      <div className="flex items-start justify-between gap-4 print:hidden">
         <div>
           <h1 className="text-2xl font-bold text-gray-900 dark:text-gray-100">
             {orderId ? "Edit Fabrication Order" : "New Fabrication Order"}
@@ -838,7 +960,7 @@ export default function FabricationOrderForm(props: Props) {
             Upload each area&apos;s layout, pick finishes, and the price calculates automatically.
           </p>
         </div>
-        <div className="flex items-center gap-2 print:hidden">
+        <div className="flex items-center gap-2">
           <button
             type="button"
             onClick={handlePrint}
@@ -870,6 +992,96 @@ export default function FabricationOrderForm(props: Props) {
         </div>
       </div>
 
+      {printChoiceOpen && (
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4 print:hidden"
+          onClick={() => setPrintChoiceOpen(false)}
+        >
+          <div
+            className="w-full max-w-sm rounded-xl bg-white p-5 shadow-xl dark:bg-gray-800"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <h3 className="text-sm font-semibold text-gray-900 dark:text-gray-100">
+              Print this order
+            </h3>
+            <p className="mt-1 text-xs text-gray-500 dark:text-gray-400">
+              Choose which version(s) to print. Select both to print one copy of each,
+              one after the other.
+            </p>
+            <div className="mt-4 space-y-2">
+              <label className="flex cursor-pointer items-start gap-2 rounded-lg border border-gray-300 px-3 py-2 text-sm hover:bg-gray-50 dark:border-gray-600 dark:hover:bg-gray-700">
+                <input
+                  type="checkbox"
+                  checked={printSelectFull}
+                  onChange={(e) => setPrintSelectFull(e.target.checked)}
+                  className="mt-0.5"
+                />
+                <span>
+                  <span className="font-medium text-gray-700 dark:text-gray-200">
+                    With Sales Info
+                  </span>
+                  <span className="block text-xs font-normal text-gray-500 dark:text-gray-400">
+                    Includes Order Total, Area Total, Sales Price, and Edge/Finish.
+                  </span>
+                </span>
+              </label>
+              <label className="flex cursor-pointer items-start gap-2 rounded-lg border border-gray-300 px-3 py-2 text-sm hover:bg-gray-50 dark:border-gray-600 dark:hover:bg-gray-700">
+                <input
+                  type="checkbox"
+                  checked={printSelectNoSales}
+                  onChange={(e) => setPrintSelectNoSales(e.target.checked)}
+                  className="mt-0.5"
+                />
+                <span>
+                  <span className="font-medium text-gray-700 dark:text-gray-200">
+                    Without Sales Info
+                  </span>
+                  <span className="block text-xs font-normal text-gray-500 dark:text-gray-400">
+                    Client &amp; Job info, Area info, and Layout only — no pricing.
+                  </span>
+                </span>
+              </label>
+            </div>
+            <div className="mt-4 flex gap-2">
+              <button
+                type="button"
+                onClick={() => setPrintChoiceOpen(false)}
+                className="flex-1 rounded-lg border border-gray-300 px-3 py-2 text-sm font-medium text-gray-700 hover:bg-gray-50 dark:border-gray-600 dark:text-gray-200 dark:hover:bg-gray-700"
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                onClick={confirmPrint}
+                disabled={!printSelectFull && !printSelectNoSales}
+                className="flex-1 rounded-lg bg-blue-600 px-3 py-2 text-sm font-medium text-white hover:bg-blue-700 disabled:cursor-not-allowed disabled:opacity-50"
+              >
+                Print
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {printQueuePending && (
+        <div className="fixed inset-x-0 bottom-6 z-50 mx-auto flex w-full max-w-md items-center justify-between gap-3 rounded-lg border border-blue-200 bg-blue-50 p-3 text-sm shadow-lg print:hidden dark:border-blue-800 dark:bg-blue-950">
+          <span className="text-blue-700 dark:text-blue-300">
+            Ready to print the{" "}
+            <strong>
+              {printQueuePending === "full" ? "With Sales Info" : "Without Sales Info"}
+            </strong>{" "}
+            version.
+          </span>
+          <button
+            type="button"
+            onClick={printQueuedNext}
+            className="shrink-0 rounded-md bg-blue-600 px-3 py-1.5 text-xs font-medium text-white hover:bg-blue-700"
+          >
+            Print Next
+          </button>
+        </div>
+      )}
+
       {(error || message) && (
         <div
           className={`rounded-lg border px-4 py-2 text-sm print:hidden ${
@@ -884,9 +1096,19 @@ export default function FabricationOrderForm(props: Props) {
 
       {/* ── TOP: compact client / job info ── */}
       <div className={`${card} border-t-4 border-t-blue-500 print:mb-1`}>
-        <h2 className="mb-4 print:mb-1 text-xs font-semibold uppercase tracking-wider text-blue-600 dark:text-blue-400">
-          Client &amp; Job Information
-        </h2>
+        <div className="mb-4 flex items-baseline justify-between print:mb-1">
+          <h2 className="text-xs font-semibold uppercase tracking-wider text-blue-600 dark:text-blue-400">
+            Client &amp; Job Information
+          </h2>
+          <div className="hidden items-baseline gap-4 text-[10px] text-gray-700 print:flex">
+            <span>
+              <strong>Date:</strong> {orderDate ? formatDateMDY(orderDate) : "-"}
+            </span>
+            <span>
+              <strong>FO #:</strong> {orderNumber || "Assigned on save"}
+            </span>
+          </div>
+        </div>
         <div className="grid grid-cols-1 gap-4 print:gap-1 sm:grid-cols-2 lg:grid-cols-6">
           <div className="relative sm:col-span-2 lg:col-span-2" ref={clientBoxRef}>
             <label className={fieldLabel}>Customer Name</label>
@@ -972,7 +1194,7 @@ export default function FabricationOrderForm(props: Props) {
               className={fieldInput}
             />
           </div>
-          <div>
+          <div className="print:hidden">
             <label className={fieldLabel}>Date</label>
             <input
               type="date"
@@ -981,7 +1203,7 @@ export default function FabricationOrderForm(props: Props) {
               className={fieldInput}
             />
           </div>
-          <div>
+          <div className="print:hidden">
             <label className={fieldLabel}>FO #</label>
             <input
               disabled
@@ -996,7 +1218,7 @@ export default function FabricationOrderForm(props: Props) {
             <label className={fieldLabel}>Notes</label>
             <input value={notes} onChange={(e) => setNotes(e.target.value)} className={fieldInput} />
           </div>
-          <div className="shrink-0 text-right">
+          <div className="fab-order-total shrink-0 text-right">
             <div className="text-xs uppercase text-gray-500 dark:text-gray-400">Order Total</div>
             <div className="text-2xl font-bold text-emerald-600 dark:text-emerald-400">
               {formatCurrency(orderTotal)}
@@ -1016,7 +1238,9 @@ export default function FabricationOrderForm(props: Props) {
           return (
             <div
               key={area.key}
-              className={`${card} fab-area-card space-y-4 print:space-y-1 border-t-4 border-t-indigo-400`}
+              className={`${card} fab-area-card space-y-4 print:space-y-1 border-t-4 border-t-indigo-400 ${
+                areaIdx > 0 ? "fab-area-page-break" : ""
+              }`}
             >
               <div className="flex items-center justify-between gap-4">
                 <input
@@ -1026,7 +1250,7 @@ export default function FabricationOrderForm(props: Props) {
                   placeholder={`Area ${areaIdx + 1}`}
                 />
                 <div className="flex items-center gap-3">
-                  <div className="text-right">
+                  <div className="fab-area-total text-right">
                     <div className="text-xs uppercase text-gray-500 dark:text-gray-400">Area Total</div>
                     <div className="text-lg font-bold text-emerald-600 dark:text-emerald-400">
                       {formatCurrency(result.areaTotal)}
@@ -1058,6 +1282,9 @@ export default function FabricationOrderForm(props: Props) {
                       placeholder="Stone name"
                     />
                   </div>
+
+                  <div className={dividerClass} />
+
                   <div className="w-14">
                     <label className={compactLabel}>Slab Qty</label>
                     <input
@@ -1095,6 +1322,9 @@ export default function FabricationOrderForm(props: Props) {
                       {result.slabPieceSqft > 0 ? result.slabPieceSqft.toFixed(2) : "-"}
                     </div>
                   </div>
+
+                  <div className={dividerClass} />
+
                   <div className="w-64">
                     <label className={compactLabel}>Provider</label>
                     <Combobox
@@ -1105,6 +1335,9 @@ export default function FabricationOrderForm(props: Props) {
                       placeholder="Type or select"
                     />
                   </div>
+
+                  <div className={dividerClass} />
+
                   <div className="w-20">
                     <label className={compactLabel}>Thickness</label>
                     <select
@@ -1137,7 +1370,7 @@ export default function FabricationOrderForm(props: Props) {
                   </div>
                 </div>
 
-                <div className="mt-2 print:mt-1 flex flex-wrap items-end gap-2 print:gap-1">
+                <div className="mt-2 print:mt-1 flex flex-wrap items-end gap-2 border-t border-transparent print:gap-1 print:border-gray-300 print:pt-1">
                   <div className="w-20">
                     <label className={compactLabel}>Backsplash</label>
                     <select
@@ -1249,19 +1482,31 @@ export default function FabricationOrderForm(props: Props) {
                     }`}
                   >
                     {result.slabQtyFlagged && <AlertTriangle className="h-3.5 w-3.5 shrink-0" />}
-                    Recommended slabs: <strong>{result.slabRecommendedQty}</strong> — job area is{" "}
-                    {(result.jobSqft + result.buildUpSqft).toFixed(2)} sqft (plus 15% waste), and
-                    each slab you entered covers {result.slabPieceSqft.toFixed(2)} sqft.{" "}
-                    {result.slabQtyFlagged
-                      ? "The quantity entered above looks insufficient."
-                      : "The quantity entered above looks sufficient."}
+                    {(() => {
+                      const baseArea = result.jobSqft + result.buildUpSqft;
+                      const totalWithWaste = baseArea * 1.15;
+                      const slabQtyNum = Number(area.slabQty) || 0;
+                      const totalCoverage = result.slabPieceSqft * slabQtyNum;
+                      return (
+                        <>
+                          Recommended slabs: <strong>{result.slabRecommendedQty}</strong> — Total
+                          job area is {totalWithWaste.toFixed(2)} sqft ({baseArea.toFixed(2)} sqft +
+                          15% waste), and each slab you entered covers{" "}
+                          {result.slabPieceSqft.toFixed(2)} sqft ({totalCoverage.toFixed(2)} sqft for{" "}
+                          {slabQtyNum} slab{slabQtyNum === 1 ? "" : "s"}).{" "}
+                          {result.slabQtyFlagged
+                            ? "The quantity entered above looks insufficient."
+                            : "The quantity entered above looks sufficient."}
+                        </>
+                      );
+                    })()}
                   </div>
                 )}
               </div>
 
               {/* LEFT: layout image (half width) | RIGHT: sales price + edge/finish side by side */}
               <div
-                className={`grid grid-cols-1 gap-4 xl:grid-cols-2 print:gap-1 print:items-start ${
+                className={`fab-lr-grid grid grid-cols-1 gap-4 xl:grid-cols-2 print:gap-1 print:items-start ${
                   hasImages ? "print:grid-cols-2" : "print:grid-cols-1"
                 }`}
               >
@@ -1296,7 +1541,7 @@ export default function FabricationOrderForm(props: Props) {
                 </div>
 
                 {/* RIGHT: sales price + edge/finish tables, side by side */}
-                <div className="grid grid-cols-1 gap-3 lg:grid-cols-2 print:grid-cols-2 print:gap-1">
+                <div className="fab-right-col grid grid-cols-1 gap-3 lg:grid-cols-2 print:grid-cols-2 print:gap-1">
                   <div className="rounded-lg border border-gray-200 border-l-4 border-l-emerald-400 p-3 dark:border-gray-700 print:p-1">
                     <h3 className="mb-2 print:mb-1 text-xs font-semibold uppercase tracking-wider text-emerald-600 dark:text-emerald-400">
                       Sales Price

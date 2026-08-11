@@ -4,12 +4,14 @@ import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { Printer, Archive, ArchiveRestore, Trash2, History, Search, X } from "lucide-react";
 import { formatCurrency } from "@/lib/fabricationCalc";
+import FilterMultiSelect from "@/components/filters/FilterMultiSelect";
 
 type OrderRow = {
   id: string;
   orderNumber: string | null;
   date: string;
   clientName: string;
+  dealName: string | null;
   salesRep: string;
   isActive: boolean;
   total: number;
@@ -28,26 +30,28 @@ type HistoryEntry = {
   changedByUser: { name: string | null; email: string | null } | null;
 };
 
+const DEFAULT_STATUS: "active" | "archived" | "all" = "active";
+
 export default function SavedFabricationOrdersClient({ isAdmin }: { isAdmin: boolean }) {
   const [orders, setOrders] = useState<OrderRow[]>([]);
   const [loading, setLoading] = useState(true);
-  const [q, setQ] = useState("");
-  const [salesRepFilter, setSalesRepFilter] = useState("");
-  const [status, setStatus] = useState<"active" | "archived" | "all">("active");
+  const [foSearch, setFoSearch] = useState("");
+  const [clientSearch, setClientSearch] = useState("");
+  const [areaSearch, setAreaSearch] = useState("");
+  const [selectedSalesReps, setSelectedSalesReps] = useState<string[]>([]);
+  const [status, setStatus] = useState<"active" | "archived" | "all">(DEFAULT_STATUS);
   const [message, setMessage] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [historyOrderId, setHistoryOrderId] = useState<string | null>(null);
   const [historyEntries, setHistoryEntries] = useState<HistoryEntry[]>([]);
   const [historyLoading, setHistoryLoading] = useState(false);
 
-  async function load() {
+  async function load(statusValue: "active" | "archived" | "all" = status) {
     setLoading(true);
     setError(null);
     try {
       const params = new URLSearchParams();
-      if (q.trim()) params.set("q", q.trim());
-      if (salesRepFilter) params.set("salesRep", salesRepFilter);
-      params.set("status", status);
+      params.set("status", statusValue);
       const res = await fetch(`/api/fabrication-orders?${params.toString()}`);
       const json = await res.json();
       if (!res.ok) throw new Error(json?.error || "Failed to load orders");
@@ -60,7 +64,7 @@ export default function SavedFabricationOrdersClient({ isAdmin }: { isAdmin: boo
   }
 
   useEffect(() => {
-    void load();
+    void load(status);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [status]);
 
@@ -69,10 +73,38 @@ export default function SavedFabricationOrdersClient({ isAdmin }: { isAdmin: boo
     [orders],
   );
 
+  const filtered = useMemo(() => {
+    const fo = foSearch.trim().toLowerCase();
+    const client = clientSearch.trim().toLowerCase();
+    const area = areaSearch.trim().toLowerCase();
+
+    return orders.filter((order) => {
+      if (fo) {
+        const orderNum = (order.orderNumber || order.id.slice(0, 8)).toLowerCase();
+        if (!orderNum.includes(fo)) return false;
+      }
+      if (client && !order.clientName.toLowerCase().includes(client)) return false;
+      if (area && !order.areas.some((a) => a.name.toLowerCase().includes(area))) return false;
+      if (selectedSalesReps.length > 0 && !selectedSalesReps.includes(order.salesRep)) {
+        return false;
+      }
+      return true;
+    });
+  }, [orders, foSearch, clientSearch, areaSearch, selectedSalesReps]);
+
+  const hasActiveFilters =
+    foSearch !== "" ||
+    clientSearch !== "" ||
+    areaSearch !== "" ||
+    selectedSalesReps.length > 0 ||
+    status !== DEFAULT_STATUS;
+
   function clearFilters() {
-    setQ("");
-    setSalesRepFilter("");
-    setStatus("active");
+    setFoSearch("");
+    setClientSearch("");
+    setAreaSearch("");
+    setSelectedSalesReps([]);
+    setStatus(DEFAULT_STATUS);
   }
 
   async function toggleArchive(order: OrderRow) {
@@ -129,12 +161,13 @@ export default function SavedFabricationOrdersClient({ isAdmin }: { isAdmin: boo
   }
 
   function exportCsv() {
-    const header = ["FO #", "Client", "Sales Rep", "Areas", "Total", "Status", "Date"];
-    const rows = orders.map((o) => [
+    const header = ["FO #", "Client", "Job/Deal", "Sales Rep", "Areas", "Total", "Status", "Date"];
+    const rows = filtered.map((o) => [
       o.orderNumber || o.id.slice(0, 8).toUpperCase(),
       o.clientName,
+      o.dealName || "",
       o.salesRep,
-      String(o.areas.length),
+      o.areas.map((a) => a.name).join(" | "),
       String(o.total.toFixed(2)),
       o.isActive ? "Active" : "Archived",
       new Date(o.date || o.createdAt).toLocaleDateString(),
@@ -181,163 +214,177 @@ export default function SavedFabricationOrdersClient({ isAdmin }: { isAdmin: boo
         </div>
       )}
 
-      <div className="flex flex-wrap items-end gap-3 rounded-lg border border-gray-200 bg-white p-4 dark:border-gray-700 dark:bg-gray-800">
-        <div className="min-w-[220px] flex-1">
-          <label className="mb-1 block text-xs font-medium text-gray-600 dark:text-gray-400">
-            Search
-          </label>
+      <div className="rounded-xl border border-gray-200 bg-white p-4 dark:border-gray-700 dark:bg-gray-800">
+        <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-5">
           <div className="relative">
-            <Search className="pointer-events-none absolute left-2.5 top-2.5 h-4 w-4 text-gray-400" />
+            <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-gray-400" />
             <input
-              value={q}
-              onChange={(e) => setQ(e.target.value)}
-              onKeyDown={(e) => e.key === "Enter" && load()}
-              placeholder="Client or order #"
-              className="w-full rounded-md border border-gray-300 bg-white py-2 pl-8 pr-3 text-sm dark:border-gray-600 dark:bg-gray-900"
+              value={foSearch}
+              onChange={(e) => setFoSearch(e.target.value)}
+              placeholder="Search FO #..."
+              className="h-10 w-full rounded-lg border border-gray-300 bg-white pl-9 pr-3 text-sm dark:border-gray-600 dark:bg-gray-900"
             />
           </div>
-        </div>
-        <div>
-          <label className="mb-1 block text-xs font-medium text-gray-600 dark:text-gray-400">
-            Sales Rep
-          </label>
-          <select
-            value={salesRepFilter}
-            onChange={(e) => setSalesRepFilter(e.target.value)}
-            className="rounded-md border border-gray-300 bg-white px-3 py-2 text-sm dark:border-gray-600 dark:bg-gray-900"
-          >
-            <option value="">All</option>
-            {salesReps.map((rep) => (
-              <option key={rep} value={rep}>
-                {rep}
-              </option>
-            ))}
-          </select>
-        </div>
-        <div>
-          <label className="mb-1 block text-xs font-medium text-gray-600 dark:text-gray-400">
-            Status
-          </label>
+          <div className="relative">
+            <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-gray-400" />
+            <input
+              value={clientSearch}
+              onChange={(e) => setClientSearch(e.target.value)}
+              placeholder="Filter by client name"
+              className="h-10 w-full rounded-lg border border-gray-300 bg-white pl-9 pr-3 text-sm dark:border-gray-600 dark:bg-gray-900"
+            />
+          </div>
+          <div className="relative">
+            <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-gray-400" />
+            <input
+              value={areaSearch}
+              onChange={(e) => setAreaSearch(e.target.value)}
+              placeholder="Filter by area name"
+              className="h-10 w-full rounded-lg border border-gray-300 bg-white pl-9 pr-3 text-sm dark:border-gray-600 dark:bg-gray-900"
+            />
+          </div>
+          <FilterMultiSelect
+            label="Sales Rep"
+            options={salesReps}
+            selected={selectedSalesReps}
+            onChange={setSelectedSalesReps}
+            fullWidth
+            matchInputStyle
+          />
           <select
             value={status}
             onChange={(e) => setStatus(e.target.value as any)}
-            className="rounded-md border border-gray-300 bg-white px-3 py-2 text-sm dark:border-gray-600 dark:bg-gray-900"
+            className="h-10 rounded-lg border border-gray-300 bg-white px-3 text-sm dark:border-gray-600 dark:bg-gray-900"
           >
             <option value="active">Active</option>
             <option value="archived">Archived</option>
             <option value="all">All</option>
           </select>
         </div>
-        <button
-          type="button"
-          onClick={load}
-          className="rounded-md bg-blue-600 px-3 py-2 text-sm text-white hover:bg-blue-700"
-        >
-          Apply
-        </button>
-        <button
-          type="button"
-          onClick={clearFilters}
-          className="inline-flex items-center gap-1 rounded-md border border-gray-300 px-3 py-2 text-sm dark:border-gray-600"
-        >
-          <X className="h-3.5 w-3.5" /> Clear Filters
-        </button>
+        <div className="mt-3 flex items-center justify-between">
+          <span className="text-xs text-gray-500 dark:text-gray-400">
+            Showing {filtered.length} of {orders.length}
+          </span>
+          <button
+            type="button"
+            onClick={clearFilters}
+            disabled={!hasActiveFilters}
+            className={`inline-flex items-center gap-1.5 rounded-md px-3 py-2 text-sm transition-colors ${
+              hasActiveFilters
+                ? "cursor-pointer border border-gray-300 text-gray-700 hover:bg-gray-50 dark:border-gray-600 dark:text-gray-300 dark:hover:bg-gray-700"
+                : "cursor-not-allowed border border-transparent text-gray-400 dark:text-gray-600"
+            }`}
+          >
+            <X className="h-3.5 w-3.5" /> Clear Filters
+          </button>
+        </div>
       </div>
 
       <div className="overflow-x-auto rounded-lg border border-gray-200 bg-white dark:border-gray-700 dark:bg-gray-800">
         <table className="w-full text-left text-sm">
           <thead>
             <tr className="border-b border-gray-200 text-xs uppercase text-gray-500 dark:border-gray-700 dark:text-gray-400">
-              <th className="px-4 py-3">FO #</th>
-              <th className="px-4 py-3">Client</th>
-              <th className="px-4 py-3">Sales Rep</th>
-              <th className="px-4 py-3">Areas</th>
-              <th className="px-4 py-3">Total</th>
-              <th className="px-4 py-3">Status</th>
-              <th className="px-4 py-3">Date</th>
-              <th className="px-4 py-3">Actions</th>
+              <th className="border-r border-gray-200 px-4 py-2 text-center dark:border-gray-700">FO #</th>
+              <th className="w-64 border-r border-gray-200 px-4 py-2 text-center dark:border-gray-700">Client</th>
+              <th className="border-r border-gray-200 px-4 py-2 text-center dark:border-gray-700">Job/Deal</th>
+              <th className="border-r border-gray-200 px-4 py-2 text-center dark:border-gray-700">Areas</th>
+              <th className="border-r border-gray-200 px-4 py-2 text-center dark:border-gray-700">Date</th>
+              <th className="border-r border-gray-200 px-4 py-2 text-center dark:border-gray-700">Total</th>
+              <th className="px-4 py-2 text-center">Actions</th>
             </tr>
           </thead>
           <tbody>
             {loading ? (
               <tr>
-                <td colSpan={8} className="px-4 py-8 text-center text-sm text-gray-500 dark:text-gray-400">
+                <td colSpan={7} className="px-4 py-8 text-center text-sm text-gray-500 dark:text-gray-400">
                   Loading fabrication orders...
                 </td>
               </tr>
-            ) : orders.length === 0 ? (
+            ) : filtered.length === 0 ? (
               <tr>
-                <td colSpan={8} className="px-4 py-8 text-center text-sm text-gray-500 dark:text-gray-400">
+                <td colSpan={7} className="px-4 py-8 text-center text-sm text-gray-500 dark:text-gray-400">
                   No fabrication orders found for these filters.
                 </td>
               </tr>
             ) : (
-              orders.map((order) => (
+              filtered.map((order) => (
                 <tr key={order.id} className="border-b border-gray-100 dark:border-gray-700/60">
-                  <td className="px-4 py-3 text-gray-600 dark:text-gray-400">
-                    {order.orderNumber || order.id.slice(0, 8).toUpperCase()}
-                  </td>
-                  <td className="px-4 py-3 font-medium">{order.clientName}</td>
-                  <td className="px-4 py-3">{order.salesRep}</td>
-                  <td className="px-4 py-3">{order.areas.map((a) => a.name).join(", ")}</td>
-                  <td className="px-4 py-3 font-semibold">{formatCurrency(order.total)}</td>
-                  <td className="px-4 py-3">
-                    {order.isActive ? (
-                      <span className="rounded-full bg-green-100 px-2 py-0.5 text-xs text-green-700 dark:bg-green-900/40 dark:text-green-300">
-                        Active
-                      </span>
-                    ) : (
-                      <span className="rounded-full bg-gray-100 px-2 py-0.5 text-xs text-gray-600 dark:bg-gray-700 dark:text-gray-300">
+                  <td className="border-r border-gray-100 px-4 py-2 text-center dark:border-gray-700/60">
+                    <Link
+                      href={`/fabrication-orders?orderId=${order.id}`}
+                      className="font-medium text-blue-600 hover:underline dark:text-blue-400"
+                    >
+                      {order.orderNumber || order.id.slice(0, 8).toUpperCase()}
+                    </Link>
+                    {!order.isActive && (
+                      <span className="ml-2 rounded-full bg-gray-100 px-2 py-0.5 text-[10px] uppercase text-gray-600 dark:bg-gray-700 dark:text-gray-300">
                         Archived
                       </span>
                     )}
                   </td>
-                  <td className="px-4 py-3">{new Date(order.date || order.createdAt).toLocaleDateString()}</td>
-                  <td className="px-4 py-3 whitespace-nowrap">
-                    <Link
-                      href={`/fabrication-orders?orderId=${order.id}`}
-                      className="mr-3 text-blue-600 hover:underline"
-                    >
-                      Edit
-                    </Link>
-                    <Link
-                      href={`/fabrication-orders/print/${order.id}`}
-                      target="_blank"
-                      className="mr-3 inline-flex items-center gap-1 text-gray-600 hover:underline dark:text-gray-300"
-                    >
-                      <Printer className="h-3.5 w-3.5" /> Print
-                    </Link>
-                    <button
-                      type="button"
-                      onClick={() => openHistory(order.id)}
-                      className="mr-3 inline-flex items-center gap-1 text-gray-600 hover:underline dark:text-gray-300"
-                    >
-                      <History className="h-3.5 w-3.5" /> Log
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => toggleArchive(order)}
-                      className="mr-3 inline-flex items-center gap-1 text-amber-600 hover:underline"
-                    >
-                      {order.isActive ? (
-                        <>
-                          <Archive className="h-3.5 w-3.5" /> Archive
-                        </>
-                      ) : (
-                        <>
-                          <ArchiveRestore className="h-3.5 w-3.5" /> Restore
-                        </>
-                      )}
-                    </button>
-                    {isAdmin && (
+                  <td className="w-64 border-r border-gray-100 px-4 py-2 font-medium dark:border-gray-700/60">
+                    {order.clientName}
+                  </td>
+                  <td className="border-r border-gray-100 px-4 py-2 text-gray-600 dark:border-gray-700/60 dark:text-gray-400">
+                    {order.dealName || "-"}
+                  </td>
+                  <td className="border-r border-gray-100 px-4 py-2 text-center dark:border-gray-700/60">
+                    {order.areas.map((a) => a.name).join(", ")}
+                  </td>
+                  <td className="border-r border-gray-100 px-4 py-2 text-center dark:border-gray-700/60">
+                    {new Date(order.date || order.createdAt).toLocaleDateString()}
+                  </td>
+                  <td className="border-r border-gray-100 px-4 py-2 text-center font-semibold dark:border-gray-700/60">
+                    {formatCurrency(order.total)}
+                  </td>
+                  <td className="px-3 py-2">
+                    <div className="flex flex-nowrap items-center justify-center gap-1">
+                      <Link
+                        href={`/fabrication-orders?orderId=${order.id}&autoprint=1`}
+                        target="_blank"
+                        title="Print"
+                        className="inline-flex items-center justify-center gap-0.5 rounded-md border border-gray-300 px-1.5 py-1 text-[11px] font-medium text-gray-700 hover:bg-gray-50 dark:border-gray-600 dark:text-gray-300 dark:hover:bg-gray-700"
+                      >
+                        <Printer className="h-3 w-3" /> Print
+                      </Link>
+                      <Link
+                        href={`/fabrication-orders?orderId=${order.id}`}
+                        title="Edit"
+                        className="inline-flex items-center justify-center gap-0.5 rounded-md border border-blue-300 px-1.5 py-1 text-[11px] font-medium text-blue-600 hover:bg-blue-50 dark:border-blue-800 dark:hover:bg-blue-900/30"
+                      >
+                        Edit
+                      </Link>
                       <button
                         type="button"
-                        onClick={() => permanentlyDelete(order)}
-                        className="inline-flex items-center gap-1 text-red-600 hover:underline"
+                        onClick={() => openHistory(order.id)}
+                        title="Log"
+                        className="inline-flex items-center justify-center gap-0.5 rounded-md border border-gray-300 px-1.5 py-1 text-[11px] font-medium text-gray-700 hover:bg-gray-50 dark:border-gray-600 dark:text-gray-300 dark:hover:bg-gray-700"
                       >
-                        <Trash2 className="h-3.5 w-3.5" /> Delete
+                        <History className="h-3 w-3" />
                       </button>
-                    )}
+                      <button
+                        type="button"
+                        onClick={() => toggleArchive(order)}
+                        title={order.isActive ? "Archive" : "Restore"}
+                        className="inline-flex items-center justify-center gap-0.5 rounded-md border border-amber-300 px-1.5 py-1 text-[11px] font-medium text-amber-600 hover:bg-amber-50 dark:border-amber-800 dark:hover:bg-amber-900/30"
+                      >
+                        {order.isActive ? (
+                          <Archive className="h-3 w-3" />
+                        ) : (
+                          <ArchiveRestore className="h-3 w-3" />
+                        )}
+                      </button>
+                      {isAdmin && (
+                        <button
+                          type="button"
+                          onClick={() => permanentlyDelete(order)}
+                          title="Delete"
+                          className="inline-flex items-center justify-center gap-0.5 rounded-md border border-red-300 px-1.5 py-1 text-[11px] font-medium text-red-600 hover:bg-red-50 dark:border-red-800 dark:hover:bg-red-900/30"
+                        >
+                          <Trash2 className="h-3 w-3" />
+                        </button>
+                      )}
+                    </div>
                   </td>
                 </tr>
               ))

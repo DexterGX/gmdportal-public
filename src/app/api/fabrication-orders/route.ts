@@ -3,6 +3,7 @@ import { prisma } from "@/lib/prisma";
 import { getCurrentUserWithRole } from "@/lib/authHelpers";
 import { computeAreaTotals, type CalcAreaInput } from "@/lib/fabricationCalc";
 import { saveOrderAreaImages } from "@/lib/fabricationImages";
+import { syncFabricationOrderArtifact } from "@/lib/fabricationOrderArtifact";
 
 const prismaAny = prisma as any;
 
@@ -399,6 +400,7 @@ export async function POST(request: NextRequest) {
             clientId: body.clientId || null,
             dealId: body.dealId || null,
             dealName: body.dealName || null,
+            jobId: body.jobId || null,
             salesRep,
             notes: body.notes || null,
             total: orderTotal,
@@ -440,6 +442,25 @@ export async function POST(request: NextRequest) {
           auth.user.id,
         );
       }
+    }
+
+    // Best-effort: link this order into the Customers program's job
+    // Documents list, mirroring how Payment Terms / Misc Estimates show up
+    // there. Never let this fail the order save itself.
+    const jobArtifactId = await syncFabricationOrderArtifact({
+      orderId: order.id,
+      jobArtifactId: null,
+      jobId: body.jobId || null,
+      orderNumber: order.orderNumber,
+      clientName,
+      dealName: body.dealName || null,
+      total: orderTotal,
+      userId: auth.user.id,
+    });
+    if (jobArtifactId) {
+      await prismaAny.fabricationOrder
+        .update({ where: { id: order.id }, data: { jobArtifactId } })
+        .catch(() => {});
     }
 
     return NextResponse.json({ id: order.id, orderNumber: order.orderNumber }, { status: 201 });

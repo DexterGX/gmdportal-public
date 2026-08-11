@@ -3,6 +3,7 @@ import { prisma } from "@/lib/prisma";
 import { getCurrentUserWithRole } from "@/lib/authHelpers";
 import { computeAreaTotals, type CalcAreaInput } from "@/lib/fabricationCalc";
 import { saveOrderAreaImages, deleteOrderAreaImages } from "@/lib/fabricationImages";
+import { syncFabricationOrderArtifact } from "@/lib/fabricationOrderArtifact";
 
 const prismaAny = prisma as any;
 const CREATE_ROLES = ["admin", "sales", "office"];
@@ -401,6 +402,7 @@ export async function PUT(
           clientId: body.clientId || null,
           dealId: body.dealId || null,
           dealName: body.dealName || null,
+          jobId: body.jobId || null,
           salesRep,
           notes: body.notes || null,
           total: orderTotal,
@@ -430,6 +432,25 @@ export async function PUT(
           await deleteOrderAreaImages(toRemove);
         }
       }
+    }
+
+    // Best-effort: keep this order's Customers-program Documents link in
+    // sync (create it if a job/deal is now set, move/update it if the
+    // job/deal changed, or remove it if the job/deal was cleared).
+    const jobArtifactId = await syncFabricationOrderArtifact({
+      orderId: id,
+      jobArtifactId: existing.jobArtifactId || null,
+      jobId: body.jobId || null,
+      orderNumber: existing.orderNumber,
+      clientName,
+      dealName: body.dealName || null,
+      total: orderTotal,
+      userId: auth.user.id,
+    });
+    if (jobArtifactId !== (existing.jobArtifactId || null)) {
+      await prismaAny.fabricationOrder
+        .update({ where: { id }, data: { jobArtifactId } })
+        .catch(() => {});
     }
 
     return NextResponse.json({ id });

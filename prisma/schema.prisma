@@ -541,6 +541,7 @@ model Job {
   customer          Customer           @relation(fields: [customerId], references: [id], onDelete: Cascade)
   artifacts         JobArtifact[]
   sampleRequests    SampleRequest[]
+  fabricationOrders FabricationOrder[]
 
   @@index([customerId])
   @@index([quickbooksJobId])
@@ -1872,6 +1873,13 @@ model FabricationOrder {
   clientId      String?
   dealId        String?
   dealName      String?
+  jobId         String?
+  job           Job?     @relation(fields: [jobId], references: [id])
+  // Points at the JobArtifact row (see Job.artifacts) that surfaces this
+  // order in the Customers program's job Documents list. Kept as a loose id
+  // rather than a relation, matching clientId/dealId above — it's a
+  // best-effort link, not something that should ever block saving an order.
+  jobArtifactId String?
   salesRep      String
   notes         String?
   isActive      Boolean  @default(true)
@@ -1887,6 +1895,7 @@ model FabricationOrder {
   @@index([clientName])
   @@index([isActive])
   @@index([orderNumber])
+  @@index([jobId])
 }
 
 model FabricationOrderArea {
