@@ -185,8 +185,12 @@ export function thicknessEnumToString(thickness: SlabThickness): string {
       return "2cm";
     case "THREE_CM":
       return "3cm";
+    case "SIX_MM":
+      return "6mm";
     case "EIGHT_MM":
       return "8mm";
+    case "TEN_MM":
+      return "10mm";
     case "TWELVE_MM":
       return "12mm";
     case "FIFTEEN_MM":
@@ -389,8 +393,12 @@ export function mapThicknessToEnum(thickness: string): string {
       return "TWO_CM";
     case "3cm":
       return "THREE_CM";
+    case "6mm":
+      return "SIX_MM";
     case "8mm":
       return "EIGHT_MM";
+    case "10mm":
+      return "TEN_MM";
     case "12mm":
       return "TWELVE_MM";
     case "15mm":
