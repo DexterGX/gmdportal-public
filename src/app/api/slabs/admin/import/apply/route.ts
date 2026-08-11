@@ -117,8 +117,16 @@ function mapThicknessStringToEnum(thickness: string): SlabThickness {
     return "TWELVE_MM";
   }
 
+  if (lower.includes("10mm") || lower === "ten_mm" || lower === "tenmm") {
+    return "TEN_MM";
+  }
+
   if (lower.includes("8mm") || lower === "eight_mm" || lower === "eightmm") {
     return "EIGHT_MM";
+  }
+
+  if (lower.includes("6mm") || lower === "six_mm" || lower === "sixmm") {
+    return "SIX_MM";
   }
 
   // Unknown thickness values are accepted by mapping to a safe default.

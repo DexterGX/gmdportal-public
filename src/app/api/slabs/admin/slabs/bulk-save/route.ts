@@ -10,7 +10,9 @@ import { SlabThickness } from "@prisma/client";
 // Map UI thickness format to database enum
 function mapThicknessToEnum(uiThickness: string): SlabThickness {
   const mapping: Record<string, SlabThickness> = {
+    "6mm": "SIX_MM",
     "8mm": "EIGHT_MM",
+    "10mm": "TEN_MM",
     "12mm": "TWELVE_MM",
     "15mm": "FIFTEEN_MM",
     "2cm": "TWO_CM",
@@ -22,7 +24,9 @@ function mapThicknessToEnum(uiThickness: string): SlabThickness {
 // Map database enum to UI format
 function mapThicknessToUI(dbThickness: SlabThickness): string {
   const mapping: Record<SlabThickness, string> = {
+    SIX_MM: "6mm",
     EIGHT_MM: "8mm",
+    TEN_MM: "10mm",
     TWELVE_MM: "12mm",
     FIFTEEN_MM: "15mm",
     TWO_CM: "2cm",
