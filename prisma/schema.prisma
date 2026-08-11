@@ -44,6 +44,10 @@ model User {
   storeInventoryTransactions   StoreInventoryTransaction[] @relation("StoreInventoryTransactionUser")
   storeRestockRequestsMade     StoreRestockRequest[]  @relation("StoreRestockRequestRequestedBy")
   storeRestockRequestsActioned StoreRestockRequest[]  @relation("StoreRestockRequestActionedBy")
+  fabricationOrdersCreated     FabricationOrder[]     @relation("FabricationOrderCreatedBy")
+  fabricationOrderHistoryChanged FabricationOrderHistory[] @relation("FabricationOrderHistoryChangedBy")
+  fabricationPriceChangesLogged  FabricationPriceChangeLog[] @relation("FabricationPriceChangeLogChangedBy")
+  fabricationImagesUploaded    FabricationOrderImage[] @relation("FabricationOrderImageUploadedBy")
 }
 
 model Account {
@@ -80,32 +84,6 @@ model VerificationToken {
   @@unique([identifier, token])
 }
 
-model StockItem {
-  id           String             @id @default(uuid())
-  name         String
-  category     String
-  unit         String
-  quantity     Int                @default(0)
-  minQuantity  Int                @default(0)
-  notes        String?
-  updatedById  String?
-  updatedAt    DateTime           @updatedAt
-  providor     String?
-  transactions StockTransaction[]
-}
-
-model StockTransaction {
-  id          String    @id @default(uuid())
-  itemId      String
-  userId      String?
-  change      Int
-  reason      String?
-  oldQuantity Int
-  newQuantity Int
-  createdAt   DateTime  @default(now())
-  item        StockItem @relation(fields: [itemId], references: [id])
-}
-
 model SlabBrandConfig {
   id            String          @id @default(cuid())
   name          String
@@ -125,6 +103,7 @@ model SlabBrandConfig {
   logoUrl       String?
   slabs         Slab[]
   notes         SlabBrandNote[]
+  fabricationOrderAreas FabricationOrderArea[]
 }
 
 model SlabBrandNote {
@@ -562,6 +541,7 @@ model Job {
   customer          Customer           @relation(fields: [customerId], references: [id], onDelete: Cascade)
   artifacts         JobArtifact[]
   sampleRequests    SampleRequest[]
+  fabricationOrders FabricationOrder[]
 
   @@index([customerId])
   @@index([quickbooksJobId])
@@ -1505,7 +1485,9 @@ model StoreItemProvider {
 
 model StoreInventoryTransaction {
   id           String               @id @default(cuid())
-  itemId       String
+  itemId       String?
+  itemName     String?
+  itemUnit     String?
   type         StoreTransactionType
   change       Int
   oldQuantity  Int
@@ -1514,7 +1496,7 @@ model StoreInventoryTransaction {
   jobReference String?
   userId       String?
   createdAt    DateTime             @default(now())
-  item         StoreItem            @relation(fields: [itemId], references: [id], onDelete: Cascade)
+  item         StoreItem?           @relation(fields: [itemId], references: [id], onDelete: SetNull)
   user         User?                @relation("StoreInventoryTransactionUser", fields: [userId], references: [id])
 
   @@index([itemId])
@@ -1554,7 +1536,9 @@ enum Role {
 }
 
 enum SlabThickness {
+  SIX_MM
   EIGHT_MM
+  TEN_MM
   TWELVE_MM
   TWO_CM
   THREE_CM
@@ -1748,4 +1732,342 @@ enum StoreRestockRequestStatus {
   ORDERED
   RECEIVED
   CANCELED
+}
+
+// ============================================================
+// Fabrication Orders
+// ============================================================
+
+enum FabricationDrawingMode {
+  CANVAS
+  IMAGE
+}
+
+model FabricationSlabTypeOption {
+  id         String              @id @default(cuid())
+  name       String              @unique // "Solid", "Vein", etc.
+  multiplier Decimal             @default(1) @db.Decimal(6, 4)
+  active     Boolean             @default(true)
+  sortOrder  Int                 @default(0)
+  createdAt  DateTime            @default(now())
+  updatedAt  DateTime            @updatedAt
+  areas      FabricationOrderArea[]
+}
+
+model FabricationSinkTypeOption {
+  id        String                 @id @default(cuid())
+  name      String                 @unique // "Undermount", "Vessel", "Drop In", etc.
+  active    Boolean                @default(true)
+  sortOrder Int                    @default(0)
+  createdAt DateTime               @default(now())
+  updatedAt DateTime               @updatedAt
+  areas     FabricationOrderArea[]
+}
+
+model FabricationEdgeType {
+  id              String                   @id @default(cuid())
+  name            String                   @unique
+  pricePerSqft    Decimal                  @default(0) @db.Decimal(10, 2)
+  isBuildUp       Boolean                  @default(false)
+  active          Boolean                  @default(true)
+  sortOrder       Int                      @default(0)
+  createdAt       DateTime                 @default(now())
+  updatedAt       DateTime                 @updatedAt
+  edgeSections    FabricationAreaSection[] @relation("SectionEdgeType")
+  buildUpSections FabricationAreaSection[] @relation("SectionBuildUpType")
+}
+
+model FabricationSinkCutoutOption {
+  id        String                 @id @default(cuid())
+  name      String                 @unique
+  price     Decimal                @default(0) @db.Decimal(10, 2)
+  active    Boolean                @default(true)
+  sortOrder Int                    @default(0)
+  createdAt DateTime               @default(now())
+  updatedAt DateTime               @updatedAt
+  areas     FabricationOrderArea[]
+}
+
+model FabricationCooktopCutoutOption {
+  id        String                 @id @default(cuid())
+  name      String                 @unique
+  price     Decimal                @default(0) @db.Decimal(10, 2)
+  active    Boolean                @default(true)
+  sortOrder Int                    @default(0)
+  createdAt DateTime               @default(now())
+  updatedAt DateTime               @updatedAt
+  areas     FabricationOrderArea[]
+}
+
+model FabricationBumpOutOption {
+  id        String                 @id @default(cuid())
+  name      String                 @unique // "Small (up to 7')", "Large (over 7')"
+  price     Decimal                @default(0) @db.Decimal(10, 2)
+  active    Boolean                @default(true)
+  sortOrder Int                    @default(0)
+  createdAt DateTime               @default(now())
+  updatedAt DateTime               @updatedAt
+  areas     FabricationOrderArea[]
+}
+
+model FabricationCuttingBoardOption {
+  id        String                 @id @default(cuid())
+  name      String                 @unique
+  price     Decimal                @default(0) @db.Decimal(10, 2)
+  active    Boolean                @default(true)
+  sortOrder Int                    @default(0)
+  createdAt DateTime               @default(now())
+  updatedAt DateTime               @updatedAt
+  areas     FabricationOrderArea[]
+}
+
+model FabricationWindowsillOption {
+  id        String                 @id @default(cuid())
+  name      String                 @unique
+  price     Decimal                @default(0) @db.Decimal(10, 2)
+  active    Boolean                @default(true)
+  sortOrder Int                    @default(0)
+  createdAt DateTime               @default(now())
+  updatedAt DateTime               @updatedAt
+  areas     FabricationOrderArea[]
+}
+
+model FabricationPowerStationOption {
+  id        String                 @id @default(cuid())
+  name      String                 @unique
+  price     Decimal                @default(0) @db.Decimal(10, 2)
+  active    Boolean                @default(true)
+  sortOrder Int                    @default(0)
+  createdAt DateTime               @default(now())
+  updatedAt DateTime               @updatedAt
+  areas     FabricationOrderArea[]
+}
+
+model FabricationOtherChargeOption {
+  id        String                 @id @default(cuid())
+  name      String                 @unique
+  price     Decimal                @default(0) @db.Decimal(10, 2)
+  active    Boolean                @default(true)
+  sortOrder Int                    @default(0)
+  createdAt DateTime               @default(now())
+  updatedAt DateTime               @updatedAt
+  areas     FabricationOrderArea[]
+}
+
+model FabricationRemovalOption {
+  id        String                 @id @default(cuid())
+  name      String                 @unique
+  price     Decimal                @default(0) @db.Decimal(10, 2)
+  active    Boolean                @default(true)
+  sortOrder Int                    @default(0)
+  createdAt DateTime               @default(now())
+  updatedAt DateTime               @updatedAt
+  areas     FabricationOrderArea[]
+}
+
+model FabricationOrder {
+  id            String   @id @default(cuid())
+  orderNumber   String?  @unique
+  date          DateTime @default(now())
+  clientName    String
+  clientId      String?
+  dealId        String?
+  dealName      String?
+  jobId         String?
+  job           Job?     @relation(fields: [jobId], references: [id])
+  // Points at the JobArtifact row (see Job.artifacts) that surfaces this
+  // order in the Customers program's job Documents list. Kept as a loose id
+  // rather than a relation, matching clientId/dealId above — it's a
+  // best-effort link, not something that should ever block saving an order.
+  jobArtifactId String?
+  salesRep      String
+  notes         String?
+  isActive      Boolean  @default(true)
+  total         Decimal  @default(0) @db.Decimal(12, 2)
+  createdById   String?
+  createdBy     User?    @relation("FabricationOrderCreatedBy", fields: [createdById], references: [id])
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  areas   FabricationOrderArea[]
+  history FabricationOrderHistory[]
+
+  @@index([clientName])
+  @@index([isActive])
+  @@index([orderNumber])
+  @@index([jobId])
+}
+
+model FabricationOrderArea {
+  id     String           @id @default(cuid())
+  orderId String
+  order  FabricationOrder @relation(fields: [orderId], references: [id], onDelete: Cascade)
+
+  name      String // "Master Bathroom", "Powder Room", "Kitchen", etc.
+  sortOrder Int    @default(0)
+
+  // Header fields (mirror the old per-tab header block)
+  sinkTypeOptionId String?
+  sinkTypeOption   FabricationSinkTypeOption? @relation(fields: [sinkTypeOptionId], references: [id])
+  sinkTypeText   String? // Model, shown when sinkTypeOption is set and not "None"
+  sinkQty        Int?
+  faucetText     String?
+  stoneName      String?
+  stoneThickness SlabThickness?
+  whNumber       String?
+  backsplashHas  Boolean         @default(false)
+  backsplashIn   Decimal?        @db.Decimal(6, 2)
+
+  slabSupplierId        String?
+  slabSupplier          SlabBrandConfig? @relation(fields: [slabSupplierId], references: [id])
+  slabSupplierCustomName String? // used when the provider isn't in the SlabBrandConfig list
+  slabAreaLabel  String? // free text like "1) 127 X 64 = 50.80"
+  slabQty        Int      @default(0)
+  slabRecommendedQty Int  @default(0)
+  slabQtyFlagged Boolean  @default(false)
+  slabTypeId     String?
+  slabType       FabricationSlabTypeOption? @relation(fields: [slabTypeId], references: [id])
+  slabAmount     Decimal  @default(0) @db.Decimal(12, 2) // price we're selling the slab for
+
+  jobSqft Decimal @default(0) @db.Decimal(10, 2)
+  labor   Decimal @default(0) @db.Decimal(12, 2)
+  buildUp Decimal @default(0) @db.Decimal(12, 2)
+
+  sinkCutoutOptionId String?
+  sinkCutoutOption   FabricationSinkCutoutOption? @relation(fields: [sinkCutoutOptionId], references: [id])
+  sinkCutoutQty      Int      @default(0)
+  sinkCutoutTotal    Decimal  @default(0) @db.Decimal(12, 2)
+
+  cooktopOptionId String?
+  cooktopOption   FabricationCooktopCutoutOption? @relation(fields: [cooktopOptionId], references: [id])
+  cooktopQty      Int      @default(0)
+  cooktopTotal    Decimal  @default(0) @db.Decimal(12, 2)
+
+  bumpOutOptionId String?
+  bumpOutOption   FabricationBumpOutOption? @relation(fields: [bumpOutOptionId], references: [id])
+  bumpOutQty      Int      @default(0)
+  bumpOutTotal    Decimal  @default(0) @db.Decimal(12, 2)
+
+  cuttingBoardOptionId String?
+  cuttingBoardOption   FabricationCuttingBoardOption? @relation(fields: [cuttingBoardOptionId], references: [id])
+  cuttingBoardQty      Int      @default(0)
+  cuttingBoardTotal    Decimal  @default(0) @db.Decimal(12, 2)
+
+  windowsillOptionId String?
+  windowsillOption   FabricationWindowsillOption? @relation(fields: [windowsillOptionId], references: [id])
+  windowsillTotal    Decimal  @default(0) @db.Decimal(12, 2)
+
+  powerStationOptionId String?
+  powerStationOption   FabricationPowerStationOption? @relation(fields: [powerStationOptionId], references: [id])
+  powerStationTotal    Decimal  @default(0) @db.Decimal(12, 2)
+
+  otherChargeOptionId  String?
+  otherChargeOption    FabricationOtherChargeOption? @relation(fields: [otherChargeOptionId], references: [id])
+  otherChargeCustomName  String? // free-typed charge name when not one of the preset options
+  otherChargeCustomPrice Decimal? @db.Decimal(10, 2)
+  otherChargeTotal    Decimal  @default(0) @db.Decimal(12, 2)
+
+  removalOptionId String?
+  removalOption   FabricationRemovalOption? @relation(fields: [removalOptionId], references: [id])
+  removalTotal    Decimal  @default(0) @db.Decimal(12, 2)
+
+  leftoverNote String? // "None" | "GMD" | "Client"
+  areaTotal    Decimal @default(0) @db.Decimal(12, 2)
+
+  drawingMode FabricationDrawingMode @default(CANVAS)
+  canvasData  Json?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  sections FabricationAreaSection[]
+  images   FabricationOrderImage[]
+
+  @@index([orderId])
+}
+
+model FabricationAreaSection {
+  id     String               @id @default(cuid())
+  areaId String
+  area   FabricationOrderArea @relation(fields: [areaId], references: [id], onDelete: Cascade)
+
+  label     String? // optional sub-label, e.g. "Perimeter", "Island"
+  sortOrder Int     @default(0)
+
+  edgeTypeId String?
+  edgeType   FabricationEdgeType? @relation("SectionEdgeType", fields: [edgeTypeId], references: [id])
+
+  buildUpTypeId String?
+  buildUpType   FabricationEdgeType? @relation("SectionBuildUpType", fields: [buildUpTypeId], references: [id])
+
+  sqftTotal Decimal @default(0) @db.Decimal(10, 2)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  rows FabricationAreaRow[]
+
+  @@index([areaId])
+}
+
+model FabricationAreaRow {
+  id        String                 @id @default(cuid())
+  sectionId String
+  section   FabricationAreaSection @relation(fields: [sectionId], references: [id], onDelete: Cascade)
+
+  lengthIn  Decimal @default(0) @db.Decimal(10, 2)
+  widthIn   Decimal @default(0) @db.Decimal(10, 2)
+  sqft      Decimal @default(0) @db.Decimal(10, 2)
+  sortOrder Int     @default(0)
+
+  @@index([sectionId])
+}
+
+model FabricationOrderImage {
+  id     String               @id @default(cuid())
+  areaId String
+  area   FabricationOrderArea @relation(fields: [areaId], references: [id], onDelete: Cascade)
+
+  fileUrl      String
+  caption      String?
+  uploadedById String?
+  uploadedBy   User?    @relation("FabricationOrderImageUploadedBy", fields: [uploadedById], references: [id])
+  uploadedAt   DateTime @default(now())
+
+  @@index([areaId])
+}
+
+model FabricationOrderHistory {
+  id      String           @id @default(cuid())
+  orderId String
+  order   FabricationOrder @relation(fields: [orderId], references: [id], onDelete: Cascade)
+
+  action    String // CREATED, UPDATED, ARCHIVED, RESTORED, DELETED
+  fieldName String?
+  oldValue  String?
+  newValue  String?
+
+  changedById   String?
+  changedByUser User?    @relation("FabricationOrderHistoryChangedBy", fields: [changedById], references: [id])
+  createdAt     DateTime @default(now())
+
+  @@index([orderId])
+  @@index([createdAt])
+}
+
+model FabricationPriceChangeLog {
+  id         String @id @default(cuid())
+  entityType String // "EdgeType","SinkCutout","Cooktop","BumpOut","CuttingBoard","Windowsill","PowerStation","OtherCharge","Removal","SlabType"
+  entityId   String
+  entityName String
+  fieldName  String
+  oldValue   String?
+  newValue   String?
+
+  changedById   String?
+  changedByUser User?    @relation("FabricationPriceChangeLogChangedBy", fields: [changedById], references: [id])
+  createdAt     DateTime @default(now())
+
+  @@index([entityType, entityId])
+  @@index([createdAt])
 }

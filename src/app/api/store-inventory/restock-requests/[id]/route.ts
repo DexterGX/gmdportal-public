@@ -56,6 +56,8 @@ export async function PATCH(
       await tx.storeInventoryTransaction.create({
         data: {
           itemId: item.id,
+          itemName: item.name,
+          itemUnit: item.unit,
           type: "RESTOCK_RECEIVED",
           change: existing.requestedQty,
           oldQuantity: item.quantity,

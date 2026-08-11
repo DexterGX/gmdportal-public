@@ -8,6 +8,10 @@ import FilterMultiSelect from "@/components/filters/FilterMultiSelect";
 import type { StoreTransaction } from "../types";
 import { TRANSACTION_TYPE_LABELS } from "../types";
 
+function itemDisplayName(t: StoreTransaction): string {
+  return t.item?.name ?? t.itemName ?? "Deleted item";
+}
+
 export default function MovementsClient() {
   const [transactions, setTransactions] = useState<StoreTransaction[]>([]);
   const [loading, setLoading] = useState(true);
@@ -39,7 +43,7 @@ export default function MovementsClient() {
     [],
   );
   const itemOptions = useMemo(
-    () => Array.from(new Set(transactions.map((t) => t.item?.name).filter(Boolean))) as string[],
+    () => Array.from(new Set(transactions.map((t) => itemDisplayName(t)).filter(Boolean))) as string[],
     [transactions],
   );
   const userOptions = useMemo(
@@ -58,7 +62,7 @@ export default function MovementsClient() {
   const visibleTransactions = useMemo(() => {
     return transactions.filter((t) => {
       if (selectedTypes.length > 0 && !selectedTypes.includes(TRANSACTION_TYPE_LABELS[t.type])) return false;
-      if (selectedItems.length > 0 && !selectedItems.includes(t.item?.name ?? "")) return false;
+      if (selectedItems.length > 0 && !selectedItems.includes(itemDisplayName(t))) return false;
       if (selectedUsers.length > 0 && !selectedUsers.includes(t.user?.name ?? "")) return false;
       if (selectedDepartments.length > 0 && !selectedDepartments.includes(t.item?.department?.label ?? "")) {
         return false;
@@ -87,7 +91,7 @@ export default function MovementsClient() {
     const csv = Papa.unparse(
       visibleTransactions.map((t) => ({
         Date: new Date(t.createdAt).toLocaleString(),
-        Item: t.item?.name ?? "",
+        Item: itemDisplayName(t),
         Department: t.item?.department?.label ?? "",
         Group: t.item?.group?.label ?? "",
         Type: TRANSACTION_TYPE_LABELS[t.type],
@@ -213,12 +217,18 @@ export default function MovementsClient() {
                 {visibleTransactions.map((t) => (
                   <tr key={t.id} className="hover:bg-gray-50 dark:hover:bg-gray-900/50">
                     <td className="px-6 py-4 text-left">
-                      <Link
-                        href={`/store-inventory/${t.itemId}`}
-                        className="font-medium text-gray-900 dark:text-gray-100 hover:text-blue-600 dark:hover:text-blue-400"
-                      >
-                        {t.item?.name ?? "—"}
-                      </Link>
+                      {t.itemId ? (
+                        <Link
+                          href={`/store-inventory/${t.itemId}`}
+                          className="font-medium text-gray-900 dark:text-gray-100 hover:text-blue-600 dark:hover:text-blue-400"
+                        >
+                          {itemDisplayName(t)}
+                        </Link>
+                      ) : (
+                        <span className="font-medium text-gray-500 dark:text-gray-400 italic">
+                          {itemDisplayName(t)} (deleted)
+                        </span>
+                      )}
                       {t.reason && <div className="text-xs text-gray-500 dark:text-gray-500">{t.reason}</div>}
                     </td>
                     <td className="px-6 py-4 text-center text-xs text-gray-600 dark:text-gray-400">
@@ -254,12 +264,18 @@ export default function MovementsClient() {
             {visibleTransactions.map((t) => (
               <div key={t.id} className="bg-white dark:bg-gray-800 rounded-lg shadow p-4">
                 <div className="flex items-start justify-between gap-2 mb-2">
-                  <Link
-                    href={`/store-inventory/${t.itemId}`}
-                    className="font-semibold text-gray-900 dark:text-gray-100 hover:text-blue-600 dark:hover:text-blue-400"
-                  >
-                    {t.item?.name ?? "—"}
-                  </Link>
+                  {t.itemId ? (
+                    <Link
+                      href={`/store-inventory/${t.itemId}`}
+                      className="font-semibold text-gray-900 dark:text-gray-100 hover:text-blue-600 dark:hover:text-blue-400"
+                    >
+                      {itemDisplayName(t)}
+                    </Link>
+                  ) : (
+                    <span className="font-semibold text-gray-500 dark:text-gray-400 italic">
+                      {itemDisplayName(t)} (deleted)
+                    </span>
+                  )}
                   <span className="text-xs text-gray-500 dark:text-gray-400 text-right shrink-0">
                     {TRANSACTION_TYPE_LABELS[t.type]}
                   </span>

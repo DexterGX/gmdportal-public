@@ -11,13 +11,23 @@ import type { AppRole } from "@/lib/programsConfig";
 
 function renderIcon(icon: any, name: string) {
   if (!icon) return null;
+  // Plain "@/icons" SVG imports (no SVGR configured) resolve to Next.js
+  // StaticImageData objects — render those through next/image.
   if (typeof icon === "object" && icon.src) {
     return <Image src={icon.src} alt={name} width={20} height={20} />;
   }
   if (typeof icon === "string") {
     return <Image src={icon} alt={name} width={20} height={20} />;
   }
-  if (typeof icon === "function" || React.isValidElement(icon)) {
+  // Any renderable component type: plain function components, class
+  // components, or React.forwardRef/React.memo wrappers (e.g. every
+  // lucide-react icon, which is a forwardRef object — typeof "object",
+  // not "function" — and was previously falling through to null here).
+  const isComponentType =
+    typeof icon === "function" ||
+    React.isValidElement(icon) ||
+    (typeof icon === "object" && icon !== null && Boolean(icon.$$typeof));
+  if (isComponentType) {
     const IconComp = icon as any;
     try {
       return <IconComp className="w-5 h-5" />;
