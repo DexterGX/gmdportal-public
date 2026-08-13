@@ -809,7 +809,14 @@ export default function FabricationOrderForm(props: Props) {
               })),
             })),
             images: {
-              keepIds: a.existingImages.map((img) => img.id),
+              // Editing always creates a new order rather than overwriting
+              // the one on screen (see below), so any already-uploaded
+              // images need to be carried over by reference — no need to
+              // re-upload, just point the new area at the same file.
+              copyExisting: a.existingImages.map((img) => ({
+                fileUrl: img.fileUrl,
+                caption: img.caption,
+              })),
               newImages: a.pendingImages.map((img) => ({
                 dataUrl: img.dataUrl,
                 caption: img.caption,
@@ -819,19 +826,26 @@ export default function FabricationOrderForm(props: Props) {
         }),
       };
 
-      const res = await fetch(
-        orderId ? `/api/fabrication-orders/${orderId}` : "/api/fabrication-orders",
-        {
-          method: orderId ? "PUT" : "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify(payload),
-        },
-      );
+      // Saving never edits an existing order in place — every save creates
+      // a brand-new record, so a previously saved order is never silently
+      // changed (or re-priced off today's settings prices) just because
+      // someone reopened it. This is why the button reads "Save as New"
+      // once an order is already loaded.
+      const wasExistingOrder = Boolean(orderId);
+      const res = await fetch("/api/fabrication-orders", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(payload),
+      });
       const json = await res.json();
       if (!res.ok) throw new Error(json?.error || "Failed to save order");
 
-      setMessage("Fabrication order saved.");
-      if (!orderId && json.id) {
+      setMessage(
+        wasExistingOrder
+          ? `Saved as a new fabrication order (FO# ${json.orderNumber || json.id}). The original order was not changed.`
+          : "Fabrication order saved.",
+      );
+      if (json.id) {
         setOrderId(json.id);
         if (json.orderNumber) setOrderNumber(json.orderNumber);
         router.replace(`/fabrication-orders?orderId=${json.id}`);
@@ -979,13 +993,18 @@ export default function FabricationOrderForm(props: Props) {
             type="button"
             onClick={handleSave}
             disabled={saving}
+            title={
+              orderId
+                ? "Saves your changes as a brand-new fabrication order — the original stays exactly as it was."
+                : undefined
+            }
             className="inline-flex items-center gap-2 rounded-lg bg-blue-600 px-4 py-2 text-sm font-medium text-white hover:bg-blue-700 disabled:opacity-60"
           >
             {saving ? (
               "Saving..."
             ) : (
               <>
-                <Save className="h-4 w-4" /> Save
+                <Save className="h-4 w-4" /> {orderId ? "Save as New" : "Save"}
               </>
             )}
           </button>
@@ -1461,16 +1480,6 @@ export default function FabricationOrderForm(props: Props) {
                     />
                   </div>
 
-                  <div className={dividerClass} />
-
-                  <div className="w-20">
-                    <label className={compactLabel}>WH #</label>
-                    <input
-                      value={area.whNumber}
-                      onChange={(e) => updateArea(area.key, { whNumber: e.target.value })}
-                      className={compactInput}
-                    />
-                  </div>
                 </div>
 
                 {result.slabPieceSqft > 0 && (
@@ -1562,12 +1571,6 @@ export default function FabricationOrderForm(props: Props) {
                       <div className="col-span-2 flex justify-between">
                         <span className="text-gray-500 dark:text-gray-400">Labor</span>
                         <strong>{formatCurrency(result.labor)}</strong>
-                      </div>
-                      <div className="col-span-2 flex justify-between">
-                        <span className="text-gray-500 dark:text-gray-400">
-                          Build-Up ({result.buildUpSqft.toFixed(2)} sqft)
-                        </span>
-                        <strong>{formatCurrency(result.buildUp)}</strong>
                       </div>
 
                       <LineItemCompact

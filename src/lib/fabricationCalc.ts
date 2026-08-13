@@ -3,10 +3,12 @@
 // (authoritative recompute at save time, using current settings prices).
 //
 // Confirmed formulas (see project history for how these were derived/confirmed):
-// - Job SqFt = sum of sqft across all non build-up sections in an area.
+// - Job SqFt = sum of sqft across all sections in an area.
 // - Labor = Job SqFt x Edge Type price/sqft x Slab Type multiplier (summed per-section
-//   to support mixed edge types within one area).
-// - Build-Up = same idea but for sections whose edge type is flagged isBuildUp.
+//   to support mixed edge types within one area). Sections previously flagged as
+//   "Build-Up" are now folded straight into Labor rather than shown as a separate
+//   line — the buildUp/buildUpSqft fields below are kept (always 0) for schema/API
+//   compatibility but are no longer used to split out a separate total.
 // - Sink/Cooktop/BumpOut/CuttingBoard = qty x flat price.
 // - Windowsill/PowerStation/OtherCharge/Removal = flat price (no qty).
 // - Slab Amount (the price the slab is sold for) is added straight into the Total.
@@ -97,13 +99,10 @@ export function computeAreaTotals(area: CalcAreaInput): CalcAreaResult {
   for (const section of area.sections) {
     const sqft = computeSectionSqft(section);
     const lineTotal = sqft * (Number(section.pricePerSqft) || 0) * multiplier;
-    if (section.isBuildUp) {
-      buildUpSqft += sqft;
-      buildUp += lineTotal;
-    } else {
-      jobSqft += sqft;
-      labor += lineTotal;
-    }
+    // Build-Up sections are no longer split out — they're priced the same
+    // as any other section and folded straight into Labor.
+    jobSqft += sqft;
+    labor += lineTotal;
   }
 
   jobSqft = round2(jobSqft);

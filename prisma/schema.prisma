@@ -48,6 +48,9 @@ model User {
   fabricationOrderHistoryChanged FabricationOrderHistory[] @relation("FabricationOrderHistoryChangedBy")
   fabricationPriceChangesLogged  FabricationPriceChangeLog[] @relation("FabricationPriceChangeLogChangedBy")
   fabricationImagesUploaded    FabricationOrderImage[] @relation("FabricationOrderImageUploadedBy")
+  vehiclesCreated              Vehicle[]              @relation("VehicleCreatedBy")
+  vehicleHistoryChanged        VehicleHistory[]       @relation("VehicleHistoryChangedBy")
+  vehicleInspectionsCreated    VehicleInspection[]    @relation("VehicleInspectionCreatedBy")
 }
 
 model Account {
@@ -2070,4 +2073,139 @@ model FabricationPriceChangeLog {
 
   @@index([entityType, entityId])
   @@index([createdAt])
+}
+
+// === Vehicles (fleet maintenance) ===
+
+model VehicleDriver {
+  id        String   @id @default(cuid())
+  name      String   @unique
+  active    Boolean  @default(true)
+  sortOrder Int      @default(0)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  vehiclesAsDefaultDriver Vehicle[]           @relation("VehicleDefaultDriver")
+  inspections             VehicleInspection[] @relation("VehicleInspectionDriver")
+
+  @@index([active])
+}
+
+model Vehicle {
+  id             String  @id @default(cuid())
+  internalNumber String? @unique
+  name           String
+  color          String?
+  plate          String?
+  hasPlate       Boolean @default(true) // false for equipment with no plate (forklifts, etc.)
+  sunpass        String?
+  hasSunpass     Boolean @default(true)
+  filter         String?
+  oil            String?
+  notes          String?
+
+  defaultDriverId String?
+  defaultDriver   VehicleDriver? @relation("VehicleDefaultDriver", fields: [defaultDriverId], references: [id])
+
+  oilChangeIntervalMiles Int @default(5000) // miles allowed before the next oil/filter change
+  lastOilChangeMileage   Int @default(0) // baseline; only moves when an oil change is completed
+
+  // Cached maintenance status, recomputed and persisted whenever a new
+  // inspection is logged, an oil change is completed, an inspection is
+  // deleted, or the interval/baseline is edited. Kept denormalized because
+  // "currentMileage >= nextChangeMileage" is a same-row field comparison
+  // that Prisma's query builder cannot express in a `where` filter, so the
+  // dashboard's "needs immediate change" list needs a plain indexed boolean.
+  currentMileage       Int       @default(0)
+  nextChangeMileage    Int       @default(5000)
+  milesRemaining       Int?
+  milesExceeded        Int?
+  needsImmediateChange Boolean   @default(false)
+  lastInspectionAt     DateTime?
+
+  isActive    Boolean  @default(true)
+  createdById String?
+  createdBy   User?    @relation("VehicleCreatedBy", fields: [createdById], references: [id])
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  inspections VehicleInspection[]
+  history     VehicleHistory[]
+
+  @@index([isActive])
+  @@index([name])
+  @@index([needsImmediateChange])
+  @@index([defaultDriverId])
+}
+
+model VehicleInspection {
+  id          String         @id @default(cuid())
+  vehicleId   String
+  vehicle     Vehicle        @relation(fields: [vehicleId], references: [id])
+  inspectedAt DateTime       @default(now())
+  driverId    String?
+  driver      VehicleDriver? @relation("VehicleInspectionDriver", fields: [driverId], references: [id])
+  mileage     Int
+
+  // Daily condition checks — distinct from the mileage-interval oil *change*
+  // calculation below. `oilLevelOk` means "oil looked fine today", unrelated
+  // to whether an oil *change* is due.
+  waterLevelOk Boolean?
+  oilLevelOk   Boolean?
+  tiresOk      Boolean?
+  sunpassOk    Boolean?
+
+  conditionNote String?
+  repairNote    String?
+
+  // Frozen snapshot of the maintenance calc at the time of this inspection —
+  // never recomputed later. Reproduces the source spreadsheet's behavior
+  // where consecutive rows repeat the same "next change" value until a real
+  // oil change moves the baseline forward.
+  oilChangeIntervalAtInspection    Int
+  lastOilChangeMileageAtInspection Int
+  nextChangeMileage                Int
+  filterAtInspection               String?
+  milesRemaining                   Int?
+  milesExceeded                    Int?
+  immediateChangeRequired          Boolean @default(false)
+
+  isOilChangeEvent Boolean  @default(false) // true = this row is a "Complete Immediate Change" action
+  isActive         Boolean  @default(true)
+  createdById      String?
+  createdBy        User?    @relation("VehicleInspectionCreatedBy", fields: [createdById], references: [id])
+  createdAt        DateTime @default(now())
+  updatedAt        DateTime @updatedAt
+
+  @@index([vehicleId, inspectedAt])
+  @@index([inspectedAt])
+  @@index([immediateChangeRequired])
+  @@index([isActive])
+  @@index([driverId])
+}
+
+model VehicleHistory {
+  id        String  @id @default(cuid())
+  vehicleId String
+  vehicle   Vehicle @relation(fields: [vehicleId], references: [id], onDelete: Cascade)
+
+  action    String // CREATED, UPDATED, ARCHIVED, RESTORED, OIL_CHANGE_COMPLETED, DELETED
+  fieldName String?
+  oldValue  String?
+  newValue  String?
+
+  changedById   String?
+  changedByUser User?    @relation("VehicleHistoryChangedBy", fields: [changedById], references: [id])
+  createdAt     DateTime @default(now())
+
+  @@index([vehicleId])
+  @@index([createdAt])
+}
+
+model VehicleProgramSettings {
+  id                             String   @id @default(cuid())
+  defaultOilChangeIntervalMiles  Int      @default(5000)
+  dueSoonThresholdMiles          Int      @default(500)
+  createdAt                      DateTime @default(now())
+  updatedAt                      DateTime @updatedAt
 }
