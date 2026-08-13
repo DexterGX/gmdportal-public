@@ -324,19 +324,29 @@ export default function FabricationOrderForm(props: Props) {
       setClientResults([]);
       return;
     }
+    // Without cancelling the previous request, a slower response for an
+    // earlier keystroke (e.g. "ros") could land after a newer one ("rosen")
+    // and overwrite good results with stale/empty ones — which is what made
+    // the dropdown intermittently show nothing while typing.
+    const controller = new AbortController();
     const timer = setTimeout(async () => {
       setClientSearching(true);
       try {
-        const res = await fetch(`/api/fabrication-orders/lookup?q=${encodeURIComponent(q)}`);
+        const res = await fetch(`/api/fabrication-orders/lookup?q=${encodeURIComponent(q)}`, {
+          signal: controller.signal,
+        });
         const json = await res.json();
         setClientResults(res.ok ? json.results || [] : []);
-      } catch {
-        setClientResults([]);
+      } catch (err: any) {
+        if (err?.name !== "AbortError") setClientResults([]);
       } finally {
-        setClientSearching(false);
+        if (!controller.signal.aborted) setClientSearching(false);
       }
     }, 300);
-    return () => clearTimeout(timer);
+    return () => {
+      clearTimeout(timer);
+      controller.abort();
+    };
   }, [clientName, clientDropdownOpen]);
 
   function selectClient(result: LookupResult) {
