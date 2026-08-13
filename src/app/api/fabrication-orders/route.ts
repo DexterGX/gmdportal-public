@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { getCurrentUserWithRole } from "@/lib/authHelpers";
 import { computeAreaTotals, type CalcAreaInput } from "@/lib/fabricationCalc";
-import { saveOrderAreaImages } from "@/lib/fabricationImages";
+import { saveOrderAreaImages, copyOrderAreaImages } from "@/lib/fabricationImages";
 import { syncFabricationOrderArtifact } from "@/lib/fabricationOrderArtifact";
 
 const prismaAny = prisma as any;
@@ -117,6 +117,9 @@ type SectionPayload = {
 type ImagePayload = {
   keepIds?: string[];
   newImages?: Array<{ dataUrl: string; caption?: string }>;
+  // "Save as New" carries over an existing area's already-uploaded images by
+  // reference (same Supabase fileUrl) rather than re-uploading them.
+  copyExisting?: Array<{ fileUrl: string; caption?: string | null }>;
 };
 
 type AreaPayload = {
@@ -439,6 +442,13 @@ export async function POST(request: NextRequest) {
         await saveOrderAreaImages(
           savedArea.id,
           areaPayload.images.newImages,
+          auth.user.id,
+        );
+      }
+      if (areaPayload?.images?.copyExisting?.length) {
+        await copyOrderAreaImages(
+          savedArea.id,
+          areaPayload.images.copyExisting,
           auth.user.id,
         );
       }

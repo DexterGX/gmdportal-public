@@ -130,7 +130,8 @@ export type ProgramId =
   | "paymentTerms"
   | "salesCommission"
   | "storeInventory"
-  | "fabricationOrders";
+  | "fabricationOrders"
+  | "vehicles";
 
 export interface ProgramConfig {
   id: ProgramId;
@@ -611,6 +612,37 @@ export const programs: ProgramConfig[] = [
         icon: History,
         name: "Price Change Log",
         path: "/fabrication-orders/price-log",
+        adminOnly: true,
+      },
+    ],
+    othersItems: [],
+  },
+  {
+    id: "vehicles",
+    name: "Vehicles",
+    basePath: "/vehicles",
+    description:
+      "Track fleet vehicle inspections and oil/filter change maintenance.",
+    allowedRoles: [
+      "admin",
+      "sales",
+      "office",
+      "finance",
+      "specialist",
+      "installer",
+    ],
+    navItems: [
+      { icon: Truck, name: "Dashboard", path: "/vehicles" },
+      {
+        icon: ClipboardList,
+        name: "New Inspection",
+        path: "/vehicles/new-inspection",
+      },
+      { icon: History, name: "Maintenance Log", path: "/vehicles/log" },
+      {
+        icon: Settings2,
+        name: "Settings",
+        path: "/vehicles/settings",
         adminOnly: true,
       },
     ],
