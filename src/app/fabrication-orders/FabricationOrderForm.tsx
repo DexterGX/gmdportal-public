@@ -2,7 +2,7 @@
 
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
-import { Plus, Trash2, AlertTriangle, Save, Table2, Printer, RotateCcw } from "lucide-react";
+import { Plus, Trash2, AlertTriangle, Save, Table2, Printer, RotateCcw, Pencil } from "lucide-react";
 import {
   computeAreaTotals,
   formatCurrency,
@@ -277,12 +277,19 @@ export default function FabricationOrderForm(props: Props) {
   const [loading, setLoading] = useState(Boolean(editOrderId));
   const [saving, setSaving] = useState(false);
   const [printChoiceOpen, setPrintChoiceOpen] = useState(false);
-  const [printSelectFull, setPrintSelectFull] = useState(true);
+  const [printSelectFull, setPrintSelectFull] = useState(false);
   const [printSelectNoSales, setPrintSelectNoSales] = useState(false);
   const [printMode, setPrintMode] = useState<"full" | "no-sales" | null>(null);
   const [printQueuePending, setPrintQueuePending] = useState<"full" | "no-sales" | null>(null);
   const [message, setMessage] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
+
+  // Opening a saved order defaults to a read-only "View" mode showing the
+  // prices exactly as they were when the order was saved (not recomputed
+  // from today's settings). Clicking Edit switches to the live, editable
+  // form — which recalculates from current prices, same as before.
+  const [viewMode, setViewMode] = useState(false);
+  const [savedOrder, setSavedOrder] = useState<any>(null);
 
   const clientBoxRef = useRef<HTMLDivElement>(null);
   const printQueueRef = useRef<Array<"full" | "no-sales">>([]);
@@ -317,19 +324,29 @@ export default function FabricationOrderForm(props: Props) {
       setClientResults([]);
       return;
     }
+    // Without cancelling the previous request, a slower response for an
+    // earlier keystroke (e.g. "ros") could land after a newer one ("rosen")
+    // and overwrite good results with stale/empty ones — which is what made
+    // the dropdown intermittently show nothing while typing.
+    const controller = new AbortController();
     const timer = setTimeout(async () => {
       setClientSearching(true);
       try {
-        const res = await fetch(`/api/fabrication-orders/lookup?q=${encodeURIComponent(q)}`);
+        const res = await fetch(`/api/fabrication-orders/lookup?q=${encodeURIComponent(q)}`, {
+          signal: controller.signal,
+        });
         const json = await res.json();
         setClientResults(res.ok ? json.results || [] : []);
-      } catch {
-        setClientResults([]);
+      } catch (err: any) {
+        if (err?.name !== "AbortError") setClientResults([]);
       } finally {
-        setClientSearching(false);
+        if (!controller.signal.aborted) setClientSearching(false);
       }
     }, 300);
-    return () => clearTimeout(timer);
+    return () => {
+      clearTimeout(timer);
+      controller.abort();
+    };
   }, [clientName, clientDropdownOpen]);
 
   function selectClient(result: LookupResult) {
@@ -475,6 +492,11 @@ export default function FabricationOrderForm(props: Props) {
             // Non-critical — Job/Deal falls back to a plain text field.
           }
         }
+        // Default to read-only View mode for a saved order — the numbers
+        // shown are the frozen ones from this response, not recomputed from
+        // current settings. Edit switches to the live, editable form.
+        setSavedOrder(json);
+        setViewMode(true);
       } catch (err: any) {
         setError(err?.message || "Failed to load order");
       } finally {
@@ -654,9 +676,51 @@ export default function FabricationOrderForm(props: Props) {
   }
 
   const areaResults = areas.map((a) => calcForArea(a));
-  const orderTotal = areaResults.reduce((sum, r) => sum + r.areaTotal, 0);
+
+  // In View mode, the numbers shown come straight from the saved record
+  // (frozen at save time) instead of the live recompute above — so opening
+  // an old order shows exactly what it looked like when it was saved, even
+  // if settings prices have changed since. Editing switches back to the
+  // live numbers.
+  const savedAreaById = useMemo(() => {
+    const map = new Map<string, any>();
+    (savedOrder?.areas || []).forEach((a: any) => {
+      if (a.id) map.set(a.id, a);
+    });
+    return map;
+  }, [savedOrder]);
+
+  function frozenResultFor(dbArea: any) {
+    return {
+      jobSqft: num(dbArea.jobSqft),
+      buildUpSqft: 0,
+      labor: num(dbArea.labor),
+      buildUp: num(dbArea.buildUp),
+      sinkCutoutTotal: num(dbArea.sinkCutoutTotal),
+      cooktopTotal: num(dbArea.cooktopTotal),
+      bumpOutTotal: num(dbArea.bumpOutTotal),
+      cuttingBoardTotal: num(dbArea.cuttingBoardTotal),
+      windowsillTotal: num(dbArea.windowsillTotal),
+      powerStationTotal: num(dbArea.powerStationTotal),
+      otherChargeTotal: num(dbArea.otherChargeTotal),
+      removalTotal: num(dbArea.removalTotal),
+      slabPieceSqft: 0,
+      slabRecommendedQty: Number(dbArea.slabRecommendedQty) || 0,
+      slabQtyFlagged: Boolean(dbArea.slabQtyFlagged),
+      areaTotal: num(dbArea.areaTotal),
+    };
+  }
+
+  const orderTotal =
+    viewMode && savedOrder
+      ? num(savedOrder.total)
+      : areaResults.reduce((sum, r) => sum + r.areaTotal, 0);
 
   function handlePrint() {
+    // Neither checkbox should come pre-checked — force a deliberate choice
+    // every time the dialog opens, rather than remembering the last pick.
+    setPrintSelectFull(false);
+    setPrintSelectNoSales(false);
     setPrintChoiceOpen(true);
   }
 
@@ -735,6 +799,9 @@ export default function FabricationOrderForm(props: Props) {
     setError(null);
     try {
       if (!clientName.trim()) throw new Error("Client name is required.");
+      if (clientJobs.length > 0 && !selectedJobId) {
+        throw new Error("Select a Job/Deal for this client before saving.");
+      }
       if (!salesRep.trim()) throw new Error("Sales rep is required.");
       if (areas.length === 0) throw new Error("Add at least one area.");
 
@@ -968,10 +1035,16 @@ export default function FabricationOrderForm(props: Props) {
       <div className="flex items-start justify-between gap-4 print:hidden">
         <div>
           <h1 className="text-2xl font-bold text-gray-900 dark:text-gray-100">
-            {orderId ? "Edit Fabrication Order" : "New Fabrication Order"}
+            {viewMode
+              ? `Fabrication Order${orderNumber ? ` ${orderNumber}` : ""}`
+              : orderId
+                ? "Edit Fabrication Order"
+                : "New Fabrication Order"}
           </h1>
           <p className="mt-1 text-sm text-gray-600 dark:text-gray-400">
-            Upload each area&apos;s layout, pick finishes, and the price calculates automatically.
+            {viewMode
+              ? "Viewing the prices exactly as they were when this order was saved. Click Edit to make changes."
+              : "Upload each area's layout, pick finishes, and the price calculates automatically."}
           </p>
         </div>
         <div className="flex items-center gap-2">
@@ -982,32 +1055,44 @@ export default function FabricationOrderForm(props: Props) {
           >
             <Printer className="h-4 w-4" /> Print
           </button>
-          <button
-            type="button"
-            onClick={handleReset}
-            className="inline-flex items-center gap-2 rounded-lg border border-gray-300 px-3 py-2 text-sm font-medium text-gray-700 hover:bg-gray-50 dark:border-gray-600 dark:text-gray-200 dark:hover:bg-gray-700"
-          >
-            <RotateCcw className="h-4 w-4" /> Reset
-          </button>
-          <button
-            type="button"
-            onClick={handleSave}
-            disabled={saving}
-            title={
-              orderId
-                ? "Saves your changes as a brand-new fabrication order — the original stays exactly as it was."
-                : undefined
-            }
-            className="inline-flex items-center gap-2 rounded-lg bg-blue-600 px-4 py-2 text-sm font-medium text-white hover:bg-blue-700 disabled:opacity-60"
-          >
-            {saving ? (
-              "Saving..."
-            ) : (
-              <>
-                <Save className="h-4 w-4" /> {orderId ? "Save as New" : "Save"}
-              </>
-            )}
-          </button>
+          {viewMode ? (
+            <button
+              type="button"
+              onClick={() => setViewMode(false)}
+              className="inline-flex items-center gap-2 rounded-lg bg-blue-600 px-4 py-2 text-sm font-medium text-white hover:bg-blue-700"
+            >
+              <Pencil className="h-4 w-4" /> Edit
+            </button>
+          ) : (
+            <>
+              <button
+                type="button"
+                onClick={handleReset}
+                className="inline-flex items-center gap-2 rounded-lg border border-gray-300 px-3 py-2 text-sm font-medium text-gray-700 hover:bg-gray-50 dark:border-gray-600 dark:text-gray-200 dark:hover:bg-gray-700"
+              >
+                <RotateCcw className="h-4 w-4" /> Reset
+              </button>
+              <button
+                type="button"
+                onClick={handleSave}
+                disabled={saving}
+                title={
+                  orderId
+                    ? "Saves your changes as a brand-new fabrication order — the original stays exactly as it was."
+                    : undefined
+                }
+                className="inline-flex items-center gap-2 rounded-lg bg-blue-600 px-4 py-2 text-sm font-medium text-white hover:bg-blue-700 disabled:opacity-60"
+              >
+                {saving ? (
+                  "Saving..."
+                ) : (
+                  <>
+                    <Save className="h-4 w-4" /> {orderId ? "Save as New" : "Save"}
+                  </>
+                )}
+              </button>
+            </>
+          )}
         </div>
       </div>
 
@@ -1113,6 +1198,10 @@ export default function FabricationOrderForm(props: Props) {
         </div>
       )}
 
+      {/* View mode makes every field in here inert with a single wrapper —
+          nothing in the Client & Job card or the areas below can be typed
+          into, toggled, added, or removed until Edit is clicked. */}
+      <fieldset disabled={viewMode} className="space-y-6 border-0 m-0 p-0 print:space-y-1">
       {/* ── TOP: compact client / job info ── */}
       <div className={`${card} border-t-4 border-t-blue-500 print:mb-1`}>
         <div className="mb-4 flex items-baseline justify-between print:mb-1">
@@ -1182,7 +1271,9 @@ export default function FabricationOrderForm(props: Props) {
             )}
           </div>
           <div>
-            <label className={fieldLabel}>Job / Deal</label>
+            <label className={fieldLabel}>
+              Job / Deal{clientJobs.length > 0 && <span className="text-red-500"> *</span>}
+            </label>
             {clientJobs.length > 0 ? (
               <select
                 value={selectedJobId}
@@ -1252,7 +1343,8 @@ export default function FabricationOrderForm(props: Props) {
         </div>
       ) : (
         areas.map((area, areaIdx) => {
-          const result = areaResults[areaIdx];
+          const savedArea = viewMode && area.id ? savedAreaById.get(area.id) : null;
+          const result = savedArea ? frozenResultFor(savedArea) : areaResults[areaIdx];
           const hasImages = area.existingImages.length > 0 || area.pendingImages.length > 0;
           return (
             <div
@@ -1338,7 +1430,17 @@ export default function FabricationOrderForm(props: Props) {
                     <div
                       className={`${compactInput} fab-readout bg-gray-100 text-center text-gray-600 dark:bg-gray-800 dark:text-gray-300`}
                     >
-                      {result.slabPieceSqft > 0 ? result.slabPieceSqft.toFixed(2) : "-"}
+                      {(() => {
+                        // Computed straight from the loaded dimension fields
+                        // (populated the same way in View and Edit mode)
+                        // rather than `result`, so this stays accurate even
+                        // in View mode where `result` uses frozen totals
+                        // that don't carry the raw slab dimensions.
+                        const l = parseFraction(area.slabLengthIn);
+                        const w = parseFraction(area.slabWidthIn);
+                        const sqft = l > 0 && w > 0 ? (l * w) / 144 : 0;
+                        return sqft > 0 ? sqft.toFixed(2) : "-";
+                      })()}
                     </div>
                   </div>
 
@@ -1855,6 +1957,7 @@ export default function FabricationOrderForm(props: Props) {
       >
         <Plus className="h-4 w-4" /> Add Area
       </button>
+      </fieldset>
     </div>
   );
 }

@@ -97,7 +97,11 @@ export async function GET(request: NextRequest) {
           },
         },
       },
-      take: 8,
+      // Pull a wider slice than we'll actually show, then sort in app code so
+      // Pipedrive-linked customers can be ranked to the top without relying
+      // on DB-level NULLS LAST ordering (which defaults the wrong way for a
+      // DESC sort on a nullable column) — only then slice to the top 8.
+      take: 25,
       orderBy: { displayName: "asc" },
     });
 
@@ -144,8 +148,18 @@ export async function GET(request: NextRequest) {
       jobsByOrgId.set(normalizedOrgId, existing);
     }
 
+    // Pipedrive-linked customers (have a pipedriveId) first, then
+    // alphabetical within each group.
+    const sortedCustomers = [...customers].sort((a, b) => {
+      const aHasPd = a.pipedriveId ? 1 : 0;
+      const bHasPd = b.pipedriveId ? 1 : 0;
+      if (aHasPd !== bHasPd) return bHasPd - aHasPd;
+      return a.displayName.localeCompare(b.displayName);
+    });
+    const topCustomers = sortedCustomers.slice(0, 8);
+
     return NextResponse.json({
-      results: customers.map((customer) => {
+      results: topCustomers.map((customer) => {
         const orgId = normalizeOrgId(customer.referredByOrgPipedriveId);
         const orgJobs = orgId ? (jobsByOrgId.get(orgId) ?? []) : [];
         const customerName = customer.displayName.toLowerCase();

@@ -73,9 +73,16 @@ export default function AreaImageUploader({
               key={img.id}
               className="group relative overflow-hidden rounded-md border border-gray-200 bg-gray-50 dark:border-gray-700 dark:bg-gray-900"
             >
-              <button
-                type="button"
+              {/* A plain div (not a <button>) so the image can still be
+                  zoomed while a surrounding <fieldset disabled> (View mode)
+                  has disabled the actual edit controls like Remove. */}
+              <div
+                role="button"
+                tabIndex={0}
                 onClick={() => setExpandedUrl(img.fileUrl)}
+                onKeyDown={(e) => {
+                  if (e.key === "Enter" || e.key === " ") setExpandedUrl(img.fileUrl);
+                }}
                 className="block w-full cursor-zoom-in"
                 title="Click to expand"
               >
@@ -88,7 +95,7 @@ export default function AreaImageUploader({
                 <span className="pointer-events-none absolute inset-0 hidden items-center justify-center bg-black/0 transition group-hover:flex group-hover:bg-black/10 print:hidden">
                   <ZoomIn className="h-6 w-6 text-white drop-shadow" />
                 </span>
-              </button>
+              </div>
               <button
                 type="button"
                 onClick={() => onRemoveExisting(img.id)}
@@ -104,9 +111,13 @@ export default function AreaImageUploader({
               key={idx}
               className="group relative overflow-hidden rounded-md border border-gray-200 bg-gray-50 dark:border-gray-700 dark:bg-gray-900"
             >
-              <button
-                type="button"
+              <div
+                role="button"
+                tabIndex={0}
                 onClick={() => setExpandedUrl(img.dataUrl)}
+                onKeyDown={(e) => {
+                  if (e.key === "Enter" || e.key === " ") setExpandedUrl(img.dataUrl);
+                }}
                 className="block w-full cursor-zoom-in"
                 title="Click to expand"
               >
@@ -119,7 +130,7 @@ export default function AreaImageUploader({
                 <span className="pointer-events-none absolute inset-0 hidden items-center justify-center bg-black/0 transition group-hover:flex group-hover:bg-black/10 print:hidden">
                   <ZoomIn className="h-6 w-6 text-white drop-shadow" />
                 </span>
-              </button>
+              </div>
               <button
                 type="button"
                 onClick={() => onRemovePending(idx)}
