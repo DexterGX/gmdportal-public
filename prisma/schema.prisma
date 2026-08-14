@@ -2106,6 +2106,7 @@ model Vehicle {
   id             String  @id @default(cuid())
   internalNumber String? @unique
   name           String
+  year           Int?
   color          String?
   plate          String?
   hasPlate       Boolean @default(true) // false for equipment with no plate (forklifts, etc.)

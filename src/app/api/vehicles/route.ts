@@ -64,7 +64,6 @@ export async function GET(request: NextRequest) {
 
   const vehicles = await prismaAny.vehicle.findMany({
     where,
-    orderBy: { name: "asc" },
     include: {
       defaultDriver: { select: { id: true, name: true } },
       inspections: {
@@ -75,6 +74,19 @@ export async function GET(request: NextRequest) {
       },
     },
     take: 500,
+  });
+
+  // internalNumber is stored as text (it's occasionally non-numeric), so a
+  // plain DB `orderBy` would sort "10" before "2" — sort numerically here
+  // instead, with vehicles that have no number pushed to the end.
+  vehicles.sort((a: any, b: any) => {
+    const numA = a.internalNumber != null ? Number(a.internalNumber) : NaN;
+    const numB = b.internalNumber != null ? Number(b.internalNumber) : NaN;
+    const aValid = Number.isFinite(numA);
+    const bValid = Number.isFinite(numB);
+    if (aValid && bValid && numA !== numB) return numA - numB;
+    if (aValid !== bValid) return aValid ? -1 : 1;
+    return String(a.name).localeCompare(String(b.name));
   });
 
   return NextResponse.json(vehicles);
@@ -119,10 +131,15 @@ export async function POST(request: NextRequest) {
     const hasPlate = body.hasPlate !== false;
     const hasSunpass = body.hasSunpass !== false;
 
+    const year = Number.isFinite(Number(body.year)) && body.year !== "" && body.year != null
+      ? Number(body.year)
+      : null;
+
     const vehicle = await prismaAny.vehicle.create({
       data: {
         internalNumber: body.internalNumber?.trim() || null,
         name,
+        year,
         color: body.color?.trim() || null,
         plate: hasPlate ? body.plate?.trim() || null : null,
         hasPlate,

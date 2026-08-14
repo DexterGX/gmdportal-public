@@ -17,10 +17,9 @@ export default async function NewInspectionPage({
 
   const { vehicleId } = await searchParams;
 
-  const [vehicles, drivers] = await Promise.all([
+  const [vehiclesRaw, drivers] = await Promise.all([
     prismaAny.vehicle.findMany({
       where: { isActive: true },
-      orderBy: { name: "asc" },
       select: {
         id: true,
         internalNumber: true,
@@ -37,6 +36,19 @@ export default async function NewInspectionPage({
       select: { id: true, name: true },
     }),
   ]);
+
+  // internalNumber is stored as text (it's occasionally non-numeric), so a
+  // plain DB `orderBy` would sort "10" before "2" — sort numerically here
+  // instead, with vehicles that have no number pushed to the end.
+  const vehicles = [...vehiclesRaw].sort((a: any, b: any) => {
+    const numA = a.internalNumber != null ? Number(a.internalNumber) : NaN;
+    const numB = b.internalNumber != null ? Number(b.internalNumber) : NaN;
+    const aValid = Number.isFinite(numA);
+    const bValid = Number.isFinite(numB);
+    if (aValid && bValid && numA !== numB) return numA - numB;
+    if (aValid !== bValid) return aValid ? -1 : 1;
+    return a.name.localeCompare(b.name);
+  });
 
   return (
     <NewInspectionClient
