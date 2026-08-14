@@ -1868,6 +1868,17 @@ model FabricationRemovalOption {
   areas     FabricationOrderArea[]
 }
 
+// Singleton row (there's only ever one) controlling which of the
+// FABRICATION_SETTINGS_CATEGORIES show up on the printable Price List page.
+// Categories are referenced by their `category` key from fabricationSettings.ts
+// (e.g. "edgeTypes", "slabTypes") rather than a relation, since this is just
+// a list of which category groups to hide, not a link to actual rows.
+model FabricationPriceListSettings {
+  id               String   @id @default(cuid())
+  hiddenCategories String[] @default([])
+  updatedAt        DateTime @updatedAt
+}
+
 model FabricationOrder {
   id            String   @id @default(cuid())
   orderNumber   String?  @unique

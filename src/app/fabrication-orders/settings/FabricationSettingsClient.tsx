@@ -1,6 +1,7 @@
 "use client";
 
 import { FormEvent, useMemo, useState } from "react";
+import { Tag } from "lucide-react";
 import {
   FABRICATION_SETTINGS_CATEGORIES,
   type FabricationSettingsCategory,
@@ -15,8 +16,14 @@ type Item = {
   [key: string]: unknown;
 };
 
+// "priceList" is a pseudo-tab (not one of the real pricing categories) for
+// the panel that controls which categories show up on the printable Price
+// List page.
+type TabKey = FabricationSettingsCategory | "priceList";
+
 interface Props {
   initialItems: Record<FabricationSettingsCategory, Item[]>;
+  initialHiddenCategories: FabricationSettingsCategory[];
 }
 
 function formatValue(value: unknown, prefix?: string, suffix?: string) {
@@ -29,10 +36,19 @@ const compactInput =
   "rounded-md border border-gray-300 bg-white px-2 py-1.5 text-xs dark:border-gray-600 dark:bg-gray-900";
 const compactLabel = "mb-1 block text-[11px] font-medium text-gray-500 dark:text-gray-400";
 
-export default function FabricationSettingsClient({ initialItems }: Props) {
-  const [activeTab, setActiveTab] = useState<FabricationSettingsCategory>("edgeTypes");
+export default function FabricationSettingsClient({
+  initialItems,
+  initialHiddenCategories,
+}: Props) {
+  const [activeTab, setActiveTab] = useState<TabKey>("edgeTypes");
   const [items, setItems] =
     useState<Record<FabricationSettingsCategory, Item[]>>(initialItems);
+
+  const [hiddenCategories, setHiddenCategories] = useState<Set<FabricationSettingsCategory>>(
+    () => new Set(initialHiddenCategories),
+  );
+  const [priceListSaving, setPriceListSaving] = useState(false);
+  const [priceListMessage, setPriceListMessage] = useState<string | null>(null);
 
   const [editingId, setEditingId] = useState<string | null>(null);
   const [name, setName] = useState("");
@@ -46,7 +62,7 @@ export default function FabricationSettingsClient({ initialItems }: Props) {
   const [error, setError] = useState<string | null>(null);
 
   const config = useMemo(
-    () => FABRICATION_SETTINGS_CATEGORIES.find((c) => c.category === activeTab)!,
+    () => FABRICATION_SETTINGS_CATEGORIES.find((c) => c.category === activeTab),
     [activeTab],
   );
 
@@ -60,16 +76,53 @@ export default function FabricationSettingsClient({ initialItems }: Props) {
     setError(null);
   }
 
-  function switchTab(tab: FabricationSettingsCategory) {
+  function switchTab(tab: TabKey) {
     setActiveTab(tab);
     resetForm();
     setMessage(null);
+    setPriceListMessage(null);
+  }
+
+  function toggleCategoryVisibility(category: FabricationSettingsCategory) {
+    setHiddenCategories((prev) => {
+      const next = new Set(prev);
+      if (next.has(category)) {
+        next.delete(category);
+      } else {
+        next.add(category);
+      }
+      return next;
+    });
+  }
+
+  async function savePriceListVisibility() {
+    setPriceListSaving(true);
+    setPriceListMessage(null);
+    try {
+      const response = await fetch(
+        "/api/fabrication-orders/settings/price-list-visibility",
+        {
+          method: "PUT",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ hiddenCategories: Array.from(hiddenCategories) }),
+        },
+      );
+      const json = await response.json();
+      if (!response.ok) {
+        throw new Error(json?.error || "Failed to save.");
+      }
+      setPriceListMessage("Saved. The Price List page now reflects these choices.");
+    } catch (err: any) {
+      setPriceListMessage(err?.message || "Failed to save.");
+    } finally {
+      setPriceListSaving(false);
+    }
   }
 
   function startEdit(item: Item) {
     setEditingId(item.id);
     setName(item.name);
-    setValue(config.dbField ? String(item[config.dbField] ?? 0) : "0");
+    setValue(config?.dbField ? String(item[config.dbField] ?? 0) : "0");
     setIsBuildUp(Boolean(item.isBuildUp));
     setSortOrder(String(item.sortOrder ?? 0));
     setActive(Boolean(item.active));
@@ -79,6 +132,7 @@ export default function FabricationSettingsClient({ initialItems }: Props) {
 
   async function saveItem(event: FormEvent) {
     event.preventDefault();
+    if (!config) return;
     setSaving(true);
     setMessage(null);
     setError(null);
@@ -129,6 +183,7 @@ export default function FabricationSettingsClient({ initialItems }: Props) {
     item: Item,
     action: "activate" | "deactivate" | "delete",
   ) {
+    if (!config) return;
     if (
       action === "delete" &&
       !confirm(
@@ -200,7 +255,7 @@ export default function FabricationSettingsClient({ initialItems }: Props) {
       )}
 
       <div className="rounded-lg border border-gray-200 bg-white p-1.5 dark:border-gray-700 dark:bg-gray-800">
-        <div className="flex flex-wrap gap-1">
+        <div className="flex flex-wrap items-center gap-1">
           {FABRICATION_SETTINGS_CATEGORIES.map((c) => (
             <button
               key={c.category}
@@ -215,10 +270,75 @@ export default function FabricationSettingsClient({ initialItems }: Props) {
               {c.label}
             </button>
           ))}
+          <div className="mx-1 h-5 w-px bg-gray-200 dark:bg-gray-700" />
+          <button
+            type="button"
+            onClick={() => switchTab("priceList")}
+            className={`inline-flex items-center gap-1 rounded-md px-2.5 py-1 text-xs ${
+              activeTab === "priceList"
+                ? "bg-blue-600 text-white"
+                : "text-gray-700 hover:bg-gray-100 dark:text-gray-200 dark:hover:bg-gray-700"
+            }`}
+          >
+            <Tag className="h-3 w-3" /> Price List
+          </button>
         </div>
       </div>
 
+      {activeTab === "priceList" ? (
+        <div className="space-y-3 rounded-lg border border-gray-200 bg-white p-3 dark:border-gray-700 dark:bg-gray-800">
+          <div>
+            <h2 className="text-sm font-semibold text-gray-900 dark:text-gray-100">
+              Price List Visibility
+            </h2>
+            <p className="text-xs text-gray-500 dark:text-gray-400">
+              Choose which of these categories show up on the printable Price List page.
+              Unchecked categories stay hidden from that page, but nothing here changes what
+              they cost or how orders are priced.
+            </p>
+          </div>
+
+          {priceListMessage && (
+            <div
+              className={`rounded-md border p-2.5 text-xs ${
+                priceListMessage.startsWith("Saved")
+                  ? "border-green-200 bg-green-50 text-green-700"
+                  : "border-red-200 bg-red-50 text-red-700"
+              }`}
+            >
+              {priceListMessage}
+            </div>
+          )}
+
+          <div className="grid grid-cols-1 gap-2 sm:grid-cols-2 md:grid-cols-3">
+            {FABRICATION_SETTINGS_CATEGORIES.map((c) => (
+              <label
+                key={c.category}
+                className="flex items-center gap-2 rounded-md border border-gray-200 px-3 py-2 text-xs dark:border-gray-700"
+              >
+                <input
+                  type="checkbox"
+                  checked={!hiddenCategories.has(c.category)}
+                  onChange={() => toggleCategoryVisibility(c.category)}
+                />
+                {c.label}
+              </label>
+            ))}
+          </div>
+
+          <button
+            type="button"
+            onClick={savePriceListVisibility}
+            disabled={priceListSaving}
+            className="rounded-md bg-blue-600 px-3 py-1.5 text-xs font-medium text-white hover:bg-blue-700 disabled:opacity-50"
+          >
+            {priceListSaving ? "Saving..." : "Save"}
+          </button>
+        </div>
+      ) : (
       <div className="space-y-3 rounded-lg border border-gray-200 bg-white p-3 dark:border-gray-700 dark:bg-gray-800">
+        {config && (
+        <>
         <div>
           <h2 className="text-sm font-semibold text-gray-900 dark:text-gray-100">
             {config.label}
@@ -394,7 +514,10 @@ export default function FabricationSettingsClient({ initialItems }: Props) {
             </tbody>
           </table>
         </div>
+        </>
+        )}
       </div>
+      )}
     </div>
   );
 }

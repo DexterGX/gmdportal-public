@@ -24,6 +24,7 @@ import {
   ClipboardList,
   Ruler,
   History,
+  Tag,
 } from "lucide-react";
 import { UserCheck } from "lucide-react";
 import type { Role } from "@prisma/client"; // Prisma enum
@@ -601,6 +602,11 @@ export const programs: ProgramConfig[] = [
         icon: ListIcon,
         name: "Saved Fab. Orders",
         path: "/fabrication-orders/saved",
+      },
+      {
+        icon: Tag,
+        name: "Price List",
+        path: "/fabrication-orders/price-list",
       },
       {
         icon: Settings2,

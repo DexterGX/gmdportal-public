@@ -2,6 +2,7 @@ import { redirect } from "next/navigation";
 import { getCurrentUserWithRole } from "@/lib/authHelpers";
 import { prisma } from "@/lib/prisma";
 import { FABRICATION_SETTINGS_CATEGORIES } from "@/lib/fabricationSettings";
+import { getHiddenPriceListCategories } from "@/lib/fabricationPriceListVisibility";
 import FabricationSettingsClient from "./FabricationSettingsClient";
 
 const prismaAny = prisma as any;
@@ -22,13 +23,16 @@ export default async function FabricationSettingsPage() {
     redirect("/fabrication-orders");
   }
 
-  const lists = await Promise.all(
-    FABRICATION_SETTINGS_CATEGORIES.map((config) =>
-      prismaAny[config.modelKey].findMany({
-        orderBy: [{ sortOrder: "asc" }, { name: "asc" }],
-      }),
+  const [lists, hiddenCategories] = await Promise.all([
+    Promise.all(
+      FABRICATION_SETTINGS_CATEGORIES.map((config) =>
+        prismaAny[config.modelKey].findMany({
+          orderBy: [{ sortOrder: "asc" }, { name: "asc" }],
+        }),
+      ),
     ),
-  );
+    getHiddenPriceListCategories(),
+  ]);
 
   const initialItems: Record<string, any[]> = {};
   FABRICATION_SETTINGS_CATEGORIES.forEach((config, index) => {
@@ -39,5 +43,10 @@ export default async function FabricationSettingsPage() {
     );
   });
 
-  return <FabricationSettingsClient initialItems={initialItems as any} />;
+  return (
+    <FabricationSettingsClient
+      initialItems={initialItems as any}
+      initialHiddenCategories={hiddenCategories as any}
+    />
+  );
 }
