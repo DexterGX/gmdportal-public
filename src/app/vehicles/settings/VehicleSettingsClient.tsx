@@ -21,6 +21,7 @@ type Vehicle = {
   id: string;
   internalNumber: string | null;
   name: string;
+  year: number | null;
   color: string | null;
   plate: string | null;
   hasPlate: boolean;
@@ -56,6 +57,7 @@ type HistoryEntry = {
 const EMPTY_FORM = {
   internalNumber: "",
   name: "",
+  year: "",
   color: "",
   defaultDriverId: "",
   oilChangeIntervalMiles: "5000",
@@ -90,6 +92,7 @@ function VehicleFormModal({
       ? {
           internalNumber: editing.internalNumber || "",
           name: editing.name,
+          year: editing.year != null ? String(editing.year) : "",
           color: editing.color || "",
           defaultDriverId: editing.defaultDriverId || "",
           oilChangeIntervalMiles: String(editing.oilChangeIntervalMiles),
@@ -123,6 +126,7 @@ function VehicleFormModal({
       const body = {
         internalNumber: form.internalNumber || null,
         name: form.name,
+        year: form.year ? Number(form.year) : null,
         color: form.color || null,
         defaultDriverId: form.defaultDriverId || null,
         oilChangeIntervalMiles: Number(form.oilChangeIntervalMiles) || 5000,
@@ -194,6 +198,17 @@ function VehicleFormModal({
             <input
               value={form.name}
               onChange={(e) => set("name", e.target.value)}
+              className="h-10 w-full rounded-lg border border-gray-300 bg-white px-3 text-sm dark:border-gray-600 dark:bg-gray-900"
+            />
+          </div>
+          <div>
+            <label className="mb-1 block text-xs font-medium text-gray-600 dark:text-gray-400">Year</label>
+            <input
+              type="number"
+              inputMode="numeric"
+              value={form.year}
+              onChange={(e) => set("year", e.target.value)}
+              placeholder="e.g. 2020"
               className="h-10 w-full rounded-lg border border-gray-300 bg-white px-3 text-sm dark:border-gray-600 dark:bg-gray-900"
             />
           </div>
@@ -757,6 +772,7 @@ export default function VehicleSettingsClient() {
           <thead>
             <tr className="border-b border-gray-200 text-xs uppercase text-gray-500 dark:border-gray-700 dark:text-gray-400">
               <th className="border-r border-gray-200 px-4 py-2 dark:border-gray-700">Vehicle</th>
+              <th className="border-r border-gray-200 px-4 py-2 text-center dark:border-gray-700">Year</th>
               <th className="border-r border-gray-200 px-4 py-2 dark:border-gray-700">Driver</th>
               <th className="border-r border-gray-200 px-4 py-2 dark:border-gray-700">Plate</th>
               <th className="border-r border-gray-200 px-4 py-2 dark:border-gray-700">Sunpass</th>
@@ -769,13 +785,13 @@ export default function VehicleSettingsClient() {
           <tbody>
             {loading ? (
               <tr>
-                <td colSpan={8} className="px-4 py-8 text-center text-sm text-gray-500 dark:text-gray-400">
+                <td colSpan={9} className="px-4 py-8 text-center text-sm text-gray-500 dark:text-gray-400">
                   Loading vehicles...
                 </td>
               </tr>
             ) : filtered.length === 0 ? (
               <tr>
-                <td colSpan={8} className="px-4 py-8 text-center text-sm text-gray-500 dark:text-gray-400">
+                <td colSpan={9} className="px-4 py-8 text-center text-sm text-gray-500 dark:text-gray-400">
                   No vehicles found.
                 </td>
               </tr>
@@ -790,6 +806,9 @@ export default function VehicleSettingsClient() {
                         Archived
                       </span>
                     )}
+                  </td>
+                  <td className="border-r border-gray-100 px-4 py-2 text-center dark:border-gray-700/60">
+                    {v.year || "-"}
                   </td>
                   <td className="border-r border-gray-100 px-4 py-2 dark:border-gray-700/60">
                     {v.defaultDriver?.name || "-"}

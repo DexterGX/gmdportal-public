@@ -147,7 +147,9 @@ export default function NewInspectionClient({
       const json = await res.json();
       if (!res.ok) throw new Error(json?.error || "Failed to save inspection");
       setResult({
-        vehicleName: selectedVehicle?.name || "Vehicle",
+        vehicleName: selectedVehicle
+          ? `${selectedVehicle.internalNumber ? `#${selectedVehicle.internalNumber} ` : ""}${selectedVehicle.name}`
+          : "Vehicle",
         status: json.status,
         filter: selectedVehicle?.filter || null,
       });
@@ -248,6 +250,9 @@ export default function NewInspectionClient({
             className="flex w-full items-center justify-between rounded-lg border border-gray-300 px-3 py-3 text-left dark:border-gray-600"
           >
             <span>
+              {selectedVehicle.internalNumber && (
+                <span className="mr-1 text-gray-400">#{selectedVehicle.internalNumber}</span>
+              )}
               <span className="font-semibold">{selectedVehicle.name}</span>
               {selectedVehicle.plate && (
                 <span className="ml-2 text-sm text-gray-500 dark:text-gray-400">

@@ -127,10 +127,14 @@ export async function PUT(
 
     const hasPlate = body.hasPlate !== false;
     const hasSunpass = body.hasSunpass !== false;
+    const year = Number.isFinite(Number(body.year)) && body.year !== "" && body.year != null
+      ? Number(body.year)
+      : null;
 
     const data = {
       internalNumber: body.internalNumber?.trim() || null,
       name,
+      year,
       color: body.color?.trim() || null,
       plate: hasPlate ? body.plate?.trim() || null : null,
       hasPlate,
@@ -150,6 +154,7 @@ export async function PUT(
 
     const historyEntries = fieldDiffEntries(id, auth.user.id, [
       { name: "name", oldValue: existing.name, newValue: name },
+      { name: "year", oldValue: existing.year, newValue: year },
       { name: "color", oldValue: existing.color, newValue: data.color },
       { name: "plate", oldValue: existing.plate, newValue: data.plate },
       { name: "sunpass", oldValue: existing.sunpass, newValue: data.sunpass },

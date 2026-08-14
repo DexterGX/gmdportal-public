@@ -288,6 +288,7 @@ export default function SavedFabricationOrdersClient({ isAdmin }: { isAdmin: boo
               <th className="w-64 border-r border-gray-200 px-4 py-2 text-center dark:border-gray-700">Client</th>
               <th className="border-r border-gray-200 px-4 py-2 text-center dark:border-gray-700">Job/Deal</th>
               <th className="border-r border-gray-200 px-4 py-2 text-center dark:border-gray-700">Areas</th>
+              <th className="border-r border-gray-200 px-4 py-2 text-center dark:border-gray-700">Sales Rep</th>
               <th className="border-r border-gray-200 px-4 py-2 text-center dark:border-gray-700">Date</th>
               <th className="border-r border-gray-200 px-4 py-2 text-center dark:border-gray-700">Total</th>
               <th className="px-4 py-2 text-center">Actions</th>
@@ -296,13 +297,13 @@ export default function SavedFabricationOrdersClient({ isAdmin }: { isAdmin: boo
           <tbody>
             {loading ? (
               <tr>
-                <td colSpan={7} className="px-4 py-8 text-center text-sm text-gray-500 dark:text-gray-400">
+                <td colSpan={8} className="px-4 py-8 text-center text-sm text-gray-500 dark:text-gray-400">
                   Loading fabrication orders...
                 </td>
               </tr>
             ) : filtered.length === 0 ? (
               <tr>
-                <td colSpan={7} className="px-4 py-8 text-center text-sm text-gray-500 dark:text-gray-400">
+                <td colSpan={8} className="px-4 py-8 text-center text-sm text-gray-500 dark:text-gray-400">
                   No fabrication orders found for these filters.
                 </td>
               </tr>
@@ -330,6 +331,9 @@ export default function SavedFabricationOrdersClient({ isAdmin }: { isAdmin: boo
                   </td>
                   <td className="border-r border-gray-100 px-4 py-2 text-center dark:border-gray-700/60">
                     {order.areas.map((a) => a.name).join(", ")}
+                  </td>
+                  <td className="border-r border-gray-100 px-4 py-2 text-center dark:border-gray-700/60">
+                    {order.salesRep || "-"}
                   </td>
                   <td className="border-r border-gray-100 px-4 py-2 text-center dark:border-gray-700/60">
                     {new Date(order.date || order.createdAt).toLocaleDateString()}

@@ -218,12 +218,19 @@ export default function VehiclesDashboardClient({
 
   function openCompleteFor(vehicle: Vehicle) {
     setCompleteVehicle(vehicle);
-    setCompleteMileage(String(vehicle.currentMileage || ""));
+    // Start blank rather than pre-filled with the last recorded mileage —
+    // pre-filling invited people to just hit Confirm without actually
+    // entering the real odometer reading at the time of the change.
+    setCompleteMileage("");
     setCompleteOpen(true);
   }
 
   async function submitCompleteChange() {
     if (!completeVehicle) return;
+    if (completeMileage.trim() === "") {
+      setError("Enter the mileage at the time of the oil/filter change.");
+      return;
+    }
     const mileage = Number(completeMileage);
     if (!Number.isFinite(mileage) || mileage < 0) {
       setError("Enter a valid mileage.");
@@ -605,6 +612,12 @@ export default function VehiclesDashboardClient({
                       {v.milesRemaining?.toLocaleString()} mi left
                     </span>
                   )}
+                </div>
+                <div className="mt-1 text-xs text-gray-500 dark:text-gray-400">
+                  Last inspection:{" "}
+                  {v.lastInspectionAt
+                    ? new Date(v.lastInspectionAt).toLocaleDateString()
+                    : "Never"}
                 </div>
                 <div className="mt-3">
                   <VehicleActions vehicle={v} />
