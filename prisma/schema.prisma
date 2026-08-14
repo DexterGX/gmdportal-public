@@ -87,6 +87,16 @@ model VerificationToken {
   @@unique([identifier, token])
 }
 
+// Tracks registration attempts per IP so /api/auth/register can rate-limit
+// account-creation spam/bots. Rows older than 24h are pruned opportunistically.
+model RegistrationAttempt {
+  id        String   @id @default(cuid())
+  ip        String
+  createdAt DateTime @default(now())
+
+  @@index([ip, createdAt])
+}
+
 model SlabBrandConfig {
   id            String          @id @default(cuid())
   name          String

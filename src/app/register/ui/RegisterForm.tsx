@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, FormEvent } from "react";
+import { useState, FormEvent, useRef } from "react";
 import { useRouter } from "next/navigation";
 
 export default function RegisterForm() {
@@ -10,6 +10,13 @@ export default function RegisterForm() {
   const [password, setPassword] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
+  // Honeypot: a field real users never see or fill in. Bots that auto-fill
+  // every input on the form will populate it, and we reject the submission
+  // server-side if it's non-empty.
+  const [hpWebsite, setHpWebsite] = useState("");
+  // Time trap: bots typically submit forms within a second or two of
+  // loading them. Real users take longer to read and type.
+  const formLoadedAt = useRef(Date.now());
 
   const router = useRouter();
 
@@ -21,7 +28,14 @@ export default function RegisterForm() {
     const res = await fetch("/api/auth/register", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ name, username, email, password }),
+      body: JSON.stringify({
+        name,
+        username,
+        email,
+        password,
+        hpWebsite,
+        elapsedMs: Date.now() - formLoadedAt.current,
+      }),
     });
 
     setLoading(false);
@@ -42,6 +56,25 @@ export default function RegisterForm() {
       </h1>
 
       <form onSubmit={handleSubmit} className="space-y-4">
+        {/* Honeypot field — hidden from real users via CSS, not `display:none`
+            or `type="hidden"`, since some bots skip those. Left off-screen
+            instead so it's still "visible" to naive DOM-filling bots. */}
+        <div
+          aria-hidden="true"
+          className="pointer-events-none absolute left-[-9999px] top-auto h-px w-px overflow-hidden"
+        >
+          <label htmlFor="website">Website</label>
+          <input
+            id="website"
+            name="website"
+            type="text"
+            tabIndex={-1}
+            autoComplete="off"
+            value={hpWebsite}
+            onChange={(e) => setHpWebsite(e.target.value)}
+          />
+        </div>
+
         <input
           type="text"
           placeholder="Full Name"
