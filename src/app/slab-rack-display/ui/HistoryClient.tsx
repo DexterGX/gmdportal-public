@@ -20,6 +20,8 @@ type HistorySortKey =
   | "batch"
   | "brand"
   | "finish"
+  | "thickness"
+  | "size"
   | "type"
   | "client"
   | "from"
@@ -64,6 +66,9 @@ const formatHistoryTimestamp = (value: string) => {
 
 export default function HistoryClient({ userName }: { userName: string }) {
   const rowStorageKey = "slabbay:last-row:history";
+  // Captured once when the page loads so the "Printed by" line in the print
+  // header reflects when this log was generated/viewed.
+  const printedAt = useMemo(() => new Date(), []);
   const [state, setState] = useState<SlabBayState>(() => loadState());
   const [mounted, setMounted] = useState(false);
   const [isLoading, setIsLoading] = useState(true);
@@ -251,6 +256,46 @@ export default function HistoryClient({ userName }: { userName: string }) {
     return `${label}${indicator}`;
   };
 
+  // For a combined header (e.g. "Finish / Thickness / Size"), clicking
+  // cycles: field 1 asc -> field 1 desc -> field 2 asc -> field 2 desc ->
+  // ... -> back to field 1 asc. Each sub-field keeps its own independent
+  // sort behavior; only the active one shows an arrow.
+  const handleCombinedSort = (fields: HistorySortKey[]) => {
+    const currentIndex = fields.indexOf(sortKey);
+    if (currentIndex === -1) {
+      setSortKey(fields[0]);
+      setSortDirection(fields[0] === "date" ? "desc" : "asc");
+      return;
+    }
+    if (sortDirection === "asc") {
+      setSortDirection("desc");
+      return;
+    }
+    const nextIndex = (currentIndex + 1) % fields.length;
+    setSortKey(fields[nextIndex]);
+    setSortDirection("asc");
+  };
+
+  const renderCombinedSortLabel = (
+    fields: { key: HistorySortKey; label: string }[],
+  ) => (
+    <>
+      {fields.map((field, index) => {
+        const isActive = sortKey === field.key;
+        return (
+          <span
+            key={field.key}
+            className={isActive ? "text-gray-700 dark:text-gray-100" : undefined}
+          >
+            {field.label}
+            {isActive ? (sortDirection === "asc" ? " ▲" : " ▼") : ""}
+            {index < fields.length - 1 ? " / " : ""}
+          </span>
+        );
+      })}
+    </>
+  );
+
   const sortRows = (entries: typeof rows) =>
     [...entries].sort((a, b) => {
       const aClient = splitClientName(a.clientName).clientName;
@@ -295,6 +340,18 @@ export default function HistoryClient({ userName }: { userName: string }) {
           return compareValues(a.brand || "", b.brand || "", sortDirection);
         case "finish":
           return compareValues(a.finish || "", b.finish || "", sortDirection);
+        case "thickness":
+          return compareValues(
+            a.slabThickness || "",
+            b.slabThickness || "",
+            sortDirection,
+          );
+        case "size":
+          return compareValues(
+            a.slabSize || "",
+            b.slabSize || "",
+            sortDirection,
+          );
         case "type":
           return compareValues(a.slabType, b.slabType, sortDirection);
         case "client":
@@ -608,9 +665,15 @@ export default function HistoryClient({ userName }: { userName: string }) {
         className="bg-white dark:bg-gray-900 rounded-xl border border-gray-200 dark:border-gray-800 p-4 print:shadow-none print:bg-white"
       >
         <div className="hidden print:block mb-3">
-          <h1 className="text-2xl font-semibold text-gray-800">
-            Slab History Log
-          </h1>
+          <div className="flex items-baseline justify-between gap-4">
+            <h1 className="text-2xl font-semibold text-gray-800">
+              Slab History Log
+            </h1>
+            <p className="text-xs text-gray-600">
+              Printed by {userName} on {printedAt.toLocaleDateString()} at{" "}
+              {printedAt.toLocaleTimeString()}
+            </p>
+          </div>
         </div>
         {isLoading ? (
           <div className="flex flex-col items-center justify-center gap-3 py-16">
@@ -624,9 +687,9 @@ export default function HistoryClient({ userName }: { userName: string }) {
             <table className="min-w-full text-sm print-history-table">
               <thead>
                 <tr className="hidden print:table-row print-spacer-row">
-                  <th colSpan={15} aria-hidden="true" />
+                  <th colSpan={9} aria-hidden="true" />
                 </tr>
-                <tr className="text-left text-xs uppercase tracking-wide text-gray-400">
+                <tr className="text-left text-xs uppercase tracking-wide text-gray-400 print:hidden">
                   <th className="py-2 pr-4">
                     <button
                       type="button"
@@ -657,15 +720,6 @@ export default function HistoryClient({ userName }: { userName: string }) {
                   <th className="py-2 pr-4">
                     <button
                       type="button"
-                      onClick={() => handleSort("slab")}
-                      className="font-inherit uppercase tracking-wide hover:text-gray-600 dark:hover:text-gray-200"
-                    >
-                      {renderSortLabel("slab", "Slab")}
-                    </button>
-                  </th>
-                  <th className="py-2 pr-4">
-                    <button
-                      type="button"
                       onClick={() => handleSort("scannerId")}
                       className="font-inherit uppercase tracking-wide hover:text-gray-600 dark:hover:text-gray-200"
                     >
@@ -675,10 +729,10 @@ export default function HistoryClient({ userName }: { userName: string }) {
                   <th className="py-2 pr-4">
                     <button
                       type="button"
-                      onClick={() => handleSort("batch")}
+                      onClick={() => handleSort("slab")}
                       className="font-inherit uppercase tracking-wide hover:text-gray-600 dark:hover:text-gray-200"
                     >
-                      {renderSortLabel("batch", "Batch")}
+                      {renderSortLabel("slab", "Name")}
                     </button>
                   </th>
                   <th className="py-2 pr-4">
@@ -693,19 +747,28 @@ export default function HistoryClient({ userName }: { userName: string }) {
                   <th className="py-2 pr-4">
                     <button
                       type="button"
-                      onClick={() => handleSort("finish")}
+                      onClick={() =>
+                        handleCombinedSort(["finish", "thickness", "size"])
+                      }
                       className="font-inherit uppercase tracking-wide hover:text-gray-600 dark:hover:text-gray-200"
                     >
-                      {renderSortLabel("finish", "Finish")}
+                      {renderCombinedSortLabel([
+                        { key: "finish", label: "Finish" },
+                        { key: "thickness", label: "Thickness" },
+                        { key: "size", label: "Size" },
+                      ])}
                     </button>
                   </th>
                   <th className="py-2 pr-4">
                     <button
                       type="button"
-                      onClick={() => handleSort("type")}
+                      onClick={() => handleCombinedSort(["batch", "type"])}
                       className="font-inherit uppercase tracking-wide hover:text-gray-600 dark:hover:text-gray-200"
                     >
-                      {renderSortLabel("type", "Type")}
+                      {renderCombinedSortLabel([
+                        { key: "batch", label: "Batch" },
+                        { key: "type", label: "Type" },
+                      ])}
                     </button>
                   </th>
                   <th className="py-2 pr-4">
@@ -715,6 +778,18 @@ export default function HistoryClient({ userName }: { userName: string }) {
                       className="font-inherit uppercase tracking-wide hover:text-gray-600 dark:hover:text-gray-200"
                     >
                       {renderSortLabel("client", "Client")}
+                    </button>
+                  </th>
+                  <th className="py-2 pr-4">
+                    <button
+                      type="button"
+                      onClick={() => handleCombinedSort(["jobId", "notes"])}
+                      className="font-inherit uppercase tracking-wide hover:text-gray-600 dark:hover:text-gray-200"
+                    >
+                      {renderCombinedSortLabel([
+                        { key: "jobId", label: "Job ID" },
+                        { key: "notes", label: "Notes" },
+                      ])}
                     </button>
                   </th>
                   <th className="py-2 pr-4">
@@ -738,30 +813,27 @@ export default function HistoryClient({ userName }: { userName: string }) {
                   <th className="py-2 pr-4">
                     <button
                       type="button"
-                      onClick={() => handleSort("jobId")}
-                      className="font-inherit uppercase tracking-wide hover:text-gray-600 dark:hover:text-gray-200"
-                    >
-                      {renderSortLabel("jobId", "Job ID")}
-                    </button>
-                  </th>
-                  <th className="py-2 pr-4">
-                    <button
-                      type="button"
-                      onClick={() => handleSort("notes")}
-                      className="font-inherit uppercase tracking-wide hover:text-gray-600 dark:hover:text-gray-200"
-                    >
-                      {renderSortLabel("notes", "Notes")}
-                    </button>
-                  </th>
-                  <th className="py-2 pr-4">
-                    <button
-                      type="button"
                       onClick={() => handleSort("user")}
                       className="font-inherit uppercase tracking-wide hover:text-gray-600 dark:hover:text-gray-200"
                     >
                       {renderSortLabel("user", "User")}
                     </button>
                   </th>
+                </tr>
+                <tr className="hidden print:table-row text-left text-xs uppercase tracking-wide text-gray-400">
+                  <th className="py-2 pr-4 print-col-date">Date</th>
+                  <th className="py-2 pr-4 print-col-action">Action</th>
+                  <th className="py-2 pr-4 print-col-slab">Slab / Scanner ID</th>
+                  <th className="py-2 pr-4 print-col-name">
+                    Slab / Brand / Finish
+                  </th>
+                  <th className="py-2 pr-4 print-col-batch">Batch / Type</th>
+                  <th className="py-2 pr-4 print-col-client">Client</th>
+                  <th className="py-2 pr-4 print-col-move">From / To</th>
+                  <th className="py-2 pr-4 print-col-jobnotes">
+                    Job ID / Notes
+                  </th>
+                  <th className="py-2 pr-4 print-col-user">User</th>
                 </tr>
               </thead>
               <tbody>
@@ -775,7 +847,7 @@ export default function HistoryClient({ userName }: { userName: string }) {
                         : "hover:bg-gray-50 dark:hover:bg-gray-800/40"
                     }`}
                   >
-                    <td className="py-3 pr-4 text-gray-600 dark:text-gray-300">
+                    <td className="py-3 pr-4 text-gray-600 dark:text-gray-300 print:hidden">
                       {(() => {
                         const { datePart, timePart } = formatHistoryTimestamp(
                           entry.timestamp,
@@ -792,7 +864,7 @@ export default function HistoryClient({ userName }: { userName: string }) {
                         );
                       })()}
                     </td>
-                    <td className="py-3 pr-4 font-medium text-gray-800 dark:text-gray-100">
+                    <td className="py-3 pr-4 font-medium text-gray-800 dark:text-gray-100 print:hidden">
                       {entry.type === "exit" ? (
                         <>
                           <button
@@ -810,7 +882,7 @@ export default function HistoryClient({ userName }: { userName: string }) {
                         formatType(entry.type)
                       )}
                     </td>
-                    <td className="py-3 pr-4 text-gray-600 dark:text-gray-300">
+                    <td className="py-3 pr-4 text-gray-600 dark:text-gray-300 print:hidden">
                       <a
                         href={`/slab/${encodeURIComponent(entry.slabId)}`}
                         target="_blank"
@@ -820,10 +892,7 @@ export default function HistoryClient({ userName }: { userName: string }) {
                         {entry.slabId}
                       </a>
                     </td>
-                    <td className="py-3 pr-4 text-gray-600 dark:text-gray-300">
-                      {entry.slabName}
-                    </td>
-                    <td className="py-3 pr-4 text-gray-600 dark:text-gray-300">
+                    <td className="py-3 pr-4 text-gray-600 dark:text-gray-300 print:hidden">
                       {entry.slabScannerId ? (
                         <a
                           href={buildSlabViewUrl(entry.slabScannerId)}
@@ -837,21 +906,34 @@ export default function HistoryClient({ userName }: { userName: string }) {
                         "-"
                       )}
                     </td>
-                    <td className="py-3 pr-4 text-gray-600 dark:text-gray-300">
-                      {entry.batchIndex && entry.batchSize
-                        ? `${entry.batchIndex}/${entry.batchSize}`
-                        : "-"}
+                    <td className="py-3 pr-4 text-gray-600 dark:text-gray-300 print:hidden">
+                      {entry.slabName}
                     </td>
-                    <td className="py-3 pr-4 text-gray-600 dark:text-gray-300">
+                    <td className="py-3 pr-4 text-gray-600 dark:text-gray-300 print:hidden">
                       {entry.brand || "-"}
                     </td>
-                    <td className="py-3 pr-4 text-gray-600 dark:text-gray-300">
-                      {entry.finish || "-"}
+                    <td className="py-3 pr-4 text-gray-600 dark:text-gray-300 print:hidden">
+                      <div className="space-y-1">
+                        <div>{entry.finish || "-"}</div>
+                        <div>
+                          {[
+                            entry.slabThickness || "-",
+                            entry.slabSize || "-",
+                          ].join(" · ")}
+                        </div>
+                      </div>
                     </td>
-                    <td className="py-3 pr-4 text-gray-600 dark:text-gray-300">
-                      {entry.slabType}
+                    <td className="py-3 pr-4 text-gray-600 dark:text-gray-300 print:hidden">
+                      <div className="space-y-1">
+                        <div>
+                          {entry.batchIndex && entry.batchSize
+                            ? `${entry.batchIndex}/${entry.batchSize}`
+                            : "-"}
+                        </div>
+                        <div>{entry.slabType}</div>
+                      </div>
                     </td>
-                    <td className="py-3 pr-4 text-gray-600 dark:text-gray-300">
+                    <td className="py-3 pr-4 text-gray-600 dark:text-gray-300 print:hidden">
                       {(() => {
                         const { clientName, originalClientName } =
                           splitClientName(entry.clientName);
@@ -874,21 +956,11 @@ export default function HistoryClient({ userName }: { userName: string }) {
                         );
                       })()}
                     </td>
-                    <td className="py-3 pr-4 text-gray-600 dark:text-gray-300">
-                      {entry.fromRack ? `${entry.fromRack}` : "-"}
-                    </td>
-                    <td className="py-3 pr-4 text-gray-600 dark:text-gray-300">
-                      {entry.type === "exit"
-                        ? "EXIT"
-                        : entry.toRack
-                          ? `${entry.toRack}`
-                          : "-"}
-                    </td>
-                    <td className="py-3 pr-4 text-gray-600 dark:text-gray-300">
-                      {entry.jobId || "-"}
-                    </td>
-                    <td className="py-3 pr-4 text-gray-600 dark:text-gray-300">
+                    <td className="py-3 pr-4 text-gray-600 dark:text-gray-300 print:hidden">
                       <div className="space-y-1">
+                        <div className="font-medium text-gray-700 dark:text-gray-200">
+                          {entry.jobId || "-"}
+                        </div>
                         <div>
                           <span className="text-xs text-gray-500 dark:text-gray-400">
                             Entry:
@@ -914,7 +986,85 @@ export default function HistoryClient({ userName }: { userName: string }) {
                         ) : null}
                       </div>
                     </td>
-                    <td className="py-3 pr-4 text-gray-600 dark:text-gray-300">
+                    <td className="py-3 pr-4 text-gray-600 dark:text-gray-300 print:hidden">
+                      {entry.fromRack ? `${entry.fromRack}` : "-"}
+                    </td>
+                    <td className="py-3 pr-4 text-gray-600 dark:text-gray-300 print:hidden">
+                      {entry.type === "exit"
+                        ? "EXIT"
+                        : entry.toRack
+                          ? `${entry.toRack}`
+                          : "-"}
+                    </td>
+                    <td className="py-3 pr-4 text-gray-600 dark:text-gray-300 print:hidden">
+                      {entry.userName}
+                    </td>
+                    <td className="hidden print:table-cell py-3 pr-4 print-col-date">
+                      {(() => {
+                        const { datePart, timePart } = formatHistoryTimestamp(
+                          entry.timestamp,
+                        );
+                        return (
+                          <div>
+                            <div>{datePart}</div>
+                            {timePart ? <div>{timePart}</div> : null}
+                          </div>
+                        );
+                      })()}
+                    </td>
+                    <td className="hidden print:table-cell py-3 pr-4 print-col-action">
+                      {formatType(entry.type)}
+                    </td>
+                    <td className="hidden print:table-cell py-3 pr-4 print-col-slab">
+                      <div>{entry.slabId}</div>
+                      <div>{entry.slabScannerId || "-"}</div>
+                    </td>
+                    <td className="hidden print:table-cell py-3 pr-4 print-col-name">
+                      <div>{entry.slabName}</div>
+                      <div>
+                        {[entry.brand || "-", entry.finish || "-"].join(" · ")}
+                      </div>
+                    </td>
+                    <td className="hidden print:table-cell py-3 pr-4 print-col-batch">
+                      <div>
+                        {entry.batchIndex && entry.batchSize
+                          ? `${entry.batchIndex}/${entry.batchSize}`
+                          : "-"}
+                      </div>
+                      <div>{entry.slabType}</div>
+                    </td>
+                    <td className="hidden print:table-cell py-3 pr-4 print-col-client">
+                      {(() => {
+                        const { clientName, originalClientName } =
+                          splitClientName(entry.clientName);
+                        const subtitle =
+                          clientSubtitleByName[clientName.trim().toLowerCase()];
+                        return (
+                          <div>
+                            <div>{clientName || "-"}</div>
+                            {subtitle ? <div>{subtitle}</div> : null}
+                            {entry.slabType === "GMD" && originalClientName ? (
+                              <div>Original Client: {originalClientName}</div>
+                            ) : null}
+                          </div>
+                        );
+                      })()}
+                    </td>
+                    <td className="hidden print:table-cell py-3 pr-4 print-col-move">
+                      {entry.fromRack ? `${entry.fromRack}` : "-"}
+                      {" → "}
+                      {entry.type === "exit"
+                        ? "EXIT"
+                        : entry.toRack
+                          ? `${entry.toRack}`
+                          : "-"}
+                    </td>
+                    <td className="hidden print:table-cell py-3 pr-4 print-col-jobnotes">
+                      <div>{entry.jobId || "-"}</div>
+                      <div>Entry: {entryNoteBySlabId.get(entry.slabId) || "-"}</div>
+                      <div>Exit: {entry.exitNote || "-"}</div>
+                    </td>
+                    <td className="hidden print:table-cell py-3 pr-4 print-col-user">
                       {entry.userName}
                     </td>
                   </tr>
@@ -922,8 +1072,14 @@ export default function HistoryClient({ userName }: { userName: string }) {
                 {displayRows.length === 0 && (
                   <tr>
                     <td
-                      colSpan={15}
-                      className="py-6 text-center text-gray-500 dark:text-gray-400"
+                      colSpan={13}
+                      className="py-6 text-center text-gray-500 dark:text-gray-400 print:hidden"
+                    >
+                      No history entries yet.
+                    </td>
+                    <td
+                      colSpan={9}
+                      className="hidden print:table-cell py-6 text-center text-gray-500 dark:text-gray-400"
                     >
                       No history entries yet.
                     </td>

@@ -194,109 +194,84 @@ body,
     background-color: transparent !important;
   }
 
+  /* History Log print — same redesign as the Inventory print: the 15
+     on-screen columns are combined into 9 wider, easier-to-read print-only
+     columns (see print-col-* below and the matching print:table-cell
+     cells in HistoryClient.tsx) instead of squeezing all 15 into tiny 8pt
+     slivers with no borders. */
   .print-history-table {
     width: 100% !important;
     table-layout: fixed !important;
-    font-size: 8pt !important;
-    line-height: 1.25 !important;
+    border-collapse: collapse !important;
+    font-size: 9pt !important;
+    line-height: 1.35 !important;
   }
 
   .print-history-table th,
   .print-history-table td {
+    border: 1px solid #999 !important;
+    padding: 4px 6px !important;
     white-space: normal !important;
     word-break: break-word;
     vertical-align: top;
   }
 
+  .print-history-table thead th {
+    background-color: #f0f0f0 !important;
+    font-weight: 700 !important;
+    text-align: left !important;
+  }
+
   .print-history-table .print-spacer-row th {
     border: none !important;
     padding: 0 !important;
-    height: 8mm !important;
+    height: 4mm !important;
+    background-color: transparent !important;
   }
 
   .print-history-table tbody tr {
     page-break-inside: avoid;
   }
 
-  /* Column widths below cover all 15 columns the History Log table actually
-     renders today (Date, Action, Slab ID, Slab, Scanner ID, Batch, Brand,
-     Finish, Type, Client, From, To, Job ID, Notes, User). The previous
-     version only covered the first 11, leaving the rest with 0% width —
-     that's what was crushing every header into a single-letter-per-line
-     stack and blowing the print out to 10 pages. */
-  .print-history-table th:nth-child(1),
-  .print-history-table td:nth-child(1) {
+  /* Column widths target the merged print-only columns by class name (not
+     position/nth-child), matching the approach used for Inventory. Date,
+     Action, and User stay their own columns since they're log-specific;
+     Slab/Scanner ID, Slab/Brand/Finish, Batch/Type, From/To, and Job
+     ID/Notes are each combined. Widths sum to 100%. */
+  .print-history-table .print-col-date {
     width: 9% !important;
   }
 
-  .print-history-table th:nth-child(2),
-  .print-history-table td:nth-child(2) {
+  .print-history-table .print-col-action {
     width: 6% !important;
   }
 
-  .print-history-table th:nth-child(3),
-  .print-history-table td:nth-child(3) {
-    width: 6% !important;
-  }
-
-  .print-history-table th:nth-child(4),
-  .print-history-table td:nth-child(4) {
-    width: 7% !important;
-  }
-
-  .print-history-table th:nth-child(5),
-  .print-history-table td:nth-child(5) {
-    width: 7% !important;
-  }
-
-  .print-history-table th:nth-child(6),
-  .print-history-table td:nth-child(6) {
-    width: 5% !important;
-  }
-
-  .print-history-table th:nth-child(7),
-  .print-history-table td:nth-child(7) {
-    width: 9% !important;
-  }
-
-  .print-history-table th:nth-child(8),
-  .print-history-table td:nth-child(8) {
-    width: 5% !important;
-  }
-
-  .print-history-table th:nth-child(9),
-  .print-history-table td:nth-child(9) {
-    width: 5% !important;
-  }
-
-  .print-history-table th:nth-child(10),
-  .print-history-table td:nth-child(10) {
+  .print-history-table .print-col-slab {
     width: 11% !important;
   }
 
-  .print-history-table th:nth-child(11),
-  .print-history-table td:nth-child(11) {
-    width: 6% !important;
+  .print-history-table .print-col-name {
+    width: 16% !important;
   }
 
-  .print-history-table th:nth-child(12),
-  .print-history-table td:nth-child(12) {
-    width: 6% !important;
+  .print-history-table .print-col-batch {
+    width: 8% !important;
   }
 
-  .print-history-table th:nth-child(13),
-  .print-history-table td:nth-child(13) {
-    width: 6% !important;
+  .print-history-table .print-col-client {
+    width: 20% !important;
   }
 
-  .print-history-table th:nth-child(14),
-  .print-history-table td:nth-child(14) {
-    width: 6% !important;
+  .print-history-table .print-col-move {
+    width: 8% !important;
   }
 
-  .print-history-table th:nth-child(15),
-  .print-history-table td:nth-child(15) {
-    width: 6% !important;
+  .print-history-table .print-col-jobnotes {
+    width: 14% !important;
+  }
+
+  .print-history-table .print-col-user {
+    width: 8% !important;
   }
 
   .print-inventory-table tbody tr {

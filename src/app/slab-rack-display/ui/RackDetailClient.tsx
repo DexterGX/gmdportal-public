@@ -18,6 +18,23 @@ const buildSlabViewUrl = (scannerId: string) =>
     scannerId,
   )}`;
 
+type RackSlabSortKey =
+  | "id"
+  | "scannerId"
+  | "name"
+  | "brand"
+  | "finish"
+  | "thickness"
+  | "size"
+  | "batch"
+  | "type"
+  | "client"
+  | "jobId"
+  | "notes"
+  | "createdAt";
+
+type SortDirection = "asc" | "desc";
+
 export default function RackDetailClient({ userName }: { userName: string }) {
   const params = useParams();
   const router = useRouter();
@@ -30,6 +47,8 @@ export default function RackDetailClient({ userName }: { userName: string }) {
   const [clientSubtitleByName, setClientSubtitleByName] = useState<
     Record<string, string | null>
   >({});
+  const [sortKey, setSortKey] = useState<RackSlabSortKey>("id");
+  const [sortDirection, setSortDirection] = useState<SortDirection>("asc");
 
   useEffect(() => {
     if (typeof window === "undefined") return;
@@ -62,6 +81,132 @@ export default function RackDetailClient({ userName }: { userName: string }) {
     () => (rack ? getSlabsByRack(state, rack.id) : []),
     [state, rack],
   );
+
+  const compareValues = (
+    left: string | number,
+    right: string | number,
+    direction: SortDirection,
+    numeric = false,
+  ) => {
+    const result = numeric
+      ? Number(left) - Number(right)
+      : String(left).localeCompare(String(right), undefined, {
+          numeric: true,
+          sensitivity: "base",
+        });
+    return direction === "asc" ? result : -result;
+  };
+
+  const handleSort = (key: RackSlabSortKey) => {
+    if (sortKey === key) {
+      setSortDirection((current) => (current === "asc" ? "desc" : "asc"));
+      return;
+    }
+    setSortKey(key);
+    setSortDirection("asc");
+  };
+
+  const renderSortLabel = (key: RackSlabSortKey, label: string) => {
+    const indicator =
+      sortKey === key ? (sortDirection === "asc" ? " ▲" : " ▼") : "";
+    return `${label}${indicator}`;
+  };
+
+  // For a combined header (e.g. "Finish / Thickness / Size"), clicking
+  // cycles: field 1 asc -> field 1 desc -> field 2 asc -> field 2 desc ->
+  // ... -> back to field 1 asc. Each sub-field keeps its own independent
+  // sort behavior; only the active one shows an arrow.
+  const handleCombinedSort = (fields: RackSlabSortKey[]) => {
+    const currentIndex = fields.indexOf(sortKey);
+    if (currentIndex === -1) {
+      setSortKey(fields[0]);
+      setSortDirection("asc");
+      return;
+    }
+    if (sortDirection === "asc") {
+      setSortDirection("desc");
+      return;
+    }
+    const nextIndex = (currentIndex + 1) % fields.length;
+    setSortKey(fields[nextIndex]);
+    setSortDirection("asc");
+  };
+
+  const renderCombinedSortLabel = (
+    fields: { key: RackSlabSortKey; label: string }[],
+  ) => (
+    <>
+      {fields.map((field, index) => {
+        const isActive = sortKey === field.key;
+        return (
+          <span
+            key={field.key}
+            className={isActive ? "text-gray-700 dark:text-gray-100" : undefined}
+          >
+            {field.label}
+            {isActive ? (sortDirection === "asc" ? " ▲" : " ▼") : ""}
+            {index < fields.length - 1 ? " / " : ""}
+          </span>
+        );
+      })}
+    </>
+  );
+
+  const sortedSlabs = useMemo(() => {
+    return [...slabs].sort((a, b) => {
+      const aBatch =
+        a.batchIndex && a.batchSize ? `${a.batchIndex}/${a.batchSize}` : "";
+      const bBatch =
+        b.batchIndex && b.batchSize ? `${b.batchIndex}/${b.batchSize}` : "";
+      const aClient = splitClientName(a.clientName).clientName;
+      const bClient = splitClientName(b.clientName).clientName;
+
+      switch (sortKey) {
+        case "id":
+          return compareValues(a.id, b.id, sortDirection);
+        case "scannerId":
+          return compareValues(
+            a.scannerId || "",
+            b.scannerId || "",
+            sortDirection,
+          );
+        case "name":
+          return compareValues(a.name, b.name, sortDirection);
+        case "brand":
+          return compareValues(a.brand || "", b.brand || "", sortDirection);
+        case "finish":
+          return compareValues(a.finish || "", b.finish || "", sortDirection);
+        case "thickness":
+          return compareValues(
+            a.thickness || "",
+            b.thickness || "",
+            sortDirection,
+          );
+        case "size":
+          return compareValues(a.size || "", b.size || "", sortDirection);
+        case "batch":
+          return compareValues(aBatch, bBatch, sortDirection);
+        case "type":
+          return compareValues(a.type, b.type, sortDirection);
+        case "client":
+          return compareValues(aClient, bClient, sortDirection);
+        case "jobId":
+          return compareValues(a.jobId || "", b.jobId || "", sortDirection);
+        case "notes":
+          return compareValues(a.notes || "", b.notes || "", sortDirection);
+        case "createdAt": {
+          const aTime = new Date(a.createdAt).getTime();
+          const bTime = new Date(b.createdAt).getTime();
+          if (!Number.isNaN(aTime) && !Number.isNaN(bTime)) {
+            return compareValues(aTime, bTime, sortDirection, true);
+          }
+          return compareValues(a.createdAt, b.createdAt, sortDirection);
+        }
+        default:
+          return 0;
+      }
+    });
+  }, [slabs, sortKey, sortDirection]);
 
   useEffect(() => {
     const clientNames = Array.from(
@@ -209,23 +354,104 @@ export default function RackDetailClient({ userName }: { userName: string }) {
             <table className="min-w-full text-sm">
               <thead>
                 <tr className="text-left text-xs uppercase tracking-wide text-gray-400">
-                  <th className="py-2 pr-4">Slab ID</th>
-                  <th className="py-2 pr-4">Scanner ID</th>
-                  <th className="py-2 pr-4">Name</th>
-                  <th className="py-2 pr-4">Brand</th>
-                  <th className="py-2 pr-4">Finish</th>
-                  <th className="py-2 pr-4">Thickness</th>
-                  <th className="py-2 pr-4">Size</th>
-                  <th className="py-2 pr-4">Batch</th>
-                  <th className="py-2 pr-4">Type</th>
-                  <th className="py-2 pr-4">Client</th>
-                  <th className="py-2 pr-4">Job ID</th>
-                  <th className="py-2 pr-4">Date Added</th>
+                  <th className="py-2 pr-4">
+                    <button
+                      type="button"
+                      onClick={() => handleSort("id")}
+                      className="font-inherit uppercase tracking-wide hover:text-gray-600 dark:hover:text-gray-200"
+                    >
+                      {renderSortLabel("id", "Slab ID")}
+                    </button>
+                  </th>
+                  <th className="py-2 pr-4">
+                    <button
+                      type="button"
+                      onClick={() => handleSort("scannerId")}
+                      className="font-inherit uppercase tracking-wide hover:text-gray-600 dark:hover:text-gray-200"
+                    >
+                      {renderSortLabel("scannerId", "Scanner ID")}
+                    </button>
+                  </th>
+                  <th className="py-2 pr-4">
+                    <button
+                      type="button"
+                      onClick={() => handleSort("name")}
+                      className="font-inherit uppercase tracking-wide hover:text-gray-600 dark:hover:text-gray-200"
+                    >
+                      {renderSortLabel("name", "Name")}
+                    </button>
+                  </th>
+                  <th className="py-2 pr-4">
+                    <button
+                      type="button"
+                      onClick={() => handleSort("brand")}
+                      className="font-inherit uppercase tracking-wide hover:text-gray-600 dark:hover:text-gray-200"
+                    >
+                      {renderSortLabel("brand", "Brand")}
+                    </button>
+                  </th>
+                  <th className="py-2 pr-4">
+                    <button
+                      type="button"
+                      onClick={() =>
+                        handleCombinedSort(["finish", "thickness", "size"])
+                      }
+                      className="font-inherit uppercase tracking-wide hover:text-gray-600 dark:hover:text-gray-200"
+                    >
+                      {renderCombinedSortLabel([
+                        { key: "finish", label: "Finish" },
+                        { key: "thickness", label: "Thickness" },
+                        { key: "size", label: "Size" },
+                      ])}
+                    </button>
+                  </th>
+                  <th className="py-2 pr-4">
+                    <button
+                      type="button"
+                      onClick={() => handleCombinedSort(["batch", "type"])}
+                      className="font-inherit uppercase tracking-wide hover:text-gray-600 dark:hover:text-gray-200"
+                    >
+                      {renderCombinedSortLabel([
+                        { key: "batch", label: "Batch" },
+                        { key: "type", label: "Type" },
+                      ])}
+                    </button>
+                  </th>
+                  <th className="py-2 pr-4">
+                    <button
+                      type="button"
+                      onClick={() => handleSort("client")}
+                      className="font-inherit uppercase tracking-wide hover:text-gray-600 dark:hover:text-gray-200"
+                    >
+                      {renderSortLabel("client", "Client")}
+                    </button>
+                  </th>
+                  <th className="py-2 pr-4">
+                    <button
+                      type="button"
+                      onClick={() => handleCombinedSort(["jobId", "notes"])}
+                      className="font-inherit uppercase tracking-wide hover:text-gray-600 dark:hover:text-gray-200"
+                    >
+                      {renderCombinedSortLabel([
+                        { key: "jobId", label: "Job ID" },
+                        { key: "notes", label: "Notes" },
+                      ])}
+                    </button>
+                  </th>
+                  <th className="py-2 pr-4">
+                    <button
+                      type="button"
+                      onClick={() => handleSort("createdAt")}
+                      className="font-inherit uppercase tracking-wide hover:text-gray-600 dark:hover:text-gray-200"
+                    >
+                      {renderSortLabel("createdAt", "Date Added")}
+                    </button>
+                  </th>
                   <th className="py-2 pr-4">Label</th>
                 </tr>
               </thead>
               <tbody>
-                {slabs.map((slab) => (
+                {sortedSlabs.map((slab) => (
                   <tr
                     key={slab.id}
                     onClick={() => handleRowClick(slab.id)}
@@ -259,27 +485,31 @@ export default function RackDetailClient({ userName }: { userName: string }) {
                       {slab.brand || "-"}
                     </td>
                     <td className="py-3 pr-4 text-gray-600 dark:text-gray-300">
-                      {slab.finish || "-"}
+                      <div className="space-y-1">
+                        <div>{slab.finish || "-"}</div>
+                        <div>{[slab.thickness, slab.size].join(" · ")}</div>
+                      </div>
                     </td>
                     <td className="py-3 pr-4 text-gray-600 dark:text-gray-300">
-                      {slab.thickness}
-                    </td>
-                    <td className="py-3 pr-4 text-gray-600 dark:text-gray-300">
-                      {slab.size}
-                    </td>
-                    <td className="py-3 pr-4 text-gray-600 dark:text-gray-300">
-                      {slab.batchIndex && slab.batchSize
-                        ? `${slab.batchIndex}/${slab.batchSize}`
-                        : "-"}
-                    </td>
-                    <td className="py-3 pr-4 text-gray-600 dark:text-gray-300">
-                      {slab.type}
+                      <div className="space-y-1">
+                        <div>
+                          {slab.batchIndex && slab.batchSize
+                            ? `${slab.batchIndex}/${slab.batchSize}`
+                            : "-"}
+                        </div>
+                        <div>{slab.type}</div>
+                      </div>
                     </td>
                     <td className="py-3 pr-4 text-gray-600 dark:text-gray-300">
                       {renderClientCell(slab.clientName, slab.type)}
                     </td>
                     <td className="py-3 pr-4 text-gray-600 dark:text-gray-300">
-                      {slab.jobId || "-"}
+                      <div className="space-y-1">
+                        <div className="font-medium text-gray-700 dark:text-gray-200">
+                          {slab.jobId || "-"}
+                        </div>
+                        <div>{slab.notes || "-"}</div>
+                      </div>
                     </td>
                     <td className="py-3 pr-4 text-gray-600 dark:text-gray-300">
                       {(() => {
@@ -310,10 +540,10 @@ export default function RackDetailClient({ userName }: { userName: string }) {
                     </td>
                   </tr>
                 ))}
-                {slabs.length === 0 && (
+                {sortedSlabs.length === 0 && (
                   <tr>
                     <td
-                      colSpan={13}
+                      colSpan={10}
                       className="py-6 text-center text-gray-500 dark:text-gray-400"
                     >
                       No slabs in this rack yet.

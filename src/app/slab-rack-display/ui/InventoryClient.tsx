@@ -286,6 +286,46 @@ export default function InventoryClient({ userName }: { userName: string }) {
     return `${label}${indicator}`;
   };
 
+  // For a combined header (e.g. "Finish / Thickness / Size"), clicking
+  // cycles: field 1 asc -> field 1 desc -> field 2 asc -> field 2 desc ->
+  // ... -> back to field 1 asc. Each sub-field keeps its own independent
+  // sort behavior; only the active one shows an arrow.
+  const handleCombinedSort = (fields: InventorySortKey[]) => {
+    const currentIndex = fields.indexOf(sortKey);
+    if (currentIndex === -1) {
+      setSortKey(fields[0]);
+      setSortDirection("asc");
+      return;
+    }
+    if (sortDirection === "asc") {
+      setSortDirection("desc");
+      return;
+    }
+    const nextIndex = (currentIndex + 1) % fields.length;
+    setSortKey(fields[nextIndex]);
+    setSortDirection("asc");
+  };
+
+  const renderCombinedSortLabel = (
+    fields: { key: InventorySortKey; label: string }[],
+  ) => (
+    <>
+      {fields.map((field, index) => {
+        const isActive = sortKey === field.key;
+        return (
+          <span
+            key={field.key}
+            className={isActive ? "text-gray-700 dark:text-gray-100" : undefined}
+          >
+            {field.label}
+            {isActive ? (sortDirection === "asc" ? " ▲" : " ▼") : ""}
+            {index < fields.length - 1 ? " / " : ""}
+          </span>
+        );
+      })}
+    </>
+  );
+
   const rows = useMemo(() => {
     const slabTerm = slabSearchTerm.trim().toLowerCase();
     const clientTerm = clientSearchTerm.trim().toLowerCase();
@@ -869,46 +909,28 @@ export default function InventoryClient({ userName }: { userName: string }) {
                   <th className="py-2 pr-4">
                     <button
                       type="button"
-                      onClick={() => handleSort("finish")}
+                      onClick={() =>
+                        handleCombinedSort(["finish", "thickness", "size"])
+                      }
                       className="font-inherit uppercase tracking-wide hover:text-gray-600 dark:hover:text-gray-200"
                     >
-                      {renderSortLabel("finish", "Finish")}
+                      {renderCombinedSortLabel([
+                        { key: "finish", label: "Finish" },
+                        { key: "thickness", label: "Thickness" },
+                        { key: "size", label: "Size" },
+                      ])}
                     </button>
                   </th>
                   <th className="py-2 pr-4">
                     <button
                       type="button"
-                      onClick={() => handleSort("thickness")}
+                      onClick={() => handleCombinedSort(["batch", "type"])}
                       className="font-inherit uppercase tracking-wide hover:text-gray-600 dark:hover:text-gray-200"
                     >
-                      {renderSortLabel("thickness", "Thickness")}
-                    </button>
-                  </th>
-                  <th className="py-2 pr-4">
-                    <button
-                      type="button"
-                      onClick={() => handleSort("size")}
-                      className="font-inherit uppercase tracking-wide hover:text-gray-600 dark:hover:text-gray-200"
-                    >
-                      {renderSortLabel("size", "Size")}
-                    </button>
-                  </th>
-                  <th className="py-2 pr-4">
-                    <button
-                      type="button"
-                      onClick={() => handleSort("batch")}
-                      className="font-inherit uppercase tracking-wide hover:text-gray-600 dark:hover:text-gray-200"
-                    >
-                      {renderSortLabel("batch", "Batch")}
-                    </button>
-                  </th>
-                  <th className="py-2 pr-4">
-                    <button
-                      type="button"
-                      onClick={() => handleSort("type")}
-                      className="font-inherit uppercase tracking-wide hover:text-gray-600 dark:hover:text-gray-200"
-                    >
-                      {renderSortLabel("type", "Type")}
+                      {renderCombinedSortLabel([
+                        { key: "batch", label: "Batch" },
+                        { key: "type", label: "Type" },
+                      ])}
                     </button>
                   </th>
                   <th className="py-2 pr-4">
@@ -923,28 +945,13 @@ export default function InventoryClient({ userName }: { userName: string }) {
                   <th className="py-2 pr-4">
                     <button
                       type="button"
-                      onClick={() => handleSort("jobId")}
+                      onClick={() => handleCombinedSort(["jobId", "notes"])}
                       className="font-inherit uppercase tracking-wide hover:text-gray-600 dark:hover:text-gray-200"
                     >
-                      {renderSortLabel("jobId", "Job ID")}
-                    </button>
-                  </th>
-                  <th className="py-2 pr-4">
-                    <button
-                      type="button"
-                      onClick={() => handleSort("notes")}
-                      className="font-inherit uppercase tracking-wide hover:text-gray-600 dark:hover:text-gray-200"
-                    >
-                      {renderSortLabel("notes", "Notes")}
-                    </button>
-                  </th>
-                  <th className="py-2 pr-4">
-                    <button
-                      type="button"
-                      onClick={() => handleSort("rack")}
-                      className="font-inherit uppercase tracking-wide hover:text-gray-600 dark:hover:text-gray-200"
-                    >
-                      {renderSortLabel("rack", "Rack")}
+                      {renderCombinedSortLabel([
+                        { key: "jobId", label: "Job ID" },
+                        { key: "notes", label: "Notes" },
+                      ])}
                     </button>
                   </th>
                   <th className="py-2 pr-4">
@@ -954,6 +961,15 @@ export default function InventoryClient({ userName }: { userName: string }) {
                       className="font-inherit uppercase tracking-wide hover:text-gray-600 dark:hover:text-gray-200"
                     >
                       {renderSortLabel("createdAt", "Date Added")}
+                    </button>
+                  </th>
+                  <th className="py-2 pr-4">
+                    <button
+                      type="button"
+                      onClick={() => handleSort("rack")}
+                      className="font-inherit uppercase tracking-wide hover:text-gray-600 dark:hover:text-gray-200"
+                    >
+                      {renderSortLabel("rack", "Rack")}
                     </button>
                   </th>
                   <th className="py-2 pr-4 print:hidden">Edit</th>
@@ -1015,33 +1031,33 @@ export default function InventoryClient({ userName }: { userName: string }) {
                       {slab.brand || "-"}
                     </td>
                     <td className="py-3 pr-4 text-gray-600 dark:text-gray-300 print:hidden">
-                      {slab.finish || "-"}
+                      <div className="space-y-1">
+                        <div>{slab.finish || "-"}</div>
+                        <div>
+                          {[slab.thickness, slab.size].join(" · ")}
+                        </div>
+                      </div>
                     </td>
                     <td className="py-3 pr-4 text-gray-600 dark:text-gray-300 print:hidden">
-                      {slab.thickness}
-                    </td>
-                    <td className="py-3 pr-4 text-gray-600 dark:text-gray-300 print:hidden">
-                      {slab.size}
-                    </td>
-                    <td className="py-3 pr-4 text-gray-600 dark:text-gray-300 print:hidden">
-                      {slab.batchIndex && slab.batchSize
-                        ? `${slab.batchIndex}/${slab.batchSize}`
-                        : "-"}
-                    </td>
-                    <td className="py-3 pr-4 text-gray-600 dark:text-gray-300 print:hidden">
-                      {slab.type}
+                      <div className="space-y-1">
+                        <div>
+                          {slab.batchIndex && slab.batchSize
+                            ? `${slab.batchIndex}/${slab.batchSize}`
+                            : "-"}
+                        </div>
+                        <div>{slab.type}</div>
+                      </div>
                     </td>
                     <td className="py-3 pr-4 text-gray-600 dark:text-gray-300 print:hidden">
                       {renderClientCell(slab)}
                     </td>
                     <td className="py-3 pr-4 text-gray-600 dark:text-gray-300 print:hidden">
-                      {slab.jobId || "-"}
-                    </td>
-                    <td className="py-3 pr-4 text-gray-600 dark:text-gray-300 print:hidden">
-                      {slab.notes || "-"}
-                    </td>
-                    <td className="py-3 pr-4 text-gray-600 dark:text-gray-300 print:hidden">
-                      {slab.rackId.toUpperCase()}
+                      <div className="space-y-1">
+                        <div className="font-medium text-gray-700 dark:text-gray-200">
+                          {slab.jobId || "-"}
+                        </div>
+                        <div>{slab.notes || "-"}</div>
+                      </div>
                     </td>
                     <td className="py-3 pr-4 text-gray-600 dark:text-gray-300 print:hidden">
                       {(() => {
@@ -1054,6 +1070,9 @@ export default function InventoryClient({ userName }: { userName: string }) {
                           </div>
                         );
                       })()}
+                    </td>
+                    <td className="py-3 pr-4 text-gray-600 dark:text-gray-300 print:hidden">
+                      {slab.rackId.toUpperCase()}
                     </td>
                     <td className="py-3 pr-4 print:hidden">
                       <button
@@ -1073,9 +1092,8 @@ export default function InventoryClient({ userName }: { userName: string }) {
                       <div>{slab.brand || "-"}</div>
                     </td>
                     <td className="hidden print:table-cell py-3 pr-4 print-col-specs">
-                      {[slab.finish || "-", slab.thickness, slab.size].join(
-                        " · "
-                      )}
+                      <div>{slab.finish || "-"}</div>
+                      <div>{[slab.thickness, slab.size].join(" · ")}</div>
                     </td>
                     <td className="hidden print:table-cell py-3 pr-4 print-col-batch">
                       <div>
@@ -1112,7 +1130,7 @@ export default function InventoryClient({ userName }: { userName: string }) {
                 {rows.length === 0 && (
                   <tr>
                     <td
-                      colSpan={15}
+                      colSpan={11}
                       className="py-6 text-center text-gray-500 dark:text-gray-400 print:hidden"
                     >
                       No slabs found.
