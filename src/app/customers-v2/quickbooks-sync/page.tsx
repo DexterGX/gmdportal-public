@@ -6,7 +6,7 @@ export default async function QuickBooksSyncPage() {
   const { appRole } = await getCurrentUserWithRole();
 
   if (appRole !== "admin") {
-    redirect("/customers");
+    redirect("/customers-v2");
   }
 
   return <QuickBooksSyncClient />;

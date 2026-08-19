@@ -224,7 +224,7 @@ export default function QuickBooksSyncClient() {
       {/* Header */}
       <div>
         <Link
-          href="/customers"
+          href="/customers-v2"
           className="inline-flex items-center gap-2 text-sm text-gray-600 dark:text-gray-400 hover:text-gray-900 dark:hover:text-gray-100 mb-4"
         >
           <ArrowLeft className="w-4 h-4" />

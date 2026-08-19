@@ -36,7 +36,7 @@ export default async function JobDetailPage({
   });
 
   if (!job) {
-    redirect("/customers");
+    redirect("/customers-v2");
   }
 
   // Serialize Decimal fields

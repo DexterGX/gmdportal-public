@@ -418,7 +418,11 @@ export default function SlabsAdminTable({
   };
 
   return (
-    <div id="print-area" className="space-y-4">
+    <div id="print-area" className="space-y-4 slabs-price-list-print">
+      {/* Scoped to this route only (previously an unscoped global print rule
+          in globals.css that leaked its list-style layout onto every other
+          program's print output). Kept identical to how it printed before. */}
+      <style>{`@page { size: auto; margin: 15mm 12mm 12mm 12mm; }`}</style>
       {/* Print-Only Filter Summary */}
       <div className="hidden print:block mb-2 p-2 border border-gray-300">
         <h3 className="font-semibold text-lg mb-1">Active Filters</h3>

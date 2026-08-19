@@ -22,5 +22,10 @@ export default function AutoPrintClient({ title }: { title?: string }) {
     return () => window.clearTimeout(timer);
   }, []);
 
-  return null;
+  // Scoped to this route only (was previously inherited from a global
+  // print rule in globals.css). Matches the portrait page size already
+  // used by the in-app Misc Estimates print view for consistency.
+  return (
+    <style>{`@page { size: auto; margin: 0.38in; }`}</style>
+  );
 }

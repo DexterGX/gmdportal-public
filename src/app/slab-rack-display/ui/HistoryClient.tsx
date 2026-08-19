@@ -520,6 +520,9 @@ export default function HistoryClient({ userName }: { userName: string }) {
 
   return (
     <div className="space-y-6">
+      {/* Scoped to this route only (was previously inherited from a global
+          print rule in globals.css that affected every page's print output). */}
+      <style>{`@page { size: auto; margin: 15mm 12mm 12mm 12mm; }`}</style>
       <div className="print:hidden">
         <h1 className="text-2xl font-semibold text-gray-800 dark:text-gray-200">
           Slab History Log

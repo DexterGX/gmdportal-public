@@ -243,7 +243,7 @@
 }
 
 @page {
-  size: Letter portrait;
+  size: auto;
   margin: 8mm;
 }
 
