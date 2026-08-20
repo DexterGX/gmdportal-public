@@ -378,6 +378,12 @@ export const programs: ProgramConfig[] = [
         path: "/slab-rack-display/settings",
         adminOnly: true,
       },
+      {
+        icon: Tag,
+        name: "Brand Settings",
+        path: "/slab-rack-display/settings/brands",
+        adminOnly: true,
+      },
     ],
     othersItems: [],
   },

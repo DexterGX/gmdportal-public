@@ -81,6 +81,20 @@ export const saveState = (state: SlabBayState) => {
   });
 };
 
+// Every mutating helper below (addMultipleSlabs, moveSlab, exitSlab, etc.)
+// must know whether its write actually reached the database before the UI
+// treats the action as successful. `saveState` above is intentionally
+// fire-and-forget (used for best-effort background syncs), which is exactly
+// what previously let scanned slabs "disappear": the optimistic local state
+// update happened unconditionally while a failed/conflicting DB write was
+// only logged to the console. `persistState` awaits the write and rejects on
+// failure so callers can surface a real error instead of a false "success".
+const persistState = async (state: SlabBayState): Promise<SlabBayState> => {
+  if (typeof window === "undefined") return state;
+  await enqueueStateSync(state);
+  return state;
+};
+
 export const saveStateToDb = async (state: SlabBayState) => {
   if (typeof window === "undefined") return;
   await enqueueStateSync(state);
@@ -199,13 +213,15 @@ const buildHistorySnapshot = (slab: Slab) => ({
   batchSize: slab.batchSize,
 });
 
-export const addRack = (state: SlabBayState, rack: Rack): SlabBayState => {
+export const addRack = async (
+  state: SlabBayState,
+  rack: Rack,
+): Promise<SlabBayState> => {
   const nextState: SlabBayState = {
     ...state,
     racks: [...state.racks, rack],
   };
-  saveState(nextState);
-  return nextState;
+  return persistState(nextState);
 };
 
 export const addDefaultRacks = (state: SlabBayState): SlabBayState => {
@@ -368,17 +384,16 @@ const addSlabLocal = (
   };
 };
 
-export const addSlab = (
+export const addSlab = async (
   state: SlabBayState,
   input: Omit<Slab, "id" | "createdAt">,
   userName: string,
-): SlabBayState => {
+): Promise<SlabBayState> => {
   const nextState = addSlabLocal(state, input, userName);
-  saveState(nextState);
-  return nextState;
+  return persistState(nextState);
 };
 
-export const addMultipleSlabs = (
+export const addMultipleSlabs = async (
   state: SlabBayState,
   input: Omit<Slab, "id" | "createdAt" | "rackId">,
   scannerIds: string[] | undefined,
@@ -386,7 +401,7 @@ export const addMultipleSlabs = (
   quantity: number,
   userName: string,
   preferredRackId?: string,
-): SlabBayState => {
+): Promise<SlabBayState> => {
   let nextState = { ...state } as SlabBayState;
   const batchId = quantity > 1 ? buildId("batch") : undefined;
   let addedCount = 0;
@@ -437,9 +452,7 @@ export const addMultipleSlabs = (
     };
   }
 
-  saveState(nextState);
-
-  return nextState;
+  return persistState(nextState);
 };
 
 export const getRecommendedDistribution = (
@@ -514,12 +527,12 @@ export const getRecommendedDistribution = (
   return { plan, remaining };
 };
 
-export const moveSlab = (
+export const moveSlab = async (
   state: SlabBayState,
   slabId: string,
   toRackId: string,
   userName: string,
-): SlabBayState => {
+): Promise<SlabBayState> => {
   const slab = state.slabs.find((item) => item.id === slabId);
   if (!slab) return state;
 
@@ -542,16 +555,15 @@ export const moveSlab = (
     slabs: updatedSlabs,
     history: [history, ...state.history],
   };
-  saveState(nextState);
-  return nextState;
+  return persistState(nextState);
 };
 
-export const exitSlab = (
+export const exitSlab = async (
   state: SlabBayState,
   slabId: string,
   userName: string,
   exitNote?: string,
-): SlabBayState => {
+): Promise<SlabBayState> => {
   const slab = state.slabs.find((item) => item.id === slabId);
   if (!slab) return state;
 
@@ -571,16 +583,15 @@ export const exitSlab = (
     slabs: state.slabs.filter((item) => item.id !== slabId),
     history: [history, ...state.history],
   };
-  saveState(nextState);
-  return nextState;
+  return persistState(nextState);
 };
 
-export const updateSlab = (
+export const updateSlab = async (
   state: SlabBayState,
   slabId: string,
   updates: Partial<Omit<Slab, "id" | "createdAt">>,
   userName: string,
-): SlabBayState => {
+): Promise<SlabBayState> => {
   const slab = state.slabs.find((item) => item.id === slabId);
   if (!slab) return state;
 
@@ -608,31 +619,29 @@ export const updateSlab = (
     slabs: state.slabs.map((slab) => (slab.id === slabId ? updatedSlab : slab)),
     history: [history, ...state.history],
   };
-  saveState(nextState);
-  return nextState;
+  return persistState(nextState);
 };
 
-export const updateRack = (
+export const updateRack = async (
   state: SlabBayState,
   rackId: string,
   updates: Partial<Rack>,
-): SlabBayState => {
+): Promise<SlabBayState> => {
   const nextState: SlabBayState = {
     ...state,
     racks: state.racks.map((rack) =>
       rack.id === rackId ? { ...rack, ...updates } : rack,
     ),
   };
-  saveState(nextState);
-  return nextState;
+  return persistState(nextState);
 };
 
-export const deleteRackWithReassignment = (
+export const deleteRackWithReassignment = async (
   state: SlabBayState,
   rackId: string,
   destinationRackId: string | null,
   userName: string,
-): { nextState: SlabBayState; error?: string } => {
+): Promise<{ nextState: SlabBayState; error?: string }> => {
   const sourceRack = state.racks.find((rack) => rack.id === rackId);
   if (!sourceRack) {
     return { nextState: state, error: "Selected rack no longer exists." };
@@ -704,16 +713,26 @@ export const deleteRackWithReassignment = (
     history: [...moveHistory, ...state.history],
   };
 
-  saveState(nextState);
+  try {
+    await persistState(nextState);
+  } catch (error) {
+    return {
+      nextState: state,
+      error:
+        error instanceof Error
+          ? error.message
+          : "Failed to save rack deletion. Please try again.",
+    };
+  }
   return { nextState };
 };
 
-export const recoverExitedSlab = (
+export const recoverExitedSlab = async (
   state: SlabBayState,
   exitHistoryId: string,
   targetRackId: string,
   userName: string,
-): { nextState: SlabBayState; error?: string } => {
+): Promise<{ nextState: SlabBayState; error?: string }> => {
   const exitEntry = state.history.find(
     (entry) => entry.id === exitHistoryId && entry.type === "exit",
   );
@@ -781,6 +800,16 @@ export const recoverExitedSlab = (
     slabs: [...state.slabs, restoredSlab],
     history: [history, ...state.history],
   };
-  saveState(nextState);
+  try {
+    await persistState(nextState);
+  } catch (error) {
+    return {
+      nextState: state,
+      error:
+        error instanceof Error
+          ? error.message
+          : "Failed to save slab recovery. Please try again.",
+    };
+  }
   return { nextState };
 };

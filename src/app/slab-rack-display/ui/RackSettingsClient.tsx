@@ -92,7 +92,7 @@ export default function RackSettingsClient() {
     return null;
   };
 
-  const handleSaveRack = () => {
+  const handleSaveRack = async () => {
     if (!selectedRack || !draftRack) {
       setError("Select a rack before saving changes.");
       return;
@@ -106,7 +106,7 @@ export default function RackSettingsClient() {
 
     setIsSaving(true);
     try {
-      const next = updateRack(state, selectedRack.id, {
+      const next = await updateRack(state, selectedRack.id, {
         name: draftRack.name.trim(),
         capacity: draftRack.capacity,
         note: draftRack.note ?? "",
@@ -116,6 +116,14 @@ export default function RackSettingsClient() {
       setState(next);
       setError(null);
       setSuccessMessage("Rack settings saved.");
+    } catch (error) {
+      setError(
+        error instanceof Error
+          ? error.message
+          : "Could not save rack settings. Please try again.",
+      );
+      const fresh = await fetchStateFromDb();
+      if (fresh) setState(fresh);
     } finally {
       setIsSaving(false);
     }
@@ -127,7 +135,7 @@ export default function RackSettingsClient() {
     setSuccessMessage(null);
   };
 
-  const handleCreateRack = () => {
+  const handleCreateRack = async () => {
     const name = newRackName.trim();
     const capacity = Number(newRackCapacity);
     const targetFill = Number(newRackTargetFill);
@@ -154,35 +162,51 @@ export default function RackSettingsClient() {
     }
 
     setError(null);
-    const next = addRack(state, {
-      id,
-      name,
-      capacity,
-      note: newRackNote,
-      countTowardInventory: newRackCountToward,
-      targetFill,
-    });
-    setState(next);
-    setSelectedRackId(id);
-    setNewRackName("");
-    setNewRackCapacity("7");
-    setNewRackTargetFill("5");
-    setNewRackNote("");
-    setNewRackCountToward(true);
+    setIsSaving(true);
+    try {
+      const next = await addRack(state, {
+        id,
+        name,
+        capacity,
+        note: newRackNote,
+        countTowardInventory: newRackCountToward,
+        targetFill,
+      });
+      setState(next);
+      setSelectedRackId(id);
+      setNewRackName("");
+      setNewRackCapacity("7");
+      setNewRackTargetFill("5");
+      setNewRackNote("");
+      setNewRackCountToward(true);
+    } catch (error) {
+      setError(
+        error instanceof Error
+          ? error.message
+          : "Could not create this rack. Please try again.",
+      );
+      const fresh = await fetchStateFromDb();
+      if (fresh) setState(fresh);
+    } finally {
+      setIsSaving(false);
+    }
   };
 
-  const handleDeleteRack = () => {
+  const handleDeleteRack = async () => {
     if (!selectedRack) {
       setError("Select a rack to delete.");
       return;
     }
 
-    const result = deleteRackWithReassignment(
+    setError(null);
+    setIsSaving(true);
+    const result = await deleteRackWithReassignment(
       state,
       selectedRack.id,
       slabsInRack.length > 0 ? deleteDestinationRackId || null : null,
       "Rack Settings",
     );
+    setIsSaving(false);
 
     if (result.error) {
       setError(result.error);
@@ -284,9 +308,10 @@ export default function RackSettingsClient() {
               <button
                 type="button"
                 onClick={handleCreateRack}
-                className="px-3 py-2 text-sm font-medium text-white bg-blue-600 rounded-lg hover:bg-blue-700 transition-colors"
+                disabled={isSaving}
+                className="px-3 py-2 text-sm font-medium text-white bg-blue-600 rounded-lg hover:bg-blue-700 disabled:cursor-not-allowed disabled:opacity-60 transition-colors"
               >
-                Create rack
+                {isSaving ? "Saving..." : "Create rack"}
               </button>
             </div>
           </div>
@@ -328,11 +353,12 @@ export default function RackSettingsClient() {
               onClick={handleDeleteRack}
               disabled={
                 !selectedRack ||
-                (slabsInRack.length > 0 && !deleteDestinationRackId)
+                (slabsInRack.length > 0 && !deleteDestinationRackId) ||
+                isSaving
               }
               className="px-3 py-2 text-sm font-medium text-white bg-red-600 rounded-lg hover:bg-red-700 disabled:cursor-not-allowed disabled:opacity-60 transition-colors"
             >
-              Delete rack
+              {isSaving ? "Saving..." : "Delete rack"}
             </button>
           </div>
         </div>

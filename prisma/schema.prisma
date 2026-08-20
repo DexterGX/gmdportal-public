@@ -1407,6 +1407,20 @@ model SlabBayStateMeta {
   version Int
 }
 
+// Custom brand names added from the SlabBay "Add Slab" form (via the
+// "Other" option) so they can be picked directly next time instead of
+// re-typing "Other" every time. isActive is a soft-delete flag: archiving a
+// brand from Rack/Brand Settings just hides it from the picker without
+// touching historical slabs/history rows, which store the brand as a plain
+// string and are not related to this table.
+model SlabBayBrand {
+  id        String   @id @default(cuid())
+  name      String   @unique
+  isActive  Boolean  @default(true)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
+
 model StoreDepartment {
   id        String      @id @default(cuid())
   key       String      @unique

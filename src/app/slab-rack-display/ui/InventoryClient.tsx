@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useRef, useState } from "react";
+import { Search, X } from "lucide-react";
 import type { SlabBayState } from "./mockData";
 import {
   encodeClientName,
@@ -617,6 +618,16 @@ export default function InventoryClient({ userName }: { userName: string }) {
     setSelectedThicknesses([]);
   };
 
+  const hasActiveFilters =
+    slabSearchTerm.trim().length > 0 ||
+    clientSearchTerm.trim().length > 0 ||
+    scannerIdSearchTerm.trim().length > 0 ||
+    notesSearchTerm.trim().length > 0 ||
+    selectedBrands.length > 0 ||
+    selectedRacks.length > 0 ||
+    selectedTypes.length > 0 ||
+    selectedThicknesses.length > 0;
+
   const openEditModal = (slabId: string) => {
     const slab = state.slabs.find((item) => item.id === slabId);
     if (!slab) return;
@@ -703,44 +714,51 @@ export default function InventoryClient({ userName }: { userName: string }) {
     const batchIndexNum = Number(editBatchIndex);
     const batchSizeNum = Number(editBatchSize);
 
-    const next = updateSlab(
-      state,
-      editingSlabId,
-      {
-        name: editName.trim(),
-        scannerId: editScannerId.trim(),
-        brand: editBrand,
-        finish: editFinish,
-        thickness: editThickness.trim(),
-        size,
-        type: editType,
-        batchIndex:
-          Number.isFinite(batchIndexNum) && batchIndexNum > 0
-            ? batchIndexNum
-            : undefined,
-        batchSize:
-          Number.isFinite(batchSizeNum) && batchSizeNum > 0
-            ? batchSizeNum
-            : undefined,
-        clientName: encodeClientName(
-          editClientName.trim(),
-          editType === "GMD" ? editOriginalClientName.trim() : undefined,
-        ),
-        notes: editNotes,
-        jobId: editJobId,
-        rackId: editRackId,
-      },
-      userName,
-    );
-
+    setIsSavingEdit(true);
     try {
-      setIsSavingEdit(true);
+      const next = await updateSlab(
+        state,
+        editingSlabId,
+        {
+          name: editName.trim(),
+          scannerId: editScannerId.trim(),
+          brand: editBrand,
+          finish: editFinish,
+          thickness: editThickness.trim(),
+          size,
+          type: editType,
+          batchIndex:
+            Number.isFinite(batchIndexNum) && batchIndexNum > 0
+              ? batchIndexNum
+              : undefined,
+          batchSize:
+            Number.isFinite(batchSizeNum) && batchSizeNum > 0
+              ? batchSizeNum
+              : undefined,
+          clientName: encodeClientName(
+            editClientName.trim(),
+            editType === "GMD" ? editOriginalClientName.trim() : undefined,
+          ),
+          notes: editNotes,
+          jobId: editJobId,
+          rackId: editRackId,
+        },
+        userName,
+      );
       setState(next);
       closeEditModal();
-    } catch {
+    } catch (error) {
+      // A failed save (conflict with another change, or a network error)
+      // must not be treated as if it went through - refresh from the
+      // database so the table reflects what's actually saved, and keep the
+      // edit modal open with the entered values so the user can retry.
       setEditError(
-        "Unable to save this slab edit right now. Please try again.",
+        error instanceof Error
+          ? error.message
+          : "Unable to save this slab edit right now. Please try again.",
       );
+      const fresh = await fetchStateFromDb();
+      if (fresh) setState(fresh);
     } finally {
       setIsSavingEdit(false);
     }
@@ -760,14 +778,17 @@ export default function InventoryClient({ userName }: { userName: string }) {
         </p>
       </div>
 
-      <div className="bg-white dark:bg-gray-900 rounded-xl border border-gray-200 dark:border-gray-800 p-4 print:hidden">
-        <div className="grid gap-3 md:grid-cols-2 lg:grid-cols-4 xl:grid-cols-8">
-          <input
-            value={slabSearchTerm}
-            onChange={(event) => setSlabSearchTerm(event.target.value)}
-            placeholder="Filter by slab name"
-            className="rounded-lg border border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-800 px-3 py-2 text-sm"
-          />
+      <div className="bg-white dark:bg-gray-900 rounded-xl border border-gray-200 dark:border-gray-800 p-4 print:hidden space-y-3">
+        <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
+          <div className="relative col-span-2 sm:col-span-1">
+            <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-gray-400" />
+            <input
+              value={slabSearchTerm}
+              onChange={(event) => setSlabSearchTerm(event.target.value)}
+              placeholder="Filter by slab name"
+              className="w-full rounded-lg border border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-800 pl-9 pr-3 py-2 text-sm"
+            />
+          </div>
           <input
             value={clientSearchTerm}
             onChange={(event) => setClientSearchTerm(event.target.value)}
@@ -786,57 +807,58 @@ export default function InventoryClient({ userName }: { userName: string }) {
             placeholder="Filter by notes"
             className="rounded-lg border border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-800 px-3 py-2 text-sm"
           />
+        </div>
+        <div className="flex flex-wrap items-center gap-2">
           <FilterMultiSelect
             label="Brand"
             options={brandOptions}
             selected={selectedBrands}
             onChange={setSelectedBrands}
-            fullWidth
-            matchInputStyle
           />
           <FilterMultiSelect
             label="Racks"
             options={racks}
             selected={selectedRacks}
             onChange={setSelectedRacks}
-            fullWidth
-            matchInputStyle
           />
           <FilterMultiSelect
             label="Type"
             options={types}
             selected={selectedTypes}
             onChange={setSelectedTypes}
-            fullWidth
-            matchInputStyle
           />
           <FilterMultiSelect
             label="Thickness"
             options={thicknesses}
             selected={selectedThicknesses}
             onChange={setSelectedThicknesses}
-            fullWidth
-            matchInputStyle
           />
         </div>
-        <div className="mt-3 text-sm text-gray-500 dark:text-gray-400">
-          Showing {rows.length} of {state.slabs.length}
-        </div>
-        <div className="mt-4 flex flex-wrap gap-2">
-          <button
-            type="button"
-            onClick={handlePrint}
-            className="px-4 py-2 text-sm font-medium text-white bg-blue-600 rounded-lg hover:bg-blue-700 transition-colors"
-          >
-            Print inventory
-          </button>
-          <button
-            type="button"
-            onClick={handleClearFilters}
-            className="px-4 py-2 text-sm font-medium text-gray-700 dark:text-gray-300 bg-white dark:bg-gray-700 border border-gray-300 dark:border-gray-600 rounded-lg hover:bg-gray-50 dark:hover:bg-gray-600 transition-colors"
-          >
-            Clear filters
-          </button>
+        <div className="flex flex-wrap items-center justify-between gap-3 border-t border-gray-100 dark:border-gray-800 pt-3">
+          <span className="text-sm text-gray-500 dark:text-gray-400">
+            Showing {rows.length} of {state.slabs.length}
+          </span>
+          <div className="flex flex-wrap items-center gap-2">
+            <button
+              type="button"
+              onClick={handlePrint}
+              className="px-4 py-2 text-sm font-medium text-white bg-blue-600 rounded-lg hover:bg-blue-700 transition-colors"
+            >
+              Print inventory
+            </button>
+            <button
+              type="button"
+              onClick={handleClearFilters}
+              disabled={!hasActiveFilters}
+              className={`inline-flex items-center gap-1.5 rounded-lg px-4 py-2 text-sm font-medium transition-colors ${
+                hasActiveFilters
+                  ? "cursor-pointer border border-gray-300 text-gray-700 hover:bg-gray-50 dark:border-gray-600 dark:text-gray-300 dark:hover:bg-gray-700"
+                  : "cursor-not-allowed border border-transparent text-gray-400 dark:text-gray-600"
+              }`}
+            >
+              <X className="h-3.5 w-3.5" /> Clear filters
+            </button>
+          </div>
         </div>
       </div>
 
