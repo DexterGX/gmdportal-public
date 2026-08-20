@@ -9,6 +9,7 @@ import {
   addMultipleSlabs,
   encodeClientName,
   exitSlab,
+  fetchStateFromDb,
   getRackById,
   getRackLoad,
   getRecommendedDistribution,
@@ -20,6 +21,93 @@ import {
 import { deleteExpectedDelivery } from "./expectedDeliveries";
 
 type ActionType = "add" | "move" | "exit" | null;
+
+// Rack/slab pickers used to be plain native <select> elements. Inside a
+// modal that itself scrolls (max-h-[90vh] overflow-y-auto), the native
+// dropdown popup - especially on mobile/touch browsers - is rendered by the
+// browser rather than positioned by our CSS, so it can be clipped by or
+// spill outside the modal's rounded card instead of respecting its
+// boundaries. This custom dropdown is a normal DOM element positioned with
+// the same `absolute` + `max-h` + outside-click pattern already used for the
+// search dropdowns elsewhere in this file, so it always stays visually
+// contained inside the modal.
+function OptionDropdown({
+  value,
+  onChange,
+  options,
+  placeholder,
+  disabled,
+}: {
+  value: string;
+  onChange: (value: string) => void;
+  options: { value: string; label: string }[];
+  placeholder: string;
+  disabled?: boolean;
+}) {
+  const [open, setOpen] = useState(false);
+  const containerRef = useRef<HTMLDivElement | null>(null);
+
+  useEffect(() => {
+    if (!open) return;
+    const handleClickOutside = (event: MouseEvent) => {
+      if (
+        containerRef.current &&
+        !containerRef.current.contains(event.target as Node)
+      ) {
+        setOpen(false);
+      }
+    };
+    document.addEventListener("mousedown", handleClickOutside);
+    return () => document.removeEventListener("mousedown", handleClickOutside);
+  }, [open]);
+
+  const selectedOption = options.find((option) => option.value === value);
+
+  return (
+    <div className="relative" ref={containerRef}>
+      <button
+        type="button"
+        disabled={disabled}
+        onClick={() => setOpen((prev) => !prev)}
+        className="mt-1 flex w-full items-center justify-between gap-2 rounded-lg border border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-800 px-3 py-2 text-left text-sm disabled:cursor-not-allowed disabled:bg-gray-100 dark:disabled:bg-gray-900 disabled:text-gray-400"
+      >
+        <span
+          className={`truncate ${selectedOption ? "text-gray-900 dark:text-gray-100" : "text-gray-400"}`}
+        >
+          {selectedOption ? selectedOption.label : placeholder}
+        </span>
+        <span className="shrink-0 text-gray-400">▾</span>
+      </button>
+      {open && !disabled && (
+        <div className="absolute z-20 mt-1 max-h-56 w-full overflow-y-auto rounded-lg border border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-800 shadow-lg">
+          {options.length === 0 ? (
+            <p className="px-3 py-2 text-sm text-gray-500 dark:text-gray-400">
+              No options available.
+            </p>
+          ) : (
+            options.map((option) => (
+              <button
+                key={option.value}
+                type="button"
+                onClick={() => {
+                  onChange(option.value);
+                  setOpen(false);
+                }}
+                className={`w-full whitespace-normal break-words text-left px-3 py-2 text-sm hover:bg-gray-100 dark:hover:bg-gray-700 ${
+                  option.value === value
+                    ? "bg-blue-50 dark:bg-blue-900/30 font-medium text-blue-700 dark:text-blue-300"
+                    : "text-gray-900 dark:text-gray-100"
+                }`}
+              >
+                {option.label}
+              </button>
+            ))
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
 
 export default function SlabActions({
   state,
@@ -45,6 +133,15 @@ export default function SlabActions({
   const [loadingClients, setLoadingClients] = useState(false);
   const [clientName, setClientName] = useState("");
   const [clientSubtitle, setClientSubtitle] = useState<string | null>(null);
+  // Keyed by lowercased client name (same approach as InventoryClient /
+  // HistoryClient). A client's name alone can be ambiguous when they're
+  // actually a contact working through a contractor or referring
+  // organization (e.g. "Diego Gama" -- "via Rise and Design"), so this
+  // resolves that "via ..." / company context live from the CRM to show
+  // alongside the plain name wherever a slab's client is displayed here.
+  const [clientSubtitleByName, setClientSubtitleByName] = useState<
+    Record<string, string | null>
+  >({});
   const [originalClientName, setOriginalClientName] = useState("");
   const [originalClientSubtitle, setOriginalClientSubtitle] = useState<
     string | null
@@ -97,6 +194,7 @@ export default function SlabActions({
   const [slabSearchTerm, setSlabSearchTerm] = useState("");
   const [showSlabDropdown, setShowSlabDropdown] = useState(false);
   const [actionError, setActionError] = useState<string | null>(null);
+  const [isSaving, setIsSaving] = useState(false);
   const [confirmOpen, setConfirmOpen] = useState(false);
   const [confirmMessage, setConfirmMessage] = useState("");
   const [confirmPlan, setConfirmPlan] = useState<
@@ -139,7 +237,11 @@ export default function SlabActions({
     [],
   );
   const OTHER_OPTION = "OTHER";
-  const brandOptions = useMemo(
+  // Fallback list shown instantly while the real, admin-managed brand list
+  // (which now also picks up anything typed into "Other") loads from
+  // /api/slab-rack-display/brands. See the effect below and
+  // `registerBrandName`.
+  const DEFAULT_BRAND_NAMES = useMemo(
     () => [
       "CAMBRIA",
       "CEASARSTONE - Porcelain",
@@ -164,10 +266,60 @@ export default function SlabActions({
       "UMI - Pompeii Quartz",
       "UMI - Vetrazzo",
       "WILLSONART",
-      OTHER_OPTION,
     ],
-    [OTHER_OPTION],
+    [],
   );
+  const [brandNames, setBrandNames] = useState<string[]>(DEFAULT_BRAND_NAMES);
+  const brandOptions = useMemo(
+    () => [...brandNames, OTHER_OPTION],
+    [brandNames],
+  );
+
+  useEffect(() => {
+    let active = true;
+    fetch("/api/slab-rack-display/brands")
+      .then((res) => (res.ok ? res.json() : null))
+      .then(
+        (
+          data: Array<{ name: string; isActive: boolean }> | null,
+        ) => {
+          if (!active || !data) return;
+          const names = data
+            .filter((brand) => brand.isActive)
+            .map((brand) => brand.name);
+          if (names.length > 0) setBrandNames(names);
+        },
+      )
+      .catch(() => undefined);
+    return () => {
+      active = false;
+    };
+  }, []);
+
+  // Registers a brand name typed into "Other" so it becomes a first-class,
+  // directly selectable option next time (instead of picking "Other" and
+  // retyping it). Fire-and-forget from the caller's perspective - the slab
+  // itself already saved successfully by the time this runs.
+  const registerBrandName = async (rawName: string) => {
+    const name = rawName.trim();
+    if (!name) return;
+    try {
+      const response = await fetch("/api/slab-rack-display/brands", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ name }),
+      });
+      if (!response.ok) return;
+      const saved = (await response.json()) as { name: string };
+      setBrandNames((prev) =>
+        prev.some((item) => item.toLowerCase() === saved.name.toLowerCase())
+          ? prev
+          : [...prev, saved.name].sort((a, b) => a.localeCompare(b)),
+      );
+    } catch {
+      // Best-effort only; the slab itself already saved successfully.
+    }
+  };
   const finishOptions = useMemo(
     () => [
       "CONCRETE",
@@ -254,6 +406,8 @@ export default function SlabActions({
   const clientDropdownRef = useRef<HTMLDivElement | null>(null);
   const originalClientDropdownRef = useRef<HTMLDivElement | null>(null);
   const slabDropdownRef = useRef<HTMLDivElement | null>(null);
+  const exitSlabIdSearchRef = useRef<HTMLDivElement | null>(null);
+  const exitScannerIdSearchRef = useRef<HTMLDivElement | null>(null);
 
   const racks = state.racks;
   const sortedRacks = useMemo(
@@ -303,6 +457,42 @@ export default function SlabActions({
     if (!fromRackId) return;
     setSelectedSlabId("");
   }, [fromRackId]);
+
+  useEffect(() => {
+    const clientNames = Array.from(
+      new Set(
+        state.slabs
+          .map((slab) => splitClientName(slab.clientName).clientName.trim())
+          .filter(Boolean),
+      ),
+    );
+    if (clientNames.length === 0) {
+      setClientSubtitleByName({});
+      return;
+    }
+    let active = true;
+    fetch("/api/slab-rack-display/client-subtitles", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ names: clientNames }),
+    })
+      .then((response) => (response.ok ? response.json() : null))
+      .then((payload) => {
+        if (!active) return;
+        const subtitles =
+          payload && typeof payload === "object" && payload.subtitles
+            ? (payload.subtitles as Record<string, string | null>)
+            : {};
+        setClientSubtitleByName(subtitles);
+      })
+      .catch(() => {
+        if (!active) return;
+        setClientSubtitleByName({});
+      });
+    return () => {
+      active = false;
+    };
+  }, [state.slabs]);
 
   useEffect(() => {
     if (!clientSearchTerm) {
@@ -446,11 +636,28 @@ export default function SlabActions({
       ) {
         setShowSlabDropdown(false);
       }
-      setActiveExitSearchField(null);
+      // Only close the exit-search dropdowns when the click actually lands
+      // outside both search boxes. Previously this reset unconditionally on
+      // every mousedown anywhere on the page - including inside the search
+      // input itself (e.g. clicking to move the cursor while typing) - which
+      // is why the results list would sometimes vanish before a match could
+      // be picked.
+      const clickedInsideSlabIdSearch =
+        exitSlabIdSearchRef.current?.contains(target) ?? false;
+      const clickedInsideScannerIdSearch =
+        exitScannerIdSearchRef.current?.contains(target) ?? false;
+      if (!clickedInsideSlabIdSearch && !clickedInsideScannerIdSearch) {
+        setActiveExitSearchField(null);
+      }
     };
     document.addEventListener("mousedown", handleClickOutside);
     return () => document.removeEventListener("mousedown", handleClickOutside);
   }, []);
+
+  const buildSlabOptionLabel = (slab: Slab) => {
+    const { clientName } = splitClientName(slab.clientName);
+    return `${slab.id} · Scanner ${slab.scannerId} — ${slab.name} (${clientName}) - ${slab.rackId.toUpperCase()}`;
+  };
 
   const slabOptions = useMemo(() => {
     // When searching by ID/scanner, show all slabs; otherwise filter by rack if selected
@@ -475,14 +682,43 @@ export default function SlabActions({
       }
     }
 
-    return filtered.map((slab) => {
-      const { clientName } = splitClientName(slab.clientName);
-      return {
-        id: slab.id,
-        label: `${slab.name} (${clientName}) - ${slab.rackId.toUpperCase()}`,
-      };
-    });
+    return filtered.map((slab) => ({
+      id: slab.id,
+      label: buildSlabOptionLabel(slab),
+    }));
   }, [state.slabs, fromRackId, action, exitSlabIdSearch, exitScannerIdSearch]);
+
+  // The live "Search by Slab ID" and "Search by Scanner ID" boxes each need
+  // their own independent result list. Previously both search terms were
+  // ANDed together into one list (via slabOptions above), so leftover text
+  // left in the other box - even from a search that never matched - could
+  // silently zero out this box's results and the dropdown would appear to
+  // "not show up" even though the current input clearly matched a slab.
+  const slabIdSearchResults = useMemo(() => {
+    const term = exitSlabIdSearch.trim().toLowerCase();
+    if (!term) return [];
+    return state.slabs
+      .filter((slab) => slab.id.toLowerCase().includes(term))
+      .map((slab) => ({ id: slab.id, label: buildSlabOptionLabel(slab) }));
+  }, [state.slabs, exitSlabIdSearch]);
+
+  const scannerIdSearchResults = useMemo(() => {
+    const term = exitScannerIdSearch.trim().toLowerCase();
+    if (!term) return [];
+    return state.slabs
+      .filter((slab) => slab.scannerId.toLowerCase().includes(term))
+      .map((slab) => ({ id: slab.id, label: buildSlabOptionLabel(slab) }));
+  }, [state.slabs, exitScannerIdSearch]);
+
+  // Shared by both the Move and Exit modals - they both drive the "Slab"
+  // picker off the same `selectedSlabId` state - so whichever one is open
+  // can show the full, non-truncated details of the slab that was picked
+  // (previously only the Exit modal did this, so Move gave no confirmation
+  // of which slab was actually about to move).
+  const selectedSlabDetails = useMemo(
+    () => state.slabs.find((slab) => slab.id === selectedSlabId),
+    [state.slabs, selectedSlabId],
+  );
 
   const handleExitSlabSelect = (slabId: string) => {
     if (!slabId) return;
@@ -493,8 +729,11 @@ export default function SlabActions({
       setTimeout(() => {
         setSelectedSlabId(foundSlab.id);
       }, 0);
-      setExitSlabIdSearch("");
-      setExitScannerIdSearch("");
+      // Autofill both search boxes with the slab that was actually picked
+      // (instead of clearing them) so it's obvious at a glance - no matter
+      // which box was used to find it - that the right slab was selected.
+      setExitSlabIdSearch(foundSlab.id);
+      setExitScannerIdSearch(foundSlab.scannerId);
       setActiveExitSearchField(null);
     }
   };
@@ -606,7 +845,15 @@ export default function SlabActions({
     }, 4000);
   };
 
-  const performAdd = (payload: {
+  // If a save fails (network error, or another user/device changed SlabBay
+  // data first), pull the real state back from the database so the screen
+  // never shows slabs that were never actually persisted.
+  const resyncAfterFailure = async () => {
+    const fresh = await fetchStateFromDb();
+    if (fresh) onUpdate(fresh);
+  };
+
+  const performAdd = async (payload: {
     input: Omit<Slab, "id" | "createdAt" | "rackId">;
     scannerIds?: string[];
     slabNotes?: string[];
@@ -614,36 +861,80 @@ export default function SlabActions({
     preferredRackId?: string;
     printLabels?: boolean;
   }) => {
-    const next = addMultipleSlabs(
-      state,
-      payload.input,
-      payload.scannerIds,
-      payload.slabNotes,
-      payload.quantity,
-      userName,
-      payload.preferredRackId,
-    );
-    if (payload.printLabels) {
-      const previousIds = new Set(state.slabs.map((slab) => slab.id));
-      const createdSlabs = next.slabs.filter(
-        (slab) => !previousIds.has(slab.id),
+    if (isSaving) return;
+    setIsSaving(true);
+    setActionError(null);
+    try {
+      const next = await addMultipleSlabs(
+        state,
+        payload.input,
+        payload.scannerIds,
+        payload.slabNotes,
+        payload.quantity,
+        userName,
+        payload.preferredRackId,
       );
-      if (createdSlabs.length <= 1) {
-        createdSlabs.forEach((slab) => openLabel(slab.id));
-      } else {
-        setPrintSelectionSlabs(
-          createdSlabs.map((slab) => ({
-            id: slab.id,
-            scannerId: slab.scannerId,
-            name: slab.name,
-          })),
+      if (payload.printLabels) {
+        const previousIds = new Set(state.slabs.map((slab) => slab.id));
+        const createdSlabs = next.slabs.filter(
+          (slab) => !previousIds.has(slab.id),
         );
-        setPrintSelectionOpen(true);
+        if (createdSlabs.length <= 1) {
+          createdSlabs.forEach((slab) => openLabel(slab.id));
+        } else {
+          setPrintSelectionSlabs(
+            createdSlabs.map((slab) => ({
+              id: slab.id,
+              scannerId: slab.scannerId,
+              name: slab.name,
+            })),
+          );
+          setPrintSelectionOpen(true);
+        }
       }
+      onUpdate(next);
+      resetForm();
+      setAction(null);
+      setConfirmOpen(false);
+      setPendingAdd(null);
+      pushNotification(
+        "success",
+        payload.quantity > 1
+          ? `${payload.quantity} slabs added successfully.`
+          : "Slab entry completed successfully.",
+      );
+      if (payload.input.brand?.startsWith("Other - ")) {
+        // The brand was typed into "Other" - register it so it shows up as
+        // a normal, directly selectable option next time.
+        void registerBrandName(payload.input.brand.replace(/^Other -\s*/, ""));
+      }
+      if (selectedDeliveryId && onExpectedDeliveriesChange) {
+        void deleteExpectedDelivery(selectedDeliveryId)
+          .then(() => {
+            onExpectedDeliveriesChange(
+              expectedDeliveries.filter(
+                (delivery) => delivery.id !== selectedDeliveryId,
+              ),
+            );
+          })
+          .catch(() => {
+            pushNotification(
+              "warning",
+              "Slab was added, but the expected delivery item could not be removed.",
+            );
+          });
+      }
+    } catch (error) {
+      const message =
+        error instanceof Error
+          ? error.message
+          : "Could not save this slab. Please try again.";
+      setActionError(message);
+      pushNotification("error", message);
+      await resyncAfterFailure();
+    } finally {
+      setIsSaving(false);
     }
-    onUpdate(next);
-    resetForm();
-    setAction(null);
   };
 
   const handleAdd = (printLabels = false) => {
@@ -767,27 +1058,11 @@ export default function SlabActions({
       return;
     }
 
-    performAdd(payload);
-    if (selectedDeliveryId && onExpectedDeliveriesChange) {
-      void deleteExpectedDelivery(selectedDeliveryId)
-        .then(() => {
-          onExpectedDeliveriesChange(
-            expectedDeliveries.filter(
-              (delivery) => delivery.id !== selectedDeliveryId,
-            ),
-          );
-        })
-        .catch(() => {
-          pushNotification(
-            "warning",
-            "Slab was added, but the expected delivery item could not be removed.",
-          );
-        });
-    }
-    pushNotification("success", "Slab entry completed successfully.");
+    void performAdd(payload);
   };
 
-  const handleMove = () => {
+  const handleMove = async () => {
+    if (isSaving) return;
     if (action === "move" && (!fromRackId || !selectedSlabId)) {
       const message = "Select a rack and slab before moving.";
       setActionError(message);
@@ -808,14 +1083,28 @@ export default function SlabActions({
       }
     }
     setActionError(null);
-    const next = moveSlab(state, selectedSlabId, moveRackId, userName);
-    onUpdate(next);
-    resetForm();
-    setAction(null);
-    pushNotification("success", "Slab moved successfully.");
+    setIsSaving(true);
+    try {
+      const next = await moveSlab(state, selectedSlabId, moveRackId, userName);
+      onUpdate(next);
+      resetForm();
+      setAction(null);
+      pushNotification("success", "Slab moved successfully.");
+    } catch (error) {
+      const message =
+        error instanceof Error
+          ? error.message
+          : "Could not save this move. Please try again.";
+      setActionError(message);
+      pushNotification("error", message);
+      await resyncAfterFailure();
+    } finally {
+      setIsSaving(false);
+    }
   };
 
-  const handleExit = () => {
+  const handleExit = async () => {
+    if (isSaving) return;
     if (!fromRackId || !selectedSlabId) {
       const message = "Select a rack and slab before exiting.";
       setActionError(message);
@@ -829,11 +1118,24 @@ export default function SlabActions({
       return;
     }
     setActionError(null);
-    const next = exitSlab(state, selectedSlabId, userName, exitNote);
-    onUpdate(next);
-    resetForm();
-    setAction(null);
-    pushNotification("success", "Slab exited successfully.");
+    setIsSaving(true);
+    try {
+      const next = await exitSlab(state, selectedSlabId, userName, exitNote);
+      onUpdate(next);
+      resetForm();
+      setAction(null);
+      pushNotification("success", "Slab exited successfully.");
+    } catch (error) {
+      const message =
+        error instanceof Error
+          ? error.message
+          : "Could not save this exit. Please try again.";
+      setActionError(message);
+      pushNotification("error", message);
+      await resyncAfterFailure();
+    } finally {
+      setIsSaving(false);
+    }
   };
 
   return (
@@ -999,19 +1301,15 @@ export default function SlabActions({
                       <label className="text-xs font-medium text-gray-500">
                         Rack
                       </label>
-                      <select
-                        value={selectedRackId}
-                        onChange={(event) =>
-                          setSelectedRackId(event.target.value)
-                        }
-                        className="mt-1 w-full rounded-lg border border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-800 px-3 py-2 text-sm"
-                      >
-                        {sortedRacks.map((rack) => (
-                          <option key={rack.id} value={rack.id}>
-                            {rack.name}
-                          </option>
-                        ))}
-                      </select>
+                      <OptionDropdown
+                        value={selectedRackId ?? ""}
+                        onChange={setSelectedRackId}
+                        placeholder="Select rack"
+                        options={sortedRacks.map((rack) => ({
+                          value: rack.id,
+                          label: rack.name,
+                        }))}
+                      />
                     </div>
                     <div>
                       <label className="text-xs font-medium text-gray-500">
@@ -1670,16 +1968,18 @@ export default function SlabActions({
                   <button
                     type="button"
                     onClick={() => handleAdd(false)}
-                    className="px-4 py-2 text-sm font-medium text-white bg-blue-600 rounded-lg hover:bg-blue-700 transition-colors"
+                    disabled={isSaving}
+                    className="px-4 py-2 text-sm font-medium text-white bg-blue-600 rounded-lg hover:bg-blue-700 disabled:cursor-not-allowed disabled:opacity-60 transition-colors"
                   >
-                    Add slab
+                    {isSaving ? "Saving..." : "Add slab"}
                   </button>
                   <button
                     type="button"
                     onClick={() => handleAdd(true)}
-                    className="px-4 py-2 text-sm font-medium text-white bg-gray-900 rounded-lg hover:bg-black transition-colors"
+                    disabled={isSaving}
+                    className="px-4 py-2 text-sm font-medium text-white bg-gray-900 rounded-lg hover:bg-black disabled:cursor-not-allowed disabled:opacity-60 transition-colors"
                   >
-                    Add & print label
+                    {isSaving ? "Saving..." : "Add & print label"}
                   </button>
                 </div>
               </div>
@@ -1941,12 +2241,12 @@ export default function SlabActions({
                     <button
                       type="button"
                       onClick={() => {
-                        if (pendingAdd) performAdd(pendingAdd);
-                        setConfirmOpen(false);
+                        if (pendingAdd) void performAdd(pendingAdd);
                       }}
-                      className="px-4 py-2 text-sm font-medium text-white bg-blue-600 rounded-lg hover:bg-blue-700 transition-colors"
+                      disabled={isSaving}
+                      className="px-4 py-2 text-sm font-medium text-white bg-blue-600 rounded-lg hover:bg-blue-700 disabled:cursor-not-allowed disabled:opacity-60 transition-colors"
                     >
-                      OK
+                      {isSaving ? "Saving..." : "OK"}
                     </button>
                   </div>
                 </div>
@@ -2041,41 +2341,57 @@ export default function SlabActions({
                         <label className="text-xs font-medium text-gray-500">
                           Rack
                         </label>
-                        <select
+                        <OptionDropdown
                           value={fromRackId}
-                          onChange={(event) =>
-                            setFromRackId(event.target.value)
-                          }
-                          className="mt-1 w-full rounded-lg border border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-800 px-3 py-2 text-sm"
-                        >
-                          <option value="">Select rack</option>
-                          {sortedRacks.map((rack) => (
-                            <option key={rack.id} value={rack.id}>
-                              {rack.name}
-                            </option>
-                          ))}
-                        </select>
+                          onChange={setFromRackId}
+                          placeholder="Select rack"
+                          options={sortedRacks.map((rack) => ({
+                            value: rack.id,
+                            label: rack.name,
+                          }))}
+                        />
                       </div>
                       <div>
                         <label className="text-xs font-medium text-gray-500">
                           Slab
                         </label>
-                        <select
+                        <OptionDropdown
                           value={selectedSlabId}
-                          onChange={(event) =>
-                            setSelectedSlabId(event.target.value)
-                          }
+                          onChange={setSelectedSlabId}
+                          placeholder="Select slab"
                           disabled={!fromRackId}
-                          className="mt-1 w-full rounded-lg border border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-800 px-3 py-2 text-sm"
-                        >
-                          <option value="">Select slab</option>
-                          {slabOptions.map((slab) => (
-                            <option key={slab.id} value={slab.id}>
-                              {slab.label}
-                            </option>
-                          ))}
-                        </select>
+                          options={slabOptions.map((slab) => ({
+                            value: slab.id,
+                            label: slab.label,
+                          }))}
+                        />
                       </div>
+                      {selectedSlabDetails &&
+                        (() => {
+                          const { clientName } = splitClientName(
+                            selectedSlabDetails.clientName,
+                          );
+                          const subtitle =
+                            clientSubtitleByName[
+                              clientName.trim().toLowerCase()
+                            ];
+                          return (
+                            <div className="rounded-lg border border-green-200 dark:border-green-900 bg-green-50 dark:bg-green-950/30 px-3 py-2">
+                              <p className="text-xs font-semibold uppercase tracking-wide text-green-700 dark:text-green-300">
+                                Selected slab
+                              </p>
+                              <p className="mt-1 whitespace-normal break-words text-sm text-green-900 dark:text-green-200">
+                                <span className="font-semibold">
+                                  {selectedSlabDetails.id}
+                                </span>{" "}
+                                · Scanner {selectedSlabDetails.scannerId} —{" "}
+                                {selectedSlabDetails.name} ({clientName}
+                                {subtitle ? ` — ${subtitle}` : ""}) — Rack{" "}
+                                {selectedSlabDetails.rackId.toUpperCase()}
+                              </p>
+                            </div>
+                          );
+                        })()}
                     </div>
                   </div>
                   <div className="rounded-lg border border-gray-200 dark:border-gray-700 p-4">
@@ -2087,20 +2403,15 @@ export default function SlabActions({
                         <label className="text-xs font-medium text-gray-500">
                           Target rack
                         </label>
-                        <select
+                        <OptionDropdown
                           value={moveRackId}
-                          onChange={(event) =>
-                            setMoveRackId(event.target.value)
-                          }
-                          className="mt-1 w-full rounded-lg border border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-800 px-3 py-2 text-sm"
-                        >
-                          <option value="">Select rack</option>
-                          {sortedRacks.map((rack) => (
-                            <option key={rack.id} value={rack.id}>
-                              {rack.name}
-                            </option>
-                          ))}
-                        </select>
+                          onChange={setMoveRackId}
+                          placeholder="Select rack"
+                          options={sortedRacks.map((rack) => ({
+                            value: rack.id,
+                            label: rack.name,
+                          }))}
+                        />
                       </div>
                     </div>
                   </div>
@@ -2119,9 +2430,10 @@ export default function SlabActions({
                   <button
                     type="button"
                     onClick={handleMove}
-                    className="px-4 py-2 text-sm font-medium text-white bg-blue-600 rounded-lg hover:bg-blue-700 transition-colors"
+                    disabled={isSaving}
+                    className="px-4 py-2 text-sm font-medium text-white bg-blue-600 rounded-lg hover:bg-blue-700 disabled:cursor-not-allowed disabled:opacity-60 transition-colors"
                   >
-                    Move slab
+                    {isSaving ? "Saving..." : "Move slab"}
                   </button>
                 </div>
                 {actionError && (
@@ -2135,77 +2447,103 @@ export default function SlabActions({
             {action === "exit" && (
               <div className="mt-4 space-y-4">
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                  <div className="relative">
+                  <div className="relative" ref={exitSlabIdSearchRef}>
                     <label className="text-xs font-medium text-gray-500">
                       Search by Slab ID
                     </label>
                     <input
                       type="text"
                       value={exitSlabIdSearch}
-                      onChange={(event) =>
-                        setExitSlabIdSearch(event.target.value)
-                      }
+                      onChange={(event) => {
+                        setExitSlabIdSearch(event.target.value);
+                        setActiveExitSearchField("slabId");
+                      }}
                       onFocus={() => setActiveExitSearchField("slabId")}
-                      onBlur={() =>
-                        setTimeout(() => setActiveExitSearchField(null), 150)
-                      }
+                      onBlur={(event) => {
+                        const next = event.relatedTarget as Node | null;
+                        if (
+                          next &&
+                          exitSlabIdSearchRef.current?.contains(next)
+                        ) {
+                          return;
+                        }
+                        setTimeout(() => setActiveExitSearchField(null), 150);
+                      }}
                       placeholder="e.g. slab-1001"
                       className="mt-1 w-full rounded-lg border border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-800 px-3 py-2 text-sm"
                     />
                     {activeExitSearchField === "slabId" &&
-                      exitSlabIdSearch.trim() &&
-                      slabOptions.length > 0 && (
-                        <div className="absolute top-full left-0 right-0 mt-1 z-10 rounded-lg border border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-800 shadow-lg max-h-48 overflow-y-auto">
-                          {slabOptions.map((slab) => (
-                            <button
-                              key={slab.id}
-                              type="button"
-                              onMouseDown={(e) => {
-                                e.preventDefault();
-                                handleExitSlabSelect(slab.id);
-                              }}
-                              className="w-full text-left px-3 py-2 text-sm text-gray-900 dark:text-gray-100 hover:bg-gray-100 dark:hover:bg-gray-700 first:rounded-t-lg last:rounded-b-lg"
-                            >
-                              {slab.label}
-                            </button>
-                          ))}
+                      exitSlabIdSearch.trim() && (
+                        <div className="absolute top-full left-0 right-0 mt-1 z-10 rounded-lg border border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-800 shadow-lg max-h-56 overflow-y-auto">
+                          {slabIdSearchResults.length > 0 ? (
+                            slabIdSearchResults.map((slab) => (
+                              <button
+                                key={slab.id}
+                                type="button"
+                                onMouseDown={(e) => {
+                                  e.preventDefault();
+                                  handleExitSlabSelect(slab.id);
+                                }}
+                                className="w-full whitespace-normal break-words text-left px-3 py-2 text-sm text-gray-900 dark:text-gray-100 hover:bg-gray-100 dark:hover:bg-gray-700 first:rounded-t-lg last:rounded-b-lg"
+                              >
+                                {slab.label}
+                              </button>
+                            ))
+                          ) : (
+                            <p className="px-3 py-2 text-sm text-gray-500 dark:text-gray-400">
+                              No slabs match &quot;{exitSlabIdSearch}&quot;.
+                            </p>
+                          )}
                         </div>
                       )}
                   </div>
-                  <div className="relative">
+                  <div className="relative" ref={exitScannerIdSearchRef}>
                     <label className="text-xs font-medium text-gray-500">
                       Search by Scanner ID
                     </label>
                     <input
                       type="text"
                       value={exitScannerIdSearch}
-                      onChange={(event) =>
-                        setExitScannerIdSearch(event.target.value)
-                      }
+                      onChange={(event) => {
+                        setExitScannerIdSearch(event.target.value);
+                        setActiveExitSearchField("scannerId");
+                      }}
                       onFocus={() => setActiveExitSearchField("scannerId")}
-                      onBlur={() =>
-                        setTimeout(() => setActiveExitSearchField(null), 150)
-                      }
+                      onBlur={(event) => {
+                        const next = event.relatedTarget as Node | null;
+                        if (
+                          next &&
+                          exitScannerIdSearchRef.current?.contains(next)
+                        ) {
+                          return;
+                        }
+                        setTimeout(() => setActiveExitSearchField(null), 150);
+                      }}
                       placeholder="e.g. scanner-123"
                       className="mt-1 w-full rounded-lg border border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-800 px-3 py-2 text-sm"
                     />
                     {activeExitSearchField === "scannerId" &&
-                      exitScannerIdSearch.trim() &&
-                      slabOptions.length > 0 && (
-                        <div className="absolute top-full left-0 right-0 mt-1 z-10 rounded-lg border border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-800 shadow-lg max-h-48 overflow-y-auto">
-                          {slabOptions.map((slab) => (
-                            <button
-                              key={slab.id}
-                              type="button"
-                              onMouseDown={(e) => {
-                                e.preventDefault();
-                                handleExitSlabSelect(slab.id);
-                              }}
-                              className="w-full text-left px-3 py-2 text-sm text-gray-900 dark:text-gray-100 hover:bg-gray-100 dark:hover:bg-gray-700 first:rounded-t-lg last:rounded-b-lg"
-                            >
-                              {slab.label}
-                            </button>
-                          ))}
+                      exitScannerIdSearch.trim() && (
+                        <div className="absolute top-full left-0 right-0 mt-1 z-10 rounded-lg border border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-800 shadow-lg max-h-56 overflow-y-auto">
+                          {scannerIdSearchResults.length > 0 ? (
+                            scannerIdSearchResults.map((slab) => (
+                              <button
+                                key={slab.id}
+                                type="button"
+                                onMouseDown={(e) => {
+                                  e.preventDefault();
+                                  handleExitSlabSelect(slab.id);
+                                }}
+                                className="w-full whitespace-normal break-words text-left px-3 py-2 text-sm text-gray-900 dark:text-gray-100 hover:bg-gray-100 dark:hover:bg-gray-700 first:rounded-t-lg last:rounded-b-lg"
+                              >
+                                {slab.label}
+                              </button>
+                            ))
+                          ) : (
+                            <p className="px-3 py-2 text-sm text-gray-500 dark:text-gray-400">
+                              No slabs match &quot;{exitScannerIdSearch}&quot;.
+                            </p>
+                          )}
                         </div>
                       )}
                   </div>
@@ -2215,39 +2553,55 @@ export default function SlabActions({
                     <label className="text-xs font-medium text-gray-500">
                       Rack
                     </label>
-                    <select
+                    <OptionDropdown
                       value={fromRackId}
-                      onChange={(event) => setFromRackId(event.target.value)}
-                      className="mt-1 w-full rounded-lg border border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-800 px-3 py-2 text-sm"
-                    >
-                      <option value="">Select rack</option>
-                      {sortedRacks.map((rack) => (
-                        <option key={rack.id} value={rack.id}>
-                          {rack.name}
-                        </option>
-                      ))}
-                    </select>
+                      onChange={setFromRackId}
+                      placeholder="Select rack"
+                      options={sortedRacks.map((rack) => ({
+                        value: rack.id,
+                        label: rack.name,
+                      }))}
+                    />
                   </div>
                   <div>
                     <label className="text-xs font-medium text-gray-500">
                       Slab
                     </label>
-                    <select
+                    <OptionDropdown
                       value={selectedSlabId}
-                      onChange={(event) =>
-                        handleExitSlabSelect(event.target.value)
-                      }
-                      className="mt-1 w-full rounded-lg border border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-800 px-3 py-2 text-sm"
-                    >
-                      <option value="">Select slab</option>
-                      {slabOptions.map((slab) => (
-                        <option key={slab.id} value={slab.id}>
-                          {slab.label}
-                        </option>
-                      ))}
-                    </select>
+                      onChange={handleExitSlabSelect}
+                      placeholder="Select slab"
+                      options={slabOptions.map((slab) => ({
+                        value: slab.id,
+                        label: slab.label,
+                      }))}
+                    />
                   </div>
                 </div>
+                {selectedSlabDetails &&
+                  (() => {
+                    const { clientName } = splitClientName(
+                      selectedSlabDetails.clientName,
+                    );
+                    const subtitle =
+                      clientSubtitleByName[clientName.trim().toLowerCase()];
+                    return (
+                      <div className="rounded-lg border border-green-200 dark:border-green-900 bg-green-50 dark:bg-green-950/30 px-3 py-2">
+                        <p className="text-xs font-semibold uppercase tracking-wide text-green-700 dark:text-green-300">
+                          Selected slab
+                        </p>
+                        <p className="mt-1 whitespace-normal break-words text-sm text-green-900 dark:text-green-200">
+                          <span className="font-semibold">
+                            {selectedSlabDetails.id}
+                          </span>{" "}
+                          · Scanner {selectedSlabDetails.scannerId} —{" "}
+                          {selectedSlabDetails.name} ({clientName}
+                          {subtitle ? ` — ${subtitle}` : ""}) — Rack{" "}
+                          {selectedSlabDetails.rackId.toUpperCase()}
+                        </p>
+                      </div>
+                    );
+                  })()}
                 <div>
                   <label className="text-xs font-medium text-gray-500">
                     Exit notes <span className="text-red-600">*</span>
@@ -2274,9 +2628,10 @@ export default function SlabActions({
                   <button
                     type="button"
                     onClick={handleExit}
-                    className="px-4 py-2 text-sm font-medium text-white bg-green-600 rounded-lg hover:bg-green-700 transition-colors"
+                    disabled={isSaving}
+                    className="px-4 py-2 text-sm font-medium text-white bg-green-600 rounded-lg hover:bg-green-700 disabled:cursor-not-allowed disabled:opacity-60 transition-colors"
                   >
-                    Exit slab
+                    {isSaving ? "Saving..." : "Exit slab"}
                   </button>
                 </div>
                 {actionError && (

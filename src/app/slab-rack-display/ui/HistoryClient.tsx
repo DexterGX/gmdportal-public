@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
+import { Search, X } from "lucide-react";
 import type { SlabBayState } from "./mockData";
 import FilterMultiSelect from "@/components/filters/FilterMultiSelect";
 import {
@@ -88,6 +89,7 @@ export default function HistoryClient({ userName }: { userName: string }) {
   >(null);
   const [recoveryRackId, setRecoveryRackId] = useState("");
   const [recoveryError, setRecoveryError] = useState<string | null>(null);
+  const [isRecovering, setIsRecovering] = useState(false);
   const [lastClickedHistoryId, setLastClickedHistoryId] = useState("");
   const [clientSubtitleByName, setClientSubtitleByName] = useState<
     Record<string, string | null>
@@ -491,31 +493,64 @@ export default function HistoryClient({ userName }: { userName: string }) {
     setRecoveryError(null);
   };
 
-  const handleRecover = () => {
+  const handleRecover = async () => {
     if (!selectedExitEntry || !recoveryRackId) {
       setRecoveryError("Select a rack to restore this slab.");
       return;
     }
+    if (isRecovering) return;
 
-    const result = recoverExitedSlab(
-      state,
-      selectedExitEntry.id,
-      recoveryRackId,
-      userName,
-    );
-    if (result.error) {
-      setRecoveryError(result.error);
-      return;
+    setIsRecovering(true);
+    try {
+      const result = await recoverExitedSlab(
+        state,
+        selectedExitEntry.id,
+        recoveryRackId,
+        userName,
+      );
+      if (result.error) {
+        setRecoveryError(result.error);
+        return;
+      }
+
+      setState(result.nextState);
+      closeRecoveryDialog();
+    } catch (error) {
+      setRecoveryError(
+        error instanceof Error
+          ? error.message
+          : "Could not restore this slab. Please try again.",
+      );
+      const fresh = await fetchStateFromDb();
+      if (fresh) setState(fresh);
+    } finally {
+      setIsRecovering(false);
     }
-
-    setState(result.nextState);
-    closeRecoveryDialog();
   };
 
   const handlePrint = (mode: "filtered" | "all") => {
     setPrintMode(mode);
     setTimeout(() => window.print(), 50);
   };
+
+  const handleClearFilters = () => {
+    setSlabFilter("");
+    setClientFilter("");
+    setScannerIdFilter("");
+    setNotesFilter("");
+    setDateFilter("");
+    setSelectedBrands([]);
+    setActionFilter("all");
+  };
+
+  const hasActiveFilters =
+    slabFilter.trim().length > 0 ||
+    clientFilter.trim().length > 0 ||
+    scannerIdFilter.trim().length > 0 ||
+    notesFilter.trim().length > 0 ||
+    dateFilter.trim().length > 0 ||
+    selectedBrands.length > 0 ||
+    actionFilter !== "all";
 
   const handleRowClick = (historyId: string) => {
     setLastClickedHistoryId(historyId);
@@ -589,14 +624,17 @@ export default function HistoryClient({ userName }: { userName: string }) {
         </p>
       </div>
 
-      <div className="bg-white dark:bg-gray-900 rounded-xl border border-gray-200 dark:border-gray-800 p-4 print:hidden">
-        <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-7">
-          <input
-            value={slabFilter}
-            onChange={(event) => setSlabFilter(event.target.value)}
-            placeholder="Filter by slab"
-            className="rounded-lg border border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-800 px-3 py-2 text-sm"
-          />
+      <div className="bg-white dark:bg-gray-900 rounded-xl border border-gray-200 dark:border-gray-800 p-4 print:hidden space-y-3">
+        <div className="grid grid-cols-2 gap-2 sm:grid-cols-3 lg:grid-cols-5">
+          <div className="relative col-span-2 sm:col-span-1">
+            <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-gray-400" />
+            <input
+              value={slabFilter}
+              onChange={(event) => setSlabFilter(event.target.value)}
+              placeholder="Filter by slab"
+              className="w-full rounded-lg border border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-800 pl-9 pr-3 py-2 text-sm"
+            />
+          </div>
           <input
             value={clientFilter}
             onChange={(event) => setClientFilter(event.target.value)}
@@ -621,18 +659,18 @@ export default function HistoryClient({ userName }: { userName: string }) {
             placeholder="Filter by date"
             className="rounded-lg border border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-800 px-3 py-2 text-sm"
           />
+        </div>
+        <div className="flex flex-wrap items-center gap-2">
           <FilterMultiSelect
             label="Brand"
             options={brandOptions}
             selected={selectedBrands}
             onChange={setSelectedBrands}
-            fullWidth
-            matchInputStyle
           />
           <select
             value={actionFilter}
             onChange={(event) => setActionFilter(event.target.value)}
-            className="rounded-lg border border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-800 px-3 py-2 text-sm"
+            className="h-10 rounded-lg border border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-800 px-3 text-sm"
           >
             <option value="all">All actions</option>
             <option value="entry">Entry</option>
@@ -642,21 +680,38 @@ export default function HistoryClient({ userName }: { userName: string }) {
             <option value="recovery">Recovery</option>
           </select>
         </div>
-        <div className="mt-4 flex flex-wrap gap-2">
-          <button
-            type="button"
-            onClick={() => handlePrint("filtered")}
-            className="px-4 py-2 text-sm font-medium text-white bg-blue-600 rounded-lg hover:bg-blue-700 transition-colors"
-          >
-            Print filtered
-          </button>
-          <button
-            type="button"
-            onClick={() => handlePrint("all")}
-            className="px-4 py-2 text-sm font-medium text-gray-700 dark:text-gray-300 bg-white dark:bg-gray-700 border border-gray-300 dark:border-gray-600 rounded-lg hover:bg-gray-50 dark:hover:bg-gray-600 transition-colors"
-          >
-            Print full inventory
-          </button>
+        <div className="flex flex-wrap items-center justify-between gap-3 border-t border-gray-100 dark:border-gray-800 pt-3">
+          <span className="text-sm text-gray-500 dark:text-gray-400">
+            Showing {rows.length} of {state.history.length}
+          </span>
+          <div className="flex flex-wrap items-center gap-2">
+            <button
+              type="button"
+              onClick={() => handlePrint("filtered")}
+              className="px-4 py-2 text-sm font-medium text-white bg-blue-600 rounded-lg hover:bg-blue-700 transition-colors"
+            >
+              Print filtered
+            </button>
+            <button
+              type="button"
+              onClick={() => handlePrint("all")}
+              className="px-4 py-2 text-sm font-medium text-gray-700 dark:text-gray-300 bg-white dark:bg-gray-700 border border-gray-300 dark:border-gray-600 rounded-lg hover:bg-gray-50 dark:hover:bg-gray-600 transition-colors"
+            >
+              Print full inventory
+            </button>
+            <button
+              type="button"
+              onClick={handleClearFilters}
+              disabled={!hasActiveFilters}
+              className={`inline-flex items-center gap-1.5 rounded-lg px-4 py-2 text-sm font-medium transition-colors ${
+                hasActiveFilters
+                  ? "cursor-pointer border border-gray-300 text-gray-700 hover:bg-gray-50 dark:border-gray-600 dark:text-gray-300 dark:hover:bg-gray-700"
+                  : "cursor-not-allowed border border-transparent text-gray-400 dark:text-gray-600"
+              }`}
+            >
+              <X className="h-3.5 w-3.5" /> Clear filters
+            </button>
+          </div>
         </div>
       </div>
 
@@ -1284,10 +1339,12 @@ export default function HistoryClient({ userName }: { userName: string }) {
               <button
                 type="button"
                 onClick={handleRecover}
-                disabled={!canRecoverSelectedExit || !recoveryRackId}
+                disabled={
+                  !canRecoverSelectedExit || !recoveryRackId || isRecovering
+                }
                 className="rounded-lg bg-blue-600 px-4 py-2 text-sm font-medium text-white transition-colors hover:bg-blue-700 disabled:cursor-not-allowed disabled:bg-blue-300 dark:disabled:bg-blue-900/50"
               >
-                Recover slab
+                {isRecovering ? "Recovering..." : "Recover slab"}
               </button>
             </div>
           </div>
