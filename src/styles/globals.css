@@ -318,11 +318,20 @@ body,
   }
 
   /* Slabs Price List — admin table print. Moved out of the old unscoped
-     global rules above (see note at top of this file); this is the same
-     dense landscape list layout it always printed with, just scoped to
+     global rules above (see note at top of this file); scoped to
      .slabs-price-list-print so it no longer bleeds onto other programs.
      The matching @page (A4 landscape) is declared locally in
-     SlabsAdminTable.tsx. */
+     SlabsAdminTable.tsx.
+
+     Previously this used a punishing 7pt font plus `white-space: nowrap` +
+     `text-overflow: ellipsis` on every cell — any value too long for its
+     narrow column (e.g. a Code like "Jum-Half-Slab" butting up against the
+     Color column) got silently clipped instead of wrapping, so it printed
+     as visually mashed-together text with no space between columns. Bumped
+     the font size up and switched to wrapping text so nothing is ever cut
+     off; also rebalanced the column widths for the columns most likely to
+     hold longer values (Code, Color) vs. very short ones (Slab ID,
+     Thickness). */
   .slabs-price-list-print h1 {
     font-size: 16pt !important;
     margin: 0 0 4px 0 !important;
@@ -336,7 +345,8 @@ body,
   .slabs-price-list-print table {
     border-collapse: collapse;
     width: 100%;
-    font-size: 7pt !important;
+    font-size: 8.5pt !important;
+    line-height: 1.3 !important;
     table-layout: fixed;
   }
 
@@ -351,16 +361,16 @@ body,
   .slabs-price-list-print th,
   .slabs-price-list-print td {
     border: 1px solid #999 !important;
-    padding: 2px 3px !important;
+    padding: 3px 5px !important;
     text-align: left;
-    overflow: hidden;
-    text-overflow: ellipsis;
-    white-space: nowrap;
+    vertical-align: top;
+    white-space: normal !important;
+    word-break: break-word;
   }
 
   .slabs-price-list-print th:nth-child(1),
   .slabs-price-list-print td:nth-child(1) {
-    width: 4% !important;
+    width: 5% !important;
   }
 
   .slabs-price-list-print th:nth-child(2),
@@ -370,32 +380,32 @@ body,
 
   .slabs-price-list-print th:nth-child(3),
   .slabs-price-list-print td:nth-child(3) {
-    width: 10% !important;
+    width: 9% !important;
   }
 
   .slabs-price-list-print th:nth-child(4),
   .slabs-price-list-print td:nth-child(4) {
-    width: 6% !important;
+    width: 8% !important;
   }
 
   .slabs-price-list-print th:nth-child(5),
   .slabs-price-list-print td:nth-child(5) {
-    width: 12% !important;
+    width: 11% !important;
   }
 
   .slabs-price-list-print th:nth-child(6),
   .slabs-price-list-print td:nth-child(6) {
-    width: 10% !important;
+    width: 9% !important;
   }
 
   .slabs-price-list-print th:nth-child(7),
   .slabs-price-list-print td:nth-child(7) {
-    width: 9% !important;
+    width: 10% !important;
   }
 
   .slabs-price-list-print th:nth-child(8),
   .slabs-price-list-print td:nth-child(8) {
-    width: 7% !important;
+    width: 6% !important;
   }
 
   .slabs-price-list-print th:nth-child(9),
@@ -416,7 +426,7 @@ body,
   .slabs-price-list-print th {
     background-color: #e5e7eb !important;
     font-weight: 600;
-    font-size: 7pt !important;
+    font-size: 8.5pt !important;
   }
 
   /* Remove shadows and rounded corners */

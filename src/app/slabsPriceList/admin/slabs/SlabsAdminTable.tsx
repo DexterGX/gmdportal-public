@@ -13,9 +13,7 @@ import {
   Trash2,
   Printer,
 } from "lucide-react";
-import MultiSelectDropdown, {
-  MultiSelectOption,
-} from "../../ui/MultiSelectDropdown";
+import FilterMultiSelect from "@/components/filters/FilterMultiSelect";
 
 type ThicknessOption = "8mm" | "12mm" | "2cm" | "3cm";
 type SlabStatusOption = "AVAILABLE" | "UNAVAILABLE" | "DISCONTINUED";
@@ -317,8 +315,97 @@ export default function SlabsAdminTable({
     setCurrentPage(1); // Reset to first page
   };
 
-  const handlePrint = () => {
-    window.print();
+  const hasActiveFilters =
+    searchQuery.trim().length > 0 ||
+    filterBrands.length > 0 ||
+    filterSeries.length > 0 ||
+    filterFinishes.length > 0 ||
+    filterHxWs.length > 0 ||
+    filterThicknesses.length > 0 ||
+    filterStatuses.length > 0;
+
+  // Finish values are stored/sent raw (e.g. "HONED_MATTE") but shown with
+  // spaces instead of underscores — these two helpers keep FilterMultiSelect
+  // (which only deals in plain strings) in sync with the raw values.
+  const finishToDisplay = (value: string) => value.replace(/_/g, " ");
+  const finishDisplayOptions = useMemo(
+    () => finishes.map(finishToDisplay),
+    [finishes]
+  );
+  const handleFinishFilterChange = (selectedDisplay: string[]) => {
+    const raw = selectedDisplay
+      .map((display) => finishes.find((f) => finishToDisplay(f) === display))
+      .filter((f): f is string => Boolean(f));
+    setFilterFinishes(raw);
+  };
+
+  // Printing — mirrors the History Log pattern (Print filtered / Print full
+  // inventory). Unlike History Log, this table is server-paginated, so
+  // "Print" here can't just reuse whatever's already loaded: the on-screen
+  // page holds at most 500 of up to ~4600 rows. Both print modes fetch the
+  // full matching set from the API first (there's no server-side pageSize
+  // cap — see /api/slabs/admin), then print. "Print filtered" fetches every
+  // row matching the current filters/search; "Print full inventory" ignores
+  // filters entirely and fetches everything.
+  const [printMode, setPrintMode] = useState<"filtered" | "all">("filtered");
+  const [printRows, setPrintRows] = useState<AdminSlabRow[]>([]);
+  const [printReady, setPrintReady] = useState(false);
+  const [isPreparingPrint, setIsPreparingPrint] = useState(false);
+
+  useEffect(() => {
+    const resetPrint = () => {
+      setPrintMode("filtered");
+      setPrintReady(false);
+    };
+    window.addEventListener("afterprint", resetPrint);
+    return () => window.removeEventListener("afterprint", resetPrint);
+  }, []);
+
+  const handlePrint = async (mode: "filtered" | "all") => {
+    setIsPreparingPrint(true);
+    try {
+      const params = new URLSearchParams();
+      if (mode === "filtered") {
+        if (searchQuery) params.set("search", searchQuery);
+        if (filterBrands.length > 0)
+          params.set(
+            "brandIds",
+            brands
+              .filter((b) => filterBrands.includes(b.name))
+              .map((b) => b.id)
+              .join(",")
+          );
+        if (filterSeries.length > 0)
+          params.set("series", filterSeries.join(","));
+        if (filterFinishes.length > 0)
+          params.set("finishes", filterFinishes.join(","));
+        if (filterHxWs.length > 0) params.set("hxws", filterHxWs.join(","));
+        if (filterThicknesses.length > 0)
+          params.set("thicknesses", filterThicknesses.join(","));
+        if (filterStatuses.length > 0)
+          params.set("statuses", filterStatuses.join(","));
+      }
+      if (sortColumn) params.set("sortBy", sortColumn);
+      params.set("sortDir", sortDirection);
+      params.set("page", "1");
+      // No server-side cap on pageSize (see /api/slabs/admin) — request a
+      // number comfortably above the full table size so one call returns
+      // everything that matches.
+      params.set("pageSize", "100000");
+
+      const response = await fetch(`/api/slabs/admin?${params.toString()}`);
+      if (!response.ok) throw new Error("Failed to load slabs for printing");
+
+      const data = await response.json();
+      setPrintRows(data.rows);
+      setPrintMode(mode);
+      setPrintReady(true);
+      setTimeout(() => window.print(), 50);
+    } catch (error: any) {
+      alert(`Failed to prepare print: ${error.message}`);
+    } finally {
+      setIsPreparingPrint(false);
+    }
   };
 
   // When in edit mode, we filter client-side; otherwise server handles it
@@ -401,6 +488,8 @@ export default function SlabsAdminTable({
     sortDirection,
   ]);
 
+  const printSourceRows = printReady ? printRows : displayRows;
+
   const formatCurrency = (value: number) => {
     return new Intl.NumberFormat("en-US", {
       style: "currency",
@@ -423,91 +512,91 @@ export default function SlabsAdminTable({
           in globals.css that leaked its list-style layout onto every other
           program's print output). Kept identical to how it printed before. */}
       <style>{`@page { size: auto; margin: 15mm 12mm 12mm 12mm; }`}</style>
+      {/* "Printed by [user] on [date]" now lives in page.tsx, on the same
+          line as the "Slab Data" title, since that title is rendered there. */}
       {/* Print-Only Filter Summary */}
       <div className="hidden print:block mb-2 p-2 border border-gray-300">
-        <h3 className="font-semibold text-lg mb-1">Active Filters</h3>
-        <div className="grid grid-cols-3 gap-1 text-sm">
-          {searchQuery && (
-            <div>
-              <strong>Search:</strong> {searchQuery}
-            </div>
-          )}
-          {filterBrands.length > 0 && (
-            <div>
-              <strong>Brands:</strong> {filterBrands.join(", ")}
-            </div>
-          )}
-          {filterSeries.length > 0 && (
-            <div>
-              <strong>Series:</strong> {filterSeries.join(", ")}
-            </div>
-          )}
-          {filterFinishes.length > 0 && (
-            <div>
-              <strong>Finishes:</strong> {filterFinishes.join(", ")}
-            </div>
-          )}
-          {filterHxWs.length > 0 && (
-            <div>
-              <strong>Sizes:</strong> {filterHxWs.join(", ")}
-            </div>
-          )}
-          {filterThicknesses.length > 0 && (
-            <div>
-              <strong>Thickness:</strong> {filterThicknesses.join(", ")}
-            </div>
-          )}
-          {filterStatuses.length > 0 && (
-            <div>
-              <strong>Status:</strong> {filterStatuses.join(", ")}
-            </div>
-          )}
-          {!searchQuery &&
-            filterBrands.length === 0 &&
-            filterSeries.length === 0 &&
-            filterFinishes.length === 0 &&
-            filterHxWs.length === 0 &&
-            filterThicknesses.length === 0 &&
-            filterStatuses.length === 0 && (
-              <div className="col-span-2 text-gray-600">No filters applied</div>
+        <h3 className="font-semibold text-lg mb-1">
+          {printMode === "all" ? "Full Inventory" : "Active Filters"}
+        </h3>
+        {printMode === "all" ? (
+          <div className="text-sm text-gray-600">
+            Printing the full inventory — all filters ignored for this printout.
+          </div>
+        ) : (
+          <div className="grid grid-cols-3 gap-1 text-sm">
+            {searchQuery && (
+              <div>
+                <strong>Search:</strong> {searchQuery}
+              </div>
             )}
-        </div>
+            {filterBrands.length > 0 && (
+              <div>
+                <strong>Brands:</strong> {filterBrands.join(", ")}
+              </div>
+            )}
+            {filterSeries.length > 0 && (
+              <div>
+                <strong>Series:</strong> {filterSeries.join(", ")}
+              </div>
+            )}
+            {filterFinishes.length > 0 && (
+              <div>
+                <strong>Finishes:</strong> {filterFinishes.join(", ")}
+              </div>
+            )}
+            {filterHxWs.length > 0 && (
+              <div>
+                <strong>Sizes:</strong> {filterHxWs.join(", ")}
+              </div>
+            )}
+            {filterThicknesses.length > 0 && (
+              <div>
+                <strong>Thickness:</strong> {filterThicknesses.join(", ")}
+              </div>
+            )}
+            {filterStatuses.length > 0 && (
+              <div>
+                <strong>Status:</strong> {filterStatuses.join(", ")}
+              </div>
+            )}
+            {!searchQuery &&
+              filterBrands.length === 0 &&
+              filterSeries.length === 0 &&
+              filterFinishes.length === 0 &&
+              filterHxWs.length === 0 &&
+              filterThicknesses.length === 0 &&
+              filterStatuses.length === 0 && (
+                <div className="col-span-2 text-gray-600">No filters applied</div>
+              )}
+          </div>
+        )}
         <div className="mt-1 pt-1 border-t border-gray-300 text-xs">
-          <strong>Total:</strong> {total} | <strong>Showing:</strong> {displayRows.length}
+          <strong>Total in database:</strong> {initialTotal} |{" "}
+          <strong>Slabs printed:</strong> {printSourceRows.length}
         </div>
       </div>
 
       {/* Header with Search and Actions */}
-      <div className="bg-white dark:bg-gray-800 rounded-lg shadow p-4 print:shadow-none print:bg-white">
-        <div className="flex items-center justify-between gap-4 mb-4 print:hidden">
-          {/* Search Bar */}
-          <div className="flex-1 max-w-md relative">
-            <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 w-5 h-5 text-gray-400" />
+      <div className="bg-white dark:bg-gray-800 rounded-lg shadow p-4 print:hidden">
+        {/* Search — typed filter, paired with Edit/Save/Cancel on the same line */}
+        <div className="flex items-center justify-between gap-4 mb-3">
+          <div className="relative max-w-md flex-1">
+            <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 w-4 h-4 text-gray-400" />
             <input
               type="text"
               placeholder="Search by color..."
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
-              className="w-full pl-10 pr-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-800 text-gray-900 dark:text-white focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+              className="w-full pl-9 pr-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-900 text-gray-900 dark:text-gray-100 text-sm focus:ring-2 focus:ring-blue-500 focus:border-transparent"
             />
           </div>
 
-          {/* Action Buttons */}
-          <div className="flex items-center gap-2">
-            {/* Print Button - hidden on print */}
-            <button
-              onClick={handlePrint}
-              className="flex items-center gap-2 px-4 py-2 text-sm font-medium text-gray-700 dark:text-gray-300 bg-white dark:bg-gray-700 border border-gray-300 dark:border-gray-600 rounded-lg hover:bg-gray-50 dark:hover:bg-gray-600 transition-colors print:hidden"
-              title="Print current view"
-            >
-              <Printer className="w-4 h-4" />
-              Print
-            </button>
-
+          <div className="flex items-center gap-2 shrink-0">
             {!isEditing ? (
               <button
                 onClick={handleEdit}
-                className="flex items-center gap-2 px-4 py-2 text-sm font-medium text-white bg-blue-600 rounded-lg hover:bg-blue-700 transition-colors print:hidden"
+                className="flex items-center gap-2 px-4 py-2 text-sm font-medium text-white bg-blue-600 rounded-lg hover:bg-blue-700 transition-colors"
               >
                 <Edit className="w-4 h-4" />
                 Edit
@@ -517,7 +606,7 @@ export default function SlabsAdminTable({
                 <button
                   onClick={handleCancel}
                   disabled={isSaving}
-                  className="flex items-center gap-2 px-4 py-2 text-sm font-medium text-gray-700 dark:text-gray-300 bg-white dark:bg-gray-700 border border-gray-300 dark:border-gray-600 rounded-lg hover:bg-gray-50 dark:hover:bg-gray-600 disabled:opacity-50 disabled:cursor-not-allowed transition-colors print:hidden"
+                  className="flex items-center gap-2 px-4 py-2 text-sm font-medium text-gray-700 dark:text-gray-300 bg-white dark:bg-gray-700 border border-gray-300 dark:border-gray-600 rounded-lg hover:bg-gray-50 dark:hover:bg-gray-600 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
                 >
                   <X className="w-4 h-4" />
                   Cancel
@@ -525,7 +614,7 @@ export default function SlabsAdminTable({
                 <button
                   onClick={handleSave}
                   disabled={!hasChanges || isSaving}
-                  className="flex items-center gap-2 px-4 py-2 text-sm font-medium text-white bg-blue-600 rounded-lg hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors print:hidden"
+                  className="flex items-center gap-2 px-4 py-2 text-sm font-medium text-white bg-blue-600 rounded-lg hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
                 >
                   <Save className="w-4 h-4" />
                   {isSaving ? "Saving..." : "Save all changes"}
@@ -535,88 +624,121 @@ export default function SlabsAdminTable({
           </div>
         </div>
 
-        {/* Filters */}
-        <div className="flex flex-wrap gap-3 print:hidden">
-          <MultiSelectDropdown
-            label="Brand"
-            options={brands.map((b) => ({ value: b.name, label: b.name }))}
-            selectedValues={filterBrands}
-            onChange={setFilterBrands}
-          />
+        {/* Selectable filters, paired with Print/Clear on the same line */}
+        <div className="flex flex-wrap items-center justify-between gap-3">
+          <div className="flex flex-wrap items-center gap-2">
+            <FilterMultiSelect
+              label="Brand"
+              options={brands.map((b) => b.name)}
+              selected={filterBrands}
+              onChange={setFilterBrands}
+            />
 
-          <MultiSelectDropdown
-            label="Series"
-            options={uniqueSeries.map((s) => ({ value: s, label: s }))}
-            selectedValues={filterSeries}
-            onChange={setFilterSeries}
-          />
+            <FilterMultiSelect
+              label="Series"
+              options={uniqueSeries}
+              selected={filterSeries}
+              onChange={setFilterSeries}
+            />
 
-          <MultiSelectDropdown
-            label="Finish"
-            options={finishes.map((f) => ({
-              value: f,
-              label: f.replace("_", " "),
-            }))}
-            selectedValues={filterFinishes}
-            onChange={setFilterFinishes}
-          />
+            <FilterMultiSelect
+              label="Finish"
+              options={finishDisplayOptions}
+              selected={filterFinishes.map(finishToDisplay)}
+              onChange={handleFinishFilterChange}
+            />
 
-          <MultiSelectDropdown
-            label="Size"
-            options={uniqueHxW.map((h) => ({ value: h, label: h }))}
-            selectedValues={filterHxWs}
-            onChange={setFilterHxWs}
-          />
+            <FilterMultiSelect
+              label="Size"
+              options={uniqueHxW}
+              selected={filterHxWs}
+              onChange={setFilterHxWs}
+            />
 
-          <MultiSelectDropdown
-            label="Thickness"
-            options={THICKNESS_OPTIONS.map((t) => ({ value: t, label: t }))}
-            selectedValues={filterThicknesses}
-            onChange={setFilterThicknesses}
-          />
+            <FilterMultiSelect
+              label="Thickness"
+              options={THICKNESS_OPTIONS}
+              selected={filterThicknesses}
+              onChange={setFilterThicknesses}
+            />
 
-          <MultiSelectDropdown
-            label="Status"
-            options={STATUS_OPTIONS.map((s) => ({ value: s, label: s }))}
-            selectedValues={filterStatuses}
-            onChange={setFilterStatuses}
-          />
+            <FilterMultiSelect
+              label="Status"
+              options={STATUS_OPTIONS}
+              selected={filterStatuses}
+              onChange={setFilterStatuses}
+            />
+          </div>
+
+          <div className="flex items-center gap-2 shrink-0">
+            <button
+              onClick={() => handlePrint("filtered")}
+              disabled={isPreparingPrint}
+              className="flex items-center gap-2 px-3 py-2 text-sm font-medium text-white bg-blue-600 rounded-lg hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+              title="Print every slab matching the current filters"
+            >
+              <Printer className="w-4 h-4" />
+              {isPreparingPrint ? "Preparing..." : "Print filtered"}
+            </button>
+            <button
+              onClick={() => handlePrint("all")}
+              disabled={isPreparingPrint}
+              className="flex items-center gap-2 px-3 py-2 text-sm font-medium text-gray-700 dark:text-gray-300 bg-white dark:bg-gray-700 border border-gray-300 dark:border-gray-600 rounded-lg hover:bg-gray-50 dark:hover:bg-gray-600 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+              title="Print the entire inventory, ignoring current filters"
+            >
+              <Printer className="w-4 h-4" />
+              Print full inventory
+            </button>
+            <button
+              type="button"
+              disabled={!hasActiveFilters}
+              onClick={clearFilters}
+              className={`inline-flex items-center gap-1 px-3 py-2 text-sm font-medium rounded-lg transition-colors ${
+                hasActiveFilters
+                  ? "bg-blue-100 dark:bg-blue-900/30 text-blue-700 dark:text-blue-300 hover:bg-blue-200 dark:hover:bg-blue-900/50"
+                  : "bg-gray-100 dark:bg-gray-700 text-gray-400 dark:text-gray-500 cursor-not-allowed"
+              }`}
+            >
+              <X className="w-3.5 h-3.5" />
+              Clear
+            </button>
+          </div>
         </div>
 
-        {(searchQuery ||
-          filterBrands.length > 0 ||
-          filterSeries.length > 0 ||
-          filterFinishes.length > 0 ||
-          filterHxWs.length > 0 ||
-          filterThicknesses.length > 0 ||
-          filterStatuses.length > 0) && (
-          <button
-            onClick={clearFilters}
-            className="mt-3 text-sm text-blue-600 dark:text-blue-400 hover:text-blue-700 dark:hover:text-blue-300 font-medium print:hidden"
-          >
-            Clear all filters
-          </button>
-        )}
-
-        {/* Status Indicator */}
-        <div className="mt-3 text-sm print:hidden">
-          {hasChanges ? (
-            <span className="text-amber-600 dark:text-amber-400 font-medium">
-              You have unsaved changes
-            </span>
-          ) : (
-            <span className="text-gray-600 dark:text-gray-400">
-              All changes saved
-            </span>
-          )}
+        {/* Showing X of Y (left) + unsaved-changes status (right) — underneath the filters */}
+        <div className="mt-3 pt-3 border-t border-gray-100 dark:border-gray-700 flex items-center justify-between text-xs text-gray-500 dark:text-gray-400">
+          <span>
+            Showing{" "}
+            <span className="font-medium text-gray-900 dark:text-white">
+              {displayRows.length}
+            </span>{" "}
+            of{" "}
+            <span className="font-medium text-gray-900 dark:text-white">
+              {total}
+            </span>{" "}
+            slabs
+          </span>
+          <span className="text-sm">
+            {hasChanges ? (
+              <span className="text-amber-600 dark:text-amber-400 font-medium">
+                You have unsaved changes
+              </span>
+            ) : (
+              <span className="text-gray-600 dark:text-gray-400">
+                All changes saved
+              </span>
+            )}
+          </span>
         </div>
       </div>
 
-      {/* Table */}
-      <div className="bg-white dark:bg-gray-800 rounded-lg shadow overflow-hidden print:shadow-none print:bg-white print:border print:border-gray-300">
+      {/* Table — screen-only. Printing uses a separate, simpler table below
+          (see printSourceRows) since Print can hold many more rows than are
+          ever loaded/paginated on screen. */}
+      <div className="bg-white dark:bg-gray-800 rounded-lg shadow overflow-hidden print:hidden">
         <div className="overflow-x-auto">
-          <table className="w-full text-sm print:text-xs">
-            <thead className="bg-gray-50 dark:bg-gray-900 text-gray-700 dark:text-gray-300 border-b border-gray-200 dark:border-gray-700 print:bg-gray-100 print:text-black print:border-gray-400">
+          <table className="w-full text-sm">
+            <thead className="bg-gray-50 dark:bg-gray-900 text-gray-700 dark:text-gray-300 border-b border-gray-200 dark:border-gray-700">
               <tr>
                 <th
                   className="px-3 py-3 text-left font-medium cursor-pointer hover:bg-gray-100 dark:hover:bg-gray-800"
@@ -1029,6 +1151,51 @@ export default function SlabsAdminTable({
             )}
           </div>
         )}
+      </div>
+
+      {/* Print-only table — a separate, simpler table (no editing controls,
+          no pagination) fed by printSourceRows so a print can hold every
+          row that matches (Print filtered) or the entire inventory (Print
+          full inventory), not just whatever page is on screen. Styled by
+          the .slabs-price-list-print rules in globals.css, which target
+          any table under this #print-area (same 11 columns as before). */}
+      <div className="hidden print:block bg-white border border-gray-300">
+        <table className="w-full">
+          <thead>
+            <tr>
+              <th>Slab ID</th>
+              <th>Brand</th>
+              <th>Series</th>
+              <th>Code</th>
+              <th>Color</th>
+              <th>Finish</th>
+              <th>H x W</th>
+              <th>Thickness</th>
+              <th>Listed Price</th>
+              <th>Final Price</th>
+              <th>Status</th>
+            </tr>
+          </thead>
+          <tbody>
+            {printSourceRows.map((row) => (
+              <tr key={row.id}>
+                <td>{row.slabNumber ?? "—"}</td>
+                <td>{row.brand}</td>
+                <td>{row.series ?? "—"}</td>
+                <td>{row.code ?? "—"}</td>
+                <td>{row.color}</td>
+                <td>{finishToDisplay(row.finish)}</td>
+                <td>
+                  {row.heightIn} x {row.widthIn} in
+                </td>
+                <td>{row.thickness}</td>
+                <td>{formatCurrency(row.listedPrice)}</td>
+                <td>{formatCurrency(row.finalPrice)}</td>
+                <td>{row.status}</td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
       </div>
     </div>
   );
