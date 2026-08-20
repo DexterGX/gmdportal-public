@@ -1,6 +1,5 @@
 import { getCurrentUserWithRole } from "@/lib/authHelpers";
 import { prisma } from "@/lib/prisma";
-import { redirect } from "next/navigation";
 import CustomersV2Client from "./CustomersV2Client";
 
 const ITEMS_PER_PAGE = 100;
@@ -22,9 +21,12 @@ export default async function CustomersV2Page({
 }) {
   const { appRole } = await getCurrentUserWithRole();
 
-  if (appRole !== "admin" && appRole !== "sales") {
-    redirect("/dashboard");
-  }
+  // Access to this program is governed by Settings > Program Access (see
+  // the canAccessProgramId check in customers-v2/layout.tsx), which is the
+  // single source of truth for which roles can enter. This page used to
+  // duplicate that check with a hardcoded admin/sales-only list that
+  // ignored whatever roles were granted in Program Access Settings —
+  // removed so a role granted there (e.g. Office) isn't blocked here too.
 
   const params = await searchParams;
   const currentPage = parseInt(params.page || "1");

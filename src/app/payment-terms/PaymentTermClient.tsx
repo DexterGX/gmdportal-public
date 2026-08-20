@@ -1321,6 +1321,9 @@ export default function PaymentTermClient({
 
   return (
     <div className="pt-builder max-w-[1500px] mx-auto space-y-6 pb-12">
+      {/* Scoped to this route only (was previously inherited from a global
+          print rule in globals.css that affected every page's print output). */}
+      <style>{`@page { size: auto; margin: 15mm 12mm 12mm 12mm; }`}</style>
       {/* ── Page title ── */}
       <div className="flex flex-wrap items-start justify-between gap-3">
         <div className="flex items-center gap-3 min-w-0">

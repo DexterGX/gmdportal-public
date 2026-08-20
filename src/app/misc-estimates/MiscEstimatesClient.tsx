@@ -4362,7 +4362,7 @@ export default function MiscEstimatesClient({
 
         @media print {
           @page {
-            size: letter portrait;
+            size: auto;
             margin: 0.38in;
           }
 

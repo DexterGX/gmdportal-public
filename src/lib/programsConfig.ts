@@ -123,7 +123,6 @@ export type ProgramId =
   | "users"
   | "closetJobs"
   | "quoteRepairs"
-  | "customers"
   | "accessories"
   | "samplesRequest"
   | "customersV2"
@@ -428,23 +427,6 @@ export const programs: ProgramConfig[] = [
     othersItems: [],
   },
   {
-    id: "customers",
-    name: "Customer Directory",
-    basePath: "/customers",
-    description: "Manage customer information synced from QuickBooks.",
-    allowedRoles: ["admin", "sales"],
-    navItems: [
-      { icon: Users, name: "All Customers", path: "/customers" },
-      {
-        icon: PlugInIcon,
-        name: "QuickBooks Sync",
-        path: "/customers/sync",
-        adminOnly: true,
-      },
-    ],
-    othersItems: [],
-  },
-  {
     id: "customersV2",
     name: "Customers",
     basePath: "/customers-v2",
@@ -461,6 +443,12 @@ export const programs: ProgramConfig[] = [
         icon: PlugInIcon,
         name: "Pipedrive Sync",
         path: "/customers-v2/sync",
+        adminOnly: true,
+      },
+      {
+        icon: PlugInIcon,
+        name: "QuickBooks Sync",
+        path: "/customers-v2/quickbooks-sync",
         adminOnly: true,
       },
     ],

@@ -217,7 +217,7 @@ export default async function QuoteRepairPrintPage({
       <style>{`
         @media print {
           @page {
-            size: letter portrait;
+            size: auto;
             margin: 0.45in;
           }
 

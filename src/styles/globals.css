@@ -116,14 +116,17 @@ body,
   }
 }
 
-/* Print Styles */
+/* Print Styles
+   NOTE: This block used to force every printed page in the app into A4
+   landscape and squeeze every <table>/<h1>/<p> into a tiny, dense list
+   layout (@page size + bare table/th/td/h1/p rules below). That was only
+   ever meant for the Slabs Price List admin table print, but because the
+   rules weren't scoped to a class, they leaked onto every other print in
+   the site. That layout now lives in the .slabs-price-list-print block
+   further down, scoped to the page that actually wants it, with its own
+   @page rule declared locally on that route. Only generic, safe-for-any-
+   page rules belong up here. */
 @media print {
-  /* Page setup */
-  @page {
-    margin: 15mm 12mm 12mm 12mm;
-    size: A4 landscape;
-  }
-
   /* Hide elements not needed on print */
   .no-print,
   .print\:hidden {
@@ -153,268 +156,277 @@ body,
     overflow: visible !important;
   }
 
-  /* Compact header */
-  h1 {
-    font-size: 16pt !important;
-    margin: 0 0 4px 0 !important;
-  }
-
-  p {
-    font-size: 8pt !important;
-    margin: 0 0 8px 0 !important;
-  }
-
-  /* Table styling for print */
-  table {
-    border-collapse: collapse;
-    width: 100%;
-    font-size: 7pt !important;
-    table-layout: fixed;
-  }
-
-  thead {
-    display: table-header-group; /* Repeat header on each page */
-  }
-
-  tbody tr {
-    page-break-inside: avoid; /* Prevent row splits */
-  }
-
-  th,
-  td {
-    border: 1px solid #999 !important;
-    padding: 2px 3px !important;
-    text-align: left;
-    overflow: hidden;
-    text-overflow: ellipsis;
-    white-space: nowrap;
-  }
-
+  /* Inventory print — redesigned so the 14 on-screen columns are combined
+     into 8 wider, easier-to-read print-only columns instead of squeezing
+     all 14 into tiny 8pt slivers. The regular on-screen header row and
+     data cells are print:hidden; only the merged print-only header row
+     and cells (print-col-*, see InventoryClient.tsx) are shown when
+     printing. Borders + a header background were also added since the
+     old print output had none, which was part of why it looked bare and
+     "compressed." */
   .print-inventory-table {
+    width: 100% !important;
     table-layout: fixed !important;
-    font-size: 8pt !important;
-    line-height: 1.25 !important;
+    border-collapse: collapse !important;
+    font-size: 9pt !important;
+    line-height: 1.35 !important;
   }
 
   .print-inventory-table th,
   .print-inventory-table td {
+    border: 1px solid #999 !important;
+    padding: 4px 6px !important;
     white-space: normal !important;
     word-break: break-word;
     vertical-align: top;
   }
 
-  .print-inventory-table .print-header-row th,
+  .print-inventory-table thead th {
+    background-color: #f0f0f0 !important;
+    font-weight: 700 !important;
+    text-align: left !important;
+  }
+
   .print-inventory-table .print-spacer-row th {
     border: none !important;
     padding: 0 !important;
+    height: 4mm !important;
+    background-color: transparent !important;
   }
 
-  .print-inventory-table .print-header-row th {
-    font-size: 12pt !important;
-    font-weight: 700 !important;
-    padding-bottom: 2mm !important;
-  }
-
-  .print-inventory-table .print-spacer-row th {
-    height: 8mm !important;
-  }
-
+  /* History Log print — same redesign as the Inventory print: the 15
+     on-screen columns are combined into 9 wider, easier-to-read print-only
+     columns (see print-col-* below and the matching print:table-cell
+     cells in HistoryClient.tsx) instead of squeezing all 15 into tiny 8pt
+     slivers with no borders. */
   .print-history-table {
+    width: 100% !important;
     table-layout: fixed !important;
-    font-size: 8pt !important;
-    line-height: 1.25 !important;
+    border-collapse: collapse !important;
+    font-size: 9pt !important;
+    line-height: 1.35 !important;
   }
 
   .print-history-table th,
   .print-history-table td {
+    border: 1px solid #999 !important;
+    padding: 4px 6px !important;
     white-space: normal !important;
     word-break: break-word;
     vertical-align: top;
+  }
+
+  .print-history-table thead th {
+    background-color: #f0f0f0 !important;
+    font-weight: 700 !important;
+    text-align: left !important;
   }
 
   .print-history-table .print-spacer-row th {
     border: none !important;
     padding: 0 !important;
-    height: 8mm !important;
+    height: 4mm !important;
+    background-color: transparent !important;
   }
 
   .print-history-table tbody tr {
     page-break-inside: avoid;
   }
 
-  .print-history-table th:nth-child(1),
-  .print-history-table td:nth-child(1) {
-    width: 12% !important;
-  }
-
-  .print-history-table th:nth-child(2),
-  .print-history-table td:nth-child(2) {
-    width: 6% !important;
-  }
-
-  .print-history-table th:nth-child(3),
-  .print-history-table td:nth-child(3) {
+  /* Column widths target the merged print-only columns by class name (not
+     position/nth-child), matching the approach used for Inventory. Date,
+     Action, and User stay their own columns since they're log-specific;
+     Slab/Scanner ID, Slab/Brand/Finish, Batch/Type, From/To, and Job
+     ID/Notes are each combined. Widths sum to 100%. */
+  .print-history-table .print-col-date {
     width: 9% !important;
   }
 
-  .print-history-table th:nth-child(4),
-  .print-history-table td:nth-child(4) {
-    width: 9% !important;
-  }
-
-  .print-history-table th:nth-child(5),
-  .print-history-table td:nth-child(5) {
-    width: 5% !important;
-  }
-
-  .print-history-table th:nth-child(6),
-  .print-history-table td:nth-child(6) {
+  .print-history-table .print-col-action {
     width: 6% !important;
   }
 
-  .print-history-table th:nth-child(7),
-  .print-history-table td:nth-child(7) {
+  .print-history-table .print-col-slab {
+    width: 11% !important;
+  }
+
+  .print-history-table .print-col-name {
+    width: 16% !important;
+  }
+
+  .print-history-table .print-col-batch {
+    width: 8% !important;
+  }
+
+  .print-history-table .print-col-client {
+    width: 20% !important;
+  }
+
+  .print-history-table .print-col-move {
+    width: 8% !important;
+  }
+
+  .print-history-table .print-col-jobnotes {
     width: 14% !important;
   }
 
-  .print-history-table th:nth-child(8),
-  .print-history-table td:nth-child(8) {
-    width: 5% !important;
-  }
-
-  .print-history-table th:nth-child(9),
-  .print-history-table td:nth-child(9) {
-    width: 5% !important;
-  }
-
-  .print-history-table th:nth-child(10),
-  .print-history-table td:nth-child(10) {
-    width: 10% !important;
-  }
-
-  .print-history-table th:nth-child(11),
-  .print-history-table td:nth-child(11) {
-    width: 9% !important;
-  }
-
-  .print-inventory-table thead th {
-    padding-top: 6mm !important;
+  .print-history-table .print-col-user {
+    width: 8% !important;
   }
 
   .print-inventory-table tbody tr {
     page-break-inside: avoid;
   }
 
-  .print-inventory-table th:nth-child(1),
-  .print-inventory-table td:nth-child(1) {
-    width: 7% !important;
-  }
-
-  .print-inventory-table th:nth-child(2),
-  .print-inventory-table td:nth-child(2) {
-    width: 7% !important;
-  }
-
-  .print-inventory-table th:nth-child(3),
-  .print-inventory-table td:nth-child(3) {
-    width: 5% !important;
-  }
-
-  .print-inventory-table th:nth-child(4),
-  .print-inventory-table td:nth-child(4) {
+  /* Column widths target the merged print-only columns by class name
+     (not position/nth-child) so this keeps working even if on-screen
+     columns are reordered or new ones are added later — nth-child was
+     the root cause of the earlier "10 sheets of paper" bug. Slab/Scanner
+     ID, Name/Brand, Finish/Thickness/Size, Batch/Type, and Job ID/Notes
+     are each combined into one column; Client, Rack, and Date Added stay
+     on their own. Widths sum to 100%. */
+  .print-inventory-table .print-col-slab {
     width: 12% !important;
   }
 
-  .print-inventory-table th:nth-child(5),
-  .print-inventory-table td:nth-child(5) {
-    width: 6% !important;
+  .print-inventory-table .print-col-name {
+    width: 16% !important;
   }
 
-  .print-inventory-table th:nth-child(6),
-  .print-inventory-table td:nth-child(6) {
-    width: 6% !important;
+  .print-inventory-table .print-col-specs {
+    width: 14% !important;
   }
 
-  .print-inventory-table th:nth-child(7),
-  .print-inventory-table td:nth-child(7) {
+  .print-inventory-table .print-col-batch {
     width: 8% !important;
   }
 
-  .print-inventory-table th:nth-child(8),
-  .print-inventory-table td:nth-child(8) {
-    width: 22% !important;
+  .print-inventory-table .print-col-client {
+    width: 24% !important;
   }
 
-  .print-inventory-table th:nth-child(9),
-  .print-inventory-table td:nth-child(9) {
-    width: 5% !important;
-  }
-
-  .print-inventory-table th:nth-child(10),
-  .print-inventory-table td:nth-child(10) {
-    width: 22% !important;
-  }
-
-  /* Specific column widths for better fit */
-  th:nth-child(1),
-  td:nth-child(1) {
-    width: 4% !important;
-  }
-
-  th:nth-child(2),
-  td:nth-child(2) {
-    width: 12% !important;
-  }
-
-  th:nth-child(3),
-  td:nth-child(3) {
+  .print-inventory-table .print-col-jobnotes {
     width: 10% !important;
   }
 
-  th:nth-child(4),
-  td:nth-child(4) {
+  .print-inventory-table .print-col-rack {
     width: 6% !important;
   }
 
-  th:nth-child(5),
-  td:nth-child(5) {
+  .print-inventory-table .print-col-date {
+    width: 10% !important;
+  }
+
+  /* Slabs Price List — admin table print. Moved out of the old unscoped
+     global rules above (see note at top of this file); scoped to
+     .slabs-price-list-print so it no longer bleeds onto other programs.
+     The matching @page (A4 landscape) is declared locally in
+     SlabsAdminTable.tsx.
+
+     Previously this used a punishing 7pt font plus `white-space: nowrap` +
+     `text-overflow: ellipsis` on every cell — any value too long for its
+     narrow column (e.g. a Code like "Jum-Half-Slab" butting up against the
+     Color column) got silently clipped instead of wrapping, so it printed
+     as visually mashed-together text with no space between columns. Bumped
+     the font size up and switched to wrapping text so nothing is ever cut
+     off; also rebalanced the column widths for the columns most likely to
+     hold longer values (Code, Color) vs. very short ones (Slab ID,
+     Thickness). */
+  .slabs-price-list-print h1 {
+    font-size: 16pt !important;
+    margin: 0 0 4px 0 !important;
+  }
+
+  .slabs-price-list-print p {
+    font-size: 8pt !important;
+    margin: 0 0 8px 0 !important;
+  }
+
+  .slabs-price-list-print table {
+    border-collapse: collapse;
+    width: 100%;
+    font-size: 8.5pt !important;
+    line-height: 1.3 !important;
+    table-layout: fixed;
+  }
+
+  .slabs-price-list-print thead {
+    display: table-header-group; /* Repeat header on each page */
+  }
+
+  .slabs-price-list-print tbody tr {
+    page-break-inside: avoid; /* Prevent row splits */
+  }
+
+  .slabs-price-list-print th,
+  .slabs-price-list-print td {
+    border: 1px solid #999 !important;
+    padding: 3px 5px !important;
+    text-align: left;
+    vertical-align: top;
+    white-space: normal !important;
+    word-break: break-word;
+  }
+
+  .slabs-price-list-print th:nth-child(1),
+  .slabs-price-list-print td:nth-child(1) {
+    width: 5% !important;
+  }
+
+  .slabs-price-list-print th:nth-child(2),
+  .slabs-price-list-print td:nth-child(2) {
     width: 12% !important;
   }
 
-  th:nth-child(6),
-  td:nth-child(6) {
-    width: 10% !important;
-  }
-
-  th:nth-child(7),
-  td:nth-child(7) {
+  .slabs-price-list-print th:nth-child(3),
+  .slabs-price-list-print td:nth-child(3) {
     width: 9% !important;
   }
 
-  th:nth-child(8),
-  td:nth-child(8) {
-    width: 7% !important;
+  .slabs-price-list-print th:nth-child(4),
+  .slabs-price-list-print td:nth-child(4) {
+    width: 8% !important;
   }
 
-  th:nth-child(9),
-  td:nth-child(9) {
+  .slabs-price-list-print th:nth-child(5),
+  .slabs-price-list-print td:nth-child(5) {
+    width: 11% !important;
+  }
+
+  .slabs-price-list-print th:nth-child(6),
+  .slabs-price-list-print td:nth-child(6) {
+    width: 9% !important;
+  }
+
+  .slabs-price-list-print th:nth-child(7),
+  .slabs-price-list-print td:nth-child(7) {
     width: 10% !important;
   }
 
-  th:nth-child(10),
-  td:nth-child(10) {
+  .slabs-price-list-print th:nth-child(8),
+  .slabs-price-list-print td:nth-child(8) {
+    width: 6% !important;
+  }
+
+  .slabs-price-list-print th:nth-child(9),
+  .slabs-price-list-print td:nth-child(9) {
     width: 10% !important;
   }
 
-  th:nth-child(11),
-  td:nth-child(11) {
+  .slabs-price-list-print th:nth-child(10),
+  .slabs-price-list-print td:nth-child(10) {
     width: 10% !important;
   }
 
-  th {
+  .slabs-price-list-print th:nth-child(11),
+  .slabs-price-list-print td:nth-child(11) {
+    width: 10% !important;
+  }
+
+  .slabs-price-list-print th {
     background-color: #e5e7eb !important;
     font-weight: 600;
-    font-size: 7pt !important;
+    font-size: 8.5pt !important;
   }
 
   /* Remove shadows and rounded corners */
