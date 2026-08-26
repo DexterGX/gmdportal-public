@@ -80,18 +80,20 @@ export default function ClosedInvoicesClient({
     const ws = XLSX.utils.json_to_sheet(
       filtered.map((row) => ({
         "Sales Rep": row.salesRep,
-        Date: row.invoiceDate,
+        Date: formatDate(row.invoiceDate),
         "Invoice#": row.invoiceNumber,
         Customer: row.customer,
         "%CMS": row.commissionRate,
         Amount: row.amount,
         Commission: row.calculatedCommission,
         "1st Payment": row.firstPaymentAmount,
-        "1st Paid Date": row.firstPaidDate ?? "",
+        "1st Paid Date": formatDate(row.firstPaidDate),
         "2nd Payment": row.secondPaymentAmount,
-        "2nd Paid Date": row.secondPaidDate ?? "",
+        "2nd Paid Date": formatDate(row.secondPaidDate),
+        "3rd Party": row.thirdPartyAmount ?? "",
+        Refund: row.refundAmount ?? "",
         Notes: row.notes ?? "",
-        "Closed At": row.closedAt,
+        "Closed At": formatDate(row.closedAt),
       })),
     );
     const wb = XLSX.utils.book_new();

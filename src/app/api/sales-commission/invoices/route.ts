@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { getServerSession } from "next-auth";
 import authOptions from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
+import { deriveInvoiceStatus } from "@/app/sales-commission/types";
 
 const p = prisma as any;
 
@@ -9,17 +10,6 @@ async function checkAuth() {
   const session = await getServerSession(authOptions);
   if (!session) return null;
   return session;
-}
-
-function computeStatus(invoice: any) {
-  if (invoice.status === "HOLD_SIGNATURE") return "HOLD_SIGNATURE";
-  if (invoice.status === "HOLD") return "HOLD";
-  if (invoice.payFirst && invoice.paySecond) return "BOTH_PAYMENTS";
-  if (invoice.paySecond) return "SECOND_PAYMENT";
-  if (invoice.payFirst) return "FIRST_PAYMENT";
-  if (invoice.firstPaid && invoice.secondPaid) return "BOTH_PAYMENTS";
-  if (invoice.firstPaid) return "FIRST_PAID";
-  return "PENDING";
 }
 
 // GET /api/sales-commission/invoices?weekId=...
@@ -130,7 +120,7 @@ export async function POST(req: NextRequest) {
         refundAmount: refundAmountValue,
         notes: row.notes || null,
         isNew: row.isNew ?? true,
-        status: computeStatus(row),
+        status: deriveInvoiceStatus(row),
         originalInvoiceId: row.originalInvoiceId || null,
         sortOrder: Number(row.sortOrder ?? 0),
       },
@@ -212,7 +202,7 @@ export async function PATCH(req: NextRequest) {
           : existing.refundAmount,
       notes: body.notes ?? existing.notes,
       isNew: body.isNew ?? existing.isNew,
-      status: body.status ?? computeStatus(body),
+      status: body.status ?? deriveInvoiceStatus({ ...existing, ...body }),
       originalInvoiceId: body.originalInvoiceId ?? existing.originalInvoiceId,
       sortOrder:
         body.sortOrder != null ? Number(body.sortOrder) : existing.sortOrder,

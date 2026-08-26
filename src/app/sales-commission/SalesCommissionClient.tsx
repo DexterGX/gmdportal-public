@@ -16,6 +16,7 @@ import {
   Upload,
 } from "lucide-react";
 import {
+  CMSClosedInvoice,
   CMSInvoice,
   CMSSettings,
   CMSWeek,
@@ -23,11 +24,14 @@ import {
   calcAdjustedCommission,
   calcFirstPayment,
   calcSecondPayment,
+  deriveInvoiceStatus,
   formatCurrency,
   formatDate,
   getInvoiceRowBg,
   isBonusCustomerName,
   isInvoiceInvalid,
+  NOTE_REASON_OPTIONS,
+  parseNoteReasons,
 } from "./types";
 import FilterMultiSelect from "@/components/filters/FilterMultiSelect";
 
@@ -55,11 +59,20 @@ type ImportPreviewRow = {
   calculatedCommission: number;
   firstPaymentAmount: number;
   secondPaymentAmount: number;
+  thirdPartyAmount: number | null;
+  refundAmount: number | null;
+  notes: string | null;
+  firstPaid: boolean;
+  firstPaidDate: string | null;
+  secondPaid: boolean;
+  secondPaidDate: string | null;
+  status: CMSInvoice["status"];
 };
 
 // Alias map: each key is the canonical field name, value is the list of
-// column header variants accepted from QuickBooks or manual files.
-const COLUMN_ALIASES: Record<string, string[]> = {
+// column header variants accepted from QuickBooks or manual files. These
+// columns must be present for a row to import.
+const REQUIRED_COLUMN_ALIASES: Record<string, string[]> = {
   salesRep: ["Sales Rep", "SalesRep", "Salesperson"],
   invoiceDate: ["Date", "Invoice Date", "InvoiceDate"],
   invoiceNumber: [
@@ -83,20 +96,21 @@ const COLUMN_ALIASES: Record<string, string[]> = {
   amount: ["Amount", "Invoice Amount", "Total"],
 };
 
-const NOTE_REASON_OPTIONS = [
-  "No Deposit",
-  "Not Signed",
-  "Customer Hold",
-  "Install Pending",
-  "Waiting Final Payment",
-  "Missing Info",
-  "On Hold",
-  "Material Delay",
-  "Customer Requested Delay",
-];
+// Optional columns. When present they let an already-partially-or-fully
+// paid invoice be imported with its paid status intact, so there's no need
+// to go into the database to mark it paid by hand afterward.
+const OPTIONAL_COLUMN_ALIASES: Record<string, string[]> = {
+  thirdPartyAmount: ["3rd Party", "Third Party", "3rdParty"],
+  refundAmount: ["Refund"],
+  firstPaidDate: ["1st Paid Date", "1st Paid", "First Paid Date"],
+  secondPaidDate: ["2nd Paid Date", "2nd Paid", "Second Paid Date"],
+  notes: ["Notes", "Note"],
+};
 
-const HOLD_SIGNATURE_REASONS = new Set(["Not Signed"]);
-const HOLD_REASONS = new Set(NOTE_REASON_OPTIONS);
+const COLUMN_ALIASES: Record<string, string[]> = {
+  ...REQUIRED_COLUMN_ALIASES,
+  ...OPTIONAL_COLUMN_ALIASES,
+};
 
 /** Find the first key in `row` that matches one of the aliases (case-insensitive). */
 function resolveField(row: Record<string, any>, aliases: string[]): any {
@@ -210,45 +224,24 @@ function formatStatus(status: string): string {
   }
 }
 
+// Effective status always wins over whatever is stored in row.status, so a
+// row carried over from a previous week (or loaded before a fix landed)
+// self-heals in the UI without needing an edit or a database change.
 function rowDisplayStatus(row: RowDraft): string {
   if (isBonusCustomerName(row.customer)) return "BONUS";
-  if (row.status === "HOLD" || row.status === "HOLD_SIGNATURE")
-    return formatStatus(row.status);
+  const effectiveStatus = deriveInvoiceStatus(row);
+  if (effectiveStatus === "HOLD" || effectiveStatus === "HOLD_SIGNATURE")
+    return formatStatus(effectiveStatus);
   if (isInvoiceInvalid(row)) return "Missing field(s)";
-  return formatStatus(row.status);
+  return formatStatus(effectiveStatus);
 }
 
-function getPaymentStatus(
-  payFirst: boolean,
-  paySecond: boolean,
-  firstPaid: boolean,
-  secondPaid: boolean,
-): RowDraft["status"] {
-  if (firstPaid && secondPaid) return "BOTH_PAYMENTS";
-  if (payFirst && paySecond) return "BOTH_PAYMENTS";
-  if (secondPaid) return "BOTH_PAYMENTS";
-  if (paySecond) return "SECOND_PAYMENT";
-  if (firstPaid) return "FIRST_PAID";
-  if (payFirst) return "FIRST_PAYMENT";
-  return "PENDING";
-}
-
-function parseNoteReasons(notes: string | null | undefined): string[] {
-  if (!notes) return [];
-  return notes
-    .split("|")
-    .map((part) => part.trim())
-    .filter(Boolean);
-}
-
-function getHoldStatusFromNotes(
-  notes: string | null | undefined,
-): RowDraft["status"] | null {
-  const reasons = parseNoteReasons(notes);
-  if (reasons.some((reason) => HOLD_SIGNATURE_REASONS.has(reason)))
-    return "HOLD_SIGNATURE";
-  if (reasons.some((reason) => HOLD_REASONS.has(reason))) return "HOLD";
-  return null;
+function weekRangeSlug(week: CMSWeek | null | undefined): string {
+  const start = week?.weekStart ? week.weekStart.slice(0, 10) : null;
+  const end = week?.weekEnd ? week.weekEnd.slice(0, 10) : null;
+  if (start && end) return `${start}_to_${end}`;
+  if (start) return start;
+  return "no-active-week";
 }
 
 function normalizeDecimalDraft(input: string): string {
@@ -413,15 +406,10 @@ export default function SalesCommissionClient({
         const paymentTouched =
           Object.prototype.hasOwnProperty.call(patch, "payFirst") ||
           Object.prototype.hasOwnProperty.call(patch, "paySecond");
-        const notesTouched = Object.prototype.hasOwnProperty.call(
-          patch,
-          "notes",
-        );
         const merged = { ...row, ...patch };
         if (paymentTouched && !merged.payFirst && !merged.firstPaid) {
           merged.paySecond = false;
         }
-        const holdStatus = getHoldStatusFromNotes(merged.notes);
         const commission = calcCommission(
           asNum(merged.amount),
           asNum(merged.commissionRate),
@@ -445,16 +433,11 @@ export default function SalesCommissionClient({
           calculatedCommission: adjustedCommission,
           firstPaymentAmount,
           secondPaymentAmount: secondBase,
-          status:
-            holdStatus ??
-            (paymentTouched || notesTouched
-              ? getPaymentStatus(
-                  merged.payFirst,
-                  merged.paySecond,
-                  merged.firstPaid,
-                  merged.secondPaid,
-                )
-              : merged.status),
+          // Always re-derived from Notes + payment flags (see types.ts),
+          // so status/color never drift out of sync with what the row
+          // actually shows, on every edit -- not just when payFirst,
+          // paySecond, or notes are the field being touched.
+          status: deriveInvoiceStatus(merged),
         };
       }),
     );
@@ -571,6 +554,11 @@ export default function SalesCommissionClient({
       merged.calculatedCommission = adjustedCommission;
       merged.firstPaymentAmount = firstPaymentAmount;
       merged.secondPaymentAmount = secondPaymentAmount;
+      // Self-heal: recompute status from Notes + payment flags on every
+      // save, so a row that was carried over with a stale status (or
+      // loaded before this fix) gets corrected in the database the next
+      // time the draft is saved, with no manual edit required.
+      merged.status = deriveInvoiceStatus(merged);
 
       return merged;
     });
@@ -615,13 +603,13 @@ export default function SalesCommissionClient({
     }
 
     const firstRow = data[0];
-    const missingFields = Object.entries(COLUMN_ALIASES)
+    const missingFields = Object.entries(REQUIRED_COLUMN_ALIASES)
       .filter(([, aliases]) => resolveField(firstRow, aliases) === undefined)
       .map(([field]) => field);
 
     if (missingFields.length > 0) {
       const readable = missingFields
-        .map((f) => COLUMN_ALIASES[f][0])
+        .map((f) => REQUIRED_COLUMN_ALIASES[f][0])
         .join(", ");
       setImportError(`Missing required column(s): ${readable}`);
       return;
@@ -638,10 +626,10 @@ export default function SalesCommissionClient({
       "Customer",
       "%Cms",
       "Amount",
-      "1st Payment",
-      "2nd Payment",
       "3rd Party",
       "Refund",
+      "1st Paid Date",
+      "2nd Paid Date",
       "Notes",
     ];
     const rowsToExport = filled
@@ -653,11 +641,11 @@ export default function SalesCommissionClient({
             Customer: "Sample Customer",
             "%Cms": 8,
             Amount: 1000,
-            "1st Payment": 48,
-            "2nd Payment": 32,
             "3rd Party": 0,
             Refund: 0,
-            Notes: "Sample row",
+            "1st Paid Date": new Date().toISOString().slice(0, 10),
+            "2nd Paid Date": "",
+            Notes: "Sample row - 1st payment already received",
           },
         ]
       : [
@@ -668,10 +656,10 @@ export default function SalesCommissionClient({
             Customer: "",
             "%Cms": "",
             Amount: "",
-            "1st Payment": "",
-            "2nd Payment": "",
             "3rd Party": "",
             Refund: "",
+            "1st Paid Date": "",
+            "2nd Paid Date": "",
             Notes: "",
           },
         ];
@@ -686,9 +674,13 @@ export default function SalesCommissionClient({
     const url = URL.createObjectURL(blob);
     const anchor = document.createElement("a");
     anchor.href = url;
+    // Filename carries the working week's date range so a template
+    // downloaded today is easy to trace back to which week's invoices it
+    // was used to import later.
+    const rangeSlug = weekRangeSlug(activeWeek);
     anchor.download = filled
-      ? "sales-commission-sample.xlsx"
-      : "sales-commission-empty-template.xlsx";
+      ? `sales-commission-sample-${rangeSlug}.xlsx`
+      : `sales-commission-empty-template-${rangeSlug}.xlsx`;
     anchor.click();
     URL.revokeObjectURL(url);
   };
@@ -713,12 +705,48 @@ export default function SalesCommissionClient({
           resolveField(row, COLUMN_ALIASES.commissionRate) ?? 0,
         );
         const amount = asNum(resolveField(row, COLUMN_ALIASES.amount) ?? 0);
+
+        // Optional columns: let an invoice that was already paid (in full
+        // or in part) outside the system import with its paid status
+        // intact, instead of always landing as a fresh Open invoice.
+        const thirdPartyRaw = resolveField(
+          row,
+          OPTIONAL_COLUMN_ALIASES.thirdPartyAmount,
+        );
+        const thirdPartyAmount =
+          thirdPartyRaw !== undefined && String(thirdPartyRaw).trim() !== ""
+            ? asNum(thirdPartyRaw)
+            : null;
+        const refundRaw = resolveField(
+          row,
+          OPTIONAL_COLUMN_ALIASES.refundAmount,
+        );
+        const refundAmount =
+          refundRaw !== undefined && String(refundRaw).trim() !== ""
+            ? asNum(refundRaw)
+            : null;
+        const firstPaidDate =
+          normalizeDate(
+            resolveField(row, OPTIONAL_COLUMN_ALIASES.firstPaidDate),
+          ) || null;
+        const secondPaidDate =
+          normalizeDate(
+            resolveField(row, OPTIONAL_COLUMN_ALIASES.secondPaidDate),
+          ) || null;
+        const notesRaw = resolveField(row, OPTIONAL_COLUMN_ALIASES.notes);
+        const notes =
+          notesRaw !== undefined && String(notesRaw).trim() !== ""
+            ? String(notesRaw).trim()
+            : null;
+        const firstPaid = Boolean(firstPaidDate);
+        const secondPaid = Boolean(secondPaidDate);
+
         const commission = calcCommission(amount, commissionRate);
         const adjustedCommission = calcAdjustedCommission(
           amount,
           commissionRate,
-          0,
-          0,
+          asNum(thirdPartyAmount),
+          asNum(refundAmount),
         );
         const firstPaymentAmount = calcFirstPayment(
           commission,
@@ -738,6 +766,20 @@ export default function SalesCommissionClient({
           calculatedCommission: adjustedCommission,
           firstPaymentAmount,
           secondPaymentAmount,
+          thirdPartyAmount,
+          refundAmount,
+          notes,
+          firstPaid,
+          firstPaidDate,
+          secondPaid,
+          secondPaidDate,
+          status: deriveInvoiceStatus({
+            notes,
+            payFirst: false,
+            paySecond: false,
+            firstPaid,
+            secondPaid,
+          }),
         };
       })
       .filter(
@@ -758,8 +800,8 @@ export default function SalesCommissionClient({
       const adjustedCommission = calcAdjustedCommission(
         row.amount,
         row.commissionRate,
-        0,
-        0,
+        asNum(row.thirdPartyAmount),
+        asNum(row.refundAmount),
       );
       const firstPaymentAmount = calcFirstPayment(
         commission,
@@ -781,6 +823,19 @@ export default function SalesCommissionClient({
         calculatedCommission: adjustedCommission,
         firstPaymentAmount,
         secondPaymentAmount,
+        thirdPartyAmount: row.thirdPartyAmount,
+        refundAmount: row.refundAmount,
+        notes: row.notes,
+        // payFirst/paySecond stay false: those checkboxes mean "pay this
+        // in the current run", not "was already paid". An already-paid
+        // import instead sets firstPaid/secondPaid with their paid dates
+        // directly, mirroring how invoices carried over between weeks are
+        // marked paid.
+        firstPaid: row.firstPaid,
+        firstPaidDate: row.firstPaidDate,
+        secondPaid: row.secondPaid,
+        secondPaidDate: row.secondPaidDate,
+        status: row.status,
         sortOrder: rows.length + index,
       };
     });
@@ -943,28 +998,117 @@ export default function SalesCommissionClient({
     }
   };
 
-  const exportCsv = () => {
-    const csv = Papa.unparse(
-      filteredRows.map((row) => ({
+  // Column layout mirrors the Closed Invoices export so the two files read
+  // the same way side by side.
+  const COMMISSION_EXPORT_HEADERS = [
+    "Sales Rep",
+    "Date",
+    "Invoice#",
+    "Customer",
+    "%Cms",
+    "Amount",
+    "Commission",
+    "1st Payment",
+    "1st Paid Date",
+    "2nd Payment",
+    "2nd Paid Date",
+    "3rd Party",
+    "Refund",
+    "Notes",
+    "Status",
+  ];
+  const CLOSED_EXPORT_HEADERS = [
+    "Sales Rep",
+    "Date",
+    "Invoice#",
+    "Customer",
+    "%Cms",
+    "Amount",
+    "Commission",
+    "1st Payment",
+    "1st Paid Date",
+    "2nd Payment",
+    "2nd Paid Date",
+    "3rd Party",
+    "Refund",
+    "Notes",
+    "Closed At",
+  ];
+
+  const exportExcel = async () => {
+    setBusy(true);
+    setMessage(null);
+    try {
+      const commissionRows = filteredRows.map((row) => ({
         "Sales Rep": row.salesRep,
-        Date: row.invoiceDate,
+        Date: formatDate(row.invoiceDate),
         "Invoice#": row.invoiceNumber,
         Customer: row.customer,
         "%Cms": row.commissionRate,
         Amount: row.amount,
-        FirstPayment: row.firstPaymentAmount,
-        SecondPayment: row.secondPaymentAmount,
-        Status: row.status,
+        Commission: row.calculatedCommission,
+        "1st Payment": row.firstPaymentAmount,
+        "1st Paid Date": formatDate(row.firstPaidDate),
+        "2nd Payment": row.secondPaymentAmount,
+        "2nd Paid Date": formatDate(row.secondPaidDate),
+        "3rd Party": row.thirdPartyAmount ?? "",
+        Refund: row.refundAmount ?? "",
         Notes: row.notes ?? "",
-      })),
-    );
-    const blob = new Blob([csv], { type: "text/csv;charset=utf-8;" });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement("a");
-    a.href = url;
-    a.download = `sales-commission-${activeWeek?.weekStart?.slice(0, 10) ?? "export"}.csv`;
-    a.click();
-    URL.revokeObjectURL(url);
+        Status: formatStatus(deriveInvoiceStatus(row)),
+      }));
+
+      const wb = XLSX.utils.book_new();
+      const commissionSheet = XLSX.utils.json_to_sheet(commissionRows, {
+        header: COMMISSION_EXPORT_HEADERS,
+      });
+      XLSX.utils.book_append_sheet(wb, commissionSheet, "Commission");
+
+      // Second tab: every closed invoice, so a single file has both the
+      // invoices currently being worked and the full history of what has
+      // already been closed out.
+      const closedRes = await fetch("/api/sales-commission/closed", {
+        cache: "no-store",
+      });
+      const closedData = closedRes.ok ? await closedRes.json() : [];
+      const closedRows = (
+        Array.isArray(closedData) ? (closedData as CMSClosedInvoice[]) : []
+      ).map((row) => ({
+        "Sales Rep": row.salesRep,
+        Date: formatDate(row.invoiceDate),
+        "Invoice#": row.invoiceNumber,
+        Customer: row.customer,
+        "%Cms": row.commissionRate,
+        Amount: row.amount,
+        Commission: row.calculatedCommission,
+        "1st Payment": row.firstPaymentAmount,
+        "1st Paid Date": formatDate(row.firstPaidDate),
+        "2nd Payment": row.secondPaymentAmount,
+        "2nd Paid Date": formatDate(row.secondPaidDate),
+        "3rd Party": row.thirdPartyAmount ?? "",
+        Refund: row.refundAmount ?? "",
+        Notes: row.notes ?? "",
+        "Closed At": formatDate(row.closedAt),
+      }));
+      const closedSheet = XLSX.utils.json_to_sheet(closedRows, {
+        header: CLOSED_EXPORT_HEADERS,
+      });
+      XLSX.utils.book_append_sheet(wb, closedSheet, "Closed Invoices");
+
+      const bytes = XLSX.write(wb, { bookType: "xlsx", type: "array" });
+      const blob = new Blob([bytes], {
+        type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+      });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = `sales-commission-${weekRangeSlug(displayedWeek)}.xlsx`;
+      a.click();
+      URL.revokeObjectURL(url);
+    } catch (error: any) {
+      setMessage(error?.message || "Unable to export.");
+    } finally {
+      setBusy(false);
+    }
   };
 
   const openReviewPicker = async () => {
@@ -1230,8 +1374,9 @@ export default function SalesCommissionClient({
               </button>
             )}
             <button
-              onClick={exportCsv}
-              className="inline-flex items-center gap-1.5 rounded-full border px-3 py-1.5 text-sm"
+              onClick={exportExcel}
+              disabled={busy}
+              className="inline-flex items-center gap-1.5 rounded-full border px-3 py-1.5 text-sm disabled:cursor-not-allowed disabled:opacity-50"
             >
               <Download className="h-3.5 w-3.5" /> Export
             </button>
@@ -2193,7 +2338,7 @@ export default function SalesCommissionClient({
                   </button>
                   <button
                     onClick={() => importInputRef.current?.click()}
-                    className="rounded-lg border px-3 py-2 text-sm"
+                    className="rounded-lg bg-emerald-600 px-3 py-2 text-sm text-white hover:bg-emerald-700"
                   >
                     Choose File
                   </button>
@@ -2225,6 +2370,16 @@ export default function SalesCommissionClient({
                   <p className="mt-1">
                     Sales Rep, Date, Invoice#, Customer, %Cms, Amount
                   </p>
+                  <p className="mt-2 font-medium text-gray-900">
+                    Optional columns
+                  </p>
+                  <p className="mt-1">
+                    3rd Party, Refund, 1st Paid Date, 2nd Paid Date, Notes.
+                    Fill in a Paid Date to import an invoice that was already
+                    paid (in part or in full) without needing to update it in
+                    the database afterward -- 1st/2nd Payment amounts are
+                    always calculated automatically.
+                  </p>
                 </div>
                 <div className="mt-3">
                   <button
@@ -2248,6 +2403,11 @@ export default function SalesCommissionClient({
                     Rows are added to the bottom so the new work stays separate
                     from older entries.
                   </li>
+                  <li>
+                    Already paid an invoice outside the system? Set its 1st
+                    Paid Date and/or 2nd Paid Date and it will import already
+                    marked paid.
+                  </li>
                   <li>You can still edit the values after import.</li>
                 </ul>
               </div>
@@ -2267,6 +2427,12 @@ export default function SalesCommissionClient({
                       <th className="px-2 py-1.5">Customer</th>
                       <th className="px-2 py-1.5">%Cms</th>
                       <th className="px-2 py-1.5">Amount</th>
+                      <th className="px-2 py-1.5">3rd Party</th>
+                      <th className="px-2 py-1.5">Refund</th>
+                      <th className="px-2 py-1.5">1st Paid</th>
+                      <th className="px-2 py-1.5">2nd Paid</th>
+                      <th className="px-2 py-1.5">Notes</th>
+                      <th className="px-2 py-1.5">Status</th>
                     </tr>
                   </thead>
                   <tbody>
@@ -2283,12 +2449,32 @@ export default function SalesCommissionClient({
                         <td className="px-2 py-1.5">
                           {formatCurrency(row.amount)}
                         </td>
+                        <td className="px-2 py-1.5">
+                          {row.thirdPartyAmount != null
+                            ? formatCurrency(row.thirdPartyAmount)
+                            : ""}
+                        </td>
+                        <td className="px-2 py-1.5">
+                          {row.refundAmount != null
+                            ? formatCurrency(row.refundAmount)
+                            : ""}
+                        </td>
+                        <td className="px-2 py-1.5">
+                          {row.firstPaidDate || ""}
+                        </td>
+                        <td className="px-2 py-1.5">
+                          {row.secondPaidDate || ""}
+                        </td>
+                        <td className="px-2 py-1.5">{row.notes ?? ""}</td>
+                        <td className="px-2 py-1.5">
+                          {formatStatus(row.status)}
+                        </td>
                       </tr>
                     ))}
                     {importPreviewRows.length === 0 ? (
                       <tr>
                         <td
-                          colSpan={6}
+                          colSpan={12}
                           className="px-2 py-2 text-center text-gray-500"
                         >
                           Choose a file to preview rows.
