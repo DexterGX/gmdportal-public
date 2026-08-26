@@ -125,20 +125,101 @@ export function calcSecondPayment(
   return parseFloat((adjustedCommission - firstPaymentAmount).toFixed(2));
 }
 
+// Reason tags that can be attached to an invoice's Notes field. Any reason
+// in HOLD_REASONS marks the invoice as on hold; HOLD_SIGNATURE_REASONS is a
+// stricter subset for a missing signature specifically. These drive both
+// the row color and the status label everywhere in the app, so there is a
+// single source of truth for "what does this invoice's status mean"
+// regardless of which week it lives in.
+export const NOTE_REASON_OPTIONS = [
+  "No Deposit",
+  "Not Signed",
+  "Customer Hold",
+  "Install Pending",
+  "Waiting Final Payment",
+  "Missing Info",
+  "On Hold",
+  "Material Delay",
+  "Customer Requested Delay",
+];
+
+export const HOLD_SIGNATURE_REASONS = new Set(["Not Signed"]);
+export const HOLD_REASONS = new Set(NOTE_REASON_OPTIONS);
+
+export function parseNoteReasons(notes: string | null | undefined): string[] {
+  if (!notes) return [];
+  return notes
+    .split("|")
+    .map((part) => part.trim())
+    .filter(Boolean);
+}
+
+export function getHoldStatusFromNotes(
+  notes: string | null | undefined,
+): CMSInvoiceStatus | null {
+  const reasons = parseNoteReasons(notes);
+  if (reasons.some((reason) => HOLD_SIGNATURE_REASONS.has(reason)))
+    return "HOLD_SIGNATURE";
+  if (reasons.some((reason) => HOLD_REASONS.has(reason))) return "HOLD";
+  return null;
+}
+
+export function getPaymentStatus(
+  payFirst: boolean,
+  paySecond: boolean,
+  firstPaid: boolean,
+  secondPaid: boolean,
+): CMSInvoiceStatus {
+  if (firstPaid && secondPaid) return "BOTH_PAYMENTS";
+  if (payFirst && paySecond) return "BOTH_PAYMENTS";
+  if (secondPaid) return "BOTH_PAYMENTS";
+  if (paySecond) return "SECOND_PAYMENT";
+  if (firstPaid) return "FIRST_PAID";
+  if (payFirst) return "FIRST_PAYMENT";
+  return "PENDING";
+}
+
+/**
+ * Single source of truth for an invoice's status. A hold reason in Notes
+ * (e.g. "No Deposit", "Not Signed") always wins over payment state, so the
+ * row color and status label stay correct even after the invoice is carried
+ * into a new week, re-imported, or only partially edited. Server routes and
+ * the client both call this instead of keeping their own copy of the rule.
+ */
+export function deriveInvoiceStatus(invoice: {
+  notes?: string | null;
+  payFirst?: boolean | null;
+  paySecond?: boolean | null;
+  firstPaid?: boolean | null;
+  secondPaid?: boolean | null;
+}): CMSInvoiceStatus {
+  const holdStatus = getHoldStatusFromNotes(invoice.notes);
+  if (holdStatus) return holdStatus;
+  return getPaymentStatus(
+    Boolean(invoice.payFirst),
+    Boolean(invoice.paySecond),
+    Boolean(invoice.firstPaid),
+    Boolean(invoice.secondPaid),
+  );
+}
+
 export function getInvoiceRowBg(
   invoice: CMSInvoice,
   settings: CMSSettings,
   hasDuplicate: boolean,
 ): string {
+  // Always re-derive from Notes + payment flags rather than trusting a
+  // possibly-stale stored `status` column, so the row color self-heals.
+  const effectiveStatus = deriveInvoiceStatus(invoice);
   // Hold states have priority over generic invalid highlighting.
-  if (invoice.status === "HOLD_SIGNATURE") return settings.colorHoldSignature;
-  if (invoice.status === "HOLD") return settings.colorHold;
+  if (effectiveStatus === "HOLD_SIGNATURE") return settings.colorHoldSignature;
+  if (effectiveStatus === "HOLD") return settings.colorHold;
   // Red: invalid data check
   if (isInvoiceInvalid(invoice)) return settings.colorError;
-  if (invoice.status === "SECOND_PAYMENT" || invoice.status === "BOTH_PAYMENTS")
+  if (effectiveStatus === "SECOND_PAYMENT" || effectiveStatus === "BOTH_PAYMENTS")
     return settings.colorClosing;
-  if (invoice.status === "FIRST_PAYMENT") return settings.colorFirstPayment;
-  if (invoice.status === "FIRST_PAID") return settings.colorFirstPaid;
+  if (effectiveStatus === "FIRST_PAYMENT") return settings.colorFirstPayment;
+  if (effectiveStatus === "FIRST_PAID") return settings.colorFirstPaid;
   return settings.colorPending;
 }
 

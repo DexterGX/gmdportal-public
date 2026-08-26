@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { getServerSession } from "next-auth";
 import authOptions from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
+import { deriveInvoiceStatus } from "@/app/sales-commission/types";
 
 const p = prisma as any;
 
@@ -110,35 +111,49 @@ export async function POST(req: NextRequest) {
 
     if (toCarry.length > 0) {
       await p.cMSInvoice.createMany({
-        data: toCarry.map((inv: any, idx: number) => ({
-          weekId: week.id,
-          salesRep: inv.salesRep,
-          invoiceDate: inv.invoiceDate,
-          invoiceNumber: inv.invoiceNumber,
-          customer: inv.customer,
-          commissionRate: inv.commissionRate,
-          amount: inv.amount,
-          calculatedCommission: inv.calculatedCommission,
-          firstPaymentAmount: inv.firstPaymentAmount,
-          secondPaymentAmount: inv.secondPaymentAmount,
-          payFirst: false,
-          paySecond: false,
-          firstPaid: inv.firstPaid || inv.payFirst,
-          firstPaidDate: inv.firstPaid
-            ? inv.firstPaidDate
-            : inv.payFirst
-              ? new Date(latestApproved.checkDate)
-              : null,
-          secondPaid: false,
-          secondPaidDate: null,
-          thirdPartyAmount: inv.thirdPartyAmount,
-          refundAmount: inv.refundAmount,
-          notes: inv.notes,
-          isNew: false,
-          status: inv.firstPaid || inv.payFirst ? "FIRST_PAID" : "PENDING",
-          originalInvoiceId: inv.originalInvoiceId ?? inv.id,
-          sortOrder: idx,
-        })),
+        data: toCarry.map((inv: any, idx: number) => {
+          const carriedFirstPaid = Boolean(inv.firstPaid || inv.payFirst);
+          return {
+            weekId: week.id,
+            salesRep: inv.salesRep,
+            invoiceDate: inv.invoiceDate,
+            invoiceNumber: inv.invoiceNumber,
+            customer: inv.customer,
+            commissionRate: inv.commissionRate,
+            amount: inv.amount,
+            calculatedCommission: inv.calculatedCommission,
+            firstPaymentAmount: inv.firstPaymentAmount,
+            secondPaymentAmount: inv.secondPaymentAmount,
+            payFirst: false,
+            paySecond: false,
+            firstPaid: carriedFirstPaid,
+            firstPaidDate: inv.firstPaid
+              ? inv.firstPaidDate
+              : inv.payFirst
+                ? new Date(latestApproved.checkDate)
+                : null,
+            secondPaid: false,
+            secondPaidDate: null,
+            thirdPartyAmount: inv.thirdPartyAmount,
+            refundAmount: inv.refundAmount,
+            notes: inv.notes,
+            isNew: false,
+            // Notes-driven holds (e.g. "No Deposit") always win, so an
+            // invoice carried into a new draft week keeps the same
+            // color/status it had before instead of silently resetting to
+            // Open/1st Paid while the Notes field still shows the hold
+            // reason.
+            status: deriveInvoiceStatus({
+              notes: inv.notes,
+              payFirst: false,
+              paySecond: false,
+              firstPaid: carriedFirstPaid,
+              secondPaid: false,
+            }),
+            originalInvoiceId: inv.originalInvoiceId ?? inv.id,
+            sortOrder: idx,
+          };
+        }),
       });
     }
   }
