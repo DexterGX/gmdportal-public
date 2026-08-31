@@ -25,6 +25,7 @@ import {
   Ruler,
   History,
   Tag,
+  Boxes,
 } from "lucide-react";
 import { UserCheck } from "lucide-react";
 import type { Role } from "@prisma/client"; // Prisma enum
@@ -131,7 +132,8 @@ export type ProgramId =
   | "salesCommission"
   | "storeInventory"
   | "fabricationOrders"
-  | "vehicles";
+  | "vehicles"
+  | "cabinetEstimates";
 
 export interface ProgramConfig {
   id: ProgramId;
@@ -613,6 +615,27 @@ export const programs: ProgramConfig[] = [
         name: "Price Change Log",
         path: "/fabrication-orders/price-log",
         adminOnly: true,
+      },
+    ],
+    othersItems: [],
+  },
+  {
+    id: "cabinetEstimates",
+    name: "Cabinet Estimate",
+    basePath: "/cabinet-estimates",
+    description:
+      "Build and save cabinet estimates for the different cabinet companies we work with.",
+    allowedRoles: ["admin", "sales", "office", "finance"],
+    navItems: [
+      {
+        icon: Boxes,
+        name: "New Estimate",
+        path: "/cabinet-estimates",
+      },
+      {
+        icon: ListIcon,
+        name: "Saved Estimates",
+        path: "/cabinet-estimates/saved",
       },
     ],
     othersItems: [],
