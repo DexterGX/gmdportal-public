@@ -1,7 +1,12 @@
 import { notFound, redirect } from "next/navigation";
 import { getCurrentUserWithRole } from "@/lib/authHelpers";
 import { prisma } from "@/lib/prisma";
-import { formatCurrency } from "@/lib/cabinetEstimateCalc";
+import {
+  computeInstallationTotal,
+  computeLineItemsCustomizationSurchargeTotal,
+  discountPercentLabel,
+  formatCurrency,
+} from "@/lib/cabinetEstimateCalc";
 import AutoPrintClient from "./AutoPrintClient";
 import PrintButton from "./PrintButton";
 import styles from "./page.module.css";
@@ -10,9 +15,21 @@ const prismaAny = prisma as any;
 
 const VIEW_ROLES = ["admin", "sales", "office", "finance"];
 
+// How many Special Customization (name, qty) pairs are laid out per print
+// row - matches Diego's "4 items per row, table-like" request.
+const SPECIAL_CUSTOMIZATION_COLUMNS = 4;
+
 function toNumber(value: unknown) {
   const parsed = Number(value);
   return Number.isFinite(parsed) ? parsed : 0;
+}
+
+function chunkArray<T>(items: T[], size: number): T[][] {
+  const chunks: T[][] = [];
+  for (let i = 0; i < items.length; i += size) {
+    chunks.push(items.slice(i, i + size));
+  }
+  return chunks;
 }
 
 function InfoRow({
@@ -52,7 +69,13 @@ export default async function CabinetEstimatePrintPage({
   const [estimate, companySettings] = await Promise.all([
     prismaAny.cabinetEstimate.findUnique({
       where: { id },
-      include: { lineItems: { orderBy: { sortOrder: "asc" } } },
+      include: {
+        lineItems: { orderBy: { sortOrder: "asc" } },
+        specialCustomizationLines: {
+          include: { item: true },
+          orderBy: { item: { sortOrder: "asc" } },
+        },
+      },
     }),
     prismaAny.companyDocumentSettings.findFirst(),
   ]);
@@ -66,6 +89,28 @@ export default async function CabinetEstimatePrintPage({
   }`;
   const printedOn = new Date().toLocaleString("en-US");
   const printedBy = user.name || user.email || "Unknown";
+  const discountPercent = toNumber(estimate.discountPercent);
+  const specialCustomizationRows = chunkArray(
+    estimate.specialCustomizationLines,
+    SPECIAL_CUSTOMIZATION_COLUMNS,
+  );
+  const lineCustomizationSurchargeAmount = computeLineItemsCustomizationSurchargeTotal(
+    estimate.lineItems.map((item: any) => ({
+      qty: toNumber(item.qty),
+      unitPrice: toNumber(item.unitPrice),
+      isCustomization: Boolean(item.isCustomization),
+      customizationType:
+        item.customizationType === "percent" || item.customizationType === "flat"
+          ? item.customizationType
+          : null,
+      customizationValue: toNumber(item.customizationValue),
+    })),
+  );
+  const installationTotal = computeInstallationTotal(
+    toNumber(estimate.installationAmount),
+    toNumber(estimate.customizationAmount),
+    lineCustomizationSurchargeAmount,
+  );
 
   return (
     <div className={styles.screen}>
@@ -86,9 +131,6 @@ export default async function CabinetEstimatePrintPage({
               alt={companySettings?.companyName || "GM Design"}
               className={styles.logo}
             />
-            <div className={styles.companyName}>
-              {companySettings?.companyName || "GM Design"}
-            </div>
             {companySettings?.address && (
               <div className={styles.companyLine}>{companySettings.address}</div>
             )}
@@ -151,7 +193,7 @@ export default async function CabinetEstimatePrintPage({
               <th className={styles.colQty}>Qty</th>
               <th>Code</th>
               <th>Description</th>
-              <th className={styles.colCustomization}>Customization?</th>
+              <th className={styles.colCustomization}>Custom</th>
               <th>Note</th>
               <th className={styles.colPUnit}>P.Unit</th>
               <th className={styles.colPTotal}>P.Total</th>
@@ -171,7 +213,13 @@ export default async function CabinetEstimatePrintPage({
                   <td>{item.code || ""}</td>
                   <td>{item.description || ""}</td>
                   <td className={styles.colCustomization}>
-                    {item.isCustomization ? "Yes" : ""}
+                    {item.isCustomization && item.customizationType === "flat"
+                      ? formatCurrency(toNumber(item.customizationValue))
+                      : item.isCustomization && item.customizationType === "percent"
+                        ? `${toNumber(item.customizationValue)}%`
+                        : item.isCustomization
+                          ? "Yes"
+                          : ""}
                   </td>
                   <td>{item.note || ""}</td>
                   <td className={styles.colPUnit}>
@@ -186,6 +234,38 @@ export default async function CabinetEstimatePrintPage({
           </tbody>
         </table>
 
+        {estimate.specialCustomizationLines.length > 0 && (
+          <div className={styles.specialCustomizationBox}>
+            <div className={styles.specialCustomizationTitle}>
+              Special Customization
+            </div>
+            <table className={styles.specialCustomizationTable}>
+              <colgroup>
+                {Array.from({ length: SPECIAL_CUSTOMIZATION_COLUMNS }).map((_, i) => (
+                  <col key={i} className={styles.customizationCol} />
+                ))}
+              </colgroup>
+              <tbody>
+                {specialCustomizationRows.map((row, rowIndex) => {
+                  const cells = row.map((line: any) => (
+                    <td key={line.id} className={styles.customizationCell}>
+                      <span className={styles.customizationQty}>
+                        {toNumber(line.qty)}
+                      </span>{" "}
+                      {line.item?.name || ""}
+                    </td>
+                  ));
+                  const padCount = SPECIAL_CUSTOMIZATION_COLUMNS - row.length;
+                  for (let i = 0; i < padCount; i += 1) {
+                    cells.push(<td key={`pad-${i}`} className={styles.customizationCell} />);
+                  }
+                  return <tr key={rowIndex}>{cells}</tr>;
+                })}
+              </tbody>
+            </table>
+          </div>
+        )}
+
         <div className={styles.footer}>
           <div className={styles.notesBox}>
             <div className={styles.notesTitle}>Notes</div>
@@ -193,7 +273,7 @@ export default async function CabinetEstimatePrintPage({
           </div>
 
           <div className={styles.categoryBox}>
-            <div className={styles.categoryTitle}>Cabinets Category</div>
+            <div className={styles.categoryTitle}>Cabinets Summary</div>
             <div className={styles.categoryRow}>
               <span>Standard Cabinets</span>
               <span>{estimate.standardCabinetsCount}</span>
@@ -201,6 +281,10 @@ export default async function CabinetEstimatePrintPage({
             <div className={styles.categoryRow}>
               <span>Double Cabinets</span>
               <span>{estimate.doubleCabinetsCount}</span>
+            </div>
+            <div className={styles.categoryRow}>
+              <span>Custom Cabinets</span>
+              <span>{estimate.customCabinetsCount}</span>
             </div>
             <div className={styles.categoryRow}>
               <span>Miscellaneous</span>
@@ -217,12 +301,13 @@ export default async function CabinetEstimatePrintPage({
           </div>
 
           <div className={styles.totalsBox}>
+            <div className={styles.totalsTitle}>Total Summary</div>
             <div className={styles.totalsRow}>
               <span>Cabinets</span>
               <strong>{formatCurrency(toNumber(estimate.cabinetsTotal))}</strong>
             </div>
             <div className={`${styles.totalsRow} ${styles.discount}`}>
-              <span>Discount</span>
+              <span>Discount ({discountPercentLabel(discountPercent)})</span>
               <strong>{formatCurrency(toNumber(estimate.discount))}</strong>
             </div>
             <div className={`${styles.totalsRow} ${styles.subtotal}`}>
@@ -237,15 +322,7 @@ export default async function CabinetEstimatePrintPage({
             </div>
             <div className={`${styles.totalsRow} ${styles.installation}`}>
               <span>Installation</span>
-              <strong>
-                {formatCurrency(toNumber(estimate.installationAmount))}
-              </strong>
-            </div>
-            <div className={styles.totalsRow}>
-              <span>{estimate.customizationLabel || "Customization"}</span>
-              <strong>
-                {formatCurrency(toNumber(estimate.customizationAmount))}
-              </strong>
+              <strong>{formatCurrency(installationTotal)}</strong>
             </div>
             <div className={styles.totalsFinal}>
               <span>Total</span>

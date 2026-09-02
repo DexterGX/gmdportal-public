@@ -637,6 +637,12 @@ export const programs: ProgramConfig[] = [
         name: "Saved Estimates",
         path: "/cabinet-estimates/saved",
       },
+      {
+        icon: Settings2,
+        name: "Special Customization Settings",
+        path: "/cabinet-estimates/settings",
+        adminOnly: true,
+      },
     ],
     othersItems: [],
   },

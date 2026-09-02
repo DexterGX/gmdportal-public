@@ -5,6 +5,11 @@ import CabinetEstimateForm from "./CabinetEstimateForm";
 
 const prismaAny = prisma as any;
 
+function toNumber(value: unknown): number {
+  const parsed = Number(value);
+  return Number.isFinite(parsed) ? parsed : 0;
+}
+
 export default async function NewCabinetEstimatePage() {
   const { user, appRole, isActive } = await getCurrentUserWithRole();
 
@@ -12,7 +17,13 @@ export default async function NewCabinetEstimatePage() {
     redirect("/login");
   }
 
-  const companySettings = await prismaAny.companyDocumentSettings.findFirst();
+  const [companySettings, specialCustomizationItems] = await Promise.all([
+    prismaAny.companyDocumentSettings.findFirst(),
+    prismaAny.cabinetSpecialCustomizationItem.findMany({
+      where: { isActive: true },
+      orderBy: [{ sortOrder: "asc" }, { name: "asc" }],
+    }),
+  ]);
 
   return (
     <CabinetEstimateForm
@@ -21,6 +32,11 @@ export default async function NewCabinetEstimatePage() {
       companyLogoUrl={companySettings?.logoUrl || "/logo.svg"}
       companyPhone={companySettings?.phoneNumber || null}
       companyAddress={companySettings?.address || null}
+      specialCustomizationItems={specialCustomizationItems.map((item: any) => ({
+        id: item.id,
+        name: item.name,
+        price: toNumber(item.price),
+      }))}
     />
   );
 }

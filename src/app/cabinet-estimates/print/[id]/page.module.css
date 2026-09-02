@@ -14,15 +14,15 @@
   padding: 20px;
   font-family: "Segoe UI", Tahoma, Geneva, Verdana, sans-serif;
   color: #0f172a;
-  line-height: 1.35;
+  line-height: 1.3;
   font-size: 9pt;
 }
 
 .printedBy {
   text-align: right;
-  font-size: 8pt;
+  font-size: 7.5pt;
   color: #6b7280;
-  margin-bottom: 6px;
+  margin-bottom: 5px;
 }
 
 .header {
@@ -32,13 +32,14 @@
 }
 
 .letterhead {
-  padding: 10px;
+  padding: 8px;
   border-right: 1px solid #111827;
   display: flex;
   flex-direction: column;
   align-items: center;
+  justify-content: center;
   text-align: center;
-  gap: 4px;
+  gap: 3px;
 }
 
 .logo {
@@ -48,13 +49,8 @@
   margin: 0 auto;
 }
 
-.companyName {
-  font-size: 11pt;
-  font-weight: 700;
-}
-
 .companyLine {
-  font-size: 8pt;
+  font-size: 7pt;
   color: #374151;
 }
 
@@ -76,44 +72,44 @@
 .infoLabel {
   background: #1d4ed8;
   color: #fff;
-  font-size: 8pt;
+  font-size: 6.5pt;
   font-weight: 700;
-  padding: 3px 6px;
+  padding: 1px 6px;
   display: flex;
   align-items: center;
 }
 
 .infoValue {
-  padding: 3px 6px;
-  font-size: 9pt;
+  padding: 1px 6px;
+  font-size: 7.5pt;
   display: flex;
   align-items: center;
   overflow-wrap: break-word;
 }
 
 .metaBox {
-  padding: 8px;
+  padding: 5px;
   display: flex;
   flex-direction: column;
-  gap: 6px;
-  font-size: 8pt;
+  gap: 3px;
+  font-size: 7pt;
 }
 
 .metaItem {
   border: 1px solid #111827;
   border-radius: 3px;
-  padding: 4px 6px;
+  padding: 2px 5px;
 }
 
 .metaLabel {
   text-transform: uppercase;
   color: #6b7280;
-  font-size: 7.5pt;
+  font-size: 6.5pt;
   font-weight: 700;
 }
 
 .metaValue {
-  font-size: 10pt;
+  font-size: 8.5pt;
   font-weight: 700;
   margin-top: 1px;
 }
@@ -122,14 +118,14 @@
   width: 100%;
   border-collapse: collapse;
   table-layout: fixed;
-  margin-top: 10px;
-  font-size: 8.5pt;
+  margin-top: 8px;
+  font-size: 7.5pt;
 }
 
 .itemsTable th,
 .itemsTable td {
   border: 1px solid #111827;
-  padding: 4px 6px;
+  padding: 3px 5px;
   text-align: left;
   vertical-align: top;
   white-space: normal;
@@ -140,7 +136,7 @@
   background: #f3f4f6;
   font-weight: 700;
   text-transform: uppercase;
-  font-size: 7.5pt;
+  font-size: 7pt;
 }
 
 .colQty {
@@ -151,14 +147,14 @@
   width: 10%;
 }
 .colDescription {
-  width: 18%;
+  width: 24%;
 }
 .colCustomization {
-  width: 10%;
+  width: 8%;
   text-align: center;
 }
 .colNote {
-  width: 26%;
+  width: 22%;
 }
 .colPUnit {
   width: 15%;
@@ -169,49 +165,89 @@
   text-align: right;
 }
 
+.specialCustomizationBox {
+  border: 1px solid #111827;
+  margin-top: 8px;
+}
+
+.specialCustomizationTitle {
+  background: #f3f4f6;
+  font-weight: 700;
+  text-transform: uppercase;
+  font-size: 7pt;
+  padding: 3px 6px;
+  border-bottom: 1px solid #111827;
+}
+
+.specialCustomizationTable {
+  width: 100%;
+  border-collapse: collapse;
+  table-layout: fixed;
+  font-size: 7.5pt;
+}
+
+.customizationCell {
+  border: 1px solid #d1d5db;
+  padding: 2px 6px;
+  overflow-wrap: break-word;
+  text-align: left;
+}
+
+.customizationCol {
+  width: 25%;
+}
+
+.customizationQty {
+  font-weight: 700;
+  color: #1d4ed8;
+}
+
 .footer {
   display: grid;
   grid-template-columns: 1fr 230px 280px;
-  gap: 10px;
-  margin-top: 10px;
+  align-items: stretch;
+  gap: 8px;
+  margin-top: 8px;
 }
 
 .notesBox {
   border: 1px solid #111827;
-  padding: 8px;
-  font-size: 8.5pt;
-  min-height: 140px;
+  padding: 6px;
+  font-size: 7.5pt;
   white-space: pre-wrap;
   overflow-wrap: break-word;
+  display: flex;
+  flex-direction: column;
 }
 
 .notesTitle {
   font-weight: 700;
   text-transform: uppercase;
-  font-size: 7.5pt;
-  margin-bottom: 4px;
+  font-size: 7pt;
+  margin-bottom: 3px;
   color: #374151;
 }
 
 .categoryBox {
   border: 1px solid #111827;
-  height: fit-content;
+  display: flex;
+  flex-direction: column;
 }
 
 .categoryTitle {
   background: #f3f4f6;
   font-weight: 700;
   text-transform: uppercase;
-  font-size: 7.5pt;
-  padding: 4px 6px;
+  font-size: 7pt;
+  padding: 3px 6px;
   border-bottom: 1px solid #111827;
 }
 
 .categoryRow {
   display: flex;
   justify-content: space-between;
-  padding: 3px 6px;
-  font-size: 8.5pt;
+  padding: 2px 6px;
+  font-size: 7.5pt;
   border-bottom: 1px solid #d1d5db;
 }
 .categoryRow:last-child {
@@ -220,14 +256,24 @@
 
 .totalsBox {
   border: 1px solid #111827;
-  height: fit-content;
+  display: flex;
+  flex-direction: column;
+}
+
+.totalsTitle {
+  background: #f3f4f6;
+  font-weight: 700;
+  text-transform: uppercase;
+  font-size: 7pt;
+  padding: 3px 6px;
+  border-bottom: 1px solid #111827;
 }
 
 .totalsRow {
   display: flex;
   justify-content: space-between;
-  padding: 4px 6px;
-  font-size: 8.5pt;
+  padding: 2px 6px;
+  font-size: 7.5pt;
   border-bottom: 1px solid #d1d5db;
 }
 
@@ -249,11 +295,13 @@
 .totalsFinal {
   display: flex;
   justify-content: space-between;
-  padding: 6px;
+  align-items: center;
+  padding: 5px 6px;
+  margin-top: auto;
   background: #1d4ed8;
   color: #fff;
   font-weight: 700;
-  font-size: 10pt;
+  font-size: 9pt;
 }
 
 @page {
@@ -275,6 +323,7 @@
   }
   .header,
   .itemsTable tr,
+  .specialCustomizationBox,
   .footer {
     break-inside: avoid;
   }

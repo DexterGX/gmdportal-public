@@ -2122,6 +2122,7 @@ model CabinetEstimate {
   // categorization logic yet)
   standardCabinetsCount Int     @default(0)
   doubleCabinetsCount   Int     @default(0)
+  customCabinetsCount   Int     @default(0)
   miscCabinetsCount     Int     @default(0)
   itemsQuantity         Int     @default(0)
   microwaveInstallation Boolean @default(false)
@@ -2129,7 +2130,8 @@ model CabinetEstimate {
   // Footer - price distribution: Cabinets -> Discount -> Subtotal -> Removal
   // -> Installation -> Customization -> Total
   cabinetsTotal       Decimal @default(0) @db.Decimal(12, 2) // auto: sum of line items
-  discount            Decimal @default(0) @db.Decimal(12, 2)
+  discountPercent     Int     @default(0) // 0/5/10/15/20/25 - 25 = "Contractor" tier
+  discount            Decimal @default(0) @db.Decimal(12, 2) // auto: cabinetsTotal * discountPercent / 100
   cabinetsSubtotal    Decimal @default(0) @db.Decimal(12, 2) // auto: cabinetsTotal - discount
   removalAmount       Decimal @default(0) @db.Decimal(12, 2)
   installationAmount  Decimal @default(0) @db.Decimal(12, 2)
@@ -2146,6 +2148,7 @@ model CabinetEstimate {
 
   lineItems CabinetEstimateLineItem[]
   history   CabinetEstimateHistory[]
+  specialCustomizationLines CabinetEstimateSpecialCustomizationLine[]
 
   @@index([estimateNumber])
   @@index([customerId])
@@ -2163,11 +2166,51 @@ model CabinetEstimateLineItem {
   code            String?
   description     String?
   isCustomization Boolean @default(false)
+  // Only meaningful when isCustomization is true - the extra Installation
+  // surcharge for building this item custom, either a percent of the
+  // line's own qty*unitPrice or a flat $ amount per unit. Never rolled
+  // into this line's own totalPrice/Cabinets total - it's added to the
+  // estimate's Installation total instead (see cabinetEstimateCalc.ts).
+  customizationType  String? // "percent" | "flat"
+  customizationValue Decimal @default(0) @db.Decimal(10, 2)
   note            String?
   unitPrice       Decimal @default(0) @db.Decimal(12, 2)
   totalPrice      Decimal @default(0) @db.Decimal(12, 2)
 
   @@index([estimateId])
+}
+
+model CabinetSpecialCustomizationItem {
+  id        String   @id @default(cuid())
+  name      String
+  price     Decimal  @default(0) @db.Decimal(12, 2)
+  isActive  Boolean  @default(true)
+  sortOrder Int      @default(0)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  lines CabinetEstimateSpecialCustomizationLine[]
+
+  @@index([isActive])
+  @@index([sortOrder])
+}
+
+model CabinetEstimateSpecialCustomizationLine {
+  id         String          @id @default(cuid())
+  estimateId String
+  estimate   CabinetEstimate @relation(fields: [estimateId], references: [id], onDelete: Cascade)
+  itemId     String
+  item       CabinetSpecialCustomizationItem @relation(fields: [itemId], references: [id])
+
+  qty    Decimal @default(0) @db.Decimal(10, 2)
+  amount Decimal @default(0) @db.Decimal(12, 2) // auto: qty * item.price at save time
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@unique([estimateId, itemId])
+  @@index([estimateId])
+  @@index([itemId])
 }
 
 model CabinetEstimateHistory {
