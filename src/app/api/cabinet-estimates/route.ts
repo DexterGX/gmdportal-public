@@ -45,13 +45,20 @@ type LineItemPayload = {
   customizationValue?: number | string;
   note?: string | null;
   unitPrice?: number | string;
+  catalogItemId?: string | null;
+  summaryBucket?: string | null;
 };
 
 function toCustomizationType(value: unknown): CustomizationType | null {
   return value === "percent" || value === "flat" ? value : null;
 }
 
-export function buildLineItemsCreateData(lineItems: LineItemPayload[]) {
+const SUMMARY_BUCKETS = ["STANDARD", "DOUBLE", "CUSTOM", "MISC"];
+function toSummaryBucket(value: unknown): string | null {
+  return typeof value === "string" && SUMMARY_BUCKETS.includes(value) ? value : null;
+}
+
+function buildLineItemsCreateData(lineItems: LineItemPayload[]) {
   return lineItems
     .map((item, index) => {
       const qty = toNumber(item.qty ?? 0);
@@ -74,6 +81,8 @@ export function buildLineItemsCreateData(lineItems: LineItemPayload[]) {
         note: item.note?.toString().trim() || null,
         unitPrice,
         totalPrice: Math.round(qty * unitPrice * 100) / 100,
+        catalogItemId: item.catalogItemId || null,
+        summaryBucket: toSummaryBucket(item.summaryBucket),
       };
     })
     .filter(
@@ -260,6 +269,8 @@ export async function POST(request: NextRequest) {
             salesRep,
             brand: body.brand || null,
             groupColor: body.groupColor || null,
+            vendorId: body.vendorId || null,
+            priceTierId: body.priceTierId || null,
             removal: body.removal || null,
             projectType: body.projectType || null,
             version: body.version || null,

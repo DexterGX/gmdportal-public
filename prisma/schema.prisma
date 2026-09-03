@@ -424,6 +424,21 @@ model CabinetProviderSettings {
   updatedAt    DateTime @updatedAt
   notes        String?
 
+  // Round 6: pricing factors shared with the Cabinet Estimate program's
+  // Companies page (same table backs both /settings/cabinets and
+  // /cabinet-estimates/companies, so edits in either place show in both).
+  // discount = fraction off retail (0.30 = 30% off), applied to a vendor
+  // price list's raw prices ONLY when an import is marked "retail" - the
+  // resulting net cost is what's stored on CabinetCatalogItemPrice.
+  // factor = sales multiplier applied LIVE on top of that stored net cost
+  // whenever a price is looked up for an estimate (see cabinetCatalogPricing.ts) -
+  // changing it takes effect immediately, no re-import needed.
+  discount Decimal @default(0) @db.Decimal(10, 4)
+  factor   Decimal @default(1) @db.Decimal(10, 4)
+
+  // Optional link to the catalog/import vendor this company represents.
+  cabinetVendor CabinetVendor?
+
   @@index([displayName])
   @@index([isActive])
 }
@@ -2096,6 +2111,79 @@ model FabricationOrderHistory {
   @@index([createdAt])
 }
 
+model CabinetVendor {
+  id        String   @id @default(cuid())
+  name      String   @unique // "Eucucina", "Jarlin", "SensiHome", "GMDPRO"
+  isActive  Boolean  @default(true)
+  sortOrder Int      @default(0)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  // Round 6: optional link to the Companies record (CabinetProviderSettings)
+  // holding this vendor's contact info + discount/factor pricing rules.
+  providerId String?                  @unique
+  provider   CabinetProviderSettings? @relation(fields: [providerId], references: [id])
+
+  priceTiers CabinetPriceTier[]
+  items      CabinetCatalogItem[]
+  estimates  CabinetEstimate[]
+
+  @@index([isActive])
+}
+
+model CabinetPriceTier {
+  id        String        @id @default(cuid())
+  vendorId  String
+  vendor    CabinetVendor @relation(fields: [vendorId], references: [id], onDelete: Cascade)
+  name      String        // e.g. "Liberty Shaker White - LSW", "Price Level 1", "WS"
+  sortOrder Int           @default(0)
+  isActive  Boolean       @default(true)
+
+  prices    CabinetCatalogItemPrice[]
+  estimates CabinetEstimate[]
+
+  @@unique([vendorId, name])
+  @@index([vendorId])
+}
+
+enum CabinetSummaryBucket {
+  STANDARD
+  DOUBLE
+  CUSTOM
+  MISC
+}
+
+model CabinetCatalogItem {
+  id            String               @id @default(cuid())
+  vendorId      String
+  vendor        CabinetVendor        @relation(fields: [vendorId], references: [id], onDelete: Cascade)
+  code          String
+  description   String
+  category      String? // vendor's own section label, kept as-is for browsing
+  summaryBucket CabinetSummaryBucket @default(STANDARD) // feeds Cabinets Summary counts
+  isActive      Boolean              @default(true)
+  createdAt     DateTime             @default(now())
+  updatedAt     DateTime             @updatedAt
+
+  prices    CabinetCatalogItemPrice[]
+  lineItems CabinetEstimateLineItem[]
+
+  @@unique([vendorId, code])
+  @@index([vendorId])
+}
+
+model CabinetCatalogItemPrice {
+  id     String             @id @default(cuid())
+  itemId String
+  item   CabinetCatalogItem @relation(fields: [itemId], references: [id], onDelete: Cascade)
+  tierId String
+  tier   CabinetPriceTier   @relation(fields: [tierId], references: [id], onDelete: Cascade)
+  price  Decimal            @db.Decimal(12, 2)
+
+  @@unique([itemId, tierId])
+  @@index([tierId])
+}
+
 model CabinetEstimate {
   id             String   @id @default(cuid())
   estimateNumber String?  @unique
@@ -2114,12 +2202,17 @@ model CabinetEstimate {
   salesRep     String
   brand        String?
   groupColor   String?
+  vendorId     String?
+  vendor       CabinetVendor?    @relation(fields: [vendorId], references: [id])
+  priceTierId  String?
+  priceTier    CabinetPriceTier? @relation(fields: [priceTierId], references: [id])
   removal      String?
   projectType  String?
   version      String?
 
-  // Footer - "CABINETS CATEGORY" box (manual entry for now, no per-item
-  // categorization logic yet)
+  // Footer - "CABINETS CATEGORY" box - auto-computed by the form from
+  // lineItems.summaryBucket (sum of qty per bucket); stored here so
+  // history/PATCH/print keep reading a plain column, same as cabinetsTotal.
   standardCabinetsCount Int     @default(0)
   doubleCabinetsCount   Int     @default(0)
   customCabinetsCount   Int     @default(0)
@@ -2154,6 +2247,8 @@ model CabinetEstimate {
   @@index([customerId])
   @@index([jobId])
   @@index([isActive])
+  @@index([vendorId])
+  @@index([priceTierId])
 }
 
 model CabinetEstimateLineItem {
@@ -2173,11 +2268,15 @@ model CabinetEstimateLineItem {
   // estimate's Installation total instead (see cabinetEstimateCalc.ts).
   customizationType  String? // "percent" | "flat"
   customizationValue Decimal @default(0) @db.Decimal(10, 2)
+  catalogItemId String?
+  catalogItem   CabinetCatalogItem?   @relation(fields: [catalogItemId], references: [id])
+  summaryBucket CabinetSummaryBucket?
   note            String?
   unitPrice       Decimal @default(0) @db.Decimal(12, 2)
   totalPrice      Decimal @default(0) @db.Decimal(12, 2)
 
   @@index([estimateId])
+  @@index([catalogItemId])
 }
 
 model CabinetSpecialCustomizationItem {

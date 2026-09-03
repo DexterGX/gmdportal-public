@@ -22,5 +22,17 @@ export default async function CabinetsInfoPage() {
     orderBy: [{ isActive: "desc" }, { displayName: "asc" }],
   });
 
-  return <CabinetsInfoClient initialProviders={providers} />;
+  // Round 6 added discount/factor (Prisma Decimal) to this model - a Server
+  // Component can't pass a Decimal instance as a prop to a Client Component,
+  // so convert to plain numbers even though this page's client doesn't
+  // display them (it still receives them as part of each provider record).
+  const serializedProviders = providers.map((p: any) => ({
+    ...p,
+    discount: Number(p.discount),
+    factor: Number(p.factor),
+    createdAt: p.createdAt.toISOString(),
+    updatedAt: p.updatedAt.toISOString(),
+  }));
+
+  return <CabinetsInfoClient initialProviders={serializedProviders} />;
 }

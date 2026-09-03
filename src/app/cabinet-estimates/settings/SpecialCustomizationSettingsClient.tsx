@@ -1,6 +1,7 @@
 "use client";
 
 import { useState } from "react";
+import Link from "next/link";
 import { Plus, Save, Trash2 } from "lucide-react";
 import { formatCurrency } from "@/lib/cabinetEstimateCalc";
 
@@ -105,15 +106,23 @@ export default function SpecialCustomizationSettingsClient({ initialItems }: Pro
 
   return (
     <div className="mx-auto max-w-4xl space-y-4">
-      <div>
-        <h1 className="text-2xl font-bold text-gray-900 dark:text-gray-100">
-          Special Customization Settings
-        </h1>
-        <p className="mt-0.5 text-sm text-gray-600 dark:text-gray-400">
-          Manage the customization types and prices available on the Cabinet Estimate
-          form&apos;s Special Customization section. Deactivate an item instead of
-          deleting it if it&apos;s already been used on a saved estimate.
-        </p>
+      <div className="flex items-start justify-between gap-4">
+        <div>
+          <h1 className="text-2xl font-bold text-gray-900 dark:text-gray-100">
+            Special Customization Settings
+          </h1>
+          <p className="mt-0.5 text-sm text-gray-600 dark:text-gray-400">
+            Manage the customization types and prices available on the Cabinet Estimate
+            form&apos;s Special Customization section. Deactivate an item instead of
+            deleting it if it&apos;s already been used on a saved estimate.
+          </p>
+        </div>
+        <Link
+          href="/cabinet-estimates/catalog-import"
+          className="whitespace-nowrap rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm font-medium text-gray-700 transition-colors hover:bg-gray-50 dark:border-gray-600 dark:bg-gray-700 dark:text-gray-300 dark:hover:bg-gray-600"
+        >
+          Import Price List
+        </Link>
       </div>
 
       {(error || message) && (

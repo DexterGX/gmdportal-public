@@ -26,6 +26,8 @@ import {
   History,
   Tag,
   Boxes,
+  Upload,
+  Building2,
 } from "lucide-react";
 import { UserCheck } from "lucide-react";
 import type { Role } from "@prisma/client"; // Prisma enum
@@ -641,6 +643,18 @@ export const programs: ProgramConfig[] = [
         icon: Settings2,
         name: "Special Customization Settings",
         path: "/cabinet-estimates/settings",
+        adminOnly: true,
+      },
+      {
+        icon: Upload,
+        name: "Import Price List",
+        path: "/cabinet-estimates/catalog-import",
+        adminOnly: true,
+      },
+      {
+        icon: Building2,
+        name: "Cabinet Companies",
+        path: "/cabinet-estimates/companies",
         adminOnly: true,
       },
     ],
