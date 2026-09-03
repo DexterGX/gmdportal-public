@@ -55,6 +55,12 @@ export async function GET(request: NextRequest) {
     const providers = await prismaAny.cabinetProviderSettings.findMany({
       where,
       orderBy: [{ isActive: "desc" }, { displayName: "asc" }],
+      include: {
+        // Round 6: lets the Cabinet Companies page show/edit which catalog
+        // vendor (if any) this company is linked to. Ignored by the plain
+        // Settings page's client, which doesn't reference it.
+        cabinetVendor: { select: { id: true, name: true } },
+      },
     });
 
     return NextResponse.json({ providers });
@@ -81,6 +87,8 @@ export async function POST(request: NextRequest) {
       address,
       notes,
       isActive,
+      discount,
+      factor,
     }: {
       actualName?: string;
       displayName?: string;
@@ -90,6 +98,12 @@ export async function POST(request: NextRequest) {
       address?: string | null;
       notes?: string | null;
       isActive?: boolean;
+      // Round 6, both optional - omitted entirely (not sent at all) falls
+      // back to the schema defaults (0 / 1). Only the Cabinet Companies
+      // page's form sends these; the plain Settings page's form doesn't,
+      // and still works unmodified.
+      discount?: number;
+      factor?: number;
     } = body;
 
     if (!actualName?.trim() || !displayName?.trim()) {
@@ -109,6 +123,8 @@ export async function POST(request: NextRequest) {
         address: address ? address.trim() : null,
         notes: notes ? notes.trim() : null,
         isActive: isActive ?? true,
+        ...(discount !== undefined ? { discount } : {}),
+        ...(factor !== undefined ? { factor } : {}),
       },
     });
 
@@ -144,6 +160,8 @@ export async function PATCH(request: NextRequest) {
       address,
       notes,
       isActive,
+      discount,
+      factor,
     }: {
       id?: string;
       actualName?: string;
@@ -154,6 +172,11 @@ export async function PATCH(request: NextRequest) {
       address?: string | null;
       notes?: string | null;
       isActive?: boolean;
+      // Round 6, both optional - omitted (the plain Settings page's form
+      // never sends these) leaves the stored value untouched rather than
+      // resetting it to a default on every save.
+      discount?: number;
+      factor?: number;
     } = body;
 
     if (!id) {
@@ -178,6 +201,8 @@ export async function PATCH(request: NextRequest) {
         address: address ? address.trim() : null,
         notes: notes ? notes.trim() : null,
         isActive: isActive ?? true,
+        ...(discount !== undefined ? { discount } : {}),
+        ...(factor !== undefined ? { factor } : {}),
       },
     });
 

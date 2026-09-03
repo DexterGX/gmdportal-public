@@ -48,6 +48,8 @@ model User {
   fabricationOrderHistoryChanged FabricationOrderHistory[] @relation("FabricationOrderHistoryChangedBy")
   fabricationPriceChangesLogged  FabricationPriceChangeLog[] @relation("FabricationPriceChangeLogChangedBy")
   fabricationImagesUploaded    FabricationOrderImage[] @relation("FabricationOrderImageUploadedBy")
+  cabinetEstimatesCreated       CabinetEstimate[]        @relation("CabinetEstimateCreatedBy")
+  cabinetEstimateHistoryChanged CabinetEstimateHistory[] @relation("CabinetEstimateHistoryChangedBy")
   vehiclesCreated              Vehicle[]              @relation("VehicleCreatedBy")
   vehicleHistoryChanged        VehicleHistory[]       @relation("VehicleHistoryChangedBy")
   vehicleInspectionsCreated    VehicleInspection[]    @relation("VehicleInspectionCreatedBy")
@@ -422,6 +424,21 @@ model CabinetProviderSettings {
   updatedAt    DateTime @updatedAt
   notes        String?
 
+  // Round 6: pricing factors shared with the Cabinet Estimate program's
+  // Companies page (same table backs both /settings/cabinets and
+  // /cabinet-estimates/companies, so edits in either place show in both).
+  // discount = fraction off retail (0.30 = 30% off), applied to a vendor
+  // price list's raw prices ONLY when an import is marked "retail" - the
+  // resulting net cost is what's stored on CabinetCatalogItemPrice.
+  // factor = sales multiplier applied LIVE on top of that stored net cost
+  // whenever a price is looked up for an estimate (see cabinetCatalogPricing.ts) -
+  // changing it takes effect immediately, no re-import needed.
+  discount Decimal @default(0) @db.Decimal(10, 4)
+  factor   Decimal @default(1) @db.Decimal(10, 4)
+
+  // Optional link to the catalog/import vendor this company represents.
+  cabinetVendor CabinetVendor?
+
   @@index([displayName])
   @@index([isActive])
 }
@@ -555,6 +572,7 @@ model Job {
   artifacts         JobArtifact[]
   sampleRequests    SampleRequest[]
   fabricationOrders FabricationOrder[]
+  cabinetEstimates  CabinetEstimate[]
 
   @@index([customerId])
   @@index([quickbooksJobId])
@@ -2090,6 +2108,225 @@ model FabricationOrderHistory {
   createdAt     DateTime @default(now())
 
   @@index([orderId])
+  @@index([createdAt])
+}
+
+model CabinetVendor {
+  id        String   @id @default(cuid())
+  name      String   @unique // "Eucucina", "Jarlin", "SensiHome", "GMDPRO"
+  isActive  Boolean  @default(true)
+  sortOrder Int      @default(0)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  // Round 6: optional link to the Companies record (CabinetProviderSettings)
+  // holding this vendor's contact info + discount/factor pricing rules.
+  providerId String?                  @unique
+  provider   CabinetProviderSettings? @relation(fields: [providerId], references: [id])
+
+  priceTiers CabinetPriceTier[]
+  items      CabinetCatalogItem[]
+  estimates  CabinetEstimate[]
+
+  @@index([isActive])
+}
+
+model CabinetPriceTier {
+  id        String        @id @default(cuid())
+  vendorId  String
+  vendor    CabinetVendor @relation(fields: [vendorId], references: [id], onDelete: Cascade)
+  name      String        // e.g. "Liberty Shaker White - LSW", "Price Level 1", "WS"
+  sortOrder Int           @default(0)
+  isActive  Boolean       @default(true)
+
+  prices    CabinetCatalogItemPrice[]
+  estimates CabinetEstimate[]
+
+  @@unique([vendorId, name])
+  @@index([vendorId])
+}
+
+enum CabinetSummaryBucket {
+  STANDARD
+  DOUBLE
+  CUSTOM
+  MISC
+}
+
+model CabinetCatalogItem {
+  id            String               @id @default(cuid())
+  vendorId      String
+  vendor        CabinetVendor        @relation(fields: [vendorId], references: [id], onDelete: Cascade)
+  code          String
+  description   String
+  category      String? // vendor's own section label, kept as-is for browsing
+  summaryBucket CabinetSummaryBucket @default(STANDARD) // feeds Cabinets Summary counts
+  isActive      Boolean              @default(true)
+  createdAt     DateTime             @default(now())
+  updatedAt     DateTime             @updatedAt
+
+  prices    CabinetCatalogItemPrice[]
+  lineItems CabinetEstimateLineItem[]
+
+  @@unique([vendorId, code])
+  @@index([vendorId])
+}
+
+model CabinetCatalogItemPrice {
+  id     String             @id @default(cuid())
+  itemId String
+  item   CabinetCatalogItem @relation(fields: [itemId], references: [id], onDelete: Cascade)
+  tierId String
+  tier   CabinetPriceTier   @relation(fields: [tierId], references: [id], onDelete: Cascade)
+  price  Decimal            @db.Decimal(12, 2)
+
+  @@unique([itemId, tierId])
+  @@index([tierId])
+}
+
+model CabinetEstimate {
+  id             String   @id @default(cuid())
+  estimateNumber String?  @unique
+  date           DateTime @default(now())
+
+  // Header (mirrors the printed estimate sheet's top block)
+  customerName String
+  customerId   String? // loose link to Customer.id - best-effort, not a DB relation (see FabricationOrder.clientId)
+  jobId        String?
+  job          Job?    @relation(fields: [jobId], references: [id])
+  jobName      String?
+  jobAddress   String?
+  email        String?
+  dealId       String?
+  dealName     String?
+  salesRep     String
+  brand        String?
+  groupColor   String?
+  vendorId     String?
+  vendor       CabinetVendor?    @relation(fields: [vendorId], references: [id])
+  priceTierId  String?
+  priceTier    CabinetPriceTier? @relation(fields: [priceTierId], references: [id])
+  removal      String?
+  projectType  String?
+  version      String?
+
+  // Footer - "CABINETS CATEGORY" box - auto-computed by the form from
+  // lineItems.summaryBucket (sum of qty per bucket); stored here so
+  // history/PATCH/print keep reading a plain column, same as cabinetsTotal.
+  standardCabinetsCount Int     @default(0)
+  doubleCabinetsCount   Int     @default(0)
+  customCabinetsCount   Int     @default(0)
+  miscCabinetsCount     Int     @default(0)
+  itemsQuantity         Int     @default(0)
+  microwaveInstallation Boolean @default(false)
+
+  // Footer - price distribution: Cabinets -> Discount -> Subtotal -> Removal
+  // -> Installation -> Customization -> Total
+  cabinetsTotal       Decimal @default(0) @db.Decimal(12, 2) // auto: sum of line items
+  discountPercent     Int     @default(0) // 0/5/10/15/20/25 - 25 = "Contractor" tier
+  discount            Decimal @default(0) @db.Decimal(12, 2) // auto: cabinetsTotal * discountPercent / 100
+  cabinetsSubtotal    Decimal @default(0) @db.Decimal(12, 2) // auto: cabinetsTotal - discount
+  removalAmount       Decimal @default(0) @db.Decimal(12, 2)
+  installationAmount  Decimal @default(0) @db.Decimal(12, 2)
+  customizationLabel  String?
+  customizationAmount Decimal @default(0) @db.Decimal(12, 2)
+  total               Decimal @default(0) @db.Decimal(12, 2) // auto: cabinetsSubtotal + removal + installation + customization
+
+  notes       String?
+  isActive    Boolean  @default(true)
+  createdById String?
+  createdBy   User?    @relation("CabinetEstimateCreatedBy", fields: [createdById], references: [id])
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  lineItems CabinetEstimateLineItem[]
+  history   CabinetEstimateHistory[]
+  specialCustomizationLines CabinetEstimateSpecialCustomizationLine[]
+
+  @@index([estimateNumber])
+  @@index([customerId])
+  @@index([jobId])
+  @@index([isActive])
+  @@index([vendorId])
+  @@index([priceTierId])
+}
+
+model CabinetEstimateLineItem {
+  id         String          @id @default(cuid())
+  estimateId String
+  estimate   CabinetEstimate @relation(fields: [estimateId], references: [id], onDelete: Cascade)
+
+  sortOrder   Int     @default(0)
+  qty             Decimal @default(1) @db.Decimal(10, 2)
+  code            String?
+  description     String?
+  isCustomization Boolean @default(false)
+  // Only meaningful when isCustomization is true - the extra Installation
+  // surcharge for building this item custom, either a percent of the
+  // line's own qty*unitPrice or a flat $ amount per unit. Never rolled
+  // into this line's own totalPrice/Cabinets total - it's added to the
+  // estimate's Installation total instead (see cabinetEstimateCalc.ts).
+  customizationType  String? // "percent" | "flat"
+  customizationValue Decimal @default(0) @db.Decimal(10, 2)
+  catalogItemId String?
+  catalogItem   CabinetCatalogItem?   @relation(fields: [catalogItemId], references: [id])
+  summaryBucket CabinetSummaryBucket?
+  note            String?
+  unitPrice       Decimal @default(0) @db.Decimal(12, 2)
+  totalPrice      Decimal @default(0) @db.Decimal(12, 2)
+
+  @@index([estimateId])
+  @@index([catalogItemId])
+}
+
+model CabinetSpecialCustomizationItem {
+  id        String   @id @default(cuid())
+  name      String
+  price     Decimal  @default(0) @db.Decimal(12, 2)
+  isActive  Boolean  @default(true)
+  sortOrder Int      @default(0)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  lines CabinetEstimateSpecialCustomizationLine[]
+
+  @@index([isActive])
+  @@index([sortOrder])
+}
+
+model CabinetEstimateSpecialCustomizationLine {
+  id         String          @id @default(cuid())
+  estimateId String
+  estimate   CabinetEstimate @relation(fields: [estimateId], references: [id], onDelete: Cascade)
+  itemId     String
+  item       CabinetSpecialCustomizationItem @relation(fields: [itemId], references: [id])
+
+  qty    Decimal @default(0) @db.Decimal(10, 2)
+  amount Decimal @default(0) @db.Decimal(12, 2) // auto: qty * item.price at save time
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@unique([estimateId, itemId])
+  @@index([estimateId])
+  @@index([itemId])
+}
+
+model CabinetEstimateHistory {
+  id         String          @id @default(cuid())
+  estimateId String
+  estimate   CabinetEstimate @relation(fields: [estimateId], references: [id], onDelete: Cascade)
+
+  action    String // CREATED, UPDATED, ARCHIVED, RESTORED, DELETED
+  fieldName String?
+  oldValue  String?
+  newValue  String?
+
+  changedById   String?
+  changedByUser User?    @relation("CabinetEstimateHistoryChangedBy", fields: [changedById], references: [id])
+  createdAt     DateTime @default(now())
+
+  @@index([estimateId])
   @@index([createdAt])
 }
 
