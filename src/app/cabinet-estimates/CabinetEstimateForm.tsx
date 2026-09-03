@@ -33,6 +33,8 @@ type LookupResult = {
   jobs: LookupJob[];
 };
 
+type CabinetSummaryBucket = "STANDARD" | "DOUBLE" | "CUSTOM" | "MISC";
+
 type LineItem = {
   key: string;
   qty: number;
@@ -43,6 +45,22 @@ type LineItem = {
   customizationValue: number;
   note: string;
   unitPrice: number;
+  // Set when this row was filled in from the price catalog (see the Code
+  // autocomplete) - drives the auto-computed Cabinets Summary counts below.
+  // Manually-typed rows keep both null and simply don't count toward any bucket.
+  catalogItemId: string | null;
+  summaryBucket: CabinetSummaryBucket | null;
+};
+
+type CatalogVendor = { id: string; name: string; displayName: string };
+type CatalogPriceTier = { id: string; name: string };
+type CatalogItemSuggestion = {
+  id: string;
+  code: string;
+  description: string;
+  category: string | null;
+  summaryBucket: CabinetSummaryBucket;
+  unitPrice: number | null;
 };
 
 type SpecialCustomizationItem = {
@@ -75,6 +93,8 @@ function emptyLineItem(): LineItem {
     customizationValue: 0,
     note: "",
     unitPrice: 0,
+    catalogItemId: null,
+    summaryBucket: null,
   };
 }
 
@@ -94,6 +114,15 @@ function isEmptyLineItem(item: LineItem): boolean {
 
 function todayIso() {
   return new Date().toISOString().slice(0, 10);
+}
+
+// Grows a Note textarea to fit its content instead of clipping - called on
+// mount (so a loaded estimate's long notes show in full immediately) and
+// on every keystroke.
+function autoResizeTextarea(el: HTMLTextAreaElement | null) {
+  if (!el) return;
+  el.style.height = "auto";
+  el.style.height = `${el.scrollHeight}px`;
 }
 
 type Props = {
@@ -131,6 +160,10 @@ export default function CabinetEstimateForm(props: Props) {
   const [salesRep, setSalesRep] = useState(props.currentUserName);
   const [brand, setBrand] = useState("");
   const [groupColor, setGroupColor] = useState("");
+  const [vendorId, setVendorId] = useState("");
+  const [priceTierId, setPriceTierId] = useState("");
+  const [vendors, setVendors] = useState<CatalogVendor[]>([]);
+  const [priceTiers, setPriceTiers] = useState<CatalogPriceTier[]>([]);
   const [removal, setRemoval] = useState("");
   const [projectType, setProjectType] = useState("");
   const [version, setVersion] = useState("");
@@ -141,11 +174,11 @@ export default function CabinetEstimateForm(props: Props) {
   // Refs to the Code/Note inputs, keyed by "rowIndex:field" - lets Enter in
   // one of those cells move focus straight down to the same cell in the
   // next row, spreadsheet-style (see handleAdvanceRowKeyDown).
-  const cellRefs = useRef<Map<string, HTMLInputElement>>(new Map());
+  const cellRefs = useRef<Map<string, HTMLInputElement | HTMLTextAreaElement>>(new Map());
   function registerCellRef(
     index: number,
     field: "code" | "note",
-    el: HTMLInputElement | null,
+    el: HTMLInputElement | HTMLTextAreaElement | null,
   ) {
     const key = `${index}:${field}`;
     if (el) cellRefs.current.set(key, el);
@@ -159,10 +192,9 @@ export default function CabinetEstimateForm(props: Props) {
     }
   }
 
-  const [standardCabinetsCount, setStandardCabinetsCount] = useState(0);
-  const [doubleCabinetsCount, setDoubleCabinetsCount] = useState(0);
-  const [customCabinetsCount, setCustomCabinetsCount] = useState(0);
-  const [miscCabinetsCount, setMiscCabinetsCount] = useState(0);
+  // Standard/Double/Custom/Misc counts are no longer manual entry - they're
+  // computed below (see cabinetsSummaryCounts) from each line item's
+  // catalog-resolved summaryBucket, the same way cabinetsTotal is computed.
   const [itemsQuantity, setItemsQuantity] = useState(0);
   const [microwaveInstallation, setMicrowaveInstallation] = useState(false);
 
@@ -275,13 +307,11 @@ export default function CabinetEstimateForm(props: Props) {
         setSalesRep(json.salesRep || "");
         setBrand(json.brand || "");
         setGroupColor(json.groupColor || "");
+        setVendorId(json.vendorId || "");
+        setPriceTierId(json.priceTierId || "");
         setRemoval(json.removal || "");
         setProjectType(json.projectType || "");
         setVersion(json.version || "");
-        setStandardCabinetsCount(json.standardCabinetsCount || 0);
-        setDoubleCabinetsCount(json.doubleCabinetsCount || 0);
-        setCustomCabinetsCount(json.customCabinetsCount || 0);
-        setMiscCabinetsCount(json.miscCabinetsCount || 0);
         setItemsQuantity(json.itemsQuantity || 0);
         setMicrowaveInstallation(Boolean(json.microwaveInstallation));
         setDiscountPercent(json.discountPercent || 0);
@@ -308,6 +338,8 @@ export default function CabinetEstimateForm(props: Props) {
                 customizationValue: item.customizationValue ?? 0,
                 note: item.note || "",
                 unitPrice: item.unitPrice ?? 0,
+                catalogItemId: item.catalogItemId || null,
+                summaryBucket: item.summaryBucket || null,
               }))
             : makeBlankRows(MIN_BLANK_ROWS),
         );
@@ -319,6 +351,118 @@ export default function CabinetEstimateForm(props: Props) {
     })();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [editEstimateId]);
+
+  useEffect(() => {
+    (async () => {
+      try {
+        const res = await fetch("/api/cabinet-catalog/vendors");
+        const json = await res.json();
+        if (res.ok) setVendors(json.vendors || []);
+      } catch {
+        // non-fatal - Brand/Group-Color selects just show no catalog options
+      }
+    })();
+  }, []);
+
+  useEffect(() => {
+    if (!vendorId) {
+      setPriceTiers([]);
+      return;
+    }
+    (async () => {
+      try {
+        const res = await fetch(`/api/cabinet-catalog/vendors/${vendorId}/tiers`);
+        const json = await res.json();
+        if (res.ok) setPriceTiers(json.tiers || []);
+      } catch {
+        setPriceTiers([]);
+      }
+    })();
+  }, [vendorId]);
+
+  // Item-code autocomplete for the table below: query the selected vendor's
+  // (and, when picked, price tier's) catalog as the user types a code.
+  const [codeQuery, setCodeQuery] = useState<{ index: number; text: string } | null>(null);
+  const [codeSuggestions, setCodeSuggestions] = useState<CatalogItemSuggestion[]>([]);
+
+  useEffect(() => {
+    if (!codeQuery || !vendorId || !codeQuery.text.trim()) {
+      setCodeSuggestions([]);
+      return;
+    }
+    const handle = setTimeout(async () => {
+      try {
+        const params = new URLSearchParams({ vendorId, q: codeQuery.text.trim() });
+        if (priceTierId) params.set("tierId", priceTierId);
+        const res = await fetch(`/api/cabinet-catalog/items?${params.toString()}`);
+        const json = await res.json();
+        if (res.ok) setCodeSuggestions(json.items || []);
+      } catch {
+        setCodeSuggestions([]);
+      }
+    }, 200);
+    return () => clearTimeout(handle);
+  }, [codeQuery, vendorId, priceTierId]);
+
+  function selectCatalogItem(index: number, suggestion: CatalogItemSuggestion) {
+    updateItem(index, {
+      code: suggestion.code,
+      description: suggestion.description,
+      unitPrice: suggestion.unitPrice ?? 0,
+      catalogItemId: suggestion.id,
+      summaryBucket: suggestion.summaryBucket,
+    });
+    setCodeQuery(null);
+  }
+
+  // Kept in sync with lineItems so repriceCatalogItems (below) always reads
+  // the latest rows without needing to be in that callback's dependency
+  // array (it's called directly from onChange handlers, not an effect).
+  const lineItemsRef = useRef<LineItem[]>(lineItems);
+  useEffect(() => {
+    lineItemsRef.current = lineItems;
+  }, [lineItems]);
+
+  // Re-fetch price (and description/bucket, in case those ever change too)
+  // for every line item already linked to a catalog item, for the given
+  // vendor/tier - this is what makes swapping Group/Color (or re-picking
+  // the same Brand) instantly re-price already-added rows instead of
+  // leaving their old price stale until the user re-picks the code.
+  async function repriceCatalogItems(forVendorId: string, forTierId: string) {
+    const ids = Array.from(
+      new Set(
+        lineItemsRef.current
+          .filter((item) => item.catalogItemId)
+          .map((item) => item.catalogItemId as string),
+      ),
+    );
+    if (ids.length === 0 || !forVendorId) return;
+    try {
+      const params = new URLSearchParams({ vendorId: forVendorId, ids: ids.join(",") });
+      if (forTierId) params.set("tierId", forTierId);
+      const res = await fetch(`/api/cabinet-catalog/items?${params.toString()}`);
+      const json = await res.json();
+      if (!res.ok) return;
+      const byId = new Map<string, CatalogItemSuggestion>(
+        (json.items || []).map((it: CatalogItemSuggestion) => [it.id, it]),
+      );
+      setLineItems((prev) =>
+        prev.map((item) => {
+          if (!item.catalogItemId) return item;
+          const match = byId.get(item.catalogItemId);
+          if (!match) return item;
+          return {
+            ...item,
+            description: match.description,
+            unitPrice: match.unitPrice ?? 0,
+            summaryBucket: match.summaryBucket,
+          };
+        }),
+      );
+    } catch {
+      // non-fatal - line items simply keep their last known price/description
+    }
+  }
 
   const cabinetsTotal = useMemo(
     () =>
@@ -361,6 +505,22 @@ export default function CabinetEstimateForm(props: Props) {
       ),
     [lineItems],
   );
+
+  // Sum qty per bucket across catalog-linked line items - this is what
+  // actually feeds the Cabinets Summary box and gets saved to the estimate
+  // (standardCabinetsCount/etc), the same "compute, don't type" treatment
+  // cabinetsTotal already gets. Free-typed lines (no catalogItemId) simply
+  // don't contribute to any bucket.
+  const cabinetsSummaryCounts = useMemo(() => {
+    const counts = { STANDARD: 0, DOUBLE: 0, CUSTOM: 0, MISC: 0 } as Record<
+      CabinetSummaryBucket,
+      number
+    >;
+    for (const item of lineItems) {
+      if (item.summaryBucket) counts[item.summaryBucket] += item.qty || 0;
+    }
+    return counts;
+  }, [lineItems]);
 
   const { cabinetsSubtotal, installationTotal, total } = useMemo(
     () =>
@@ -421,7 +581,7 @@ export default function CabinetEstimateForm(props: Props) {
   // column, plus they move focus straight down into the same column of the
   // next row so the user can keep typing without reaching for the mouse.
   function handleAdvanceRowKeyDown(
-    e: React.KeyboardEvent<HTMLInputElement>,
+    e: React.KeyboardEvent<HTMLInputElement | HTMLTextAreaElement>,
     index: number,
     field: "code" | "note",
   ) {
@@ -447,14 +607,12 @@ export default function CabinetEstimateForm(props: Props) {
     setSalesRep(props.currentUserName);
     setBrand("");
     setGroupColor("");
+    setVendorId("");
+    setPriceTierId("");
     setRemoval("");
     setProjectType("");
     setVersion("");
     setLineItems(makeBlankRows(MIN_BLANK_ROWS));
-    setStandardCabinetsCount(0);
-    setDoubleCabinetsCount(0);
-    setCustomCabinetsCount(0);
-    setMiscCabinetsCount(0);
     setItemsQuantity(0);
     setMicrowaveInstallation(false);
     setDiscountPercent(0);
@@ -485,13 +643,15 @@ export default function CabinetEstimateForm(props: Props) {
         salesRep,
         brand,
         groupColor,
+        vendorId: vendorId || null,
+        priceTierId: priceTierId || null,
         removal,
         projectType,
         version,
-        standardCabinetsCount,
-        doubleCabinetsCount,
-        customCabinetsCount,
-        miscCabinetsCount,
+        standardCabinetsCount: cabinetsSummaryCounts.STANDARD,
+        doubleCabinetsCount: cabinetsSummaryCounts.DOUBLE,
+        customCabinetsCount: cabinetsSummaryCounts.CUSTOM,
+        miscCabinetsCount: cabinetsSummaryCounts.MISC,
         itemsQuantity,
         microwaveInstallation,
         discountPercent,
@@ -507,6 +667,8 @@ export default function CabinetEstimateForm(props: Props) {
           customizationValue: item.customizationValue,
           note: item.note,
           unitPrice: item.unitPrice,
+          catalogItemId: item.catalogItemId,
+          summaryBucket: item.summaryBucket,
         })),
         specialCustomizationLines: props.specialCustomizationItems
           .map((item) => ({ itemId: item.id, qty: specialCustomizationQtyById[item.id] || 0 }))
@@ -546,7 +708,7 @@ export default function CabinetEstimateForm(props: Props) {
   }
 
   return (
-    <div className="mx-auto max-w-6xl space-y-4">
+    <div className="mx-auto max-w-[100rem] space-y-4">
       <div className="flex flex-wrap items-center justify-between gap-3">
         <div>
           <h1 className="text-2xl font-bold text-gray-900 dark:text-gray-100">
@@ -737,22 +899,71 @@ export default function CabinetEstimateForm(props: Props) {
                   />
                 </HeaderRow>
 
-                <HeaderRow label="Brand">
-                  <input
-                    value={brand}
-                    onChange={(e) => setBrand(e.target.value)}
-                    placeholder="e.g. GMDPRO"
+                <HeaderRow label="Brand" highlight={!vendorId}>
+                  <select
+                    value={vendorId}
+                    onChange={(e) => {
+                      const nextVendorId = e.target.value;
+                      const vendor = vendors.find((v) => v.id === nextVendorId);
+                      setVendorId(nextVendorId);
+                      setBrand(vendor?.displayName || "");
+                      setPriceTierId("");
+                      setGroupColor("");
+                      // Switching brands means switching catalogs entirely -
+                      // a code from the old vendor almost never means the
+                      // same cabinet (or exists at all) under the new one,
+                      // so clear every catalog-linked row rather than risk
+                      // showing a price/description that doesn't match.
+                      setLineItems((prev) =>
+                        prev.map((item) =>
+                          item.catalogItemId
+                            ? {
+                                ...item,
+                                catalogItemId: null,
+                                summaryBucket: null,
+                                description: "",
+                                unitPrice: 0,
+                              }
+                            : item,
+                        ),
+                      );
+                    }}
                     className="w-full bg-transparent px-2 py-0.5 text-[11px] text-gray-900 outline-none dark:text-gray-100"
-                  />
+                  >
+                    <option value="">{brand || "-- Select brand --"}</option>
+                    {vendors.map((v) => (
+                      <option key={v.id} value={v.id}>
+                        {v.displayName}
+                      </option>
+                    ))}
+                  </select>
                 </HeaderRow>
 
-                <HeaderRow label="Group / Color">
-                  <input
-                    value={groupColor}
-                    onChange={(e) => setGroupColor(e.target.value)}
-                    placeholder="e.g. Liberty Shaker White - LSW"
-                    className="w-full bg-transparent px-2 py-0.5 text-[11px] text-gray-900 outline-none dark:text-gray-100"
-                  />
+                <HeaderRow label="Group / Color" highlight={Boolean(vendorId) && !priceTierId}>
+                  <select
+                    value={priceTierId}
+                    onChange={(e) => {
+                      const nextTierId = e.target.value;
+                      const tier = priceTiers.find((t) => t.id === nextTierId);
+                      setPriceTierId(nextTierId);
+                      setGroupColor(tier?.name || "");
+                      // Swapping the color/tier keeps the same catalog items
+                      // but their price (and possibly description) can be
+                      // different for the new tier - refresh every already
+                      // catalog-linked row instantly rather than leaving it
+                      // showing the old tier's price.
+                      repriceCatalogItems(vendorId, nextTierId);
+                    }}
+                    disabled={!vendorId}
+                    className="w-full bg-transparent px-2 py-0.5 text-[11px] text-gray-900 outline-none disabled:opacity-50 dark:text-gray-100"
+                  >
+                    <option value="">{groupColor || (vendorId ? "-- Select group/color --" : "Select a brand first")}</option>
+                    {priceTiers.map((t) => (
+                      <option key={t.id} value={t.id}>
+                        {t.name}
+                      </option>
+                    ))}
+                  </select>
                 </HeaderRow>
 
                 <HeaderRow label="Removal">
@@ -810,10 +1021,10 @@ export default function CabinetEstimateForm(props: Props) {
                     <th className="w-24 border border-gray-300 px-2 py-1.5 text-left dark:border-gray-600">
                       Code
                     </th>
-                    <th className="w-48 border border-gray-300 px-2 py-1.5 text-left dark:border-gray-600">
+                    <th className="w-72 border border-gray-300 px-2 py-1.5 text-left dark:border-gray-600">
                       Description
                     </th>
-                    <th className="w-24 border border-gray-300 px-2 py-1.5 text-center dark:border-gray-600">
+                    <th className="w-20 border border-gray-300 px-2 py-1.5 text-center dark:border-gray-600">
                       Custom
                     </th>
                     <th className="border border-gray-300 px-2 py-1.5 text-left dark:border-gray-600">
@@ -831,7 +1042,7 @@ export default function CabinetEstimateForm(props: Props) {
                 <tbody>
                   {lineItems.map((item, index) => (
                     <tr key={item.key} className="border-b border-gray-200 dark:border-gray-700">
-                      <td className="border border-gray-200 p-1 dark:border-gray-700">
+                      <td className="border border-gray-200 p-1 align-top dark:border-gray-700">
                         <input
                           type="number"
                           min={0}
@@ -846,24 +1057,70 @@ export default function CabinetEstimateForm(props: Props) {
                           className="w-full bg-transparent px-1.5 py-0.5 text-center text-xs text-gray-900 outline-none dark:text-gray-100 [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
                         />
                       </td>
-                      <td className="border border-gray-200 p-1 dark:border-gray-700">
+                      <td className="relative border border-gray-200 p-1 align-top dark:border-gray-700">
                         <input
                           ref={(el) => registerCellRef(index, "code", el)}
                           value={item.code}
-                          onChange={(e) => updateItem(index, { code: e.target.value })}
-                          onKeyDown={(e) => handleAdvanceRowKeyDown(e, index, "code")}
-                          className="w-full bg-transparent px-1.5 py-0.5 text-xs text-gray-900 outline-none dark:text-gray-100"
-                        />
-                      </td>
-                      <td className="border border-gray-200 p-1 dark:border-gray-700">
-                        <input
-                          value={item.description}
-                          onChange={(e) =>
-                            updateItem(index, { description: e.target.value })
+                          onChange={(e) => {
+                            updateItem(index, {
+                              code: e.target.value,
+                              catalogItemId: null,
+                              summaryBucket: null,
+                              description: "",
+                              unitPrice: 0,
+                            });
+                            setCodeQuery({ index, text: e.target.value });
+                          }}
+                          onFocus={() => setCodeQuery({ index, text: item.code })}
+                          onBlur={() =>
+                            setTimeout(
+                              () => setCodeQuery((q) => (q?.index === index ? null : q)),
+                              150,
+                            )
                           }
-                          onKeyDown={handleItemKeyDown}
+                          onKeyDown={(e) => handleAdvanceRowKeyDown(e, index, "code")}
+                          autoComplete="off"
+                          title={
+                            !vendorId
+                              ? "Select a Brand above to search the catalog"
+                              : !priceTierId
+                                ? "Select a Group/Color above to see prices"
+                                : undefined
+                          }
                           className="w-full bg-transparent px-1.5 py-0.5 text-xs text-gray-900 outline-none dark:text-gray-100"
                         />
+                        {codeQuery?.index === index && codeSuggestions.length > 0 && (
+                          <div className="absolute left-0 top-full z-10 max-h-48 w-64 overflow-y-auto rounded border border-gray-300 bg-white text-xs shadow-lg dark:border-gray-600 dark:bg-gray-800">
+                            {codeSuggestions.map((s) => (
+                              <button
+                                type="button"
+                                key={s.id}
+                                onMouseDown={(e) => e.preventDefault()}
+                                onClick={() => selectCatalogItem(index, s)}
+                                className="block w-full px-2 py-1 text-left hover:bg-blue-50 dark:hover:bg-gray-700"
+                              >
+                                <span className="font-semibold text-gray-900 dark:text-gray-100">
+                                  {s.code}
+                                </span>{" "}
+                                <span className="text-gray-500 dark:text-gray-400">
+                                  {s.description}
+                                </span>
+                              </button>
+                            ))}
+                          </div>
+                        )}
+                      </td>
+                      <td className="border border-gray-200 p-1 align-top dark:border-gray-700">
+                        <div
+                          className="min-h-[1.5rem] whitespace-pre-wrap break-words px-1.5 py-0.5 text-xs text-gray-900 dark:text-gray-100"
+                          title={item.description || undefined}
+                        >
+                          {item.description || (
+                            <span className="text-gray-400 dark:text-gray-500">
+                              {item.code ? "No catalog match" : "Pick a code"}
+                            </span>
+                          )}
+                        </div>
                       </td>
                       <td className="border border-gray-200 p-1 text-center align-top dark:border-gray-700">
                         <label className="flex w-full cursor-pointer items-center justify-center py-0.5">
@@ -909,44 +1166,39 @@ export default function CabinetEstimateForm(props: Props) {
                               }
                               placeholder="0"
                               title="Installation surcharge value"
-                              className="w-9 rounded border border-gray-300 bg-white px-0.5 text-right text-[9px] text-gray-900 outline-none dark:border-gray-600 dark:bg-gray-900 dark:text-gray-100 [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
+                              className="w-8 rounded border border-gray-300 bg-white px-0.5 text-right text-[9px] text-gray-900 outline-none dark:border-gray-600 dark:bg-gray-900 dark:text-gray-100 [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
                             />
                           </div>
                         )}
                       </td>
-                      <td className="border border-gray-200 p-1 dark:border-gray-700">
-                        <input
-                          ref={(el) => registerCellRef(index, "note", el)}
+                      <td className="border border-gray-200 p-1 align-top dark:border-gray-700">
+                        <textarea
+                          ref={(el) => {
+                            registerCellRef(index, "note", el);
+                            autoResizeTextarea(el);
+                          }}
                           value={item.note}
-                          onChange={(e) => updateItem(index, { note: e.target.value })}
+                          onChange={(e) => {
+                            updateItem(index, { note: e.target.value });
+                            autoResizeTextarea(e.target);
+                          }}
                           onKeyDown={(e) => handleAdvanceRowKeyDown(e, index, "note")}
-                          className="w-full bg-transparent px-1.5 py-0.5 text-xs text-gray-900 outline-none dark:text-gray-100"
+                          rows={1}
+                          className="block w-full resize-none overflow-hidden bg-transparent px-1.5 py-0.5 text-xs text-gray-900 outline-none dark:text-gray-100"
                         />
                       </td>
-                      <td className="border border-gray-200 p-1 dark:border-gray-700">
-                        <div className="relative">
-                          <span className="pointer-events-none absolute left-1.5 top-1/2 -translate-y-1/2 text-xs text-gray-500 dark:text-gray-400">
-                            $
-                          </span>
-                          <input
-                            type="number"
-                            min={0}
-                            step="0.01"
-                            value={item.unitPrice}
-                            onChange={(e) =>
-                              updateItem(index, {
-                                unitPrice: Number(e.target.value) || 0,
-                              })
-                            }
-                            onKeyDown={handleItemKeyDown}
-                            className="w-full bg-transparent py-0.5 pl-4 pr-1 text-right text-xs text-gray-900 outline-none dark:text-gray-100 [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
-                          />
+                      <td className="border border-gray-200 p-1 align-top text-right dark:border-gray-700">
+                        <div
+                          className="px-1.5 py-0.5 text-xs text-gray-900 dark:text-gray-100"
+                          title="Set automatically from the selected catalog code, brand and group/color - not editable"
+                        >
+                          {formatCurrency(item.unitPrice)}
                         </div>
                       </td>
-                      <td className="border border-gray-200 px-2 py-0.5 text-right text-xs font-medium text-gray-900 dark:border-gray-700 dark:text-gray-100">
+                      <td className="border border-gray-200 px-2 py-0.5 align-top text-right text-xs font-medium text-gray-900 dark:border-gray-700 dark:text-gray-100">
                         {formatCurrency(computeLineItemTotal(item.qty, item.unitPrice))}
                       </td>
-                      <td className="border border-gray-200 p-1 text-center dark:border-gray-700">
+                      <td className="border border-gray-200 p-1 align-top text-center dark:border-gray-700">
                         <button
                           type="button"
                           onClick={() => removeItem(index)}
@@ -993,16 +1245,36 @@ export default function CabinetEstimateForm(props: Props) {
               </div>
               <div className="divide-y divide-gray-200 text-xs dark:divide-gray-700">
                 <CategoryRow label="Standard Cabinets">
-                  <NumberField value={standardCabinetsCount} onChange={setStandardCabinetsCount} />
+                  <span
+                    className="text-[11px] font-semibold text-gray-900 dark:text-gray-100"
+                    title="Auto-computed from catalog-linked item rows"
+                  >
+                    {cabinetsSummaryCounts.STANDARD}
+                  </span>
                 </CategoryRow>
                 <CategoryRow label="Double Cabinets">
-                  <NumberField value={doubleCabinetsCount} onChange={setDoubleCabinetsCount} />
+                  <span
+                    className="text-[11px] font-semibold text-gray-900 dark:text-gray-100"
+                    title="Auto-computed from catalog-linked item rows"
+                  >
+                    {cabinetsSummaryCounts.DOUBLE}
+                  </span>
                 </CategoryRow>
                 <CategoryRow label="Custom Cabinets">
-                  <NumberField value={customCabinetsCount} onChange={setCustomCabinetsCount} />
+                  <span
+                    className="text-[11px] font-semibold text-gray-900 dark:text-gray-100"
+                    title="Auto-computed from catalog-linked item rows"
+                  >
+                    {cabinetsSummaryCounts.CUSTOM}
+                  </span>
                 </CategoryRow>
                 <CategoryRow label="Miscellaneous">
-                  <NumberField value={miscCabinetsCount} onChange={setMiscCabinetsCount} />
+                  <span
+                    className="text-[11px] font-semibold text-gray-900 dark:text-gray-100"
+                    title="Auto-computed from catalog-linked item rows"
+                  >
+                    {cabinetsSummaryCounts.MISC}
+                  </span>
                 </CategoryRow>
                 <CategoryRow label="Quantity of Items">
                   <NumberField value={itemsQuantity} onChange={setItemsQuantity} />
@@ -1125,11 +1397,29 @@ export default function CabinetEstimateForm(props: Props) {
   );
 }
 
-function HeaderRow({ label, children }: { label: string; children: React.ReactNode }) {
+function HeaderRow({
+  label,
+  children,
+  highlight,
+}: {
+  label: string;
+  children: React.ReactNode;
+  highlight?: boolean;
+}) {
   return (
-    <div className="grid grid-cols-[130px_1fr] divide-x divide-gray-300 dark:divide-gray-600">
-      <div className="flex items-center bg-blue-600 px-2 py-0.5 text-[9px] font-semibold text-white">
+    <div
+      className={`grid grid-cols-[130px_1fr] divide-x divide-gray-300 dark:divide-gray-600 ${
+        highlight ? "bg-red-50 dark:bg-red-950/30" : ""
+      }`}
+    >
+      <div
+        className={`flex items-center px-2 py-0.5 text-[9px] font-semibold text-white ${
+          highlight ? "bg-red-600" : "bg-blue-600"
+        }`}
+        title={highlight ? "Select this to search the catalog and pull real prices" : undefined}
+      >
         {label}
+        {highlight ? " *" : ""}
       </div>
       {children}
     </div>

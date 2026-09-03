@@ -40,10 +40,17 @@ type LineItemPayload = {
   customizationValue?: number | string;
   note?: string | null;
   unitPrice?: number | string;
+  catalogItemId?: string | null;
+  summaryBucket?: string | null;
 };
 
 function toCustomizationType(value: unknown): CustomizationType | null {
   return value === "percent" || value === "flat" ? value : null;
+}
+
+const SUMMARY_BUCKETS = ["STANDARD", "DOUBLE", "CUSTOM", "MISC"];
+function toSummaryBucket(value: unknown): string | null {
+  return typeof value === "string" && SUMMARY_BUCKETS.includes(value) ? value : null;
 }
 
 function buildLineItemsCreateData(lineItems: LineItemPayload[]) {
@@ -69,6 +76,8 @@ function buildLineItemsCreateData(lineItems: LineItemPayload[]) {
         note: item.note?.toString().trim() || null,
         unitPrice,
         totalPrice: Math.round(qty * unitPrice * 100) / 100,
+        catalogItemId: item.catalogItemId || null,
+        summaryBucket: toSummaryBucket(item.summaryBucket),
       };
     })
     .filter(
@@ -265,6 +274,8 @@ export async function PATCH(
         salesRep,
         brand: body.brand || null,
         groupColor: body.groupColor || null,
+        vendorId: body.vendorId || null,
+        priceTierId: body.priceTierId || null,
         removal: body.removal || null,
         projectType: body.projectType || null,
         version: body.version || null,
