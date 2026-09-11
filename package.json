@@ -36,6 +36,7 @@
     "@types/nodemailer": "^7.0.4",
     "@types/papaparse": "^5.5.1",
     "@types/react": "19.1.12",
+    "@types/react-dom": "19.1.11",
     "autoprefixer": "^10.4.19",
     "eslint": "8.57.1",
     "eslint-config-next": "15.5.4",

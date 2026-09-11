@@ -196,8 +196,14 @@ export function resolveRemovalType(
 // - the number that actually feeds a customer estimate's Installation
 // total in "perItem"/"higher" calc mode. A line whose installationItemId
 // has no entry here (deactivated item, or never assigned) contributes $0.
+//
+// Deliberately typed to only the two fields actually used (not the full
+// CabinetInstallationServiceItemRow) - callers that only fetch a lighter
+// shape (e.g. the estimate form's live-preview state, which has no reason
+// to carry bucketDefault) can pass it straight through without needing to
+// fetch or fake fields this function never reads.
 export function installationServiceItemPricesById(
-  rows: CabinetInstallationServiceItemRow[],
+  rows: { id: string; salePrice: number }[],
 ): Record<string, number> {
   const map: Record<string, number> = {};
   for (const row of rows) map[row.id] = row.salePrice;
