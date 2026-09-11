@@ -1,0 +1,319 @@
+"use client";
+
+import { useEffect, useMemo, useState } from "react";
+import Link from "next/link";
+import { Printer, Search } from "lucide-react";
+
+type Vendor = { id: string; name: string; displayName: string };
+
+type PriceListItem = {
+  id: string;
+  code: string;
+  description: string;
+  category: string | null;
+  summaryBucket: "STANDARD" | "DOUBLE" | "CUSTOM" | "MISC";
+  isActive: boolean;
+  updatedAt: string;
+  prices: Record<string, number>;
+};
+
+type PriceListResponse = {
+  vendor: { id: string; name: string; displayName: string; discount: number | null; factor: number | null };
+  tiers: { id: string; name: string }[];
+  lastUpdated: string | null;
+  items: PriceListItem[];
+};
+
+/** Same inline-style fixed/sticky column pattern used on the Import review
+ * tables (ImportClient.tsx) - a Tailwind width class alone was flaky under
+ * `position: sticky` + horizontal scroll (see that file's history), so
+ * Code/Description are pinned the same explicit way here. */
+const COL_W = { code: 140, description: 320, category: 140, bucket: 110, tier: 100 };
+
+function fixedColStyle(width: number) {
+  return { width, minWidth: width, maxWidth: width };
+}
+
+function stickyColStyle(width: number, left: number) {
+  return { width, minWidth: width, maxWidth: width, position: "sticky" as const, left, zIndex: 10 };
+}
+
+function formatCurrency(value: number) {
+  return value.toLocaleString("en-US", { style: "currency", currency: "USD" });
+}
+
+function formatTimestamp(iso: string | null) {
+  if (!iso) return "Never imported";
+  return new Date(iso).toLocaleString("en-US", {
+    dateStyle: "medium",
+    timeStyle: "short",
+  });
+}
+
+export default function PriceListClient() {
+  const [vendors, setVendors] = useState<Vendor[]>([]);
+  const [vendorId, setVendorId] = useState("");
+  const [data, setData] = useState<PriceListResponse | null>(null);
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [search, setSearch] = useState("");
+  const [includeInactive, setIncludeInactive] = useState(false);
+
+  useEffect(() => {
+    (async () => {
+      try {
+        const res = await fetch("/api/cabinet-catalog/vendors");
+        const json = await res.json();
+        if (res.ok) {
+          setVendors(json.vendors || []);
+          if (!vendorId && json.vendors?.length > 0) setVendorId(json.vendors[0].id);
+        }
+      } catch {
+        // non-fatal - the vendor picker just stays empty
+      }
+      // eslint-disable-next-line react-hooks/exhaustive-deps
+    })();
+  }, []);
+
+  useEffect(() => {
+    if (!vendorId) {
+      setData(null);
+      return;
+    }
+    setLoading(true);
+    setError(null);
+    (async () => {
+      try {
+        const params = new URLSearchParams({ vendorId });
+        if (includeInactive) params.set("includeInactive", "1");
+        const res = await fetch(`/api/cabinet-catalog/admin/price-list?${params.toString()}`);
+        const json = await res.json();
+        if (!res.ok) {
+          setError(json.error || "Failed to load the price list.");
+          setData(null);
+          return;
+        }
+        setData(json);
+      } catch {
+        setError("Failed to load the price list.");
+        setData(null);
+      } finally {
+        setLoading(false);
+      }
+    })();
+  }, [vendorId, includeInactive]);
+
+  const filteredItems = useMemo(() => {
+    if (!data) return [];
+    const q = search.trim().toLowerCase();
+    if (!q) return data.items;
+    return data.items.filter(
+      (item) =>
+        item.code.toLowerCase().includes(q) ||
+        item.description.toLowerCase().includes(q) ||
+        (item.category || "").toLowerCase().includes(q),
+    );
+  }, [data, search]);
+
+  return (
+    <div className="space-y-6">
+      <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between print:hidden">
+        <div>
+          <h1 className="text-3xl font-bold text-gray-900 dark:text-white">Price List</h1>
+          <p className="mt-2 text-sm text-gray-600 dark:text-gray-400">
+            Read-only view of the prices on file for each cabinet company,
+            and when that company&apos;s price list was last updated. To
+            change a price, use Import Price List instead.
+          </p>
+        </div>
+        <div className="flex flex-wrap items-center gap-2 shrink-0">
+          <Link
+            href="/cabinet-estimates/catalog-import"
+            className="whitespace-nowrap rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm font-medium text-gray-700 transition-colors hover:bg-gray-50 dark:border-gray-600 dark:bg-gray-700 dark:text-gray-300 dark:hover:bg-gray-600"
+          >
+            Import Price List
+          </Link>
+          <Link
+            href="/cabinet-estimates/companies"
+            className="whitespace-nowrap rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm font-medium text-gray-700 transition-colors hover:bg-gray-50 dark:border-gray-600 dark:bg-gray-700 dark:text-gray-300 dark:hover:bg-gray-600"
+          >
+            Cabinet Companies
+          </Link>
+          <button
+            type="button"
+            onClick={() => window.print()}
+            disabled={!data || filteredItems.length === 0}
+            className="inline-flex items-center gap-2 rounded-lg bg-blue-600 px-4 py-2 text-sm font-medium text-white hover:bg-blue-700 disabled:cursor-not-allowed disabled:opacity-50"
+          >
+            <Printer className="h-4 w-4" />
+            Print
+          </button>
+        </div>
+      </div>
+
+      <div className="flex flex-col gap-3 rounded-xl border border-gray-200 bg-white p-4 dark:border-gray-700 dark:bg-gray-800 sm:flex-row sm:items-center sm:justify-between print:hidden">
+        <div className="flex flex-wrap items-center gap-3">
+          <label className="flex items-center gap-2 text-sm text-gray-700 dark:text-gray-300">
+            Company
+            <select
+              value={vendorId}
+              onChange={(e) => setVendorId(e.target.value)}
+              className="rounded-lg border border-gray-300 bg-white px-3 py-1.5 text-sm text-gray-900 dark:border-gray-600 dark:bg-gray-900 dark:text-gray-100"
+            >
+              {vendors.length === 0 && <option value="">No companies yet</option>}
+              {vendors.map((v) => (
+                <option key={v.id} value={v.id}>
+                  {v.displayName}
+                </option>
+              ))}
+            </select>
+          </label>
+          <div className="relative">
+            <Search className="pointer-events-none absolute left-2.5 top-1/2 h-4 w-4 -translate-y-1/2 text-gray-400" />
+            <input
+              value={search}
+              onChange={(e) => setSearch(e.target.value)}
+              placeholder="Search code, description, category..."
+              className="rounded-lg border border-gray-300 bg-white py-1.5 pl-8 pr-3 text-sm text-gray-900 dark:border-gray-600 dark:bg-gray-900 dark:text-gray-100"
+            />
+          </div>
+          <label className="flex items-center gap-2 text-sm text-gray-600 dark:text-gray-400">
+            <input
+              type="checkbox"
+              checked={includeInactive}
+              onChange={(e) => setIncludeInactive(e.target.checked)}
+              className="h-4 w-4 rounded border-gray-300 text-blue-600 focus:ring-blue-500 dark:border-gray-600"
+            />
+            Show discontinued items
+          </label>
+        </div>
+        {data && (
+          <div className="text-sm text-gray-600 dark:text-gray-400">
+            Last updated:{" "}
+            <span className="font-medium text-gray-900 dark:text-gray-100">
+              {formatTimestamp(data.lastUpdated)}
+            </span>
+            {data.vendor.discount !== null && data.vendor.factor !== null && (
+              <span className="ml-3">
+                Discount: <span className="font-medium">{(data.vendor.discount * 100).toFixed(0)}%</span>
+                {" · "}
+                Sales Multiplier: <span className="font-medium">{data.vendor.factor.toFixed(2)}x</span>
+              </span>
+            )}
+          </div>
+        )}
+      </div>
+
+      {error && (
+        <div className="rounded-lg border border-red-200 bg-red-50 p-3 text-sm text-red-700">
+          {error}
+        </div>
+      )}
+
+      <div className="hidden print:block">
+        {data && (
+          <div className="mb-3">
+            <h2 className="text-xl font-bold">{data.vendor.displayName} - Price List</h2>
+            <p className="text-sm text-gray-600">Last updated: {formatTimestamp(data.lastUpdated)}</p>
+          </div>
+        )}
+      </div>
+
+      <div className="overflow-hidden rounded-xl border border-gray-300 bg-white dark:border-gray-600 dark:bg-gray-800 print:overflow-visible print:rounded-none print:border-0">
+        <div className="overflow-x-auto print:overflow-visible">
+          <table className="w-full border-collapse text-xs">
+            <thead>
+              <tr className="bg-gray-100 text-left uppercase tracking-wide text-gray-600 dark:bg-gray-700 dark:text-gray-300">
+                <th
+                  className="border border-gray-200 bg-gray-100 p-2 dark:border-gray-700 dark:bg-gray-700"
+                  style={stickyColStyle(COL_W.code, 0)}
+                >
+                  Code
+                </th>
+                <th
+                  className="border border-gray-200 bg-gray-100 p-2 dark:border-gray-700 dark:bg-gray-700"
+                  style={stickyColStyle(COL_W.description, COL_W.code)}
+                >
+                  Description
+                </th>
+                <th className="border border-gray-200 p-2 dark:border-gray-700" style={fixedColStyle(COL_W.category)}>
+                  Category
+                </th>
+                <th className="border border-gray-200 p-2 dark:border-gray-700" style={fixedColStyle(COL_W.bucket)}>
+                  Bucket
+                </th>
+                {(data?.tiers || []).map((tier) => (
+                  <th
+                    key={tier.id}
+                    className="border border-gray-200 p-2 text-right dark:border-gray-700"
+                    style={fixedColStyle(COL_W.tier)}
+                  >
+                    {tier.name}
+                  </th>
+                ))}
+              </tr>
+            </thead>
+            <tbody>
+              {loading && (
+                <tr>
+                  <td colSpan={4 + (data?.tiers.length || 0)} className="p-4 text-center text-gray-500">
+                    Loading...
+                  </td>
+                </tr>
+              )}
+              {!loading && filteredItems.length === 0 && (
+                <tr>
+                  <td colSpan={4 + (data?.tiers.length || 0)} className="p-4 text-center text-gray-500">
+                    {data
+                      ? "No items match this vendor yet - import a price list to get started."
+                      : "Pick a company above to browse its price list."}
+                  </td>
+                </tr>
+              )}
+              {!loading &&
+                filteredItems.map((item) => (
+                  <tr
+                    key={item.id}
+                    className={item.isActive ? "" : "opacity-50"}
+                    title={item.isActive ? undefined : "Discontinued - no longer offered"}
+                  >
+                    <td
+                      className="border border-gray-200 bg-white p-2 font-semibold text-gray-900 dark:border-gray-700 dark:bg-gray-800 dark:text-gray-100"
+                      style={stickyColStyle(COL_W.code, 0)}
+                    >
+                      {item.code}
+                    </td>
+                    <td
+                      className="border border-gray-200 bg-white p-2 text-gray-700 dark:border-gray-700 dark:bg-gray-800 dark:text-gray-300"
+                      style={stickyColStyle(COL_W.description, COL_W.code)}
+                    >
+                      {item.description}
+                    </td>
+                    <td className="border border-gray-200 p-2 text-gray-600 dark:border-gray-700 dark:text-gray-400" style={fixedColStyle(COL_W.category)}>
+                      {item.category || "-"}
+                    </td>
+                    <td className="border border-gray-200 p-2 text-gray-600 dark:border-gray-700 dark:text-gray-400" style={fixedColStyle(COL_W.bucket)}>
+                      {item.summaryBucket}
+                    </td>
+                    {(data?.tiers || []).map((tier) => (
+                      <td
+                        key={tier.id}
+                        className="border border-gray-200 p-2 text-right text-gray-900 dark:border-gray-700 dark:text-gray-100"
+                        style={fixedColStyle(COL_W.tier)}
+                      >
+                        {tier.id in item.prices ? (
+                          formatCurrency(item.prices[tier.id])
+                        ) : (
+                          <span className="italic text-gray-400 dark:text-gray-500">N/A</span>
+                        )}
+                      </td>
+                    ))}
+                  </tr>
+                ))}
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+  );
+}

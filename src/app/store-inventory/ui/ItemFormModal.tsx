@@ -12,6 +12,7 @@ export type StoreItemFormValues = {
   quantity: number;
   minQuantity: number;
   recommendedQuantity: number;
+  location: string;
   purchaseLink: string;
   notes: string;
   providerId: string;
@@ -41,6 +42,7 @@ export default function ItemFormModal({ item, departments, groups, providers, on
     quantity: item?.quantity ?? 0,
     minQuantity: item?.minQuantity ?? 0,
     recommendedQuantity: item?.recommendedQuantity ?? 0,
+    location: item?.location ?? "",
     purchaseLink: item?.purchaseLink ?? "",
     notes: item?.notes ?? "",
     providerId: linkedProvider?.providerId ?? "",
@@ -116,6 +118,16 @@ export default function ItemFormModal({ item, departments, groups, providers, on
                 ))}
               </select>
             </div>
+          </div>
+
+          <div>
+            <label className="text-xs font-medium text-gray-500 dark:text-gray-400">Location</label>
+            <input
+              value={form.location}
+              onChange={(e) => update("location", e.target.value)}
+              placeholder="e.g. Aisle 3, Shelf B"
+              className="w-full mt-1 p-2 border border-gray-300 dark:border-gray-600 rounded-md bg-white dark:bg-gray-900 text-gray-900 dark:text-gray-100"
+            />
           </div>
 
           <div className="grid grid-cols-4 gap-3">

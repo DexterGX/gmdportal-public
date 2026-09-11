@@ -2,7 +2,6 @@ import Link from "next/link";
 import {
   Building2,
   FileSignature,
-  Hammer,
   KeyRound,
   UsersRound,
 } from "lucide-react";
@@ -21,13 +20,6 @@ const cards = [
       "Manage cabinet provider actual/display names and contact details for reuse across programs.",
     href: "/settings/cabinets",
     icon: UsersRound,
-  },
-  {
-    title: "Cabinet Installation",
-    description:
-      "Manage installer profiles, installation items, and target pay values for future estimate automation.",
-    href: "/settings/cabinet-installation",
-    icon: Hammer,
   },
   {
     title: "Program Access",

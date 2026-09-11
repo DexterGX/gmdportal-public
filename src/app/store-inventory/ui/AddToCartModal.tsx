@@ -38,6 +38,12 @@ export default function AddToCartModal({ item, initialQuantity, initialReason, o
 
         <p className="text-sm text-gray-600 dark:text-gray-400 mb-4">
           {item.name} — <span className="font-medium">{item.quantity}</span> {item.unit} available
+          {item.location && (
+            <>
+              {" "}
+              · Location: <span className="font-medium">{item.location}</span>
+            </>
+          )}
         </p>
 
         <div className="space-y-3">

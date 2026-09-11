@@ -99,10 +99,6 @@ export default async function CabinetEstimatePrintPage({
       qty: toNumber(item.qty),
       unitPrice: toNumber(item.unitPrice),
       isCustomization: Boolean(item.isCustomization),
-      customizationType:
-        item.customizationType === "percent" || item.customizationType === "flat"
-          ? item.customizationType
-          : null,
       customizationValue: toNumber(item.customizationValue),
     })),
   );
@@ -213,13 +209,7 @@ export default async function CabinetEstimatePrintPage({
                   <td>{item.code || ""}</td>
                   <td>{item.description || ""}</td>
                   <td className={styles.colCustomization}>
-                    {item.isCustomization && item.customizationType === "flat"
-                      ? formatCurrency(toNumber(item.customizationValue))
-                      : item.isCustomization && item.customizationType === "percent"
-                        ? `${toNumber(item.customizationValue)}%`
-                        : item.isCustomization
-                          ? "Yes"
-                          : ""}
+                    {item.isCustomization ? "Yes" : ""}
                   </td>
                   <td>{item.note || ""}</td>
                   <td className={styles.colPUnit}>
@@ -321,7 +311,10 @@ export default async function CabinetEstimatePrintPage({
               <strong>{formatCurrency(toNumber(estimate.removalAmount))}</strong>
             </div>
             <div className={`${styles.totalsRow} ${styles.installation}`}>
-              <span>Installation</span>
+              <span>
+                Installation
+                {estimate.installationTypeName ? ` (${estimate.installationTypeName})` : ""}
+              </span>
               <strong>{formatCurrency(installationTotal)}</strong>
             </div>
             <div className={styles.totalsFinal}>

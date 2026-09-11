@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useRef, useState } from "react";
+import { createPortal } from "react-dom";
 import { useRouter, useSearchParams } from "next/navigation";
 import { Plus, Trash2, Save, Printer, RotateCcw } from "lucide-react";
 import {
@@ -10,11 +11,13 @@ import {
   computeDiscountAmount,
   computeLineItemsCustomizationSurchargeTotal,
   computeSpecialCustomizationTotal,
+  computeBaseInstallationAmount,
+  computeRemovalAmount,
   discountPercentLabel,
-  CustomizationType,
   DISCOUNT_PERCENT_OPTIONS,
   formatCurrency,
 } from "@/lib/cabinetEstimateCalc";
+import { installationServiceItemPricesById } from "@/lib/cabinetEstimateParameters";
 
 type LookupJob = {
   id: string;
@@ -41,15 +44,24 @@ type LineItem = {
   code: string;
   description: string;
   isCustomization: boolean;
-  customizationType: CustomizationType | null;
-  customizationValue: number;
   note: string;
-  unitPrice: number;
+  // null means this row is linked to a catalog item but that item has
+  // no price at the currently selected vendor/tier - rendered as N/A
+  // and highlighted, rather than a misleading $0.00. A row with no
+  // catalogItemId (blank, or a manually-typed code with no match)
+  // still just uses 0, unchanged from before.
+  unitPrice: number | null;
   // Set when this row was filled in from the price catalog (see the Code
   // autocomplete) - drives the auto-computed Cabinets Summary counts below.
   // Manually-typed rows keep both null and simply don't count toward any bucket.
   catalogItemId: string | null;
   summaryBucket: CabinetSummaryBucket | null;
+  // Snapshotted from the catalog item's installationItemId at selection
+  // time (round 11) - which row of the Installers Price Table prices this
+  // line's installation. Null if unmatched/manually typed - contributes
+  // $0 to the per-item Installation total, same tolerant behavior as a
+  // missing summaryBucket already has for Cabinets Summary.
+  installationItemId: string | null;
 };
 
 type CatalogVendor = { id: string; name: string; displayName: string };
@@ -60,6 +72,7 @@ type CatalogItemSuggestion = {
   description: string;
   category: string | null;
   summaryBucket: CabinetSummaryBucket;
+  installationItemId: string | null;
   unitPrice: number | null;
 };
 
@@ -89,12 +102,11 @@ function emptyLineItem(): LineItem {
     code: "",
     description: "",
     isCustomization: false,
-    customizationType: null,
-    customizationValue: 0,
     note: "",
     unitPrice: 0,
     catalogItemId: null,
     summaryBucket: null,
+    installationItemId: null,
   };
 }
 
@@ -108,7 +120,7 @@ function isEmptyLineItem(item: LineItem): boolean {
     !item.description.trim() &&
     !item.note.trim() &&
     !item.isCustomization &&
-    item.unitPrice === 0
+    (item.unitPrice === 0 || item.unitPrice == null)
   );
 }
 
@@ -164,7 +176,16 @@ export default function CabinetEstimateForm(props: Props) {
   const [priceTierId, setPriceTierId] = useState("");
   const [vendors, setVendors] = useState<CatalogVendor[]>([]);
   const [priceTiers, setPriceTiers] = useState<CatalogPriceTier[]>([]);
-  const [removal, setRemoval] = useState("");
+  // Round 12: Removal is no longer free text/a manual $ amount - the user
+  // picks a Removal Type (GMD-Parameters-managed) and every dollar is
+  // computed from its percent x the Cabinets total, same "users pick, the
+  // system prices" pattern Installation Type already established (round 9).
+  // Optional/blank by default, unlike Installation Type - not every
+  // estimate has a removal.
+  const [removalTypeId, setRemovalTypeId] = useState("");
+  // Round 12: Project Type is still a plain string (no calc tied to it
+  // yet, per Diego's explicit "for now" scoping) but is now chosen from a
+  // GMD-Parameters-managed list instead of typed freely.
   const [projectType, setProjectType] = useState("");
   const [version, setVersion] = useState("");
 
@@ -199,10 +220,43 @@ export default function CabinetEstimateForm(props: Props) {
   const [microwaveInstallation, setMicrowaveInstallation] = useState(false);
 
   const [discountPercent, setDiscountPercent] = useState(0);
-  const [removalAmount, setRemovalAmount] = useState(0);
-  const [installationAmount, setInstallationAmount] = useState(0);
+  // Round 9: Installation is no longer a typed $ amount - the user only
+  // picks an Installation Type, and every dollar is computed from the
+  // GMD Parameters fetched below (see the useEffect a bit further down).
+  const [installationTypeId, setInstallationTypeId] = useState("");
+  const [gmdParameters, setGmdParameters] = useState<{
+    settings: {
+      installationBasePercent: number;
+      installationCalcMode: "flat" | "perItem" | "higher";
+      customSurchargePercent: number;
+    };
+    installationServiceItems: { id: string; code: string | null; description: string; salePrice: number }[];
+    installationTypes: {
+      id: string;
+      name: string;
+      multiplier: number;
+      isActive: boolean;
+    }[];
+    removalTypes: {
+      id: string;
+      name: string;
+      percent: number;
+      isActive: boolean;
+    }[];
+    projectTypes: {
+      id: string;
+      name: string;
+      isActive: boolean;
+    }[];
+  }>({
+    settings: { installationBasePercent: 15, installationCalcMode: "higher", customSurchargePercent: 0 },
+    installationServiceItems: [],
+    installationTypes: [],
+    removalTypes: [],
+    projectTypes: [],
+  });
   // Special Customization - an admin-managed catalog of customization types
-  // (see /cabinet-estimates/settings). The user just picks a qty per type;
+  // (see GMD Parameters > Cabinet Estimates). The user just picks a qty per type;
   // the $ amount is always derived from the catalog price, never typed in.
   const [specialCustomizationQtyById, setSpecialCustomizationQtyById] = useState<
     Record<string, number>
@@ -309,14 +363,13 @@ export default function CabinetEstimateForm(props: Props) {
         setGroupColor(json.groupColor || "");
         setVendorId(json.vendorId || "");
         setPriceTierId(json.priceTierId || "");
-        setRemoval(json.removal || "");
+        setRemovalTypeId(json.removalTypeId || "");
         setProjectType(json.projectType || "");
         setVersion(json.version || "");
         setItemsQuantity(json.itemsQuantity || 0);
         setMicrowaveInstallation(Boolean(json.microwaveInstallation));
         setDiscountPercent(json.discountPercent || 0);
-        setRemovalAmount(json.removalAmount || 0);
-        setInstallationAmount(json.installationAmount || 0);
+        setInstallationTypeId(json.installationTypeId || "");
         setNotes(json.notes || "");
         const qtyById: Record<string, number> = {};
         for (const line of json.specialCustomizationLines || []) {
@@ -331,11 +384,6 @@ export default function CabinetEstimateForm(props: Props) {
                 code: item.code || "",
                 description: item.description || "",
                 isCustomization: Boolean(item.isCustomization),
-                customizationType:
-                  item.customizationType === "percent" || item.customizationType === "flat"
-                    ? item.customizationType
-                    : null,
-                customizationValue: item.customizationValue ?? 0,
                 note: item.note || "",
                 unitPrice: item.unitPrice ?? 0,
                 catalogItemId: item.catalogItemId || null,
@@ -364,6 +412,34 @@ export default function CabinetEstimateForm(props: Props) {
     })();
   }, []);
 
+  // GMD Parameters (round 9) - the admin-tunable numbers behind the
+  // Installation auto-calculation. Fetched once for a live preview as the
+  // user works; the persisted number always comes from the server, which
+  // re-fetches these itself rather than trusting anything computed here.
+  useEffect(() => {
+    (async () => {
+      try {
+        const res = await fetch("/api/cabinet-estimates/parameters");
+        const json = await res.json();
+        if (!res.ok) return;
+        setGmdParameters(json);
+        // A brand-new estimate (never one being loaded for edit) defaults
+        // to the first active Installation Type so the select isn't blank.
+        if (!editEstimateId) {
+          setInstallationTypeId((prev) => {
+            if (prev) return prev;
+            const types = json.installationTypes || [];
+            const firstActive = types.find((t: any) => t.isActive) || types[0];
+            return firstActive?.id || "";
+          });
+        }
+      } catch {
+        // non-fatal - Installation just shows $0 until this loads
+      }
+    })();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
   useEffect(() => {
     if (!vendorId) {
       setPriceTiers([]);
@@ -384,6 +460,48 @@ export default function CabinetEstimateForm(props: Props) {
   // (and, when picked, price tier's) catalog as the user types a code.
   const [codeQuery, setCodeQuery] = useState<{ index: number; text: string } | null>(null);
   const [codeSuggestions, setCodeSuggestions] = useState<CatalogItemSuggestion[]>([]);
+  const [codeDropdownRect, setCodeDropdownRect] = useState<{
+    top: number;
+    left: number;
+    width: number;
+  } | null>(null);
+  const codeDropdownRef = useRef<HTMLDivElement | null>(null);
+
+  // Special Customization sidebar height sync - it should line up with the
+  // bottom of the Notes/Cabinets Summary/Total Summary row on the left,
+  // not run on past it (or leave empty space above it). ResizeObserver on
+  // the left column (header + item table + footer row) picks up both the
+  // item table growing (more rows added) and the footer's own natural
+  // height, so the sidebar's height - and therefore how much of its own
+  // item list needs to scroll internally - stays in sync automatically
+  // rather than needing a fixed guess or a CSS-only trick (this project's
+  // standing lesson from the sticky-column/dropdown-portal fixes is that
+  // CSS alone tends to be flaky for this kind of cross-sibling sizing).
+  const leftColumnRef = useRef<HTMLDivElement | null>(null);
+  const [leftColumnHeight, setLeftColumnHeight] = useState<number | null>(null);
+  const [isDesktopLayout, setIsDesktopLayout] = useState(false);
+
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    const mql = window.matchMedia("(min-width: 1024px)");
+    setIsDesktopLayout(mql.matches);
+    const handleChange = () => setIsDesktopLayout(mql.matches);
+    mql.addEventListener("change", handleChange);
+    return () => mql.removeEventListener("change", handleChange);
+  }, []);
+
+  useEffect(() => {
+    if (typeof ResizeObserver === "undefined" || !leftColumnRef.current) return;
+    const el = leftColumnRef.current;
+    const observer = new ResizeObserver((entries) => {
+      const entry = entries[0];
+      if (entry) {
+        setLeftColumnHeight(entry.contentRect.height);
+      }
+    });
+    observer.observe(el);
+    return () => observer.disconnect();
+  }, []);
 
   useEffect(() => {
     if (!codeQuery || !vendorId || !codeQuery.text.trim()) {
@@ -403,14 +521,48 @@ export default function CabinetEstimateForm(props: Props) {
     }, 200);
     return () => clearTimeout(handle);
   }, [codeQuery, vendorId, priceTierId]);
+  // Close the code-search dropdown on any scroll or resize so it never
+  // renders in a stale position. It's rendered via a portal (see the
+  // codeSuggestions dropdown below) specifically so it can escape the item
+  // table's `overflow-hidden` wrapper, which otherwise clipped it whenever
+  // a suggestion list needed to extend past the table's own bottom edge.
+  useEffect(() => {
+    // Scrolling *inside* the suggestions list itself also fires a capturing
+    // "scroll" event on window (a capture-phase listener on an ancestor
+    // still runs even though "scroll" doesn't bubble) - ignore those so the
+    // list doesn't slam shut the instant someone tries to scroll through
+    // more matches than fit on screen. Any other scroll (the page, the item
+    // table's own horizontal scroll container, etc.) still closes it so it
+    // never renders in a stale position.
+    function closeCodeDropdown(event: Event) {
+      if (
+        codeDropdownRef.current &&
+        event.target instanceof Node &&
+        codeDropdownRef.current.contains(event.target)
+      ) {
+        return;
+      }
+      setCodeQuery((q) => (q ? null : q));
+    }
+    window.addEventListener("scroll", closeCodeDropdown, true);
+    window.addEventListener("resize", closeCodeDropdown);
+    return () => {
+      window.removeEventListener("scroll", closeCodeDropdown, true);
+      window.removeEventListener("resize", closeCodeDropdown);
+    };
+  }, []);
+
 
   function selectCatalogItem(index: number, suggestion: CatalogItemSuggestion) {
     updateItem(index, {
       code: suggestion.code,
       description: suggestion.description,
-      unitPrice: suggestion.unitPrice ?? 0,
+      // Preserve null (no price at this vendor/tier) instead of
+      // silently defaulting to 0 - see the N/A rendering below.
+      unitPrice: suggestion.unitPrice,
       catalogItemId: suggestion.id,
       summaryBucket: suggestion.summaryBucket,
+      installationItemId: suggestion.installationItemId,
     });
     setCodeQuery(null);
   }
@@ -454,8 +606,9 @@ export default function CabinetEstimateForm(props: Props) {
           return {
             ...item,
             description: match.description,
-            unitPrice: match.unitPrice ?? 0,
+            unitPrice: match.unitPrice,
             summaryBucket: match.summaryBucket,
+            installationItemId: match.installationItemId,
           };
         }),
       );
@@ -467,7 +620,7 @@ export default function CabinetEstimateForm(props: Props) {
   const cabinetsTotal = useMemo(
     () =>
       computeCabinetsTotal(
-        lineItems.map((i) => ({ qty: i.qty, unitPrice: i.unitPrice })),
+        lineItems.map((i) => ({ qty: i.qty, unitPrice: i.unitPrice ?? 0 })),
       ),
     [lineItems],
   );
@@ -489,21 +642,64 @@ export default function CabinetEstimateForm(props: Props) {
   );
 
   // Each line item flagged "Custom" carries its own extra Installation
-  // surcharge (percent of that line's own qty*unitPrice, or a flat $
-  // amount per unit) - it never touches that line's own total/the
+  // surcharge - a percent of that line's own qty*unitPrice, where the
+  // percent is the single value currently set on GMD Parameters (round 9 -
+  // no longer typed per line). It never touches that line's own total/the
   // Cabinets total, it's a separate amount that rolls into Installation.
+  // This is a live preview only - the server re-derives the real number
+  // from its own fresh read of GMD Parameters at save time.
   const lineCustomizationSurchargeTotal = useMemo(
     () =>
       computeLineItemsCustomizationSurchargeTotal(
         lineItems.map((item) => ({
           qty: item.qty,
-          unitPrice: item.unitPrice,
+          unitPrice: item.unitPrice ?? 0,
           isCustomization: item.isCustomization,
-          customizationType: item.customizationType,
-          customizationValue: item.customizationValue,
+          customizationValue: gmdParameters.settings.customSurchargePercent,
         })),
       ),
-    [lineItems],
+    [lineItems, gmdParameters.settings.customSurchargePercent],
+  );
+
+  // Base Installation (round 9) - see cabinetEstimateCalc.ts for the 3 calc
+  // modes. A live preview only, same caveat as above.
+  const baseInstallationAmount = useMemo(
+    () =>
+      computeBaseInstallationAmount({
+        cabinetsTotal,
+        lineItems: lineItems.map((item) => ({
+          qty: item.qty,
+          unitPrice: item.unitPrice ?? 0,
+          installationItemId: item.installationItemId,
+        })),
+        installationServiceItemPrices: installationServiceItemPricesById(gmdParameters.installationServiceItems),
+        calcMode: gmdParameters.settings.installationCalcMode,
+        basePercent: gmdParameters.settings.installationBasePercent,
+      }),
+    [cabinetsTotal, lineItems, gmdParameters.installationServiceItems, gmdParameters.settings.installationCalcMode, gmdParameters.settings.installationBasePercent],
+  );
+
+  const selectedInstallationType = useMemo(
+    () => gmdParameters.installationTypes.find((t) => t.id === installationTypeId) || null,
+    [gmdParameters.installationTypes, installationTypeId],
+  );
+
+  const installationAmount = useMemo(
+    () => Math.round(baseInstallationAmount * (selectedInstallationType?.multiplier ?? 1) * 100) / 100,
+    [baseInstallationAmount, selectedInstallationType],
+  );
+
+  // Round 12: Removal - a live preview only, same caveat as Installation
+  // above; the server always recomputes this itself from a fresh read of
+  // GMD Parameters at save time (see computeRemovalAmount/resolveRemovalType).
+  const selectedRemovalType = useMemo(
+    () => gmdParameters.removalTypes.find((t) => t.id === removalTypeId) || null,
+    [gmdParameters.removalTypes, removalTypeId],
+  );
+
+  const removalAmount = useMemo(
+    () => computeRemovalAmount(cabinetsTotal, selectedRemovalType?.percent),
+    [cabinetsTotal, selectedRemovalType],
   );
 
   // Sum qty per bucket across catalog-linked line items - this is what
@@ -609,15 +805,18 @@ export default function CabinetEstimateForm(props: Props) {
     setGroupColor("");
     setVendorId("");
     setPriceTierId("");
-    setRemoval("");
+    setRemovalTypeId("");
     setProjectType("");
     setVersion("");
     setLineItems(makeBlankRows(MIN_BLANK_ROWS));
     setItemsQuantity(0);
     setMicrowaveInstallation(false);
     setDiscountPercent(0);
-    setRemovalAmount(0);
-    setInstallationAmount(0);
+    setInstallationTypeId(
+      gmdParameters.installationTypes.find((t) => t.isActive)?.id ||
+        gmdParameters.installationTypes[0]?.id ||
+        "",
+    );
     setSpecialCustomizationQtyById({});
     setNotes("");
     setMessage(null);
@@ -645,7 +844,7 @@ export default function CabinetEstimateForm(props: Props) {
         groupColor,
         vendorId: vendorId || null,
         priceTierId: priceTierId || null,
-        removal,
+        removalTypeId: removalTypeId || null,
         projectType,
         version,
         standardCabinetsCount: cabinetsSummaryCounts.STANDARD,
@@ -655,20 +854,18 @@ export default function CabinetEstimateForm(props: Props) {
         itemsQuantity,
         microwaveInstallation,
         discountPercent,
-        removalAmount,
-        installationAmount,
+        installationTypeId: installationTypeId || null,
         notes,
         lineItems: lineItems.map((item) => ({
           qty: item.qty,
           code: item.code,
           description: item.description,
           isCustomization: item.isCustomization,
-          customizationType: item.customizationType,
-          customizationValue: item.customizationValue,
           note: item.note,
           unitPrice: item.unitPrice,
           catalogItemId: item.catalogItemId,
           summaryBucket: item.summaryBucket,
+          installationItemId: item.installationItemId,
         })),
         specialCustomizationLines: props.specialCustomizationItems
           .map((item) => ({ itemId: item.id, qty: specialCustomizationQtyById[item.id] || 0 }))
@@ -765,8 +962,8 @@ export default function CabinetEstimateForm(props: Props) {
         </div>
       ) : (
         <>
-          <div className="flex flex-col gap-3 lg:flex-row lg:items-stretch">
-          <div className="flex min-w-0 flex-1 flex-col gap-3">
+          <div className="flex flex-col gap-3 lg:flex-row lg:items-start">
+          <div ref={leftColumnRef} className="flex min-w-0 flex-1 flex-col gap-3">
           {/* Header - mimics the printed sheet's letterhead + info block */}
           <div className="overflow-hidden rounded-xl border border-gray-300 bg-white dark:border-gray-600 dark:bg-gray-800">
             <div className="grid grid-cols-1 lg:grid-cols-[240px_1fr_170px]">
@@ -921,6 +1118,7 @@ export default function CabinetEstimateForm(props: Props) {
                                 ...item,
                                 catalogItemId: null,
                                 summaryBucket: null,
+                                installationItemId: null,
                                 description: "",
                                 unitPrice: 0,
                               }
@@ -967,19 +1165,45 @@ export default function CabinetEstimateForm(props: Props) {
                 </HeaderRow>
 
                 <HeaderRow label="Removal">
-                  <input
-                    value={removal}
-                    onChange={(e) => setRemoval(e.target.value)}
+                  <select
+                    value={removalTypeId}
+                    onChange={(e) => setRemovalTypeId(e.target.value)}
                     className="w-full bg-transparent px-2 py-0.5 text-[11px] text-gray-900 outline-none dark:text-gray-100"
-                  />
+                  >
+                    <option value="">-- None --</option>
+                    {gmdParameters.removalTypes
+                      .filter((t) => t.isActive || t.id === removalTypeId)
+                      .map((t) => (
+                        <option key={t.id} value={t.id}>
+                          {t.name}
+                        </option>
+                      ))}
+                  </select>
                 </HeaderRow>
 
                 <HeaderRow label="Project Type">
-                  <input
+                  <select
                     value={projectType}
                     onChange={(e) => setProjectType(e.target.value)}
                     className="w-full bg-transparent px-2 py-0.5 text-[11px] text-gray-900 outline-none dark:text-gray-100"
-                  />
+                  >
+                    <option value="">-- None --</option>
+                    {gmdParameters.projectTypes
+                      .filter((t) => t.isActive || t.name === projectType)
+                      .map((t) => (
+                        <option key={t.id} value={t.name}>
+                          {t.name}
+                        </option>
+                      ))}
+                    {/* A saved estimate's projectType may hold a value from
+                        before this dropdown existed (free text) or one that
+                        no longer matches any configured option - show it so
+                        it isn't silently blanked out on load. */}
+                    {projectType &&
+                      !gmdParameters.projectTypes.some((t) => t.name === projectType) && (
+                        <option value={projectType}>{projectType}</option>
+                      )}
+                  </select>
                 </HeaderRow>
               </div>
 
@@ -1040,9 +1264,18 @@ export default function CabinetEstimateForm(props: Props) {
                   </tr>
                 </thead>
                 <tbody>
-                  {lineItems.map((item, index) => (
+                  {lineItems.map((item, index) => {
+                    // Catalog-linked, but no price exists for the current
+                    // Brand/Group-Color - render N/A instead of a $0.00
+                    // that would look like a genuine free item.
+                    const hasMissingPrice = Boolean(item.catalogItemId) && item.unitPrice == null;
+                    return (
                     <tr key={item.key} className="border-b border-gray-200 dark:border-gray-700">
-                      <td className="border border-gray-200 p-1 align-top dark:border-gray-700">
+                      <td
+                        className={`border border-gray-200 p-1 align-top dark:border-gray-700 ${
+                          item.code && item.qty === 0 ? "bg-red-50 dark:bg-red-950/30" : ""
+                        }`}
+                      >
                         <input
                           type="number"
                           min={0}
@@ -1054,6 +1287,7 @@ export default function CabinetEstimateForm(props: Props) {
                             })
                           }
                           onKeyDown={handleItemKeyDown}
+                          title={item.code && item.qty === 0 ? "Quantity is missing for this item" : undefined}
                           className="w-full bg-transparent px-1.5 py-0.5 text-center text-xs text-gray-900 outline-none dark:text-gray-100 [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
                         />
                       </td>
@@ -1066,12 +1300,27 @@ export default function CabinetEstimateForm(props: Props) {
                               code: e.target.value,
                               catalogItemId: null,
                               summaryBucket: null,
+                              installationItemId: null,
                               description: "",
                               unitPrice: 0,
                             });
                             setCodeQuery({ index, text: e.target.value });
+                            const rect = e.target.getBoundingClientRect();
+                            setCodeDropdownRect({
+                              top: rect.bottom,
+                              left: rect.left,
+                              width: rect.width,
+                            });
                           }}
-                          onFocus={() => setCodeQuery({ index, text: item.code })}
+                          onFocus={(e) => {
+                            setCodeQuery({ index, text: item.code });
+                            const rect = e.target.getBoundingClientRect();
+                            setCodeDropdownRect({
+                              top: rect.bottom,
+                              left: rect.left,
+                              width: rect.width,
+                            });
+                          }}
                           onBlur={() =>
                             setTimeout(
                               () => setCodeQuery((q) => (q?.index === index ? null : q)),
@@ -1089,26 +1338,43 @@ export default function CabinetEstimateForm(props: Props) {
                           }
                           className="w-full bg-transparent px-1.5 py-0.5 text-xs text-gray-900 outline-none dark:text-gray-100"
                         />
-                        {codeQuery?.index === index && codeSuggestions.length > 0 && (
-                          <div className="absolute left-0 top-full z-10 max-h-48 w-64 overflow-y-auto rounded border border-gray-300 bg-white text-xs shadow-lg dark:border-gray-600 dark:bg-gray-800">
-                            {codeSuggestions.map((s) => (
-                              <button
-                                type="button"
-                                key={s.id}
-                                onMouseDown={(e) => e.preventDefault()}
-                                onClick={() => selectCatalogItem(index, s)}
-                                className="block w-full px-2 py-1 text-left hover:bg-blue-50 dark:hover:bg-gray-700"
-                              >
-                                <span className="font-semibold text-gray-900 dark:text-gray-100">
-                                  {s.code}
-                                </span>{" "}
-                                <span className="text-gray-500 dark:text-gray-400">
-                                  {s.description}
-                                </span>
-                              </button>
-                            ))}
-                          </div>
-                        )}
+                        {codeQuery?.index === index &&
+                          codeSuggestions.length > 0 &&
+                          codeDropdownRect &&
+                          typeof document !== "undefined" &&
+                          createPortal(
+                            <div
+                              ref={codeDropdownRef}
+                              style={{
+                                position: "fixed",
+                                top: codeDropdownRect.top,
+                                left: Math.min(
+                                  codeDropdownRect.left,
+                                  window.innerWidth - 328,
+                                ),
+                                width: Math.max(codeDropdownRect.width, 320),
+                              }}
+                              className="z-50 max-h-64 overflow-y-auto rounded border border-gray-300 bg-white text-xs shadow-lg dark:border-gray-600 dark:bg-gray-800"
+                            >
+                              {codeSuggestions.map((s) => (
+                                <button
+                                  type="button"
+                                  key={s.id}
+                                  onMouseDown={(e) => e.preventDefault()}
+                                  onClick={() => selectCatalogItem(index, s)}
+                                  className="block w-full px-2 py-1 text-left hover:bg-blue-50 dark:hover:bg-gray-700"
+                                >
+                                  <span className="font-semibold text-gray-900 dark:text-gray-100">
+                                    {s.code}
+                                  </span>{" "}
+                                  <span className="text-gray-500 dark:text-gray-400">
+                                    {s.description}
+                                  </span>
+                                </button>
+                              ))}
+                            </div>,
+                            document.body,
+                          )}
                       </td>
                       <td className="border border-gray-200 p-1 align-top dark:border-gray-700">
                         <div
@@ -1123,53 +1389,19 @@ export default function CabinetEstimateForm(props: Props) {
                         </div>
                       </td>
                       <td className="border border-gray-200 p-1 text-center align-top dark:border-gray-700">
-                        <label className="flex w-full cursor-pointer items-center justify-center py-0.5">
+                        <label
+                          className="flex w-full cursor-pointer items-center justify-center py-0.5"
+                          title="Adds the GMD Parameters Custom surcharge % to Installation"
+                        >
                           <input
                             type="checkbox"
                             checked={item.isCustomization}
                             onChange={(e) =>
-                              updateItem(index, {
-                                isCustomization: e.target.checked,
-                                customizationType: e.target.checked
-                                  ? item.customizationType || "percent"
-                                  : null,
-                              })
+                              updateItem(index, { isCustomization: e.target.checked })
                             }
                             className="h-4 w-4 rounded border-gray-300 text-blue-600 focus:ring-blue-500 dark:border-gray-600"
                           />
                         </label>
-                        {item.isCustomization && (
-                          <div className="mt-0.5 flex items-center justify-center gap-0.5">
-                            <select
-                              value={item.customizationType || "percent"}
-                              onChange={(e) =>
-                                updateItem(index, {
-                                  customizationType: e.target.value as CustomizationType,
-                                })
-                              }
-                              className="rounded border border-gray-300 bg-white text-[9px] leading-tight text-gray-900 outline-none dark:border-gray-600 dark:bg-gray-900 dark:text-gray-100"
-                              title="Installation surcharge type"
-                            >
-                              <option value="percent">%</option>
-                              <option value="flat">$</option>
-                            </select>
-                            <input
-                              type="number"
-                              min={0}
-                              step="0.01"
-                              value={item.customizationValue === 0 ? "" : item.customizationValue}
-                              onChange={(e) =>
-                                updateItem(index, {
-                                  customizationValue:
-                                    e.target.value === "" ? 0 : Number(e.target.value) || 0,
-                                })
-                              }
-                              placeholder="0"
-                              title="Installation surcharge value"
-                              className="w-8 rounded border border-gray-300 bg-white px-0.5 text-right text-[9px] text-gray-900 outline-none dark:border-gray-600 dark:bg-gray-900 dark:text-gray-100 [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
-                            />
-                          </div>
-                        )}
                       </td>
                       <td className="border border-gray-200 p-1 align-top dark:border-gray-700">
                         <textarea
@@ -1187,16 +1419,30 @@ export default function CabinetEstimateForm(props: Props) {
                           className="block w-full resize-none overflow-hidden bg-transparent px-1.5 py-0.5 text-xs text-gray-900 outline-none dark:text-gray-100"
                         />
                       </td>
-                      <td className="border border-gray-200 p-1 align-top text-right dark:border-gray-700">
+                      <td
+                        className={`border border-gray-200 p-1 align-top text-right dark:border-gray-700 ${
+                          (item.code && item.qty === 0) || hasMissingPrice ? "bg-red-50 dark:bg-red-950/30" : ""
+                        }`}
+                      >
                         <div
-                          className="px-1.5 py-0.5 text-xs text-gray-900 dark:text-gray-100"
-                          title="Set automatically from the selected catalog code, brand and group/color - not editable"
+                          className={`px-1.5 py-0.5 text-xs ${hasMissingPrice ? "font-medium text-red-600 dark:text-red-400" : "text-gray-900 dark:text-gray-100"}`}
+                          title={
+                            hasMissingPrice
+                              ? "No price found for this item at the selected Brand/Group-Color - pick a different Group/Color, or ask an admin to add one via Import Price List"
+                              : item.code && item.qty === 0
+                              ? "Quantity is missing for this item"
+                              : "Set automatically from the selected catalog code, brand and group/color - not editable"
+                          }
                         >
-                          {formatCurrency(item.unitPrice)}
+                          {hasMissingPrice ? "N/A" : formatCurrency(item.unitPrice)}
                         </div>
                       </td>
                       <td className="border border-gray-200 px-2 py-0.5 align-top text-right text-xs font-medium text-gray-900 dark:border-gray-700 dark:text-gray-100">
-                        {formatCurrency(computeLineItemTotal(item.qty, item.unitPrice))}
+                        {hasMissingPrice ? (
+                          <span className="text-red-600 dark:text-red-400">N/A</span>
+                        ) : (
+                          formatCurrency(computeLineItemTotal(item.qty, item.unitPrice ?? 0))
+                        )}
                       </td>
                       <td className="border border-gray-200 p-1 align-top text-center dark:border-gray-700">
                         <button
@@ -1210,7 +1456,8 @@ export default function CabinetEstimateForm(props: Props) {
                         </button>
                       </td>
                     </tr>
-                  ))}
+                    );
+                  })}
                 </tbody>
               </table>
             </div>
@@ -1326,19 +1573,34 @@ export default function CabinetEstimateForm(props: Props) {
                   </span>
                 </TotalsRow>
                 <TotalsRow label="Removal" className="bg-red-50 dark:bg-red-950/30">
-                  <NumberField value={removalAmount} onChange={setRemovalAmount} step="0.01" />
+                  <span
+                    className="text-[11px] font-semibold text-gray-900 dark:text-gray-100"
+                    title="Computed from the selected Removal Type's percent x the Cabinets total (before discounts) - not editable. Pick a Removal Type in the header."
+                  >
+                    {formatCurrency(removalAmount)}
+                  </span>
                 </TotalsRow>
                 <TotalsRow label="Installation" className="bg-green-50 dark:bg-green-950/30">
                   <div className="flex items-center gap-1.5">
-                    <NumberField
-                      value={installationAmount}
-                      onChange={setInstallationAmount}
-                      step="0.01"
-                      title="Manual installation amount"
-                    />
+                    <select
+                      value={installationTypeId}
+                      onChange={(e) => setInstallationTypeId(e.target.value)}
+                      className="rounded border border-gray-300 bg-white px-1.5 py-0.5 text-[11px] text-gray-900 dark:border-gray-600 dark:bg-gray-900 dark:text-gray-100"
+                    >
+                      {gmdParameters.installationTypes.length === 0 && (
+                        <option value="">Loading...</option>
+                      )}
+                      {gmdParameters.installationTypes
+                        .filter((t) => t.isActive || t.id === installationTypeId)
+                        .map((t) => (
+                          <option key={t.id} value={t.id}>
+                            {t.name}
+                          </option>
+                        ))}
+                    </select>
                     <span
                       className="text-[11px] font-semibold text-gray-900 dark:text-gray-100"
-                      title="Manual amount plus Special Customization and per-item Custom surcharges"
+                      title="Computed from GMD Parameters, plus Special Customization and per-item Custom surcharges - not editable"
                     >
                       {formatCurrency(installationTotal)}
                     </span>
@@ -1354,28 +1616,37 @@ export default function CabinetEstimateForm(props: Props) {
           </div>
 
           {/* Special Customization - admin-managed catalog of customization
-              types (see Settings). Runs as a full-height sidebar alongside
+              types (see GMD Parameters > Cabinet Estimates). Runs alongside
               the header/table/footer, starting at the top of the form, per
               Diego's request; the user enters a qty per type and the $
               contribution rolls into the "Customization" row in Total
-              Summary above. */}
-          <div className="flex w-full flex-col overflow-hidden rounded-xl border border-gray-300 bg-white lg:w-56 dark:border-gray-600 dark:bg-gray-800">
-            <div className="bg-gray-100 px-2.5 py-1 text-[11px] font-semibold uppercase tracking-wide text-gray-600 dark:bg-gray-700 dark:text-gray-300">
+              Summary above. Its height is synced (via leftColumnHeight,
+              measured off the left column with a ResizeObserver above) to
+              line up exactly with the bottom of the Notes/Cabinets Summary/
+              Total Summary row, growing automatically as item rows are
+              added - rather than either leaving empty space below a short
+              item list or running on past the footer when the item list is
+              long, which is what a plain height:auto sidebar did before. */}
+          <div
+            className="flex w-full flex-col overflow-hidden rounded-xl border border-gray-300 bg-white lg:w-56 dark:border-gray-600 dark:bg-gray-800"
+            style={isDesktopLayout && leftColumnHeight ? { height: leftColumnHeight } : undefined}
+          >
+            <div className="flex-shrink-0 bg-gray-100 px-2.5 py-1 text-[11px] font-semibold uppercase tracking-wide text-gray-600 dark:bg-gray-700 dark:text-gray-300">
               Special Customization
             </div>
             {props.specialCustomizationItems.length === 0 ? (
               <div className="p-3 text-xs text-gray-500 dark:text-gray-400">
                 No customization types configured yet - add them under
-                Special Customization Settings.
+                GMD Parameters &gt; Cabinet Estimates.
               </div>
             ) : (
-              <div className="divide-y divide-gray-200 text-xs dark:divide-gray-700">
+              <div className="min-h-0 flex-1 divide-y divide-gray-200 overflow-y-auto text-xs dark:divide-gray-700">
                 {props.specialCustomizationItems.map((item) => (
                   <div
                     key={item.id}
                     className="flex items-center justify-between gap-2 px-2.5 py-1"
                   >
-                    <span className="truncate pr-1 text-gray-700 dark:text-gray-300">
+                    <span className="break-words pr-1 text-gray-700 dark:text-gray-300">
                       {item.name}
                     </span>
                     <NumberField
@@ -1384,6 +1655,7 @@ export default function CabinetEstimateForm(props: Props) {
                       step="1"
                       widthClassName="w-14"
                       blankWhenZero
+                      centered
                     />
                   </div>
                 ))}
@@ -1471,6 +1743,7 @@ function NumberField({
   widthClassName = "w-20",
   title,
   blankWhenZero = false,
+  centered = false,
 }: {
   value: number;
   onChange: (value: number) => void;
@@ -1479,6 +1752,7 @@ function NumberField({
   widthClassName?: string;
   title?: string;
   blankWhenZero?: boolean;
+  centered?: boolean;
 }) {
   return (
     <input
@@ -1489,7 +1763,7 @@ function NumberField({
         onChange(e.target.value === "" ? 0 : Number(e.target.value) || 0)
       }
       title={title}
-      className={`${widthClassName} rounded border border-gray-300 bg-white px-1.5 py-0.5 text-right text-[11px] text-gray-900 outline-none dark:border-gray-600 dark:bg-gray-900 dark:text-gray-100 [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none ${className || ""}`}
+      className={`${widthClassName} rounded border border-gray-300 bg-white px-1.5 py-0.5 ${centered ? "text-center" : "text-right"} text-[11px] text-gray-900 outline-none dark:border-gray-600 dark:bg-gray-900 dark:text-gray-100 [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none ${className || ""}`}
     />
   );
 }

@@ -34,6 +34,7 @@ export type StoreItem = {
   quantity: number;
   minQuantity: number;
   recommendedQuantity: number;
+  location: string | null;
   purchaseLink: string | null;
   notes: string | null;
   isActive: boolean;

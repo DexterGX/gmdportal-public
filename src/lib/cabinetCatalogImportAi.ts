@@ -14,7 +14,9 @@ import Anthropic from "@anthropic-ai/sdk";
 import {
   CABINET_SUMMARY_BUCKETS,
   gridToPromptText,
+  installationItemOptionKey,
   type CabinetImportParsePlan,
+  type CabinetInstallationItemOption,
   type CabinetSummaryBucket,
   type RawSheet,
 } from "./cabinetCatalogImport";
@@ -22,13 +24,8 @@ import {
 const MODEL = "claude-sonnet-5";
 const MAX_ROWS_PER_SHEET = 70;
 
-const PARSE_PLAN_TOOL = {
-  name: "emit_parse_plan",
-  description:
-    "Report the structural layout of the vendor price list so it can be parsed row by row.",
-  input_schema: {
-    type: "object" as const,
-    properties: {
+function buildParsePlanTool(installationItemKeys: string[]) {
+  const properties: Record<string, any> = {
       sheetName: {
         type: "string",
         description: "Exact name of the sheet that contains the actual price list data.",
@@ -41,6 +38,14 @@ const PARSE_PLAN_TOOL = {
       descriptionCol: {
         type: "integer",
         description: "0-indexed column holding the item description/name.",
+      },
+      sizeCol: {
+        type: ["integer", "null"],
+        description:
+          "0-indexed column holding the cabinet's dimensions (e.g. '9\" X 34 1/2\" X 24\"'), " +
+          "ONLY when that appears in its own separate column rather than already being part of " +
+          "the description text. null if the description already includes the size, or there is " +
+          "no separate size column at all - do not duplicate it.",
       },
       priceColumns: {
         type: "array",
@@ -81,10 +86,13 @@ const PARSE_PLAN_TOOL = {
         description:
           "Substring->bucket rules mapping category text you observed to one of " +
           CABINET_SUMMARY_BUCKETS.join("/") +
-          ". STANDARD = ordinary single cabinets, DOUBLE = double-door/double-drawer/pantry-style " +
-          "cabinets, CUSTOM = customized/special-order items, MISC = accessories, panels, molding, " +
-          "hardware, anything not a cabinet box. Add one hint per distinct category you actually " +
-          "saw in the file rather than leaving most to fall through to defaultBucket - first match wins.",
+          ". STANDARD = ordinary cabinets, including multi-drawer base cabinets (a 3-drawer base " +
+          "is still just a standard cabinet, NOT a \"double\" one - drawer count/door count don't " +
+          "drive this bucket). DOUBLE = tall pantry and closet-style cabinets specifically - the " +
+          "name refers to their size/type, not to having two doors or two drawers. CUSTOM = " +
+          "customized/special-order items. MISC = accessories, panels, molding, hardware, anything " +
+          "not a cabinet box. Add one hint per distinct category you actually saw in the file " +
+          "rather than leaving most to fall through to defaultBucket - first match wins.",
         items: {
           type: "object",
           properties: {
@@ -99,27 +107,143 @@ const PARSE_PLAN_TOOL = {
         enum: CABINET_SUMMARY_BUCKETS,
         description: "Bucket to use when no category hint matches (or there is no category).",
       },
-    },
-    required: [
-      "sheetName",
-      "dataStartRow",
-      "codeCol",
-      "descriptionCol",
-      "priceColumns",
-      "categoryMode",
-      "categoryColumn",
-      "sectionDetectColumn",
-      "categoryBucketHints",
-      "defaultBucket",
-    ],
-  },
-};
+  };
 
-function buildPrompt(sheets: RawSheet[], vendorName: string): string {
+  const required = [
+    "sheetName",
+    "dataStartRow",
+    "codeCol",
+    "descriptionCol",
+    "sizeCol",
+    "priceColumns",
+    "categoryMode",
+    "categoryColumn",
+    "sectionDetectColumn",
+    "categoryBucketHints",
+    "defaultBucket",
+  ];
+
+  // Only ask for installation-item hints when GMD actually has Installers
+  // Price Table rows configured yet - a fresh install with none simply
+  // gets no installationItemHints back (resolveInstallationItem then
+  // leaves every item unassigned, same as "no hint matched").
+  if (installationItemKeys.length > 0) {
+    properties.installationItemHints = {
+      type: "array",
+      description:
+        "Substring rules mapping to one of GMD's real Installers Price Table rows (listed " +
+        "below in the prompt, each by its exact key). Despite the field name, categoryContains " +
+        "is checked against each row's category text AND its own individual description " +
+        "together - so if one category groups several genuinely different item types (e.g. a " +
+        "\"PANELS AND DOORS\" category containing both real panels and dummy doors, or a " +
+        "\"FILLERS\" category containing both plain and fluted fillers), write a separate hint " +
+        "per item type using a word that appears in THAT item's own description (e.g. \"panel\" " +
+        "for the panels, \"dummy\" for the dummy doors, \"fluted\" for the fluted filler), not " +
+        "just one broad hint for the shared category label - a broad hint like \"filler\" or " +
+        "\"molding\" alone would otherwise catch rows that really belong to a more specific hint. " +
+        "When more than one hint matches the same row, the app keeps whichever hint text is " +
+        "LONGEST/most specific, not whichever was written first, so it's safe (and encouraged) " +
+        "to write both a general hint and more specific overrides. This mapping always takes " +
+        "priority over any automatic bucket default (see installationItemExclusions) - a hint " +
+        "you write here wins even for a row whose bucket already has a default item. It is " +
+        "fine, and expected, to leave some rows unmapped (simply omit a hint) if nothing in the " +
+        "list is really a good match - do not guess just to cover every row, and use " +
+        "confidence \"low\" (see that field) rather than omitting a hint when a match is only " +
+        "plausible, not certain.",
+      items: {
+        type: "object",
+        properties: {
+          categoryContains: { type: "string" },
+          installationItemKey: { type: "string", enum: installationItemKeys },
+          confidence: {
+            type: "string",
+            enum: ["high", "low"],
+            description:
+              "\"high\" when you're confident this row really is the item described. \"low\" " +
+              "when it's a reasonable best guess but you're not sure - e.g. the description is " +
+              "ambiguous, or it could plausibly belong to a couple of the listed items. Still " +
+              "write the hint rather than omitting it - a \"low\" confidence match gets flagged " +
+              "for the admin to double-check in the review screen, instead of either being " +
+              "silently trusted (if you'd marked it high) or silently dropped (if you'd omitted " +
+              "it). Omit the hint entirely only when there truly is no plausible match at all.",
+          },
+        },
+        required: ["categoryContains", "installationItemKey", "confidence"],
+      },
+    };
+    required.push("installationItemHints");
+
+    properties.installationItemExclusions = {
+      type: "array",
+      description:
+        "Text patterns (checked the same way as installationItemHints, against category+" +
+        "description together) identifying rows that are NOT genuine full cabinets even though " +
+        "their Cabinets Summary bucket is Standard or Double - small decorative or accessory " +
+        "parts such as corbels/corbals, rosettes, wood blocks, onlays, valances, knee drawers, " +
+        "or wine racks that GMD still counts as Standard/Double for the summary count, but that " +
+        "should NOT automatically be priced as a full \"Standard Cabinet\"/\"Double Cabinet\" " +
+        "installation. A row matching one of these patterns is excluded from that automatic " +
+        "default - it only gets an installation item if installationItemHints also has a " +
+        "specific match for it (e.g. map valance-style rows to a \"Valance\" item if one exists " +
+        "in the list above), and is otherwise left unassigned rather than guessed. Only flag " +
+        "genuinely small/decorative parts this way - do not flag ordinary base, wall, tall, " +
+        "vanity, corner, or sink-base cabinets just because they come in many sizes or have " +
+        "drawers; those ARE real cabinets and should keep the bucket default.",
+      items: {
+        type: "object",
+        properties: {
+          textContains: { type: "string" },
+        },
+        required: ["textContains"],
+      },
+    };
+    required.push("installationItemExclusions");
+  }
+
+  return {
+    name: "emit_parse_plan",
+    description:
+      "Report the structural layout of the vendor price list so it can be parsed row by row.",
+    input_schema: {
+      type: "object" as const,
+      properties,
+      required,
+    },
+  };
+}
+
+function buildPrompt(
+  sheets: RawSheet[],
+  vendorName: string,
+  installationItems: CabinetInstallationItemOption[],
+): string {
   const sections = sheets.map((sheet) => {
     const preview = gridToPromptText(sheet.grid, MAX_ROWS_PER_SHEET);
     return `### Sheet: "${sheet.sheetName}"\n${preview}`;
   });
+
+  const installationItemsSection =
+    installationItems.length > 0
+      ? `GMD's real Installers Price Table currently has these rows (ordinary cabinet SKUs are ` +
+        `handled automatically elsewhere and are deliberately NOT in this list - these are only ` +
+        `the accessory/add-on style rows, e.g. crown molding, panels, fillers, appliance cutouts, ` +
+        `dummy doors, valance) - for installationItemHints, map each row you identified to the ` +
+        `single closest-matching row's key using a word from that specific row's OWN ` +
+        `description, not just its category (a shared category can cover several distinct item ` +
+        `types - see the field description above for why that matters) - do not invent new ` +
+        `keys, and it's fine to leave a row unmapped rather than guess:\n` +
+        installationItems
+          .map((it) => `- key "${installationItemOptionKey(it)}": ${it.description}`)
+          .join("\n") +
+        `\n\nSeparately, watch for catalog rows that are small decorative or accessory parts - ` +
+        `corbels/corbals, rosettes, wood blocks, onlays, knee drawers, wine racks, and similar - ` +
+        `which GMD's category rules may still bucket as Standard or Double for the Cabinets ` +
+        `Summary count even though they are not real cabinets. List patterns matching those ` +
+        `rows in installationItemExclusions so they don't wrongly inherit the automatic ` +
+        `"Standard Cabinet"/"Double Cabinet" default - they should end up mapped by a specific ` +
+        `installationItemHints entry if a genuinely matching row exists above (e.g. a "valance" ` +
+        `hint for valance-style SKUs), or left unassigned if nothing really fits.\n\n`
+      : "";
 
   return (
     `This is a cabinet price list from vendor "${vendorName}", exported from a spreadsheet. ` +
@@ -137,16 +261,46 @@ function buildPrompt(sheets: RawSheet[], vendorName: string): string {
     `and does NOT look like a real item (a real item row almost always has both a code and a ` +
     `description present together, even one with no price). Set sectionDetectColumn to whichever ` +
     `column that header text actually appears in, even if that's the same as codeCol.\n\n` +
+    `IMPORTANT about the very first block of items: it's common for the first category in the ` +
+    `whole list (e.g. "BASE CABINETS") to be its own short label row sitting directly above the ` +
+    `first item row, with nothing else between them. If you set dataStartRow to the first item ` +
+    `row itself, that leading label gets skipped entirely and every item in that first block ends ` +
+    `up with no category at all. Look one row above the first item row - if it's a short standalone ` +
+    `label rather than another column-header row, set dataStartRow to that label row instead so it ` +
+    `gets picked up as a real section header, not silently dropped.\n\n` +
+    `IMPORTANT about repeated header rows: some vendor sheets reprint the same column-header row ` +
+    `every so many rows (e.g. once per printed page), with the same code/description/tier-name ` +
+    `labels appearing again mid-file. You don't need to work around these yourself - the app ` +
+    `already recognizes and skips a row that repeats the original header text, or that has ` +
+    `non-numeric text sitting in the price-tier columns, so it won't get treated as a real item ` +
+    `or overwrite the current category. Just pick codeCol/descriptionCol/priceColumns/` +
+    `sectionDetectColumn as if the file were clean throughout.\n\n` +
+    `IMPORTANT about dimensions: some sheets list a cabinet's size (width/height/depth, e.g. ` +
+    `'9" X 34 1/2" X 24"') in its own separate column instead of folding it into the description ` +
+    `text. When that's the case here, set sizeCol to that column so the app appends it onto the ` +
+    `description - otherwise that size information would be silently lost. If the description ` +
+    `already reads like it includes the size, or there's no distinct size column at all, leave ` +
+    `sizeCol null rather than duplicating it.\n\n` +
     `A price-tier column's header sometimes bundles several color/finish codes that share one ` +
     `price into a single cell (e.g. "CS, US" or "SM/PE/CT/NT") - report that header text exactly ` +
     `as it reads, comma/slash and all; the app splits it into separate tiers automatically, so ` +
     `don't try to pick just one code out of it.\n\n` +
     `For categoryBucketHints, this shop's own rule of thumb (use it as a guide, adapt to the ` +
-    `actual category words you see, and it's fine to add more hints than these): pantry cabinets ` +
-    `-> DOUBLE, crown molding/trim -> MISC, typical single/double-door base or wall cabinets -> ` +
-    `STANDARD, drawer-bank cabinets -> DOUBLE, anything explicitly marked custom or special-order ` +
-    `-> CUSTOM, hardware/accessories/panels/fillers -> MISC. Try to give every distinct category ` +
-    `you see a real hint rather than leaving most of them to fall through to defaultBucket.\n\n` +
+    `actual category words you see, and it's fine to add more hints than these): pantry and ` +
+    `closet-style cabinets -> DOUBLE, crown molding/trim -> MISC, ordinary base/wall/drawer-bank ` +
+    `cabinets (including multi-drawer base cabinets - a 3-drawer base is still a standard ` +
+    `cabinet, not a "double" one just because it has multiple drawers) -> STANDARD, anything ` +
+    `explicitly marked custom or special-order -> CUSTOM, hardware/accessories/panels/fillers -> ` +
+    `MISC. Try to give every distinct category you see a real hint rather than leaving most of ` +
+    `them to fall through to defaultBucket.\n\n` +
+    `IMPORTANT about hint text matching: categoryContains is a plain case-insensitive substring ` +
+    `match against the real category text, with NO plural/singular normalization - a hint of ` +
+    `"pantry" will NOT match category text that reads "PANTRIES" (plural), so that item would ` +
+    `silently fall through to defaultBucket instead of getting the bucket you intended. Pick a ` +
+    `substring that's actually present in the category text you observed (e.g. "pantr" instead ` +
+    `of "pantry" so it matches both "PANTRY" and "PANTRIES"), or add a separate hint for each ` +
+    `variant you see.\n\n` +
+    installationItemsSection +
     sections.join("\n\n") +
     `\n\nCall emit_parse_plan with your best-effort structural reading of this file.`
   );
@@ -159,7 +313,11 @@ function isCabinetSummaryBucket(value: unknown): value is CabinetSummaryBucket {
   );
 }
 
-function validatePlan(raw: any, sheetNames: string[]): CabinetImportParsePlan {
+function validatePlan(
+  raw: any,
+  sheetNames: string[],
+  installationItemKeys: string[],
+): CabinetImportParsePlan {
   if (!raw || typeof raw !== "object") {
     throw new Error("AI did not return a parse plan.");
   }
@@ -171,6 +329,9 @@ function validatePlan(raw: any, sheetNames: string[]): CabinetImportParsePlan {
   }
   if (!Number.isInteger(raw.codeCol) || !Number.isInteger(raw.descriptionCol)) {
     throw new Error("AI returned invalid code/description columns.");
+  }
+  if (raw.sizeCol !== null && raw.sizeCol !== undefined && !Number.isInteger(raw.sizeCol)) {
+    throw new Error("AI returned an invalid sizeCol.");
   }
   if (!Array.isArray(raw.priceColumns) || raw.priceColumns.length === 0) {
     throw new Error("AI did not identify any price-tier columns.");
@@ -193,11 +354,35 @@ function validatePlan(raw: any, sheetNames: string[]): CabinetImportParsePlan {
     }
   }
 
+  // installationItemHints is only requested when installationItemKeys is
+  // non-empty (see buildParsePlanTool) - default to [] otherwise. Any entry
+  // referencing a key outside the list we actually offered is dropped
+  // rather than throwing - a stale/hallucinated key should just leave that
+  // category unmapped, not fail the whole import.
+  const installationItemKeySet = new Set(installationItemKeys);
+  const rawInstallationHints = Array.isArray(raw.installationItemHints)
+    ? raw.installationItemHints
+    : [];
+  const installationItemHints = rawInstallationHints.filter(
+    (h: any) =>
+      typeof h?.categoryContains === "string" &&
+      typeof h?.installationItemKey === "string" &&
+      installationItemKeySet.has(h.installationItemKey),
+  );
+
+  const rawInstallationItemExclusions = Array.isArray(raw.installationItemExclusions)
+    ? raw.installationItemExclusions
+    : [];
+  const installationItemExclusions = rawInstallationItemExclusions.filter(
+    (p: any) => typeof p?.textContains === "string" && p.textContains.trim(),
+  );
+
   return {
     sheetName: raw.sheetName,
     dataStartRow: raw.dataStartRow,
     codeCol: raw.codeCol,
     descriptionCol: raw.descriptionCol,
+    sizeCol: Number.isInteger(raw.sizeCol) ? raw.sizeCol : null,
     priceColumns: raw.priceColumns.map((pc: any) => ({ col: pc.col, tierName: String(pc.tierName).trim() })),
     categoryMode: raw.categoryMode,
     categoryColumn: Number.isInteger(raw.categoryColumn) ? raw.categoryColumn : null,
@@ -207,12 +392,21 @@ function validatePlan(raw: any, sheetNames: string[]): CabinetImportParsePlan {
       bucket: h.bucket as CabinetSummaryBucket,
     })),
     defaultBucket: raw.defaultBucket,
+    installationItemHints: installationItemHints.map((h: any) => ({
+      categoryContains: String(h.categoryContains).trim(),
+      installationItemKey: String(h.installationItemKey),
+      confidence: h.confidence === "low" ? "low" : "high",
+    })),
+    installationItemExclusions: installationItemExclusions.map((p: any) => ({
+      textContains: String(p.textContains).trim(),
+    })),
   };
 }
 
 export async function inferCabinetImportParsePlan(input: {
   sheets: RawSheet[];
   vendorName: string;
+  installationItems?: CabinetInstallationItemOption[];
 }): Promise<CabinetImportParsePlan> {
   const apiKey = process.env.ANTHROPIC_API_KEY;
   if (!apiKey) {
@@ -223,16 +417,27 @@ export async function inferCabinetImportParsePlan(input: {
 
   const client = new Anthropic({ apiKey });
   const sheetNames = input.sheets.map((s) => s.sheetName);
+  // Round 12 follow-up: any item with a bucketDefault (see the schema
+  // comment on CabinetInstallationServiceItem.bucketDefault) is assigned
+  // deterministically from the item's own CabinetSummaryBucket in
+  // applyParsePlan() - never by the AI. Keep those rows out of what the AI
+  // is even shown here, so it isn't tempted to guess at a mapping
+  // (STANDARD/DOUBLE cabinet SKUs) that's already handled reliably and
+  // guessed at hints for accessory-only rows instead.
+  const allInstallationItems = input.installationItems || [];
+  const installationItems = allInstallationItems.filter((it) => !it.bucketDefault);
+  const installationItemKeys = installationItems.map(installationItemOptionKey);
+  const parsePlanTool = buildParsePlanTool(installationItemKeys);
 
   const message = await client.messages.create({
     model: MODEL,
     max_tokens: 2048,
-    tools: [PARSE_PLAN_TOOL],
-    tool_choice: { type: "tool", name: PARSE_PLAN_TOOL.name },
+    tools: [parsePlanTool],
+    tool_choice: { type: "tool", name: parsePlanTool.name },
     messages: [
       {
         role: "user",
-        content: buildPrompt(input.sheets, input.vendorName),
+        content: buildPrompt(input.sheets, input.vendorName, installationItems),
       },
     ],
   });
@@ -244,5 +449,5 @@ export async function inferCabinetImportParsePlan(input: {
     throw new Error("AI did not return a structured parse plan.");
   }
 
-  return validatePlan(toolUse.input, sheetNames);
+  return validatePlan(toolUse.input, sheetNames, installationItemKeys);
 }

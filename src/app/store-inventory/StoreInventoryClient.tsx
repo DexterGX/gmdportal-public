@@ -343,6 +343,7 @@ export default function StoreInventoryClient({ userRole, userId, canManage }: Pr
         Name: item.name,
         Department: item.department?.label ?? "",
         Group: item.group?.label ?? "",
+        Location: item.location ?? "",
         Unit: item.unit,
         Quantity: item.quantity,
         "Min Qty": item.minQuantity,
@@ -594,6 +595,9 @@ export default function StoreInventoryClient({ userRole, userId, canManage }: Pr
                     Group
                   </th>
                   <th className="px-6 py-3 text-center text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">
+                    Location
+                  </th>
+                  <th className="px-6 py-3 text-center text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">
                     Qty / Min / Rec.
                   </th>
                   <th className="px-6 py-3 text-center text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">
@@ -643,6 +647,9 @@ export default function StoreInventoryClient({ userRole, userId, canManage }: Pr
                         ) : (
                           <span className="text-gray-400">—</span>
                         )}
+                      </td>
+                      <td className="px-6 py-4 text-center text-sm text-gray-700 dark:text-gray-300">
+                        {item.location ?? <span className="text-gray-400">—</span>}
                       </td>
                       <td className="px-6 py-4 text-center text-sm text-gray-900 dark:text-gray-100">
                         {item.quantity} / {item.minQuantity} / {item.recommendedQuantity}{" "}
@@ -764,6 +771,12 @@ export default function StoreInventoryClient({ userRole, userId, canManage }: Pr
                   </div>
                   <div className="text-sm text-gray-700 dark:text-gray-300 mb-3">
                     Qty {item.quantity} {item.unit} · Min {item.minQuantity} · Rec. {item.recommendedQuantity}
+                    {item.location && (
+                      <>
+                        {" "}
+                        · Location: <span className="text-gray-600 dark:text-gray-400">{item.location}</span>
+                      </>
+                    )}
                   </div>
                   {preferredProvider && (
                     <div className="text-sm text-gray-600 dark:text-gray-400 mb-3">
@@ -874,6 +887,7 @@ export default function StoreInventoryClient({ userRole, userId, canManage }: Pr
                 <th className="text-left">Item</th>
                 <th className="text-left">Department</th>
                 <th className="text-left">Group</th>
+                <th className="text-left">Location</th>
                 <th className="text-left">Qty</th>
                 <th className="text-left">Min</th>
                 <th className="text-left">Rec.</th>
@@ -889,6 +903,7 @@ export default function StoreInventoryClient({ userRole, userId, canManage }: Pr
                     <td>{item.name}</td>
                     <td>{item.department?.label ?? "—"}</td>
                     <td>{item.group?.label ?? "—"}</td>
+                    <td>{item.location ?? "—"}</td>
                     <td>
                       {item.quantity} {item.unit}
                     </td>
