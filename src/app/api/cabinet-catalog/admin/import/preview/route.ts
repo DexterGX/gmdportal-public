@@ -81,6 +81,12 @@ export async function POST(request: Request) {
       return NextResponse.json({ error: "File is empty" }, { status: 400 });
     }
 
+    const installationItems = await prismaAny.cabinetInstallationServiceItem.findMany({
+      where: { isActive: true },
+      select: { id: true, code: true, description: true, bucketDefault: true },
+      orderBy: [{ sortOrder: "asc" }, { description: "asc" }],
+    });
+
     let parsePlan: CabinetImportParsePlan;
     if (parsePlanRaw) {
       try {
@@ -90,7 +96,7 @@ export async function POST(request: Request) {
       }
     } else {
       try {
-        parsePlan = await inferCabinetImportParsePlan({ sheets, vendorName });
+        parsePlan = await inferCabinetImportParsePlan({ sheets, vendorName, installationItems });
       } catch (err: any) {
         return NextResponse.json(
           { error: err.message || "AI parsing failed" },
@@ -107,10 +113,13 @@ export async function POST(request: Request) {
       );
     }
 
-    const { items, warnings } = applyParsePlan(sheet.grid, parsePlan, vendorName, {
-      mode: pricingMode,
-      discount,
-    });
+    const { items, warnings } = applyParsePlan(
+      sheet.grid,
+      parsePlan,
+      vendorName,
+      { mode: pricingMode, discount },
+      installationItems,
+    );
     if (items.length === 0) {
       return NextResponse.json(
         { error: "No item rows could be extracted with this parse plan", warnings },
@@ -130,6 +139,7 @@ export async function POST(request: Request) {
       description: item.description,
       category: item.category,
       summaryBucket: item.summaryBucket,
+      installationItemId: item.installationItemId,
       isActive: item.isActive,
       prices: item.prices.map((p: any) => ({
         tierId: p.tierId,
@@ -145,6 +155,7 @@ export async function POST(request: Request) {
       vendorName,
       parsePlan,
       sheetNames: sheets.map((s) => s.sheetName),
+      installationItems,
       diff,
       warnings,
       summary: {

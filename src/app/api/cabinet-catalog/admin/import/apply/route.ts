@@ -104,6 +104,7 @@ export async function POST(request: Request) {
               description: item.description,
               category: item.category,
               summaryBucket: item.summaryBucket as CabinetSummaryBucket,
+              installationItemId: item.installationItemId || null,
               isActive: true,
             })),
           });
@@ -137,6 +138,7 @@ export async function POST(request: Request) {
               description: incoming.description,
               category: incoming.category,
               summaryBucket: incoming.summaryBucket as CabinetSummaryBucket,
+              installationItemId: incoming.installationItemId || null,
               isActive: true,
             },
           });

@@ -133,6 +133,13 @@ export type CabinetImportParsePlan = {
   dataStartRow: number; // 0-indexed row where item rows begin
   codeCol: number;
   descriptionCol: number;
+  // Round 12 follow-up: some vendor sheets carry the cabinet's dimensions
+  // (e.g. `9" X 34 1/2" X 24"`) in their own separate column rather than
+  // folded into the description text. When set, that column's text gets
+  // appended onto the description so it isn't lost. Left null when the
+  // description already includes the size, or the sheet has no separate
+  // size column at all - never guessed, always the AI/admin's call.
+  sizeCol: number | null;
   priceColumns: { col: number; tierName: string }[];
   // Category comes from either an explicit column (Diego's master sheet has
   // a literal CAT column) or from section-header rows that interrupt the
@@ -145,7 +152,73 @@ export type CabinetImportParsePlan = {
   // "drawer", bucket: "DOUBLE" }. First match wins; falls back to defaultBucket.
   categoryBucketHints: { categoryContains: string; bucket: CabinetSummaryBucket }[];
   defaultBucket: CabinetSummaryBucket;
+  // Round 11: same substring-hint mechanism as categoryBucketHints, but
+  // mapping to a row of GMD's real Installers Price Table (see
+  // cabinetCatalogImportAi.ts) instead of the 4-bucket enum. Despite the
+  // field name, categoryContains is matched against BOTH the row's
+  // category AND its own description text (see resolveInstallationItem) -
+  // a vendor often groups genuinely different item types (e.g. real
+  // panels and dummy doors) under one umbrella category, so category text
+  // alone can't tell them apart; the individual item's description
+  // usually can. When more than one hint matches a row, the LONGEST
+  // matching substring wins (not declaration order) - a broad hint like
+  // "filler" shouldn't be able to swallow a row that a more specific hint
+  // like "fluted filler" was actually written for.
+  //
+  // Round 12 follow-up #2: a hint match, when present, ALWAYS wins over
+  // a CabinetInstallationServiceItem.bucketDefault (see applyParsePlan) -
+  // the item-level hint is more specific than the blanket bucket rule.
+  // The bucket default only fills in when nothing here matches a given
+  // row, and even then only if the row isn't flagged in
+  // installationItemExclusions below. Unlike defaultBucket, there is
+  // deliberately no fallback here - a row nothing matches is left
+  // unassigned (installationItemId: null) for an admin to fix, rather
+  // than guessed.
+  //
+  // Round 12 follow-up #3: each hint may carry an optional confidence -
+  // "low" when the AI's match is plausible but not certain. Rather than
+  // staying silent on a shaky guess (the row would just fall back to the
+  // bucket default or unassigned, hiding the uncertainty), the AI is
+  // encouraged to still write the hint and mark it "low" so the applied
+  // item is visibly flagged for admin review instead of silently trusted.
+  // Missing/omitted confidence means "high" (the AI is sure).
+  installationItemHints: {
+    categoryContains: string;
+    installationItemKey: string;
+    confidence?: "high" | "low";
+  }[];
+  // Round 12 follow-up #2: GMD's own catalogs bucket some small
+  // decorative/accessory parts (corbels, rosettes, blocks, onlays, knee
+  // drawers, wine racks, and similar) as STANDARD or DOUBLE purely for
+  // the Cabinets Summary count, even though they are NOT genuine full
+  // cabinets for installation-pricing purposes. Without this, such a row
+  // would silently inherit the bucket's "Standard Cabinet"/"Double
+  // Cabinet" default just because its bucket matches - wrong, and
+  // exactly the class of bug Diego flagged ("these small things all
+  // being considered cabinets"). A row whose category+description
+  // matches one of these patterns is excluded from the automatic bucket
+  // default; it falls through to installationItemHints only (and is left
+  // unassigned if nothing there matches either, rather than guessed).
+  installationItemExclusions: { textContains: string }[];
 };
+
+// A row of the Installers Price Table, as handed to the AI/resolver -
+// "key" is whichever of code/id is stable enough to reference the row by
+// (code when the admin has set one, otherwise the row's own id).
+export type CabinetInstallationItemOption = {
+  id: string;
+  code: string | null;
+  description: string;
+  // Round 12 follow-up: set when this item is the deterministic default for
+  // an entire CabinetSummaryBucket (see the schema comment on
+  // CabinetInstallationServiceItem.bucketDefault) - null for ordinary
+  // accessory-style items that still rely on installationItemHints.
+  bucketDefault: CabinetSummaryBucket | null;
+};
+
+export function installationItemOptionKey(item: { id: string; code: string | null }): string {
+  return item.code || item.id;
+}
 
 export type NormalizedImportItemPrice = {
   tierName: string;
@@ -158,6 +231,16 @@ export type NormalizedImportItem = {
   description: string;
   category: string | null;
   summaryBucket: CabinetSummaryBucket;
+  // Round 11: which Installers Price Table row prices this item's
+  // installation - AI/admin-assigned, null if unmatched (no forced default).
+  installationItemId: string | null;
+  // Round 12 follow-up #3: true when installationItemId came from an
+  // installationItemHints entry the AI marked confidence "low" - a
+  // plausible but not certain match, surfaced in the review UI as a
+  // "double-check this" flag rather than trusted silently. Always false
+  // when installationItemId is null (nothing assigned to doubt) or came
+  // from the deterministic bucket default (never a guess).
+  installationItemUncertain: boolean;
   prices: NormalizedImportItemPrice[];
   sourceRow: number; // 0-indexed row in the grid, for admin traceability
 };
@@ -181,6 +264,62 @@ function resolveBucket(
   return defaultBucket;
 }
 
+// Substring mechanism like resolveBucket, but with no fallback (a row
+// nothing matches simply stays unassigned) and, as of round 12 follow-up
+// #2, MOST-SPECIFIC-MATCH-WINS rather than first-match-wins: a broad hint
+// (e.g. "filler" or "molding", written for one item type) would otherwise
+// swallow every row sharing that generic word, even when a more specific
+// hint (e.g. "fluted filler") exists for that row's actual item type -
+// picking the longest matching substring favors whichever hint text most
+// precisely describes this particular row. Matches each hint against the
+// row's category AND its own description together (not category alone) -
+// a vendor's category label often groups several genuinely different item
+// types (e.g. "PANELS AND DOORS" covering both real panels and dummy
+// doors), so only the individual row's own description can actually tell
+// them apart.
+function resolveInstallationItem(
+  category: string | null,
+  description: string,
+  hints: CabinetImportParsePlan["installationItemHints"] | undefined,
+  installationItemIdByKey: Map<string, string>,
+): { id: string; uncertain: boolean } | null {
+  if (!hints || hints.length === 0) return null;
+  const text = `${category || ""} ${description}`.toLowerCase();
+  if (!text.trim()) return null;
+  let bestKey: string | null = null;
+  let bestLength = -1;
+  let bestUncertain = false;
+  for (const hint of hints) {
+    const needle = hint.categoryContains ? hint.categoryContains.toLowerCase() : "";
+    if (needle && text.includes(needle) && needle.length > bestLength) {
+      bestKey = hint.installationItemKey;
+      bestLength = needle.length;
+      bestUncertain = hint.confidence === "low";
+    }
+  }
+  if (!bestKey) return null;
+  const id = installationItemIdByKey.get(bestKey);
+  return id ? { id, uncertain: bestUncertain } : null;
+}
+
+// Round 12 follow-up #2: does this row's category+description match one of
+// installationItemExclusions? Same text-building as resolveInstallationItem,
+// but a plain "does any pattern appear" check - no key to resolve, no
+// specificity contest, since these patterns only ever suppress the bucket
+// default rather than pick an item.
+function matchesExclusionPattern(
+  category: string | null,
+  description: string,
+  patterns: CabinetImportParsePlan["installationItemExclusions"] | undefined,
+): boolean {
+  if (!patterns || patterns.length === 0) return false;
+  const text = `${category || ""} ${description}`.toLowerCase();
+  if (!text.trim()) return false;
+  return patterns.some(
+    (p) => p.textContains && text.includes(p.textContains.toLowerCase()),
+  );
+}
+
 /**
  * Walk every row of the grid from dataStartRow onward, applying the parse
  * plan. This is the only place actual prices get read out of the file.
@@ -199,10 +338,55 @@ export function applyParsePlan(
   plan: CabinetImportParsePlan,
   vendorName: string,
   pricing?: CabinetImportPricing,
+  installationItems?: CabinetInstallationItemOption[],
 ): { items: NormalizedImportItem[]; warnings: string[] } {
   const items: NormalizedImportItem[] = [];
   const warnings: string[] = [];
   let currentCategory: string | null = null;
+  const installationItemIdByKey = new Map(
+    (installationItems || []).map((it) => [installationItemOptionKey(it), it.id]),
+  );
+  // Round 12 follow-up: any bucket with a designated default item (see
+  // CabinetInstallationServiceItem.bucketDefault) resolves deterministically
+  // from that bucket alone when nothing more specific applies. As of round
+  // 12 follow-up #2, this is a FALLBACK, not an override: a matching
+  // installationItemHints entry always wins over it, and a row flagged by
+  // installationItemExclusions never gets it at all (see the loop below).
+  const installationItemIdByBucket = new Map(
+    (installationItems || [])
+      .filter((it) => it.bucketDefault)
+      .map((it) => [it.bucketDefault as CabinetSummaryBucket, it.id]),
+  );
+
+  // Some vendor sheets reprint their column headers periodically (one per
+  // printed "page" of the source spreadsheet, e.g. every ~48 rows) - a
+  // row like "SKU# | DESCRIPTION | WS | CS | US | ..." that repeats the
+  // exact header text used to build this plan. Such a row can carry no
+  // price (every tier cell holds a tier-name label again, not a number)
+  // and lack a populated description cell, which gives it the exact same
+  // signature `isSectionRow` below looks for on a genuine category label
+  // ("BASE DRAWERS CABINETS"). Left unchecked, applying it as a section
+  // header overwrites currentCategory with garbage like "SKU#" for every
+  // item row that follows until the next real header. Guard against that
+  // two ways: (a) if the header row immediately above the data can be
+  // identified, remember its code/description/section-detect column text
+  // so an exact repeat of that label is recognized; (b) independent of
+  // that, if the candidate row's price-tier columns hold non-numeric text
+  // rather than being genuinely blank, that's itself a strong signal the
+  // row is a reprinted header, not a one-off category label - real
+  // category rows are just a text label with nothing in the price columns.
+  const headerRowLabels = new Set<string>();
+  if (plan.dataStartRow > 0) {
+    const headerRow = grid[plan.dataStartRow - 1] || [];
+    for (const col of [plan.codeCol, plan.descriptionCol, plan.sectionDetectColumn]) {
+      if (col === null || col === undefined) continue;
+      const cell = headerRow[col];
+      if (cell !== null && cell !== undefined) {
+        const label = String(cell).trim().toLowerCase();
+        if (label) headerRowLabels.add(label);
+      }
+    }
+  }
 
   for (let r = plan.dataStartRow; r < grid.length; r++) {
     const row = grid[r] || [];
@@ -223,19 +407,37 @@ export function applyParsePlan(
     // BOTH a code and a description together, even if it happens to lack a
     // price in every tier).
     const looksLikeItemRow = codeCell !== null && descCell !== null;
-    const isSectionRow =
+    const isSectionRowCandidate =
       plan.categoryMode === "sectionRow" &&
       sectionText !== null &&
       !rowHasAnyPrice &&
       !looksLikeItemRow;
 
-    if (isSectionRow) {
-      currentCategory = String(sectionText).trim();
+    if (isSectionRowCandidate) {
+      const sectionLabel = String(sectionText).trim();
+      const repeatsColumnHeader = headerRowLabels.has(sectionLabel.toLowerCase());
+      const priceColumnsHoldText = plan.priceColumns.some((pc) => {
+        const cell = row[pc.col];
+        return cell !== null && parsePriceCell(cell) === null;
+      });
+      if (repeatsColumnHeader || priceColumnsHoldText) {
+        warnings.push(
+          `Row ${r}: skipped "${sectionLabel}", looks like a repeated header row rather than a category label - kept previous category`,
+        );
+        continue;
+      }
+      currentCategory = sectionLabel;
       continue;
     }
 
     const code = codeCell === null ? "" : String(codeCell).trim();
-    const description = descCell === null ? "" : String(descCell).trim();
+    const baseDescription = descCell === null ? "" : String(descCell).trim();
+    const sizeCell = plan.sizeCol !== null && plan.sizeCol !== undefined ? row[plan.sizeCol] : null;
+    const sizeText = sizeCell === null ? "" : String(sizeCell).trim();
+    const description =
+      sizeText && !baseDescription.toLowerCase().includes(sizeText.toLowerCase())
+        ? `${baseDescription} - ${sizeText}`
+        : baseDescription;
 
     if (!code && !description) continue; // blank separator row
     if (!code) {
@@ -270,12 +472,43 @@ export function applyParsePlan(
       continue;
     }
 
+    const summaryBucket = resolveBucket(category, plan.categoryBucketHints, plan.defaultBucket);
+    // Round 12 follow-up #2: check the specific item-level hint FIRST - it
+    // beats the bucket default whenever it matches. Only fall back to the
+    // bucket default when no hint matched, and only if this row isn't
+    // flagged as a non-cabinet accessory (installationItemExclusions) -
+    // otherwise leave it unassigned rather than wrongly inheriting
+    // "Standard Cabinet"/"Double Cabinet".
+    const hintMatch = resolveInstallationItem(
+      category,
+      description,
+      plan.installationItemHints,
+      installationItemIdByKey,
+    );
+    const excludedFromBucketDefault = matchesExclusionPattern(
+      category,
+      description,
+      plan.installationItemExclusions,
+    );
+    const installationItemId = hintMatch
+      ? hintMatch.id
+      : excludedFromBucketDefault
+        ? null
+        : installationItemIdByBucket.get(summaryBucket) || null;
+    // Round 12 follow-up #3: only a hint's own "low" confidence can make a
+    // row uncertain - the bucket default is deterministic (never a guess),
+    // and an unassigned row has nothing to doubt (it gets the separate
+    // "needs attention" treatment in the UI instead).
+    const installationItemUncertain = Boolean(hintMatch && hintMatch.uncertain);
+
     items.push({
       key: generateItemKey(vendorName, code),
       code,
       description,
       category,
-      summaryBucket: resolveBucket(category, plan.categoryBucketHints, plan.defaultBucket),
+      summaryBucket,
+      installationItemId,
+      installationItemUncertain,
       prices,
       sourceRow: r,
     });
@@ -293,6 +526,7 @@ export type ExistingCatalogItem = {
   description: string;
   category: string | null;
   summaryBucket: CabinetSummaryBucket;
+  installationItemId: string | null;
   isActive: boolean;
   prices: { tierId: string; price: string | number; tier: { id: string; name: string } }[];
 };
@@ -332,6 +566,9 @@ export function detectItemChanges(
   if (existing.description !== incoming.description) changes.push("description");
   if ((existing.category || "") !== (incoming.category || "")) changes.push("category");
   if (existing.summaryBucket !== incoming.summaryBucket) changes.push("summaryBucket");
+  if ((existing.installationItemId || null) !== (incoming.installationItemId || null)) {
+    changes.push("installationItem");
+  }
   if (!pricesEqual(incoming.prices, existing.prices)) changes.push("prices");
   return changes;
 }

@@ -65,6 +65,9 @@ export async function PUT(
   if (typeof body.unit === "string" && body.unit.trim()) data.unit = body.unit.trim();
   if (Number.isFinite(body.minQuantity)) data.minQuantity = Number(body.minQuantity);
   if (Number.isFinite(body.recommendedQuantity)) data.recommendedQuantity = Number(body.recommendedQuantity);
+  if ("location" in body) {
+    data.location = typeof body.location === "string" && body.location.trim() ? body.location.trim() : null;
+  }
   if ("purchaseLink" in body) data.purchaseLink = body.purchaseLink || null;
   if ("notes" in body) data.notes = body.notes || null;
   if (typeof body.isActive === "boolean") data.isActive = body.isActive;

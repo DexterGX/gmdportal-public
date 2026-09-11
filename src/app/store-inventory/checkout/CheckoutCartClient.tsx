@@ -91,12 +91,19 @@ export default function CheckoutCartClient() {
               return (
                 <div key={line.item.id} className="p-3 rounded-md border border-gray-200 dark:border-gray-700">
                   <div className="flex items-center justify-between gap-2 mb-2">
-                    <Link
-                      href={`/store-inventory/${line.item.id}`}
-                      className="font-medium text-gray-900 dark:text-gray-100 hover:text-blue-600 dark:hover:text-blue-400"
-                    >
-                      {line.item.name}
-                    </Link>
+                    <div>
+                      <Link
+                        href={`/store-inventory/${line.item.id}`}
+                        className="font-medium text-gray-900 dark:text-gray-100 hover:text-blue-600 dark:hover:text-blue-400"
+                      >
+                        {line.item.name}
+                      </Link>
+                      {line.item.location && (
+                        <div className="text-xs text-gray-500 dark:text-gray-400">
+                          Location: {line.item.location}
+                        </div>
+                      )}
+                    </div>
                     <button
                       onClick={() => removeFromCart(line.item.id)}
                       className="text-gray-400 hover:text-red-600"

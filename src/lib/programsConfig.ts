@@ -28,6 +28,8 @@ import {
   Boxes,
   Upload,
   Building2,
+  Tags,
+  SlidersHorizontal,
 } from "lucide-react";
 import { UserCheck } from "lucide-react";
 import type { Role } from "@prisma/client"; // Prisma enum
@@ -327,11 +329,6 @@ export const programs: ProgramConfig[] = [
         icon: ListIcon,
         name: "Cabinets Info",
         path: "/settings/cabinets",
-      },
-      {
-        icon: Table2,
-        name: "Cabinet Installation",
-        path: "/settings/cabinet-installation",
       },
       {
         icon: Settings2,
@@ -640,12 +637,6 @@ export const programs: ProgramConfig[] = [
         path: "/cabinet-estimates/saved",
       },
       {
-        icon: Settings2,
-        name: "Special Customization Settings",
-        path: "/cabinet-estimates/settings",
-        adminOnly: true,
-      },
-      {
         icon: Upload,
         name: "Import Price List",
         path: "/cabinet-estimates/catalog-import",
@@ -655,6 +646,18 @@ export const programs: ProgramConfig[] = [
         icon: Building2,
         name: "Cabinet Companies",
         path: "/cabinet-estimates/companies",
+        adminOnly: true,
+      },
+      {
+        icon: Tags,
+        name: "Price List",
+        path: "/cabinet-estimates/price-list",
+        adminOnly: true,
+      },
+      {
+        icon: SlidersHorizontal,
+        name: "GMD Parameters",
+        path: "/cabinet-estimates/parameters",
         adminOnly: true,
       },
     ],

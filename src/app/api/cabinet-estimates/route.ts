@@ -7,14 +7,21 @@ import {
   computeDiscountAmount,
   computeLineItemsCustomizationSurchargeTotal,
   computeSpecialCustomizationLineAmount,
+  computeBaseInstallationAmount,
+  computeRemovalAmount,
   round2,
-  CustomizationType,
   DISCOUNT_PERCENT_OPTIONS,
 } from "@/lib/cabinetEstimateCalc";
 import {
   generateMonthlyCabinetEstimateNumber,
   isEstimateNumberUniqueConstraintError,
 } from "@/lib/cabinetEstimateNumber";
+import {
+  getCabinetEstimateParameters,
+  resolveInstallationType,
+  resolveRemovalType,
+  installationServiceItemPricesById,
+} from "@/lib/cabinetEstimateParameters";
 
 const prismaAny = prisma as any;
 
@@ -41,35 +48,32 @@ type LineItemPayload = {
   code?: string | null;
   description?: string | null;
   isCustomization?: boolean;
-  customizationType?: string | null;
-  customizationValue?: number | string;
   note?: string | null;
   unitPrice?: number | string;
   catalogItemId?: string | null;
   summaryBucket?: string | null;
+  installationItemId?: string | null;
 };
-
-function toCustomizationType(value: unknown): CustomizationType | null {
-  return value === "percent" || value === "flat" ? value : null;
-}
 
 const SUMMARY_BUCKETS = ["STANDARD", "DOUBLE", "CUSTOM", "MISC"];
 function toSummaryBucket(value: unknown): string | null {
   return typeof value === "string" && SUMMARY_BUCKETS.includes(value) ? value : null;
 }
 
-function buildLineItemsCreateData(lineItems: LineItemPayload[]) {
+function buildLineItemsCreateData(
+  lineItems: LineItemPayload[],
+  customSurchargePercent: number,
+) {
   return lineItems
     .map((item, index) => {
       const qty = toNumber(item.qty ?? 0);
       const unitPrice = toNumber(item.unitPrice);
       const isCustomization = Boolean(item.isCustomization);
-      const customizationType = isCustomization
-        ? toCustomizationType(item.customizationType)
-        : null;
-      const customizationValue = customizationType
-        ? toNumber(item.customizationValue)
-        : 0;
+      // The Custom column is just a checkbox (round 9) - the surcharge % is
+      // never typed per line, it's always whatever GMD Parameters currently
+      // says, stamped here server-side.
+      const customizationType = isCustomization ? "percent" : null;
+      const customizationValue = isCustomization ? customSurchargePercent : 0;
       return {
         sortOrder: index,
         qty,
@@ -83,6 +87,7 @@ function buildLineItemsCreateData(lineItems: LineItemPayload[]) {
         totalPrice: Math.round(qty * unitPrice * 100) / 100,
         catalogItemId: item.catalogItemId || null,
         summaryBucket: toSummaryBucket(item.summaryBucket),
+        installationItemId: item.installationItemId || null,
       };
     })
     .filter(
@@ -203,7 +208,14 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    const lineItemsData = buildLineItemsCreateData(lineItemsPayload);
+    // GMD Parameters are always fetched fresh and are the sole authority for
+    // every dollar Installation computes to - never trust anything the
+    // client sent for installationAmount or a line's customization %.
+    const parameters = await getCabinetEstimateParameters(prismaAny);
+    const lineItemsData = buildLineItemsCreateData(
+      lineItemsPayload,
+      parameters.settings.customSurchargePercent,
+    );
     const cabinetsTotal = computeCabinetsTotal(
       lineItemsData.map((item) => ({ qty: item.qty, unitPrice: item.unitPrice })),
     );
@@ -213,8 +225,36 @@ export async function POST(request: NextRequest) {
       ? Math.trunc(toNumber(body.discountPercent))
       : 0;
     const discount = computeDiscountAmount(cabinetsTotal, discountPercent);
-    const removalAmount = toNumber(body.removalAmount);
-    const installationAmount = toNumber(body.installationAmount);
+    // Round 12: Removal is no longer a client-typed dollar amount - it's
+    // resolved the same way Installation Type is (never trust an
+    // arbitrary client id) and the $ amount is always a percent of
+    // cabinetsTotal (pre-discount), computed server-side.
+    const resolvedRemovalType = resolveRemovalType(
+      parameters.removalTypes,
+      body.removalTypeId,
+    );
+    const removalAmount = computeRemovalAmount(
+      cabinetsTotal,
+      resolvedRemovalType?.percent,
+    );
+    const resolvedInstallationType = resolveInstallationType(
+      parameters.installationTypes,
+      body.installationTypeId,
+    );
+    const baseInstallationAmount = computeBaseInstallationAmount({
+      cabinetsTotal,
+      lineItems: lineItemsData.map((item) => ({
+        qty: item.qty,
+        unitPrice: item.unitPrice,
+        installationItemId: item.installationItemId,
+      })),
+      installationServiceItemPrices: installationServiceItemPricesById(parameters.installationServiceItems),
+      calcMode: parameters.settings.installationCalcMode,
+      basePercent: parameters.settings.installationBasePercent,
+    });
+    const installationAmount = round2(
+      baseInstallationAmount * (resolvedInstallationType?.multiplier ?? 1),
+    );
     const specialCustomizationPayload: SpecialCustomizationLinePayload[] = Array.isArray(
       body.specialCustomizationLines,
     )
@@ -231,7 +271,6 @@ export async function POST(request: NextRequest) {
         qty: item.qty,
         unitPrice: item.unitPrice,
         isCustomization: item.isCustomization,
-        customizationType: item.customizationType as CustomizationType | null,
         customizationValue: item.customizationValue,
       })),
     );
@@ -271,7 +310,10 @@ export async function POST(request: NextRequest) {
             groupColor: body.groupColor || null,
             vendorId: body.vendorId || null,
             priceTierId: body.priceTierId || null,
-            removal: body.removal || null,
+            installationTypeId: resolvedInstallationType?.id || null,
+            installationTypeName: resolvedInstallationType?.name || null,
+            removalTypeId: resolvedRemovalType?.id || null,
+            removal: resolvedRemovalType?.name || null,
             projectType: body.projectType || null,
             version: body.version || null,
             standardCabinetsCount: Math.max(

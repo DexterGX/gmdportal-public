@@ -85,6 +85,7 @@ export async function POST(request: NextRequest) {
       recommendedQuantity: Number.isFinite(body.recommendedQuantity)
         ? Number(body.recommendedQuantity)
         : 0,
+      location: typeof body.location === "string" && body.location.trim() ? body.location.trim() : null,
       purchaseLink: body.purchaseLink || null,
       notes: body.notes || null,
     },

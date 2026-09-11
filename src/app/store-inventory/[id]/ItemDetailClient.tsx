@@ -14,6 +14,7 @@ import {
   Trash2,
   Clock,
   Archive,
+  MapPin,
 } from "lucide-react";
 import ItemFormModal, { type StoreItemFormValues, type ProviderOption } from "../ui/ItemFormModal";
 import RequestRestockModal from "../ui/RequestRestockModal";
@@ -248,6 +249,12 @@ export default function ItemDetailClient({ itemId, canManage }: Props) {
             {item.group && (
               <span className="inline-flex items-center px-2 py-1 rounded-full text-xs font-medium bg-purple-100 dark:bg-purple-900/30 text-purple-800 dark:text-purple-300">
                 {item.group.label}
+              </span>
+            )}
+            {item.location && (
+              <span className="inline-flex items-center gap-1 px-2 py-1 rounded-full text-xs font-medium bg-gray-100 dark:bg-gray-700 text-gray-700 dark:text-gray-300">
+                <MapPin className="w-3 h-3" />
+                {item.location}
               </span>
             )}
           </div>

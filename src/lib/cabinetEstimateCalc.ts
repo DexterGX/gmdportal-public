@@ -44,57 +44,121 @@ export function computeDiscountAmount(
   return round2(((Number(cabinetsTotal) || 0) * pct) / 100);
 }
 
-// Per-line "Custom" surcharge: when a line item is flagged Custom, it
-// carries its own extra Installation charge - either a percent of that
-// line's own qty*unitPrice, or a flat $ amount per unit. This surcharge
-// never touches the line's own totalPrice/the Cabinets total; it's a
-// separate amount that rolls into the Installation total instead.
-// Example (Diego, 2026-09-02): a $500 cabinet marked Custom at 10% adds
-// $500 to Cabinets (as always) and $50 to Installation.
-export type CustomizationType = "percent" | "flat";
-
+// Per-line "Custom" surcharge: when a line item's Custom checkbox is
+// checked, it carries its own extra Installation charge - a percent of
+// that line's own qty*unitPrice. This surcharge never touches the line's
+// own totalPrice/the Cabinets total; it's a separate amount that rolls
+// into the Installation total instead. As of round 9 the percent itself
+// is never typed per-line - it's a single global value set on the GMD
+// Parameters page (CabinetEstimateParameters.customSurchargePercent),
+// applied to every checked line the same way. `customizationValue` on
+// CabinetEstimateLineItem still stores the percent that was actually in
+// effect when the line was last saved (server-stamped, never trusted from
+// the client - see the save routes), which is why this still takes a
+// percent parameter rather than reading a constant.
 export type LineItemCustomizationCalcInput = {
   qty: number;
   unitPrice: number;
   isCustomization: boolean;
-  customizationType: CustomizationType | null | undefined;
-  customizationValue: number;
+  customizationValue: number; // the percent in effect when this line was saved
 };
 
 export function computeLineItemCustomizationSurcharge(
   qty: number,
   unitPrice: number,
-  customizationType: CustomizationType | null | undefined,
+  isCustomization: boolean,
   customizationValue: number,
 ): number {
+  if (!isCustomization) return 0;
   const q = Number(qty) || 0;
-  const value = Number(customizationValue) || 0;
-  if (customizationType === "percent") {
-    return round2(q * (Number(unitPrice) || 0) * (value / 100));
-  }
-  if (customizationType === "flat") {
-    return round2(q * value);
-  }
-  return 0;
+  const percent = Number(customizationValue) || 0;
+  return round2(q * (Number(unitPrice) || 0) * (percent / 100));
 }
 
 export function computeLineItemsCustomizationSurchargeTotal(
   items: LineItemCustomizationCalcInput[],
 ): number {
   return round2(
-    items.reduce((sum, item) => {
-      if (!item.isCustomization) return sum;
-      return (
+    items.reduce(
+      (sum, item) =>
         sum +
         computeLineItemCustomizationSurcharge(
           item.qty,
           item.unitPrice,
-          item.customizationType,
+          item.isCustomization,
           item.customizationValue,
-        )
-      );
+        ),
+      0,
+    ),
+  );
+}
+
+// Base Installation (round 9, per-item source reworked round 11) - the
+// "which formula do we use" question from Diego: either a flat percent of
+// the Cabinets total (pre-discount), a per-item amount keyed by each
+// catalog-linked line's assigned Installers Price Table row
+// (installationItemId - AI/admin-assigned at import time, see
+// cabinetCatalogImportAi.ts's installationItemHints), or whichever of the
+// two comes out higher (the default, matching how Diego described doing
+// this today). A line with no catalog match, or no installation-item
+// assignment yet, contributes $0 to the per-item half - same tolerant
+// behavior the Cabinets Summary counts already have for a missing
+// summaryBucket, not a new gap.
+export type InstallationCalcMode = "flat" | "perItem" | "higher";
+
+export type InstallationLineItemCalcInput = {
+  qty: number;
+  unitPrice: number;
+  installationItemId: string | null | undefined;
+};
+
+export type InstallationServiceItemPricesById = Record<string, number>;
+
+export function computePerItemInstallationAmount(
+  items: InstallationLineItemCalcInput[],
+  installationServiceItemPrices: InstallationServiceItemPricesById,
+): number {
+  return round2(
+    items.reduce((sum, item) => {
+      if (!item.installationItemId) return sum;
+      const price = Number(installationServiceItemPrices[item.installationItemId]) || 0;
+      return sum + (Number(item.qty) || 0) * price;
     }, 0),
   );
+}
+
+export function computeBaseInstallationAmount(input: {
+  cabinetsTotal: number;
+  lineItems: InstallationLineItemCalcInput[];
+  installationServiceItemPrices: InstallationServiceItemPricesById;
+  calcMode: InstallationCalcMode;
+  basePercent: number;
+}): number {
+  const flatAmount = round2(
+    ((Number(input.cabinetsTotal) || 0) * (Number(input.basePercent) || 0)) /
+      100,
+  );
+  const perItemAmount = computePerItemInstallationAmount(
+    input.lineItems,
+    input.installationServiceItemPrices,
+  );
+  if (input.calcMode === "flat") return flatAmount;
+  if (input.calcMode === "perItem") return perItemAmount;
+  return round2(Math.max(flatAmount, perItemAmount));
+}
+
+// Round 12: Removal is no longer a manually-typed dollar amount - the
+// user picks a Removal Type (GMD-Parameters-managed, admin sets a percent
+// per type) and the $ amount is always a percent of the Cabinets total
+// BEFORE discounts are applied ("cabinetsTotal", not "cabinetsSubtotal" -
+// Diego was explicit: "a percentage of the cabinets before discounts are
+// applied"). No Removal Type selected means $0, same tolerant-zero
+// behavior used everywhere else in this program for an unset selection.
+export function computeRemovalAmount(
+  cabinetsTotal: number,
+  percent: number | null | undefined,
+): number {
+  return round2(((Number(cabinetsTotal) || 0) * (Number(percent) || 0)) / 100);
 }
 
 // Special Customization: an admin-managed catalog of customization types
