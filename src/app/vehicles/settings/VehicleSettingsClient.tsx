@@ -708,7 +708,7 @@ export default function VehicleSettingsClient() {
   }
 
   return (
-    <div className="mx-auto max-w-5xl space-y-6">
+    <div className="space-y-6">
       {toast && (
         <div
           className={`fixed top-4 right-4 z-[60] rounded-lg px-4 py-3 text-sm font-medium text-white shadow-lg ${
@@ -757,13 +757,19 @@ export default function VehicleSettingsClient() {
           </div>
           <select
             value={status}
+            aria-label="Filter by status"
             onChange={(e) => setStatus(e.target.value as any)}
             className="h-10 rounded-lg border border-gray-300 bg-white px-3 text-sm dark:border-gray-600 dark:bg-gray-900"
           >
-            <option value="active">Active</option>
-            <option value="archived">Archived</option>
-            <option value="all">All</option>
+            <option value="active">Status: Active</option>
+            <option value="archived">Status: Archived</option>
+            <option value="all">Status: All</option>
           </select>
+        </div>
+        <div className="mt-3 text-xs text-gray-500 dark:text-gray-400">
+          Showing {filtered.length} of {vehicles.length} vehicle{vehicles.length === 1 ? "" : "s"}
+          {status !== "all" && ` — ${status === "archived" ? "archived only" : "active only"}`}.
+          {status === "active" && " Switch to “Status: Archived” to see archived vehicles."}
         </div>
       </div>
 
@@ -779,19 +785,22 @@ export default function VehicleSettingsClient() {
               <th className="border-r border-gray-200 px-4 py-2 dark:border-gray-700">Filter</th>
               <th className="border-r border-gray-200 px-4 py-2 dark:border-gray-700">Oil</th>
               <th className="border-r border-gray-200 px-4 py-2 text-center dark:border-gray-700">Interval</th>
+              <th className="border-r border-gray-200 px-4 py-2 text-center dark:border-gray-700">Last Oil Change</th>
+              <th className="border-r border-gray-200 px-4 py-2 text-center dark:border-gray-700">Next Oil Change</th>
+              <th className="border-r border-gray-200 px-4 py-2 text-center dark:border-gray-700">Current Mileage</th>
               <th className="px-4 py-2 text-center">Actions</th>
             </tr>
           </thead>
           <tbody>
             {loading ? (
               <tr>
-                <td colSpan={9} className="px-4 py-8 text-center text-sm text-gray-500 dark:text-gray-400">
+                <td colSpan={12} className="px-4 py-8 text-center text-sm text-gray-500 dark:text-gray-400">
                   Loading vehicles...
                 </td>
               </tr>
             ) : filtered.length === 0 ? (
               <tr>
-                <td colSpan={9} className="px-4 py-8 text-center text-sm text-gray-500 dark:text-gray-400">
+                <td colSpan={12} className="px-4 py-8 text-center text-sm text-gray-500 dark:text-gray-400">
                   No vehicles found.
                 </td>
               </tr>
@@ -823,6 +832,15 @@ export default function VehicleSettingsClient() {
                   <td className="border-r border-gray-100 px-4 py-2 dark:border-gray-700/60">{v.oil || "-"}</td>
                   <td className="border-r border-gray-100 px-4 py-2 text-center dark:border-gray-700/60">
                     {v.oilChangeIntervalMiles.toLocaleString()} mi
+                  </td>
+                  <td className="border-r border-gray-100 px-4 py-2 text-center dark:border-gray-700/60">
+                    {v.lastOilChangeMileage.toLocaleString()} mi
+                  </td>
+                  <td className="border-r border-gray-100 px-4 py-2 text-center dark:border-gray-700/60">
+                    {(v.lastOilChangeMileage + v.oilChangeIntervalMiles).toLocaleString()} mi
+                  </td>
+                  <td className="border-r border-gray-100 px-4 py-2 text-center dark:border-gray-700/60">
+                    {v.currentMileage.toLocaleString()} mi
                   </td>
                   <td className="px-3 py-2">
                     <div className="flex flex-nowrap items-center justify-center gap-1">
