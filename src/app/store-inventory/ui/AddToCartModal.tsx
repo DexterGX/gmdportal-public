@@ -13,14 +13,15 @@ interface Props {
 }
 
 export default function AddToCartModal({ item, initialQuantity, initialReason, onClose, onSubmit }: Props) {
-  const [quantity, setQuantity] = useState(initialQuantity ?? 1);
+  const [quantity, setQuantity] = useState<number | "">(initialQuantity ?? 1);
   const [reason, setReason] = useState(initialReason ?? "");
 
-  const exceedsStock = quantity > item.quantity;
+  const exceedsStock = quantity !== "" && quantity > item.quantity;
+  const isInvalid = quantity === "" || quantity <= 0 || exceedsStock;
 
   function handleSubmit() {
-    if (quantity <= 0 || exceedsStock) return;
-    onSubmit(quantity, reason);
+    if (isInvalid) return;
+    onSubmit(quantity as number, reason);
   }
 
   return (
@@ -54,7 +55,7 @@ export default function AddToCartModal({ item, initialQuantity, initialReason, o
               min={1}
               max={item.quantity}
               value={quantity}
-              onChange={(e) => setQuantity(Number(e.target.value))}
+              onChange={(e) => setQuantity(e.target.value === "" ? "" : Number(e.target.value))}
               className="w-full mt-1 p-2 border border-gray-300 dark:border-gray-600 rounded-md bg-white dark:bg-gray-900 text-gray-900 dark:text-gray-100"
             />
             {exceedsStock && (
@@ -83,7 +84,7 @@ export default function AddToCartModal({ item, initialQuantity, initialReason, o
           </button>
           <button
             onClick={handleSubmit}
-            disabled={quantity <= 0 || exceedsStock}
+            disabled={isInvalid}
             className="px-4 py-2 rounded-md bg-blue-600 text-white hover:bg-blue-700 disabled:opacity-50"
           >
             Add to Cart

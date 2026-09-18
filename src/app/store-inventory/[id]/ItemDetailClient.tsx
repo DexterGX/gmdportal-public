@@ -7,6 +7,7 @@ import {
   ArrowLeft,
   ShoppingCart,
   RotateCcw,
+  Undo2,
   Pencil,
   ExternalLink,
   Star,
@@ -18,6 +19,7 @@ import {
 } from "lucide-react";
 import ItemFormModal, { type StoreItemFormValues, type ProviderOption } from "../ui/ItemFormModal";
 import RequestRestockModal from "../ui/RequestRestockModal";
+import ReturnItemModal from "../ui/ReturnItemModal";
 import AddToCartModal from "../ui/AddToCartModal";
 import LinkProviderModal from "./ui/LinkProviderModal";
 import { useCart } from "../CartContext";
@@ -53,6 +55,7 @@ export default function ItemDetailClient({ itemId, canManage }: Props) {
   const [showEditModal, setShowEditModal] = useState(false);
   const [showCartModal, setShowCartModal] = useState(false);
   const [showRestockModal, setShowRestockModal] = useState(false);
+  const [showReturnModal, setShowReturnModal] = useState(false);
   const [showLinkProviderModal, setShowLinkProviderModal] = useState(false);
   const [toast, setToast] = useState<{ type: "success" | "error"; message: string } | null>(null);
 
@@ -143,6 +146,26 @@ export default function ItemDetailClient({ itemId, canManage }: Props) {
       fetchItem();
     } catch (error) {
       showToast("error", "Failed to submit restock request");
+    }
+  }
+
+  async function handleReturnSubmit(quantity: number, reason: string) {
+    if (!item) return;
+    try {
+      const res = await fetch(`/api/store-inventory/items/${item.id}/return`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ quantity, reason }),
+      });
+      if (!res.ok) {
+        const body = await res.json().catch(() => ({}));
+        throw new Error(body.error || "Failed to return item");
+      }
+      setShowReturnModal(false);
+      showToast("success", `Returned ${quantity} ${item.unit} to stock`);
+      fetchItem();
+    } catch (error) {
+      showToast("error", error instanceof Error ? error.message : "Failed to return item");
     }
   }
 
@@ -273,6 +296,13 @@ export default function ItemDetailClient({ itemId, canManage }: Props) {
           >
             <RotateCcw className="w-4 h-4" />
             Request Restock
+          </button>
+          <button
+            onClick={() => setShowReturnModal(true)}
+            className="inline-flex items-center gap-2 px-4 py-2 bg-green-600 text-white rounded-md hover:bg-green-700 text-sm font-medium"
+          >
+            <Undo2 className="w-4 h-4" />
+            Return Item
           </button>
           {canManage && (
             <button
@@ -474,6 +504,10 @@ export default function ItemDetailClient({ itemId, canManage }: Props) {
 
       {showRestockModal && (
         <RequestRestockModal item={item} onClose={() => setShowRestockModal(false)} onSubmit={handleRestockSubmit} />
+      )}
+
+      {showReturnModal && (
+        <ReturnItemModal item={item} onClose={() => setShowReturnModal(false)} onSubmit={handleReturnSubmit} />
       )}
 
       {showLinkProviderModal && (

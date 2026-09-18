@@ -15,6 +15,7 @@ import {
   X,
   ShoppingCart,
   RotateCcw,
+  Undo2,
   Pencil,
   Archive,
   Trash2,
@@ -24,6 +25,7 @@ import { useSidebar } from "@/context/SidebarContext";
 import FilterMultiSelect from "@/components/filters/FilterMultiSelect";
 import ItemFormModal, { type StoreItemFormValues, type ProviderOption } from "./ui/ItemFormModal";
 import RequestRestockModal from "./ui/RequestRestockModal";
+import ReturnItemModal from "./ui/ReturnItemModal";
 import AddToCartModal from "./ui/AddToCartModal";
 import { useCart } from "./CartContext";
 import type { StoreItem, StoreTaxonomy, StoreRestockRequest } from "./types";
@@ -58,12 +60,14 @@ export default function StoreInventoryClient({ userRole, userId, canManage }: Pr
   const [selectedDepartments, setSelectedDepartments] = useState<string[]>([]);
   const [selectedGroups, setSelectedGroups] = useState<string[]>([]);
   const [selectedStockStatuses, setSelectedStockStatuses] = useState<string[]>([]);
+  const [selectedLocations, setSelectedLocations] = useState<string[]>([]);
 
   const [showItemModal, setShowItemModal] = useState(false);
   const [editingItem, setEditingItem] = useState<StoreItem | null>(null);
 
   const [cartTarget, setCartTarget] = useState<StoreItem | null>(null);
   const [restockTarget, setRestockTarget] = useState<StoreItem | null>(null);
+  const [returnTarget, setReturnTarget] = useState<StoreItem | null>(null);
   const [toast, setToast] = useState<{ type: "success" | "error"; message: string } | null>(null);
 
   const [showPrintMenu, setShowPrintMenu] = useState(false);
@@ -169,13 +173,15 @@ export default function StoreInventoryClient({ userRole, userId, canManage }: Pr
     setSelectedDepartments([]);
     setSelectedGroups([]);
     setSelectedStockStatuses([]);
+    setSelectedLocations([]);
   };
 
   const hasActiveFilters = Boolean(
     searchTerm ||
       selectedDepartments.length > 0 ||
       selectedGroups.length > 0 ||
-      selectedStockStatuses.length > 0,
+      selectedStockStatuses.length > 0 ||
+      selectedLocations.length > 0,
   );
 
   const activeDepartments = useMemo(() => departments.filter((d) => d.isActive), [departments]);
@@ -183,6 +189,13 @@ export default function StoreInventoryClient({ userRole, userId, canManage }: Pr
   const departmentOptions = useMemo(() => activeDepartments.map((d) => d.label), [activeDepartments]);
   const groupOptions = useMemo(() => activeGroups.map((g) => g.label), [activeGroups]);
   const stockStatusOptions = ["Critical", "Low", "OK"];
+  const locationOptions = useMemo(
+    () =>
+      Array.from(new Set(items.map((i) => i.location).filter((l): l is string => Boolean(l)))).sort((a, b) =>
+        a.localeCompare(b, undefined, { numeric: true, sensitivity: "base" }),
+      ),
+    [items],
+  );
 
   const visibleItems = useMemo(() => {
     return items.filter((item) => {
@@ -198,9 +211,12 @@ export default function StoreInventoryClient({ userRole, userId, canManage }: Pr
       ) {
         return false;
       }
+      if (selectedLocations.length > 0 && !selectedLocations.includes(item.location ?? "")) {
+        return false;
+      }
       return true;
     });
-  }, [items, selectedDepartments, selectedGroups, selectedStockStatuses]);
+  }, [items, selectedDepartments, selectedGroups, selectedStockStatuses, selectedLocations]);
 
   const stats = useMemo(() => {
     const total = items.length;
@@ -309,6 +325,26 @@ export default function StoreInventoryClient({ userRole, userId, canManage }: Pr
       fetchPendingRequestTotal();
     } catch (error) {
       showToast("error", "Failed to submit restock request");
+    }
+  }
+
+  async function handleReturnSubmit(quantity: number, reason: string) {
+    if (!returnTarget) return;
+    try {
+      const res = await fetch(`/api/store-inventory/items/${returnTarget.id}/return`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ quantity, reason }),
+      });
+      if (!res.ok) {
+        const body = await res.json().catch(() => ({}));
+        throw new Error(body.error || "Failed to return item");
+      }
+      showToast("success", `Returned ${quantity} ${returnTarget.unit} of ${returnTarget.name} to stock`);
+      setReturnTarget(null);
+      fetchItems();
+    } catch (error) {
+      showToast("error", error instanceof Error ? error.message : "Failed to return item");
     }
   }
 
@@ -544,6 +580,13 @@ export default function StoreInventoryClient({ userRole, userId, canManage }: Pr
               matchInputStyle
             />
             <FilterMultiSelect
+              label="Location"
+              options={locationOptions}
+              selected={selectedLocations}
+              onChange={setSelectedLocations}
+              matchInputStyle
+            />
+            <FilterMultiSelect
               label="Stock Level"
               options={stockStatusOptions}
               selected={selectedStockStatuses}
@@ -704,6 +747,13 @@ export default function StoreInventoryClient({ userRole, userId, canManage }: Pr
                           >
                             <RotateCcw className="w-4 h-4" />
                           </button>
+                          <button
+                            onClick={() => setReturnTarget(item)}
+                            title="Return Item"
+                            className="p-1.5 rounded-md text-gray-600 dark:text-gray-300 hover:bg-green-50 dark:hover:bg-green-900/30 hover:text-green-600"
+                          >
+                            <Undo2 className="w-4 h-4" />
+                          </button>
                           {canManage && (
                             <>
                               <button
@@ -797,6 +847,13 @@ export default function StoreInventoryClient({ userRole, userId, canManage }: Pr
                     >
                       <RotateCcw className="w-3.5 h-3.5" />
                       Restock
+                    </button>
+                    <button
+                      onClick={() => setReturnTarget(item)}
+                      className="inline-flex items-center gap-1 px-3 py-1.5 rounded-md text-sm bg-green-50 dark:bg-green-900/30 text-green-700 dark:text-green-300"
+                    >
+                      <Undo2 className="w-3.5 h-3.5" />
+                      Return
                     </button>
                     {canManage && (
                       <button
@@ -939,6 +996,14 @@ export default function StoreInventoryClient({ userRole, userId, canManage }: Pr
           item={restockTarget}
           onClose={() => setRestockTarget(null)}
           onSubmit={handleRestockSubmit}
+        />
+      )}
+
+      {returnTarget && (
+        <ReturnItemModal
+          item={returnTarget}
+          onClose={() => setReturnTarget(null)}
+          onSubmit={handleReturnSubmit}
         />
       )}
     </div>

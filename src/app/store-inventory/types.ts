@@ -53,7 +53,7 @@ export type StoreTransaction = {
   itemId: string | null;
   itemName: string | null;
   itemUnit: string | null;
-  type: "CHECKOUT" | "RESTOCK_RECEIVED" | "ADJUSTMENT" | "INITIAL";
+  type: "CHECKOUT" | "RETURN" | "RESTOCK_RECEIVED" | "ADJUSTMENT" | "INITIAL";
   change: number;
   oldQuantity: number;
   newQuantity: number;
@@ -120,6 +120,7 @@ export const RESTOCK_STATUS_STYLES: Record<StoreRestockRequest["status"], { labe
 
 export const TRANSACTION_TYPE_LABELS: Record<StoreTransaction["type"], string> = {
   CHECKOUT: "Checked Out",
+  RETURN: "Returned to Stock",
   RESTOCK_RECEIVED: "Restock Received",
   ADJUSTMENT: "Adjustment",
   INITIAL: "Initial Stock",

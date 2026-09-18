@@ -135,7 +135,7 @@ export default function MovementsClient() {
             <Clock className="w-7 h-7" />
             Movements Log
           </h1>
-          <p className="text-gray-600 dark:text-gray-400 mt-1">Every check-out, restock, and adjustment.</p>
+          <p className="text-gray-600 dark:text-gray-400 mt-1">Every check-out, return, restock, and adjustment.</p>
         </div>
         <div className="flex items-center gap-2">
           <button

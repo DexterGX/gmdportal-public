@@ -20,6 +20,15 @@ export type StoreItemFormValues = {
   providerCost: string;
 };
 
+// Same shape as StoreItemFormValues, but the three quantity fields allow ""
+// while the user is actively clearing/retyping the input. Coerced back to
+// numbers (empty -> 0) right before onSave is called.
+type FormState = Omit<StoreItemFormValues, "quantity" | "minQuantity" | "recommendedQuantity"> & {
+  quantity: number | "";
+  minQuantity: number | "";
+  recommendedQuantity: number | "";
+};
+
 export type ProviderOption = { id: string; name: string };
 
 interface Props {
@@ -34,7 +43,7 @@ interface Props {
 export default function ItemFormModal({ item, departments, groups, providers, onClose, onSave }: Props) {
   const linkedProvider = item?.providers.find((p) => p.isPreferred) ?? item?.providers[0] ?? null;
 
-  const [form, setForm] = useState<StoreItemFormValues>({
+  const [form, setForm] = useState<FormState>({
     name: item?.name ?? "",
     departmentId: item?.departmentId ?? "",
     groupId: item?.groupId ?? "",
@@ -51,14 +60,22 @@ export default function ItemFormModal({ item, departments, groups, providers, on
   });
   const [saving, setSaving] = useState(false);
 
-  const update = <K extends keyof StoreItemFormValues>(key: K, value: StoreItemFormValues[K]) =>
+  const update = <K extends keyof FormState>(key: K, value: FormState[K]) =>
     setForm((prev) => ({ ...prev, [key]: value }));
+
+  const updateQty = (key: "quantity" | "minQuantity" | "recommendedQuantity", raw: string) =>
+    update(key, raw === "" ? "" : Number(raw));
 
   async function handleSubmit() {
     if (!form.name.trim()) return;
     setSaving(true);
     try {
-      await onSave(form);
+      await onSave({
+        ...form,
+        quantity: form.quantity === "" ? 0 : form.quantity,
+        minQuantity: form.minQuantity === "" ? 0 : form.minQuantity,
+        recommendedQuantity: form.recommendedQuantity === "" ? 0 : form.recommendedQuantity,
+      });
     } finally {
       setSaving(false);
     }
@@ -146,7 +163,7 @@ export default function ItemFormModal({ item, departments, groups, providers, on
                 type="number"
                 value={form.quantity}
                 disabled={Boolean(item)}
-                onChange={(e) => update("quantity", Number(e.target.value))}
+                onChange={(e) => updateQty("quantity", e.target.value)}
                 className="w-full mt-1 p-2 border border-gray-300 dark:border-gray-600 rounded-md bg-white dark:bg-gray-900 text-gray-900 dark:text-gray-100 disabled:opacity-60 disabled:cursor-not-allowed"
               />
             </div>
@@ -155,7 +172,7 @@ export default function ItemFormModal({ item, departments, groups, providers, on
               <input
                 type="number"
                 value={form.minQuantity}
-                onChange={(e) => update("minQuantity", Number(e.target.value))}
+                onChange={(e) => updateQty("minQuantity", e.target.value)}
                 className="w-full mt-1 p-2 border border-gray-300 dark:border-gray-600 rounded-md bg-white dark:bg-gray-900 text-gray-900 dark:text-gray-100"
               />
             </div>
@@ -164,7 +181,7 @@ export default function ItemFormModal({ item, departments, groups, providers, on
               <input
                 type="number"
                 value={form.recommendedQuantity}
-                onChange={(e) => update("recommendedQuantity", Number(e.target.value))}
+                onChange={(e) => updateQty("recommendedQuantity", e.target.value)}
                 className="w-full mt-1 p-2 border border-gray-300 dark:border-gray-600 rounded-md bg-white dark:bg-gray-900 text-gray-900 dark:text-gray-100"
               />
             </div>

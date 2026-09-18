@@ -1774,6 +1774,7 @@ enum QuoteRepairStatus {
 
 enum StoreTransactionType {
   CHECKOUT
+  RETURN
   RESTOCK_RECEIVED
   ADJUSTMENT
   INITIAL
