@@ -58,6 +58,7 @@ export default function StoreInventoryClient({ userRole, userId, canManage }: Pr
   const [selectedDepartments, setSelectedDepartments] = useState<string[]>([]);
   const [selectedGroups, setSelectedGroups] = useState<string[]>([]);
   const [selectedStockStatuses, setSelectedStockStatuses] = useState<string[]>([]);
+  const [selectedLocations, setSelectedLocations] = useState<string[]>([]);
 
   const [showItemModal, setShowItemModal] = useState(false);
   const [editingItem, setEditingItem] = useState<StoreItem | null>(null);
@@ -169,13 +170,15 @@ export default function StoreInventoryClient({ userRole, userId, canManage }: Pr
     setSelectedDepartments([]);
     setSelectedGroups([]);
     setSelectedStockStatuses([]);
+    setSelectedLocations([]);
   };
 
   const hasActiveFilters = Boolean(
     searchTerm ||
       selectedDepartments.length > 0 ||
       selectedGroups.length > 0 ||
-      selectedStockStatuses.length > 0,
+      selectedStockStatuses.length > 0 ||
+      selectedLocations.length > 0,
   );
 
   const activeDepartments = useMemo(() => departments.filter((d) => d.isActive), [departments]);
@@ -183,6 +186,13 @@ export default function StoreInventoryClient({ userRole, userId, canManage }: Pr
   const departmentOptions = useMemo(() => activeDepartments.map((d) => d.label), [activeDepartments]);
   const groupOptions = useMemo(() => activeGroups.map((g) => g.label), [activeGroups]);
   const stockStatusOptions = ["Critical", "Low", "OK"];
+  const locationOptions = useMemo(
+    () =>
+      Array.from(new Set(items.map((i) => i.location).filter((l): l is string => Boolean(l)))).sort((a, b) =>
+        a.localeCompare(b, undefined, { numeric: true, sensitivity: "base" }),
+      ),
+    [items],
+  );
 
   const visibleItems = useMemo(() => {
     return items.filter((item) => {
@@ -198,9 +208,12 @@ export default function StoreInventoryClient({ userRole, userId, canManage }: Pr
       ) {
         return false;
       }
+      if (selectedLocations.length > 0 && !selectedLocations.includes(item.location ?? "")) {
+        return false;
+      }
       return true;
     });
-  }, [items, selectedDepartments, selectedGroups, selectedStockStatuses]);
+  }, [items, selectedDepartments, selectedGroups, selectedStockStatuses, selectedLocations]);
 
   const stats = useMemo(() => {
     const total = items.length;
@@ -541,6 +554,13 @@ export default function StoreInventoryClient({ userRole, userId, canManage }: Pr
               options={groupOptions}
               selected={selectedGroups}
               onChange={setSelectedGroups}
+              matchInputStyle
+            />
+            <FilterMultiSelect
+              label="Location"
+              options={locationOptions}
+              selected={selectedLocations}
+              onChange={setSelectedLocations}
               matchInputStyle
             />
             <FilterMultiSelect
