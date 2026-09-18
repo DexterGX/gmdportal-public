@@ -11,6 +11,8 @@ import {
   ClipboardList,
   Printer,
   ChevronDown,
+  ChevronUp,
+  ChevronsUpDown,
   Download,
   X,
   ShoppingCart,
@@ -218,6 +220,61 @@ export default function StoreInventoryClient({ userRole, userId, canManage }: Pr
     });
   }, [items, selectedDepartments, selectedGroups, selectedStockStatuses, selectedLocations]);
 
+  type SortKey = "name" | "department" | "group" | "location" | "quantity" | "status" | "provider";
+  const [sortKey, setSortKey] = useState<SortKey | null>(null);
+  const [sortDir, setSortDir] = useState<"asc" | "desc">("asc");
+
+  function toggleSort(key: SortKey) {
+    if (sortKey === key) {
+      setSortDir((prev) => (prev === "asc" ? "desc" : "asc"));
+    } else {
+      setSortKey(key);
+      setSortDir("asc");
+    }
+  }
+
+  function renderSortIcon(key: SortKey) {
+    if (sortKey !== key) {
+      return <ChevronsUpDown className="w-3 h-3 text-gray-300 dark:text-gray-600" />;
+    }
+    return sortDir === "asc" ? (
+      <ChevronUp className="w-3 h-3 text-gray-700 dark:text-gray-200" />
+    ) : (
+      <ChevronDown className="w-3 h-3 text-gray-700 dark:text-gray-200" />
+    );
+  }
+
+  const sortedItems = useMemo(() => {
+    if (!sortKey) return visibleItems;
+    const dir = sortDir === "asc" ? 1 : -1;
+    const collate = (a: string, b: string) =>
+      a.localeCompare(b, undefined, { numeric: true, sensitivity: "base" });
+    const statusRank: Record<string, number> = { critical: 0, low: 1, ok: 2 };
+    const preferredProviderName = (i: StoreItem) =>
+      (i.providers.find((p) => p.isPreferred) ?? i.providers[0])?.provider.name ?? "";
+
+    return [...visibleItems].sort((a, b) => {
+      switch (sortKey) {
+        case "name":
+          return dir * collate(a.name, b.name);
+        case "department":
+          return dir * collate(a.department?.label ?? "", b.department?.label ?? "");
+        case "group":
+          return dir * collate(a.group?.label ?? "", b.group?.label ?? "");
+        case "location":
+          return dir * collate(a.location ?? "", b.location ?? "");
+        case "quantity":
+          return dir * (a.quantity - b.quantity);
+        case "status":
+          return dir * (statusRank[a.stockStatus] - statusRank[b.stockStatus]);
+        case "provider":
+          return dir * collate(preferredProviderName(a), preferredProviderName(b));
+        default:
+          return 0;
+      }
+    });
+  }, [visibleItems, sortKey, sortDir]);
+
   const stats = useMemo(() => {
     const total = items.length;
     const low = items.filter((i) => i.stockStatus === "low").length;
@@ -352,8 +409,8 @@ export default function StoreInventoryClient({ userRole, userId, canManage }: Pr
     if (printMode === "lowStock") {
       return items.filter((item) => item.stockStatus === "low" || item.stockStatus === "critical");
     }
-    return visibleItems;
-  }, [printMode, items, visibleItems]);
+    return sortedItems;
+  }, [printMode, items, sortedItems]);
 
   async function runPrint(mode: PrintMode) {
     setShowPrintMenu(false);
@@ -375,7 +432,7 @@ export default function StoreInventoryClient({ userRole, userId, canManage }: Pr
 
   function exportCsv() {
     const csv = Papa.unparse(
-      visibleItems.map((item) => ({
+      sortedItems.map((item) => ({
         Name: item.name,
         Department: item.department?.label ?? "",
         Group: item.group?.label ?? "",
@@ -628,26 +685,68 @@ export default function StoreInventoryClient({ userRole, userId, canManage }: Pr
             <table className="min-w-full divide-y divide-gray-200 dark:divide-gray-700">
               <thead className="bg-gray-50 dark:bg-gray-900">
                 <tr>
-                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">
-                    Item
+                  <th
+                    onClick={() => toggleSort("name")}
+                    className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider cursor-pointer select-none hover:text-gray-700 dark:hover:text-gray-200"
+                  >
+                    <span className="inline-flex items-center gap-1">
+                      Item
+                      {renderSortIcon("name")}
+                    </span>
                   </th>
-                  <th className="px-6 py-3 text-center text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">
-                    Department
+                  <th
+                    onClick={() => toggleSort("department")}
+                    className="px-6 py-3 text-center text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider cursor-pointer select-none hover:text-gray-700 dark:hover:text-gray-200"
+                  >
+                    <span className="inline-flex items-center justify-center gap-1">
+                      Department
+                      {renderSortIcon("department")}
+                    </span>
                   </th>
-                  <th className="px-6 py-3 text-center text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">
-                    Group
+                  <th
+                    onClick={() => toggleSort("group")}
+                    className="px-6 py-3 text-center text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider cursor-pointer select-none hover:text-gray-700 dark:hover:text-gray-200"
+                  >
+                    <span className="inline-flex items-center justify-center gap-1">
+                      Group
+                      {renderSortIcon("group")}
+                    </span>
                   </th>
-                  <th className="px-6 py-3 text-center text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">
-                    Location
+                  <th
+                    onClick={() => toggleSort("location")}
+                    className="px-6 py-3 text-center text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider cursor-pointer select-none hover:text-gray-700 dark:hover:text-gray-200"
+                  >
+                    <span className="inline-flex items-center justify-center gap-1">
+                      Location
+                      {renderSortIcon("location")}
+                    </span>
                   </th>
-                  <th className="px-6 py-3 text-center text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">
-                    Qty / Min / Rec.
+                  <th
+                    onClick={() => toggleSort("quantity")}
+                    className="px-6 py-3 text-center text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider cursor-pointer select-none hover:text-gray-700 dark:hover:text-gray-200"
+                  >
+                    <span className="inline-flex items-center justify-center gap-1">
+                      Qty / Min / Rec.
+                      {renderSortIcon("quantity")}
+                    </span>
                   </th>
-                  <th className="px-6 py-3 text-center text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">
-                    Status
+                  <th
+                    onClick={() => toggleSort("status")}
+                    className="px-6 py-3 text-center text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider cursor-pointer select-none hover:text-gray-700 dark:hover:text-gray-200"
+                  >
+                    <span className="inline-flex items-center justify-center gap-1">
+                      Status
+                      {renderSortIcon("status")}
+                    </span>
                   </th>
-                  <th className="px-6 py-3 text-center text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">
-                    Provider
+                  <th
+                    onClick={() => toggleSort("provider")}
+                    className="px-6 py-3 text-center text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider cursor-pointer select-none hover:text-gray-700 dark:hover:text-gray-200"
+                  >
+                    <span className="inline-flex items-center justify-center gap-1">
+                      Provider
+                      {renderSortIcon("provider")}
+                    </span>
                   </th>
                   <th className="px-6 py-3 text-center text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">
                     Actions
@@ -655,7 +754,7 @@ export default function StoreInventoryClient({ userRole, userId, canManage }: Pr
                 </tr>
               </thead>
               <tbody className="bg-white dark:bg-gray-800 divide-y divide-gray-200 dark:divide-gray-700">
-                {visibleItems.map((item) => {
+                {sortedItems.map((item) => {
                   const preferredProvider =
                     item.providers.find((p) => p.isPreferred) ?? item.providers[0] ?? null;
                   return (
@@ -790,7 +889,7 @@ export default function StoreInventoryClient({ userRole, userId, canManage }: Pr
 
           {/* Mobile Cards */}
           <div className="lg:hidden space-y-4">
-            {visibleItems.map((item) => {
+            {sortedItems.map((item) => {
               const preferredProvider = item.providers.find((p) => p.isPreferred) ?? item.providers[0] ?? null;
               return (
                 <div key={item.id} className="bg-white dark:bg-gray-800 rounded-lg shadow p-4">
