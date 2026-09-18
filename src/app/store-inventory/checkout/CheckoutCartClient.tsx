@@ -10,6 +10,23 @@ export default function CheckoutCartClient() {
 
   const [submitting, setSubmitting] = useState(false);
   const [toast, setToast] = useState<{ type: "success" | "error"; message: string } | null>(null);
+  // Raw text of each line's Qty input while the user is actively editing it,
+  // so the field can go empty instead of snapping back to "0" mid-edit.
+  // Cleared on blur so the field re-syncs with the committed cart quantity.
+  const [qtyDrafts, setQtyDrafts] = useState<Record<string, string>>({});
+
+  function handleQtyChange(itemId: string, raw: string) {
+    setQtyDrafts((prev) => ({ ...prev, [itemId]: raw }));
+    updateLine(itemId, { quantity: raw === "" ? 0 : Number(raw) });
+  }
+
+  function handleQtyBlur(itemId: string) {
+    setQtyDrafts((prev) => {
+      const next = { ...prev };
+      delete next[itemId];
+      return next;
+    });
+  }
 
   function showToast(type: "success" | "error", message: string) {
     setToast({ type, message });
@@ -120,8 +137,9 @@ export default function CheckoutCartClient() {
                         type="number"
                         min={1}
                         max={line.item.quantity}
-                        value={line.quantity}
-                        onChange={(e) => updateLine(line.item.id, { quantity: Number(e.target.value) })}
+                        value={qtyDrafts[line.item.id] ?? line.quantity}
+                        onChange={(e) => handleQtyChange(line.item.id, e.target.value)}
+                        onBlur={() => handleQtyBlur(line.item.id)}
                         className="w-full mt-0.5 p-1.5 text-sm border border-gray-300 dark:border-gray-600 rounded-md bg-white dark:bg-gray-900 text-gray-900 dark:text-gray-100"
                       />
                     </div>

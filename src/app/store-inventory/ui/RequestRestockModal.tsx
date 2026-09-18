@@ -12,15 +12,17 @@ interface Props {
 
 export default function RequestRestockModal({ item, onClose, onSubmit }: Props) {
   const suggested = Math.max(item.recommendedQuantity - item.quantity, item.minQuantity || 1);
-  const [requestedQty, setRequestedQty] = useState(suggested > 0 ? suggested : 1);
+  const [requestedQty, setRequestedQty] = useState<number | "">(suggested > 0 ? suggested : 1);
   const [notes, setNotes] = useState("");
   const [submitting, setSubmitting] = useState(false);
 
+  const isInvalid = requestedQty === "" || requestedQty <= 0;
+
   async function handleSubmit() {
-    if (requestedQty <= 0) return;
+    if (isInvalid) return;
     setSubmitting(true);
     try {
-      await onSubmit(requestedQty, notes);
+      await onSubmit(requestedQty as number, notes);
     } finally {
       setSubmitting(false);
     }
@@ -51,7 +53,7 @@ export default function RequestRestockModal({ item, onClose, onSubmit }: Props) 
               type="number"
               min={1}
               value={requestedQty}
-              onChange={(e) => setRequestedQty(Number(e.target.value))}
+              onChange={(e) => setRequestedQty(e.target.value === "" ? "" : Number(e.target.value))}
               className="w-full mt-1 p-2 border border-gray-300 dark:border-gray-600 rounded-md bg-white dark:bg-gray-900 text-gray-900 dark:text-gray-100"
             />
           </div>
@@ -75,7 +77,7 @@ export default function RequestRestockModal({ item, onClose, onSubmit }: Props) 
           </button>
           <button
             onClick={handleSubmit}
-            disabled={submitting || requestedQty <= 0}
+            disabled={submitting || isInvalid}
             className="px-4 py-2 rounded-md bg-purple-600 text-white hover:bg-purple-700 disabled:opacity-50"
           >
             {submitting ? "Submitting..." : "Submit Request"}
