@@ -352,7 +352,7 @@ export default async function PaymentTermClientPrintPage({
   [adjTrailingColumn, surplus] = applyCredit(adjTrailingColumn, surplus);
 
   const trailingColumnLabel = templateLaborChargeEnabled
-    ? "Remaining Labor Charge"
+    ? "Template C.Top"
     : "Repair";
 
   const balanceColumns = {
