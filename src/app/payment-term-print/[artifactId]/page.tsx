@@ -40,6 +40,12 @@ type Meta = {
     remainingBalance?: number;
     byType?: TotalsByType;
   };
+  // Set true only on Payment Terms created after the Remaining Labor Charge
+  // (template) billing change was introduced. Older, already-agreed
+  // Payment Terms must keep printing with the original Repair-column
+  // behavior even when reopened/reprinted later, so this is never
+  // retroactively backfilled onto existing records.
+  templateLaborChargeEnabled?: boolean;
   adjustedInvoiceBreakdown?: BreakdownRow[];
   invoices?: Array<{
     id: string;
@@ -163,6 +169,10 @@ export default async function PaymentTermClientPrintPage({
   }
 
   const meta = ((artifact.metadata ?? {}) as Meta) || {};
+  // Legacy Payment Terms (created before this flag existed) fall back to
+  // the original Repair-column behavior, matching what the client actually
+  // agreed to and was printed for them at the time.
+  const templateLaborChargeEnabled = meta.templateLaborChargeEnabled === true;
   const rows = Array.isArray(meta.adjustedInvoiceBreakdown)
     ? meta.adjustedInvoiceBreakdown
     : [];
@@ -306,22 +316,44 @@ export default async function PaymentTermClientPrintPage({
     return [round2(balance - applied), round2(credit - applied)];
   }
 
+  // Remaining Labor Charge: collected at countertop template (measurement)
+  // time, before installation. 80% of whatever labor balance is still owed
+  // after the upfront labor deposit; the leftover 20% stays folded into the
+  // Countertop Install balance (due at installation) so the columns don't
+  // double-count the same labor dollars. Only applies to Payment Terms
+  // created after this billing change (see templateLaborChargeEnabled
+  // above) -- older ones keep the original Repair column instead.
+  const TEMPLATE_LABOR_CHARGE_PCT = 80;
+  const laborBalance = balancesByKey.ct_labor;
+  const templateLaborCharge = templateLaborChargeEnabled
+    ? round2((laborBalance * TEMPLATE_LABOR_CHARGE_PCT) / 100)
+    : 0;
+  const remainingLaborAtInstall = templateLaborChargeEnabled
+    ? round2(laborBalance - templateLaborCharge)
+    : laborBalance;
+
   let adjDelivery = balancesByKey.cab_cabinet;
   let adjCabInstall =
     balancesByKey.cab_removal +
     balancesByKey.cab_installation +
     balancesByKey.cab_others;
-  let adjCountertop = balancesByKey.ct_labor + balancesByKey.ct_misc;
+  let adjCountertop = remainingLaborAtInstall + balancesByKey.ct_misc;
   let adjBacksplash = balancesByKey.ct_tile;
   let adjReconnection = balancesByKey.ct_reconection;
-  let adjRepair = balancesByKey.svc_repair;
+  let adjTrailingColumn = templateLaborChargeEnabled
+    ? templateLaborCharge
+    : balancesByKey.svc_repair;
 
   [adjDelivery, surplus] = applyCredit(adjDelivery, surplus);
   [adjCabInstall, surplus] = applyCredit(adjCabInstall, surplus);
   [adjCountertop, surplus] = applyCredit(adjCountertop, surplus);
   [adjBacksplash, surplus] = applyCredit(adjBacksplash, surplus);
   [adjReconnection, surplus] = applyCredit(adjReconnection, surplus);
-  [adjRepair, surplus] = applyCredit(adjRepair, surplus);
+  [adjTrailingColumn, surplus] = applyCredit(adjTrailingColumn, surplus);
+
+  const trailingColumnLabel = templateLaborChargeEnabled
+    ? "Remaining Labor Charge"
+    : "Repair";
 
   const balanceColumns = {
     clientDeposit,
@@ -330,7 +362,7 @@ export default async function PaymentTermClientPrintPage({
     countertopInstall: adjCountertop,
     reconnection: adjReconnection,
     backsplashAndReconnection: adjBacksplash,
-    repair: adjRepair,
+    trailingColumn: adjTrailingColumn,
     total: safeNum(meta.totals?.invoiceTotal),
   };
 
@@ -472,7 +504,7 @@ export default async function PaymentTermClientPrintPage({
                 <th>Countertop Install</th>
                 <th>Reconnection</th>
                 <th>Tile Backsplash Installation</th>
-                <th>Repair</th>
+                <th>{trailingColumnLabel}</th>
                 <th>Total</th>
               </tr>
             </thead>
@@ -509,8 +541,8 @@ export default async function PaymentTermClientPrintPage({
                     : ""}
                 </td>
                 <td>
-                  {balanceColumns.repair !== 0
-                    ? `$${money(balanceColumns.repair)}`
+                  {balanceColumns.trailingColumn !== 0
+                    ? `$${money(balanceColumns.trailingColumn)}`
                     : ""}
                 </td>
                 <td>
@@ -570,8 +602,10 @@ export default async function PaymentTermClientPrintPage({
               plus 50% of labor amount. Balance due on counter top installation
               date. ■ 50% deposit of tile backsplash and/or installation.
               Balance due on tile installation date completion. ■ 50% deposit of
-              reconnection amount. Balance due on completion date. ■ 50% deposit
-              of repair service amount. Balance due on completion date.
+              reconnection amount. Balance due on completion date.{" "}
+              {templateLaborChargeEnabled
+                ? "■ 80% of the remaining counter top labor balance is due at template (measurement) completion. Any remaining labor balance is due on counter top installation date."
+                : "■ 50% deposit of repair service amount. Balance due on completion date."}
             </p>
           </div>
         </div>

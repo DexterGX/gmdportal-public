@@ -222,6 +222,12 @@ export async function POST(request: NextRequest) {
       adjustedInvoiceBreakdown: Array.isArray(body?.adjustedInvoiceBreakdown)
         ? body.adjustedInvoiceBreakdown
         : [],
+      // Every Payment Term created from here on prints with the new
+      // Remaining Labor Charge (80% at template) billing behavior. Existing
+      // saved Payment Terms have no such flag and keep printing with the
+      // original Repair-column behavior forever, so past client agreements
+      // never change out from under them.
+      templateLaborChargeEnabled: true,
       sourceArtifactId: body?.sourceArtifactId ?? null,
       showInCustomerFiles,
       savedAt: now.toISOString(),
