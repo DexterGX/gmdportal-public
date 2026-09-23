@@ -40,11 +40,13 @@ type Meta = {
     remainingBalance?: number;
     byType?: TotalsByType;
   };
-  // Set true only on Payment Terms created after the Remaining Labor Charge
-  // (template) billing change was introduced. Older, already-agreed
-  // Payment Terms must keep printing with the original Repair-column
-  // behavior even when reopened/reprinted later, so this is never
-  // retroactively backfilled onto existing records.
+  // Set true only on Payment Terms created after the "Cab. Installed for
+  // Template" billing change was introduced (80% of the cabinet
+  // install/removal/others balance collected at template time, shown as
+  // its own column right after Delivery). Older, already-agreed Payment
+  // Terms must keep printing with the original layout even when reopened
+  // or reprinted later, so this is never retroactively backfilled onto
+  // existing records.
   templateLaborChargeEnabled?: boolean;
   adjustedInvoiceBreakdown?: BreakdownRow[];
   invoices?: Array<{
@@ -316,53 +318,57 @@ export default async function PaymentTermClientPrintPage({
     return [round2(balance - applied), round2(credit - applied)];
   }
 
-  // Remaining Labor Charge: collected at countertop template (measurement)
-  // time, before installation. 80% of whatever labor balance is still owed
-  // after the upfront labor deposit; the leftover 20% stays folded into the
-  // Countertop Install balance (due at installation) so the columns don't
-  // double-count the same labor dollars. Only applies to Payment Terms
-  // created after this billing change (see templateLaborChargeEnabled
-  // above) -- older ones keep the original Repair column instead.
-  const TEMPLATE_LABOR_CHARGE_PCT = 80;
-  const laborBalance = balancesByKey.ct_labor;
-  const templateLaborCharge = templateLaborChargeEnabled
-    ? round2((laborBalance * TEMPLATE_LABOR_CHARGE_PCT) / 100)
-    : 0;
-  const remainingLaborAtInstall = templateLaborChargeEnabled
-    ? round2(laborBalance - templateLaborCharge)
-    : laborBalance;
-
-  let adjDelivery = balancesByKey.cab_cabinet;
-  let adjCabInstall =
+  // Cab. Installed for Template: 80% of the cabinet install/removal/others
+  // balance is collected up front, at countertop template (measurement)
+  // time -- before the cabinets are actually installed. It prints as its
+  // own column right after Delivery (Cabinet Balance); the remaining 20%
+  // stays in the Cab. Install / Removal / Others balance, due on cabinet
+  // installation date, so the columns don't double-count the same dollars.
+  // Only applies to Payment Terms created after this billing change (see
+  // templateLaborChargeEnabled above) -- older ones keep the original
+  // layout, with no extra column.
+  const TEMPLATE_CAB_INSTALL_PCT = 80;
+  const cabInstallBalance =
     balancesByKey.cab_removal +
     balancesByKey.cab_installation +
     balancesByKey.cab_others;
-  let adjCountertop = remainingLaborAtInstall + balancesByKey.ct_misc;
+  const templateCabCharge = templateLaborChargeEnabled
+    ? round2((cabInstallBalance * TEMPLATE_CAB_INSTALL_PCT) / 100)
+    : 0;
+  const remainingCabInstall = templateLaborChargeEnabled
+    ? round2(cabInstallBalance - templateCabCharge)
+    : cabInstallBalance;
+
+  let adjDelivery = balancesByKey.cab_cabinet;
+  let adjTemplateCabCharge = templateCabCharge;
+  let adjCabInstall = remainingCabInstall;
+  let adjCountertop = balancesByKey.ct_labor + balancesByKey.ct_misc;
   let adjBacksplash = balancesByKey.ct_tile;
   let adjReconnection = balancesByKey.ct_reconection;
-  let adjTrailingColumn = templateLaborChargeEnabled
-    ? templateLaborCharge
-    : balancesByKey.svc_repair;
+  let adjRepair = balancesByKey.svc_repair;
 
   [adjDelivery, surplus] = applyCredit(adjDelivery, surplus);
+  [adjTemplateCabCharge, surplus] = applyCredit(adjTemplateCabCharge, surplus);
   [adjCabInstall, surplus] = applyCredit(adjCabInstall, surplus);
   [adjCountertop, surplus] = applyCredit(adjCountertop, surplus);
   [adjBacksplash, surplus] = applyCredit(adjBacksplash, surplus);
   [adjReconnection, surplus] = applyCredit(adjReconnection, surplus);
-  [adjTrailingColumn, surplus] = applyCredit(adjTrailingColumn, surplus);
+  [adjRepair, surplus] = applyCredit(adjRepair, surplus);
 
-  const trailingColumnLabel = templateLaborChargeEnabled
-    ? "Template C.Top"
-    : "Repair";
+  // Legacy Payment Terms never show the extra column, so the table has 8
+  // columns instead of 9 for them.
+  const balanceColumnCount = templateLaborChargeEnabled ? 9 : 8;
+  const balanceColWidth = `${100 / balanceColumnCount}%`;
 
   const balanceColumns = {
     clientDeposit,
     deliveryCabinetBalance: adjDelivery,
+    templateCabCharge: adjTemplateCabCharge,
     cabinetInstallRemovalOthers: adjCabInstall,
     countertopInstall: adjCountertop,
     reconnection: adjReconnection,
     backsplashAndReconnection: adjBacksplash,
-    trailingColumn: adjTrailingColumn,
+    repair: adjRepair,
     total: safeNum(meta.totals?.invoiceTotal),
   };
 
@@ -487,24 +493,22 @@ export default async function PaymentTermClientPrintPage({
           </h2>
           <table className={styles.balanceTable}>
             <colgroup>
-              <col style={{ width: "12.5%" }} />
-              <col style={{ width: "12.5%" }} />
-              <col style={{ width: "12.5%" }} />
-              <col style={{ width: "12.5%" }} />
-              <col style={{ width: "12.5%" }} />
-              <col style={{ width: "12.5%" }} />
-              <col style={{ width: "12.5%" }} />
-              <col style={{ width: "12.5%" }} />
+              {Array.from({ length: balanceColumnCount }).map((_, i) => (
+                <col key={i} style={{ width: balanceColWidth }} />
+              ))}
             </colgroup>
             <thead>
               <tr>
                 <th>Client Deposit Given</th>
                 <th>Delivery (Cabinet Balance)</th>
+                {templateLaborChargeEnabled && (
+                  <th>Cab. Installed for Template</th>
+                )}
                 <th>Cab. Install / Removal / Others</th>
                 <th>Countertop Install</th>
                 <th>Reconnection</th>
                 <th>Tile Backsplash Installation</th>
-                <th>{trailingColumnLabel}</th>
+                <th>Repair</th>
                 <th>Total</th>
               </tr>
             </thead>
@@ -520,6 +524,13 @@ export default async function PaymentTermClientPrintPage({
                     ? `$${money(balanceColumns.deliveryCabinetBalance)}`
                     : ""}
                 </td>
+                {templateLaborChargeEnabled && (
+                  <td>
+                    {balanceColumns.templateCabCharge !== 0
+                      ? `$${money(balanceColumns.templateCabCharge)}`
+                      : ""}
+                  </td>
+                )}
                 <td>
                   {balanceColumns.cabinetInstallRemovalOthers !== 0
                     ? `$${money(balanceColumns.cabinetInstallRemovalOthers)}`
@@ -541,8 +552,8 @@ export default async function PaymentTermClientPrintPage({
                     : ""}
                 </td>
                 <td>
-                  {balanceColumns.trailingColumn !== 0
-                    ? `$${money(balanceColumns.trailingColumn)}`
+                  {balanceColumns.repair !== 0
+                    ? `$${money(balanceColumns.repair)}`
                     : ""}
                 </td>
                 <td>
@@ -604,7 +615,7 @@ export default async function PaymentTermClientPrintPage({
               Balance due on tile installation date completion. ■ 50% deposit of
               reconnection amount. Balance due on completion date.{" "}
               {templateLaborChargeEnabled
-                ? "■ 80% of the remaining counter top labor balance is due at template (measurement) completion. Any remaining labor balance is due on counter top installation date."
+                ? "■ 80% of the cabinet install/removal/others balance is due at template (measurement) completion. The remaining balance is due on cabinet installation date."
                 : "■ 50% deposit of repair service amount. Balance due on completion date."}
             </p>
           </div>
