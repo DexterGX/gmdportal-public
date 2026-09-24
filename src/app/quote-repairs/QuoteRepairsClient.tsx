@@ -78,6 +78,21 @@ function formatPhoneNumber(raw: string | null | undefined) {
   return raw || "";
 }
 
+function splitAddress(address: string | null | undefined): {
+  street: string;
+  locality: string;
+} {
+  const cleaned = (address || "")
+    .replace(/,\s*(USA|United States( of America)?)\s*$/i, "")
+    .trim();
+  const commaIdx = cleaned.indexOf(",");
+  if (commaIdx === -1) return { street: cleaned, locality: "" };
+  return {
+    street: cleaned.slice(0, commaIdx).trim(),
+    locality: cleaned.slice(commaIdx + 1).trim(),
+  };
+}
+
 export default function QuoteRepairsClient({
   userId,
   userRole,
@@ -359,7 +374,7 @@ export default function QuoteRepairsClient({
             ))}
           </div>
 
-          <div className="hidden md:block rounded-xl border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800 overflow-hidden">
+          <div className="hidden md:block rounded-xl border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800 overflow-x-auto">
             <table className="w-full text-sm">
               <thead className="bg-gray-50 dark:bg-gray-900 border-b border-gray-200 dark:border-gray-700">
                 <tr>
@@ -369,7 +384,7 @@ export default function QuoteRepairsClient({
                     "Address",
                     "Areas",
                     "Sales Rep",
-                    "Current Version",
+                    "Version",
                     "Status",
                     "Total",
                     "Created",
@@ -377,7 +392,7 @@ export default function QuoteRepairsClient({
                   ].map((label) => (
                     <th
                       key={label}
-                      className="px-4 py-3 text-left text-xs font-semibold text-gray-600 dark:text-gray-400 uppercase tracking-wide"
+                      className={`${label === "Actions" ? "pl-3 pr-4 text-right" : "px-3 text-left"} py-3 text-xs font-semibold text-gray-600 dark:text-gray-400 uppercase tracking-wide whitespace-nowrap`}
                     >
                       {label}
                     </th>
@@ -390,25 +405,39 @@ export default function QuoteRepairsClient({
                     key={row.id}
                     className="hover:bg-gray-50 dark:hover:bg-gray-900/50"
                   >
-                    <td className="px-4 py-4 font-semibold text-gray-900 dark:text-gray-100 whitespace-nowrap">
+                    <td className="px-3 py-3 font-semibold text-gray-900 dark:text-gray-100 whitespace-nowrap">
                       {row.quoteRepairNumber}
                     </td>
-                    <td className="px-4 py-4 text-gray-900 dark:text-gray-100 whitespace-nowrap">
+                    <td className="px-3 py-3 text-gray-900 dark:text-gray-100 min-w-[140px]">
                       {row.customerName}
                     </td>
-                    <td className="px-4 py-4 text-gray-700 dark:text-gray-300">
-                      {row.propertyAddress}
+                    <td className="px-3 py-3 text-gray-700 dark:text-gray-300 min-w-[190px]">
+                      {(() => {
+                        const { street, locality } = splitAddress(
+                          row.propertyAddress,
+                        );
+                        return (
+                          <>
+                            <div>{street || "-"}</div>
+                            {locality && (
+                              <div className="text-xs text-gray-500 dark:text-gray-400">
+                                {locality}
+                              </div>
+                            )}
+                          </>
+                        );
+                      })()}
                     </td>
-                    <td className="px-4 py-4 text-gray-700 dark:text-gray-300">
+                    <td className="px-3 py-3 text-gray-700 dark:text-gray-300">
                       {formatQuoteRepairAreas(row.areas)}
                     </td>
-                    <td className="px-4 py-4 text-gray-700 dark:text-gray-300 whitespace-nowrap">
+                    <td className="px-3 py-3 text-gray-700 dark:text-gray-300 whitespace-nowrap">
                       {row.salesRep?.name || row.salesRep?.email || "-"}
                     </td>
-                    <td className="px-4 py-4 text-gray-700 dark:text-gray-300">
+                    <td className="px-3 py-3 text-center text-gray-700 dark:text-gray-300">
                       {row.currentVersionNumber ?? "-"}
                     </td>
-                    <td className="px-4 py-4">
+                    <td className="px-3 py-3 whitespace-nowrap">
                       <span
                         className={`rounded-full px-2 py-1 text-xs font-semibold ${getStatusPillClass(toDisplayStatus(row.status))}`}
                       >
@@ -419,23 +448,23 @@ export default function QuoteRepairsClient({
                         }
                       </span>
                     </td>
-                    <td className="px-4 py-4 text-gray-700 dark:text-gray-300 whitespace-nowrap">
+                    <td className="px-3 py-3 text-gray-700 dark:text-gray-300 whitespace-nowrap">
                       {formatCurrency(row.total)}
                     </td>
-                    <td className="px-4 py-4 text-gray-500 whitespace-nowrap">
+                    <td className="px-3 py-3 text-gray-500 whitespace-nowrap">
                       {new Date(row.createdAt).toLocaleDateString()}
                     </td>
-                    <td className="px-4 py-4 whitespace-nowrap">
-                      <div className="flex items-center gap-2">
+                    <td className="pl-3 pr-4 py-3 whitespace-nowrap">
+                      <div className="flex items-center justify-end gap-1.5">
                         <button
                           type="button"
                           onClick={() =>
                             router.push(`/quote-repairs/${row.id}`)
                           }
-                          className="inline-flex items-center gap-1 rounded-md bg-blue-100 text-blue-700 px-3 py-1.5 hover:bg-blue-200"
+                          className="inline-flex items-center gap-1 rounded-md bg-blue-100 text-blue-700 px-2.5 py-1 text-xs font-medium hover:bg-blue-200"
                         >
-                          <Eye className="w-4 h-4" />
-                          View Details
+                          <Eye className="w-3.5 h-3.5" />
+                          View
                         </button>
                         {userRole === "admin" && (
                           <button
@@ -444,9 +473,9 @@ export default function QuoteRepairsClient({
                             onClick={() =>
                               deleteRepair(row.id, row.quoteRepairNumber)
                             }
-                            className="inline-flex items-center gap-1 rounded-md bg-red-100 text-red-700 px-3 py-1.5 hover:bg-red-200 disabled:opacity-50"
+                            className="inline-flex items-center gap-1 rounded-md bg-red-100 text-red-700 px-2.5 py-1 text-xs font-medium hover:bg-red-200 disabled:opacity-50"
                           >
-                            <Trash2 className="w-4 h-4" />
+                            <Trash2 className="w-3.5 h-3.5" />
                             {deletingId === row.id ? "Deleting..." : "Delete"}
                           </button>
                         )}

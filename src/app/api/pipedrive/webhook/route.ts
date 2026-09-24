@@ -3,6 +3,7 @@ import { createHmac, timingSafeEqual } from "crypto";
 import { prisma } from "@/lib/prisma";
 import {
   PipedriveDeal,
+  fetchDeal,
   fetchPerson,
   fetchOrganization,
   fetchUser,
@@ -185,11 +186,23 @@ export async function POST(request: NextRequest) {
     const ownerId =
       getNumericId(data.owner_id) ?? getNumericId(data.creator_user_id);
 
-    const [personData, orgData, ownerData] = await Promise.all([
+    const dealIdNum = getNumericId(data.id);
+    const [personData, orgData, ownerData, freshDeal] = await Promise.all([
       personId ? fetchPerson(personId) : Promise.resolve(null),
       orgId ? fetchOrganization(orgId) : Promise.resolve(null),
       ownerId ? fetchUser(ownerId) : Promise.resolve(null),
+      dealIdNum ? fetchDeal(dealIdNum) : Promise.resolve(null),
     ]);
+
+    // Webhook payloads don't carry custom fields in the API v2 shape (v1 puts
+    // them at the top level, v2 wraps them as { type, value }). Prefer the
+    // freshly fetched deal so CompanyCam / QB / address fields aren't wiped.
+    const dealCustomFields: Record<string, any> =
+      freshDeal?.custom_fields ??
+      data.custom_fields ??
+      Object.fromEntries(
+        Object.entries(data).filter(([key]) => /^[0-9a-f]{40}$/.test(key)),
+      );
 
     if (orgData) {
       const orgCustomerData = mapPipedriveOrgToCustomer(
@@ -202,9 +215,7 @@ export async function POST(request: NextRequest) {
     const customerPipedriveId = personId
       ? String(personId)
       : `deal_${String(data.id)}`;
-    const addressData = buildBillAddr(
-      data.custom_fields?.[DEAL_FIELDS.ADDRESS],
-    );
+    const addressData = buildBillAddr(dealCustomFields[DEAL_FIELDS.ADDRESS]);
 
     const customerData = personData
       ? mapPipedrivePersonToCustomer(personData, orgData, ownerData?.name)
@@ -270,7 +281,7 @@ export async function POST(request: NextRequest) {
       won_time: data.won_time || null,
       lost_time: data.lost_time || null,
       expected_close_date: data.expected_close_date || null,
-      custom_fields: data.custom_fields || {},
+      custom_fields: dealCustomFields,
     };
 
     const jobData = mapPipedriveDealToJob(dealData, customer.id);

@@ -301,6 +301,23 @@ export async function fetchAllDeals(
 }
 
 /**
+ * Fetch a single deal by ID (v2). Used by the webhook so custom fields are
+ * always read in the v2 API shape, whatever the webhook payload looks like.
+ */
+export async function fetchDeal(dealId: number): Promise<PipedriveDeal | null> {
+  try {
+    const response = await pipedriveRequest<{
+      success: boolean;
+      data: PipedriveDeal;
+    }>(`/deals/${dealId}`);
+    return response.data;
+  } catch (error) {
+    console.error(`[Pipedrive] Failed to fetch deal ${dealId}:`, error);
+    return null;
+  }
+}
+
+/**
  * Fetch a single person by ID (v2).
  */
 export async function fetchPerson(
@@ -463,6 +480,24 @@ export function mapPipedriveOrgToCustomer(
 }
 
 /**
+ * Reads a text-like custom field value. Pipedrive sends these either as a
+ * plain value (API v2) or wrapped as { type, value } (webhooks v2).
+ * Never returns "[object Object]".
+ */
+export function readCustomFieldText(raw: unknown): string | null {
+  let v: unknown = raw;
+  if (v && typeof v === "object" && "value" in (v as Record<string, unknown>)) {
+    v = (v as Record<string, unknown>).value;
+  }
+  if (typeof v === "number" && Number.isFinite(v)) return String(v);
+  if (typeof v === "string") {
+    const trimmed = v.trim();
+    return trimmed ? trimmed : null;
+  }
+  return null;
+}
+
+/**
  * Map a Pipedrive Deal to a Job DB record.
  * Extracts all known custom field values (address, type, QB URL, CompanyCam…).
  */
@@ -472,20 +507,10 @@ export function mapPipedriveDealToJob(deal: PipedriveDeal, customerId: string) {
   const addrField = cf[DEAL_FIELDS.ADDRESS];
   const propertyAddress = addrField?.formatted_address || null;
 
-  const jobType =
-    typeof cf[DEAL_FIELDS.JOB_TYPE] === "string"
-      ? (cf[DEAL_FIELDS.JOB_TYPE] as string)
-      : null;
-  const quickbooksUrl =
-    typeof cf[DEAL_FIELDS.QB_URL] === "string"
-      ? (cf[DEAL_FIELDS.QB_URL] as string)
-      : null;
-  const companyCamIdRaw = cf[DEAL_FIELDS.CC_ID];
-  const companyCamId = companyCamIdRaw ? String(companyCamIdRaw) : null;
-  const companyCamUrl =
-    typeof cf[DEAL_FIELDS.CC_URL] === "string"
-      ? (cf[DEAL_FIELDS.CC_URL] as string)
-      : null;
+  const jobType = readCustomFieldText(cf[DEAL_FIELDS.JOB_TYPE]);
+  const quickbooksUrl = readCustomFieldText(cf[DEAL_FIELDS.QB_URL]);
+  const companyCamId = readCustomFieldText(cf[DEAL_FIELDS.CC_ID]);
+  const companyCamUrl = readCustomFieldText(cf[DEAL_FIELDS.CC_URL]);
 
   const wonOrClose = deal.won_time || deal.close_time;
   const closeDate = wonOrClose ? new Date(wonOrClose) : null;
