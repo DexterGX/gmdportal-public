@@ -4,7 +4,7 @@ import { useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import type { QuoteRepairStatus } from "@prisma/client";
-import { Plus, Trash2, Eye, Printer } from "lucide-react";
+import { Plus, Trash2, Eye, Printer, Camera } from "lucide-react";
 import {
   QUOTE_REPAIR_STATUS_LABELS,
   formatQuoteRepairAreas,
@@ -24,10 +24,12 @@ export default function QuoteRepairDetailClient({
   repair,
   userId,
   userRole,
+  companyCamUrl,
 }: {
   repair: any;
   userId: string;
   userRole: string;
+  companyCamUrl: string | null;
 }) {
   const router = useRouter();
   const [creatingVersion, setCreatingVersion] = useState(false);
@@ -106,16 +108,38 @@ export default function QuoteRepairDetailClient({
             {repair.customerName} • {formatQuoteRepairAreas(repair.areas)}
           </p>
         </div>
-        {canEditRepair && (
-          <button
-            disabled={creatingVersion}
-            onClick={createNewVersion}
-            className="inline-flex items-center gap-2 px-3 py-2 rounded-md bg-indigo-600 text-white hover:bg-indigo-700 disabled:opacity-50"
-          >
-            <Plus className="w-4 h-4" />
-            {creatingVersion ? "Creating..." : "Create New Quote"}
-          </button>
-        )}
+        <div className="flex items-center gap-2 shrink-0">
+          {companyCamUrl ? (
+            <a
+              href={companyCamUrl}
+              target="_blank"
+              rel="noopener noreferrer"
+              title="Open customer project in CompanyCam"
+              aria-label="Open customer project in CompanyCam"
+              className="inline-flex items-center justify-center w-10 h-10 rounded-md border border-blue-200 dark:border-blue-800 bg-blue-50 dark:bg-blue-900/30 text-blue-600 dark:text-blue-400 hover:bg-blue-100 dark:hover:bg-blue-900/50"
+            >
+              <Camera className="w-5 h-5" />
+            </a>
+          ) : (
+            <span
+              title="No CompanyCam project linked to this customer"
+              aria-label="No CompanyCam project linked to this customer"
+              className="inline-flex items-center justify-center w-10 h-10 rounded-md border border-gray-200 dark:border-gray-700 text-gray-300 dark:text-gray-600 cursor-not-allowed"
+            >
+              <Camera className="w-5 h-5" />
+            </span>
+          )}
+          {canEditRepair && (
+            <button
+              disabled={creatingVersion}
+              onClick={createNewVersion}
+              className="inline-flex items-center gap-2 px-3 py-2 rounded-md bg-indigo-600 text-white hover:bg-indigo-700 disabled:opacity-50"
+            >
+              <Plus className="w-4 h-4" />
+              {creatingVersion ? "Creating..." : "Create New Quote"}
+            </button>
+          )}
+        </div>
       </div>
 
       <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
