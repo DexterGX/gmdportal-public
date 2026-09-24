@@ -335,6 +335,12 @@ export const programs: ProgramConfig[] = [
         name: "Program Access",
         path: "/settings/program-access",
       },
+      {
+        icon: PlugInIcon,
+        name: "API Keys",
+        path: "/settings/api-keys",
+        adminOnly: true,
+      },
     ],
     othersItems: [],
   },

@@ -53,6 +53,8 @@ model User {
   vehiclesCreated              Vehicle[]              @relation("VehicleCreatedBy")
   vehicleHistoryChanged        VehicleHistory[]       @relation("VehicleHistoryChangedBy")
   vehicleInspectionsCreated    VehicleInspection[]    @relation("VehicleInspectionCreatedBy")
+  apiKeysCreated               ApiKey[]               @relation("ApiKeyCreatedBy")
+  apiKeysRevoked               ApiKey[]               @relation("ApiKeyRevokedBy")
 }
 
 model Account {
@@ -2573,4 +2575,35 @@ model VehicleProgramSettings {
   dueSoonThresholdMiles          Int      @default(500)
   createdAt                      DateTime @default(now())
   updatedAt                      DateTime @updatedAt
+}
+
+// ============================================================
+// External API keys (Settings > API Keys)
+// ============================================================
+// Keys let trusted outside programs read specific portal data through
+// /api/v1/*. Only a SHA-256 hash of each key is stored — the full key is shown
+// once at creation and can't be recovered. Revoking is a soft delete
+// (isActive=false) so usage history stays; permanent delete is separate.
+model ApiKey {
+  id          String    @id @default(cuid())
+  name        String // who/what uses it, e.g. "Jobsite AI (Mark)"
+  keyPrefix   String // first chars of the key, shown in the UI to identify it
+  keyHash     String    @unique
+  scopes      String[]  @default([]) // e.g. "fabrication-orders:read", "accessories:read", "pricing:read"
+  isActive    Boolean   @default(true)
+  expiresAt   DateTime?
+  lastUsedAt  DateTime?
+  lastUsedIp  String?
+  usageCount  Int       @default(0)
+  notes       String?
+
+  createdById   String?
+  createdBy     User?     @relation("ApiKeyCreatedBy", fields: [createdById], references: [id])
+  revokedAt     DateTime?
+  revokedById   String?
+  revokedBy     User?     @relation("ApiKeyRevokedBy", fields: [revokedById], references: [id])
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
+
+  @@index([isActive])
 }
