@@ -3,6 +3,7 @@ import {
   Building2,
   FileSignature,
   KeyRound,
+  PlugZap,
   UsersRound,
 } from "lucide-react";
 
@@ -34,6 +35,13 @@ const cards = [
       "Edit agreement templates for Payment Terms and future e-sign document workflows.",
     href: "/settings/agreement-forms",
     icon: FileSignature,
+  },
+  {
+    title: "API Keys",
+    description:
+      "Create and revoke keys that let trusted outside programs read portal data (Fabrication Orders, Accessories).",
+    href: "/settings/api-keys",
+    icon: PlugZap,
   },
 ];
 

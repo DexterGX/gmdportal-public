@@ -40,6 +40,14 @@ type Meta = {
     remainingBalance?: number;
     byType?: TotalsByType;
   };
+  // Set true only on Payment Terms created after the "Cab. Installed for
+  // Template" billing change was introduced (80% of the cabinet
+  // install/removal/others balance collected at template time, shown as
+  // its own column right after Delivery). Older, already-agreed Payment
+  // Terms must keep printing with the original layout even when reopened
+  // or reprinted later, so this is never retroactively backfilled onto
+  // existing records.
+  templateLaborChargeEnabled?: boolean;
   adjustedInvoiceBreakdown?: BreakdownRow[];
   invoices?: Array<{
     id: string;
@@ -163,6 +171,10 @@ export default async function PaymentTermClientPrintPage({
   }
 
   const meta = ((artifact.metadata ?? {}) as Meta) || {};
+  // Legacy Payment Terms (created before this flag existed) fall back to
+  // the original Repair-column behavior, matching what the client actually
+  // agreed to and was printed for them at the time.
+  const templateLaborChargeEnabled = meta.templateLaborChargeEnabled === true;
   const rows = Array.isArray(meta.adjustedInvoiceBreakdown)
     ? meta.adjustedInvoiceBreakdown
     : [];
@@ -306,26 +318,52 @@ export default async function PaymentTermClientPrintPage({
     return [round2(balance - applied), round2(credit - applied)];
   }
 
-  let adjDelivery = balancesByKey.cab_cabinet;
-  let adjCabInstall =
+  // Cab. Installed for Template: 80% of the cabinet install/removal/others
+  // balance is collected up front, at countertop template (measurement)
+  // time -- before the cabinets are actually installed. It prints as its
+  // own column right after Delivery (Cabinet Balance); the remaining 20%
+  // stays in the Cab. Install / Removal / Others balance, due on cabinet
+  // installation date, so the columns don't double-count the same dollars.
+  // Only applies to Payment Terms created after this billing change (see
+  // templateLaborChargeEnabled above) -- older ones keep the original
+  // layout, with no extra column.
+  const TEMPLATE_CAB_INSTALL_PCT = 80;
+  const cabInstallBalance =
     balancesByKey.cab_removal +
     balancesByKey.cab_installation +
     balancesByKey.cab_others;
+  const templateCabCharge = templateLaborChargeEnabled
+    ? round2((cabInstallBalance * TEMPLATE_CAB_INSTALL_PCT) / 100)
+    : 0;
+  const remainingCabInstall = templateLaborChargeEnabled
+    ? round2(cabInstallBalance - templateCabCharge)
+    : cabInstallBalance;
+
+  let adjDelivery = balancesByKey.cab_cabinet;
+  let adjTemplateCabCharge = templateCabCharge;
+  let adjCabInstall = remainingCabInstall;
   let adjCountertop = balancesByKey.ct_labor + balancesByKey.ct_misc;
   let adjBacksplash = balancesByKey.ct_tile;
   let adjReconnection = balancesByKey.ct_reconection;
   let adjRepair = balancesByKey.svc_repair;
 
   [adjDelivery, surplus] = applyCredit(adjDelivery, surplus);
+  [adjTemplateCabCharge, surplus] = applyCredit(adjTemplateCabCharge, surplus);
   [adjCabInstall, surplus] = applyCredit(adjCabInstall, surplus);
   [adjCountertop, surplus] = applyCredit(adjCountertop, surplus);
   [adjBacksplash, surplus] = applyCredit(adjBacksplash, surplus);
   [adjReconnection, surplus] = applyCredit(adjReconnection, surplus);
   [adjRepair, surplus] = applyCredit(adjRepair, surplus);
 
+  // Legacy Payment Terms never show the extra column, so the table has 8
+  // columns instead of 9 for them.
+  const balanceColumnCount = templateLaborChargeEnabled ? 9 : 8;
+  const balanceColWidth = `${100 / balanceColumnCount}%`;
+
   const balanceColumns = {
     clientDeposit,
     deliveryCabinetBalance: adjDelivery,
+    templateCabCharge: adjTemplateCabCharge,
     cabinetInstallRemovalOthers: adjCabInstall,
     countertopInstall: adjCountertop,
     reconnection: adjReconnection,
@@ -455,19 +493,17 @@ export default async function PaymentTermClientPrintPage({
           </h2>
           <table className={styles.balanceTable}>
             <colgroup>
-              <col style={{ width: "12.5%" }} />
-              <col style={{ width: "12.5%" }} />
-              <col style={{ width: "12.5%" }} />
-              <col style={{ width: "12.5%" }} />
-              <col style={{ width: "12.5%" }} />
-              <col style={{ width: "12.5%" }} />
-              <col style={{ width: "12.5%" }} />
-              <col style={{ width: "12.5%" }} />
+              {Array.from({ length: balanceColumnCount }).map((_, i) => (
+                <col key={i} style={{ width: balanceColWidth }} />
+              ))}
             </colgroup>
             <thead>
               <tr>
                 <th>Client Deposit Given</th>
                 <th>Delivery (Cabinet Balance)</th>
+                {templateLaborChargeEnabled && (
+                  <th>Cab. Installed for Template</th>
+                )}
                 <th>Cab. Install / Removal / Others</th>
                 <th>Countertop Install</th>
                 <th>Reconnection</th>
@@ -488,6 +524,13 @@ export default async function PaymentTermClientPrintPage({
                     ? `$${money(balanceColumns.deliveryCabinetBalance)}`
                     : ""}
                 </td>
+                {templateLaborChargeEnabled && (
+                  <td>
+                    {balanceColumns.templateCabCharge !== 0
+                      ? `$${money(balanceColumns.templateCabCharge)}`
+                      : ""}
+                  </td>
+                )}
                 <td>
                   {balanceColumns.cabinetInstallRemovalOthers !== 0
                     ? `$${money(balanceColumns.cabinetInstallRemovalOthers)}`
@@ -570,8 +613,10 @@ export default async function PaymentTermClientPrintPage({
               plus 50% of labor amount. Balance due on counter top installation
               date. ■ 50% deposit of tile backsplash and/or installation.
               Balance due on tile installation date completion. ■ 50% deposit of
-              reconnection amount. Balance due on completion date. ■ 50% deposit
-              of repair service amount. Balance due on completion date.
+              reconnection amount. Balance due on completion date.{" "}
+              {templateLaborChargeEnabled
+                ? "■ 80% of the cabinet install/removal/others balance is due at template (measurement) completion. The remaining balance is due on cabinet installation date."
+                : "■ 50% deposit of repair service amount. Balance due on completion date."}
             </p>
           </div>
         </div>
