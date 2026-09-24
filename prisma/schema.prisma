@@ -393,6 +393,18 @@ model CountertopAgreementImage {
   @@index([category])
 }
 
+// Singleton row (like the other *Settings models). Temporary admin kill
+// switch for the still-in-testing template billing change (the "Cab.
+// Installed for Template" column). Defaults to false so it never silently
+// re-enables itself; once the feature is signed off this flag -- and the
+// branching in the POST /api/payment-terms handler and the print page --
+// can be removed.
+model PaymentTermSettings {
+  id                         String   @id @default(cuid())
+  templateLaborChargeEnabled Boolean  @default(false)
+  updatedAt                  DateTime @updatedAt
+}
+
 model ProgramAccessSetting {
   id           String   @id @default(cuid())
   programId    String   @unique

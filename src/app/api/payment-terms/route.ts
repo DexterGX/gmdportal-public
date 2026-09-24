@@ -149,6 +149,23 @@ export async function POST(request: NextRequest) {
     const now = new Date();
     const showInCustomerFiles = body?.showInCustomerFiles !== false;
 
+    // Temporary admin kill switch (Payment Term > Countertop Settings) while
+    // the Cab. Installed for Template billing change is still being tested.
+    // Defaults to false/off if no settings row exists yet (or if the
+    // PaymentTermSettings table hasn't been created yet via prisma db push),
+    // so this never silently turns itself on and never blocks creating a
+    // Payment Term either way.
+    let templateLaborChargeEnabled = false;
+    try {
+      const paymentTermSettings = await (
+        prisma as any
+      ).paymentTermSettings.findFirst();
+      templateLaborChargeEnabled =
+        paymentTermSettings?.templateLaborChargeEnabled === true;
+    } catch {
+      templateLaborChargeEnabled = false;
+    }
+
     if (showInCustomerFiles) {
       const existing = await prisma.jobArtifact.findMany({
         where: {
@@ -222,12 +239,13 @@ export async function POST(request: NextRequest) {
       adjustedInvoiceBreakdown: Array.isArray(body?.adjustedInvoiceBreakdown)
         ? body.adjustedInvoiceBreakdown
         : [],
-      // Every Payment Term created from here on prints with the new
-      // Remaining Labor Charge (80% at template) billing behavior. Existing
-      // saved Payment Terms have no such flag and keep printing with the
-      // original Repair-column behavior forever, so past client agreements
-      // never change out from under them.
-      templateLaborChargeEnabled: true,
+      // Every Payment Term created while the admin toggle (Payment Term >
+      // Countertop Settings) is on prints with the new Cab. Installed for
+      // Template billing behavior. Existing saved Payment Terms keep
+      // whatever value was baked in at the time they were created, so past
+      // client agreements never change out from under them, and turning the
+      // toggle off/on later only affects Payment Terms created after that.
+      templateLaborChargeEnabled,
       sourceArtifactId: body?.sourceArtifactId ?? null,
       showInCustomerFiles,
       savedAt: now.toISOString(),
