@@ -233,6 +233,20 @@ export default function CabinetEstimateForm(props: Props) {
   // keystroke/total change) - only the cost-derived groups in
   // formatEstimateReferenceNumber update live as the total changes.
   const [referenceRandomDigits] = useState(() => generateRandomDigits(8));
+  // Catalog image pop-up (opened from a row's thumbnail) instead of a new tab.
+  const [imagePreview, setImagePreview] = useState<{
+    url: string;
+    code: string;
+    description: string;
+  } | null>(null);
+  useEffect(() => {
+    if (!imagePreview) return;
+    function onKey(e: KeyboardEvent) {
+      if (e.key === "Escape") setImagePreview(null);
+    }
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [imagePreview]);
 
   const [discountPercent, setDiscountPercent] = useState(0);
   // Round 9: Installation is no longer a typed $ amount - the user only
@@ -1029,6 +1043,51 @@ export default function CabinetEstimateForm(props: Props) {
         </div>
       ) : (
         <>
+          {imagePreview &&
+            typeof document !== "undefined" &&
+            createPortal(
+              <div
+                className="fixed inset-0 z-[60] flex items-center justify-center bg-black/60 p-4"
+                onClick={() => setImagePreview(null)}
+                role="dialog"
+                aria-modal="true"
+              >
+                <div
+                  className="relative flex max-h-full w-full max-w-3xl flex-col overflow-hidden rounded-xl bg-white shadow-2xl dark:bg-gray-800"
+                  onClick={(e) => e.stopPropagation()}
+                >
+                  <div className="flex items-start justify-between gap-3 border-b border-gray-200 px-4 py-2.5 dark:border-gray-700">
+                    <div className="min-w-0">
+                      <div className="text-sm font-semibold text-gray-900 dark:text-gray-100">
+                        {imagePreview.code}
+                      </div>
+                      {imagePreview.description && (
+                        <div className="text-xs text-gray-500 dark:text-gray-400">
+                          {imagePreview.description}
+                        </div>
+                      )}
+                    </div>
+                    <button
+                      type="button"
+                      onClick={() => setImagePreview(null)}
+                      aria-label="Close"
+                      className="rounded p-1 text-xl leading-none text-gray-500 hover:bg-gray-100 hover:text-gray-800 dark:hover:bg-gray-700"
+                    >
+                      &times;
+                    </button>
+                  </div>
+                  <div className="flex items-center justify-center overflow-auto bg-white p-4">
+                    {/* eslint-disable-next-line @next/next/no-img-element */}
+                    <img
+                      src={imagePreview.url}
+                      alt={imagePreview.code}
+                      className="max-h-[75vh] w-auto max-w-full object-contain"
+                    />
+                  </div>
+                </div>
+              </div>,
+              document.body,
+            )}
           <div className="flex flex-col gap-3 lg:flex-row lg:items-start">
           <div ref={leftColumnRef} className="flex min-w-0 flex-1 flex-col gap-3">
           {/* Header - mimics the printed sheet's letterhead + info block */}
@@ -1465,10 +1524,15 @@ export default function CabinetEstimateForm(props: Props) {
                       <td className="border border-gray-200 p-1 align-top dark:border-gray-700">
                         <div className="flex items-start gap-1.5">
                           {item.catalogImageUrl ? (
-                            <a
-                              href={item.catalogImageUrl}
-                              target="_blank"
-                              rel="noopener noreferrer"
+                            <button
+                              type="button"
+                              onClick={() =>
+                                setImagePreview({
+                                  url: item.catalogImageUrl as string,
+                                  code: item.code,
+                                  description: item.description,
+                                })
+                              }
                               title="View catalog image"
                               className="mt-0.5 shrink-0"
                             >
@@ -1478,7 +1542,7 @@ export default function CabinetEstimateForm(props: Props) {
                                 alt=""
                                 className="h-8 w-8 rounded border border-gray-200 object-contain hover:border-blue-400 dark:border-gray-600"
                               />
-                            </a>
+                            </button>
                           ) : null}
                           <div
                             className="min-h-[1.5rem] min-w-0 whitespace-pre-wrap break-words px-1.5 py-0.5 text-xs text-gray-900 dark:text-gray-100"
