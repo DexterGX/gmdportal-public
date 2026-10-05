@@ -59,10 +59,11 @@ let pdfjsLibPromise: Promise<any> | null = null;
 async function getPdfjsLib(): Promise<any> {
   if (!pdfjsLibPromise) {
     pdfjsLibPromise = (async () => {
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
       const pdfjsLib: any = await import("pdfjs-dist/legacy/build/pdf.mjs");
       // Side-effect import only - registers itself as pdfjs's in-process
       // worker. Intentionally not using the returned module.
+      // pdf.worker.mjs ships no type declarations (TS7016 under strict).
+      // @ts-ignore
       await import("pdfjs-dist/legacy/build/pdf.worker.mjs");
       return pdfjsLib;
     })();
