@@ -216,6 +216,7 @@ function buildPrompt(
   sheets: RawSheet[],
   vendorName: string,
   installationItems: CabinetInstallationItemOption[],
+  catalogPdfAttached: boolean,
 ): string {
   const sections = sheets.map((sheet) => {
     const preview = gridToPromptText(sheet.grid, MAX_ROWS_PER_SHEET);
@@ -245,7 +246,19 @@ function buildPrompt(
         `hint for valance-style SKUs), or left unassigned if nothing really fits.\n\n`
       : "";
 
+  const catalogPdfSection = catalogPdfAttached
+    ? `Also attached is this vendor's own product catalog (PDF), with photos/illustrations of ` +
+      `its cabinets grouped by type. It is NOT a source of prices or codes - only the ` +
+      `spreadsheet rows above are real data. Use the catalog purely as visual context: cross-` +
+      `reference its codes against the spreadsheet rows to judge whether a row is a genuine ` +
+      `full cabinet or a small decorative/accessory part (see installationItemExclusions), and ` +
+      `to sanity-check installationItemHints - e.g. a category whose catalog photo clearly ` +
+      `shows a corbel, valance, or similar small part rather than a cabinet box is a strong ` +
+      `signal for installationItemExclusions even if its summary bucket says Standard/Double.\n\n`
+    : "";
+
   return (
+    catalogPdfSection +
     `This is a cabinet price list from vendor "${vendorName}", exported from a spreadsheet. ` +
     `Each row below is shown as "<row index>: <cell> | <cell> | ...". Column indexes are ` +
     `0-based and count from the left. Blank cells are empty between the pipes.\n\n` +
@@ -407,6 +420,15 @@ export async function inferCabinetImportParsePlan(input: {
   sheets: RawSheet[];
   vendorName: string;
   installationItems?: CabinetInstallationItemOption[];
+  // Round 13: this vendor's catalog PDF (see CabinetVendor.catalogPdfUrl),
+  // already fetched/base64-encoded/page-capped by cabinetCatalogPdf.ts -
+  // this module never fetches it itself. Purely a classification aid (see
+  // buildPrompt's catalogPdfSection) - never a source of prices/codes,
+  // which still only ever come from applyParsePlan reading the actual
+  // spreadsheet cells. Omitted/null when the vendor has no catalog
+  // attached, or it couldn't be fetched/was too large - the import simply
+  // proceeds without it, same as always.
+  catalogPdfBase64?: string | null;
 }): Promise<CabinetImportParsePlan> {
   const apiKey = process.env.ANTHROPIC_API_KEY;
   if (!apiKey) {
@@ -429,6 +451,31 @@ export async function inferCabinetImportParsePlan(input: {
   const installationItemKeys = installationItems.map(installationItemOptionKey);
   const parsePlanTool = buildParsePlanTool(installationItemKeys);
 
+  const promptText = buildPrompt(
+    input.sheets,
+    input.vendorName,
+    installationItems,
+    Boolean(input.catalogPdfBase64),
+  );
+
+  // Round 13: when a catalog PDF is attached, it goes in as its own
+  // document content block alongside the text prompt - Claude reads both
+  // together in one call. Text-only when there's no catalog, unchanged
+  // from before this feature existed.
+  const content: Anthropic.MessageParam["content"] = input.catalogPdfBase64
+    ? [
+        {
+          type: "document",
+          source: {
+            type: "base64",
+            media_type: "application/pdf",
+            data: input.catalogPdfBase64,
+          },
+        },
+        { type: "text", text: promptText },
+      ]
+    : promptText;
+
   const message = await client.messages.create({
     model: MODEL,
     max_tokens: 2048,
@@ -437,7 +484,7 @@ export async function inferCabinetImportParsePlan(input: {
     messages: [
       {
         role: "user",
-        content: buildPrompt(input.sheets, input.vendorName, installationItems),
+        content,
       },
     ],
   });

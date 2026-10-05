@@ -2146,6 +2146,18 @@ model CabinetVendor {
   providerId String?                  @unique
   provider   CabinetProviderSettings? @relation(fields: [providerId], references: [id])
 
+  // Round 13: an optional reference catalog (PDF with product photos/
+  // illustrations) an admin can attach to a vendor - never a source of
+  // prices (those always come from the price list import, see
+  // CabinetCatalogItemPrice), used only to (a) give the AI visual context
+  // during price-list import for better installationItemHints/exclusions,
+  // and (b) crop reference images per catalog item (CabinetCatalogItem.
+  // catalogImageUrl) shown to estimators. Re-uploading replaces these
+  // fields outright - only the latest catalog is kept.
+  catalogPdfUrl      String?
+  catalogPdfFileName String?
+  catalogUploadedAt  DateTime?
+
   priceTiers CabinetPriceTier[]
   items      CabinetCatalogItem[]
   estimates  CabinetEstimate[]
@@ -2193,6 +2205,13 @@ model CabinetCatalogItem {
   // AI couldn't confidently match is left blank rather than guessed.
   installationItemId String?
   installationItem    CabinetInstallationServiceItem? @relation(fields: [installationItemId], references: [id])
+
+  // Round 13: reference photo cropped from the vendor's catalog PDF (see
+  // CabinetVendor.catalogPdfUrl) - purely visual, shown to estimators when
+  // picking this item, never read for pricing. Null until an admin runs
+  // "Extract item images" for this vendor (or if the AI couldn't locate a
+  // matching illustration for this code).
+  catalogImageUrl String?
 
   prices    CabinetCatalogItemPrice[]
   lineItems CabinetEstimateLineItem[]

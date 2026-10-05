@@ -9,6 +9,7 @@ import {
   type ExistingCatalogItem,
 } from "@/lib/cabinetCatalogImport";
 import { inferCabinetImportParsePlan } from "@/lib/cabinetCatalogImportAi";
+import { fetchAndPrepareCatalogPdf } from "@/lib/cabinetCatalogPdf";
 
 const prismaAny = prisma as any;
 
@@ -60,12 +61,14 @@ export async function POST(request: Request) {
     }
 
     let vendorName: string;
+    let catalogPdfUrl: string | null = null;
     if (vendorId) {
       const vendor = await prismaAny.cabinetVendor.findUnique({ where: { id: vendorId } });
       if (!vendor) {
         return NextResponse.json({ error: "Vendor not found" }, { status: 400 });
       }
       vendorName = vendor.name;
+      catalogPdfUrl = vendor.catalogPdfUrl || null;
     } else {
       vendorName = newVendorName!.trim();
     }
@@ -95,8 +98,20 @@ export async function POST(request: Request) {
         return NextResponse.json({ error: "Invalid parsePlan JSON" }, { status: 400 });
       }
     } else {
+      // Round 13: when this vendor has a catalog PDF attached, hand it to
+      // the AI as visual context for better installationItemHints/
+      // exclusions - never a source of prices/codes (see
+      // cabinetCatalogPdf.ts and buildPrompt's catalogPdfSection). Best-
+      // effort only: a fetch/size failure just means no catalog this time,
+      // never a reason to fail the whole preview.
+      const catalogPdf = catalogPdfUrl ? await fetchAndPrepareCatalogPdf(catalogPdfUrl) : null;
       try {
-        parsePlan = await inferCabinetImportParsePlan({ sheets, vendorName, installationItems });
+        parsePlan = await inferCabinetImportParsePlan({
+          sheets,
+          vendorName,
+          installationItems,
+          catalogPdfBase64: catalogPdf?.base64 || null,
+        });
       } catch (err: any) {
         return NextResponse.json(
           { error: err.message || "AI parsing failed" },

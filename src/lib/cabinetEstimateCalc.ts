@@ -246,3 +246,50 @@ export function formatCurrency(value: number | null | undefined): string {
     currency: "USD",
   }).format(n);
 }
+
+// Diego-requested cosmetic flourish for the printed/on-screen estimate
+// header: a bold 16-digit "card number"-style string (4 groups of 4) where
+// the FIRST and LAST groups together encode the estimate's COST (our vendor
+// cost, see computeCabinetsCost - not the selling total)
+// (so it's a meaningful live value, not pure decoration) and the two
+// middle groups are random filler. Example: a $12,420 total -> rounded to
+// whole dollars and zero-padded to 8 digits ("00012420") -> group 1 is the
+// first 4 digits ("0001"), group 4 the last 4 ("2420") - concatenating
+// group1+group4 and stripping leading zeros reconstructs 12420 exactly.
+// Caps at 8 digits (~$99.9M total), far past any real estimate.
+// Our own (vendor net) cost of the cabinets on an estimate. Line prices on
+// an estimate are sell prices = stored net cost x the vendor company's sales
+// factor (see computeCabinetSellPrice in cabinetCatalogPricing.ts), so
+// dividing the Cabinets total by that factor gets back what we pay the
+// vendor. Pre-discount, excludes removal/installation. factor <= 0 or
+// missing is treated as 1, same as the sell-price side.
+export function computeCabinetsCost(
+  cabinetsTotal: number | null | undefined,
+  factor: number | null | undefined,
+): number {
+  const total = Number(cabinetsTotal) || 0;
+  const f = Number(factor);
+  return round2(total / (Number.isFinite(f) && f > 0 ? f : 1));
+}
+
+export function generateRandomDigits(count: number): string {
+  let out = "";
+  for (let i = 0; i < count; i += 1) {
+    out += Math.floor(Math.random() * 10);
+  }
+  return out;
+}
+
+export function formatEstimateReferenceNumber(
+  total: number | null | undefined,
+  randomDigits: string,
+): string {
+  const amount = Math.max(0, Math.round(Number(total) || 0));
+  const costDigits = String(amount).slice(-8).padStart(8, "0");
+  const group1 = costDigits.slice(0, 4);
+  const group4 = costDigits.slice(4, 8);
+  const safeRandom = /^\d{8}$/.test(randomDigits) ? randomDigits : "00000000";
+  const group2 = safeRandom.slice(0, 4);
+  const group3 = safeRandom.slice(4, 8);
+  return `${group1} ${group2} ${group3} ${group4}`;
+}

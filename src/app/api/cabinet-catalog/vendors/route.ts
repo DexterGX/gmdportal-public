@@ -58,6 +58,9 @@ export async function GET() {
         name: true,
         providerId: true,
         provider: { select: { displayName: true, discount: true, factor: true } },
+        catalogPdfUrl: true,
+        catalogPdfFileName: true,
+        catalogUploadedAt: true,
       },
       orderBy: [{ sortOrder: "asc" }, { name: "asc" }],
     });
@@ -75,6 +78,11 @@ export async function GET() {
         providerId: v.providerId,
         discount: v.provider ? Number(v.provider.discount) : null,
         factor: v.provider ? Number(v.provider.factor) : null,
+        // Round 13: lets the admin import page show whether a reference
+        // catalog is already attached, and offer "replace" vs "attach".
+        catalogPdfUrl: v.catalogPdfUrl || null,
+        catalogPdfFileName: v.catalogPdfFileName || null,
+        catalogUploadedAt: v.catalogUploadedAt ? v.catalogUploadedAt.toISOString() : null,
       })),
     });
   } catch (error: any) {

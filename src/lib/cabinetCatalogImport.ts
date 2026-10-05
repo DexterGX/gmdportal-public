@@ -323,6 +323,11 @@ function matchesExclusionPattern(
 /**
  * Walk every row of the grid from dataStartRow onward, applying the parse
  * plan. This is the only place actual prices get read out of the file.
+ *
+ * All "Row N" text in warnings below uses `r + 1`, not the raw 0-indexed
+ * `r` - the grid is 0-indexed (grid[0] is the sheet's first row) but a
+ * spreadsheet's own row numbers, what an admin actually sees and counts
+ * from when they go check a flagged row, start at 1.
  */
 export type CabinetImportPricing = {
   // "retail": raw cell prices are list/retail prices and need the vendor's
@@ -422,7 +427,7 @@ export function applyParsePlan(
       });
       if (repeatsColumnHeader || priceColumnsHoldText) {
         warnings.push(
-          `Row ${r}: skipped "${sectionLabel}", looks like a repeated header row rather than a category label - kept previous category`,
+          `Row ${r + 1}: skipped "${sectionLabel}", looks like a repeated header row rather than a category label - kept previous category`,
         );
         continue;
       }
@@ -441,7 +446,7 @@ export function applyParsePlan(
 
     if (!code && !description) continue; // blank separator row
     if (!code) {
-      warnings.push(`Row ${r}: skipped, no code found ("${description}")`);
+      warnings.push(`Row ${r + 1}: skipped, no code found ("${description}")`);
       continue;
     }
 
@@ -468,7 +473,7 @@ export function applyParsePlan(
     }
 
     if (prices.length === 0) {
-      warnings.push(`Row ${r}: skipped "${code}", no prices found in any tier column`);
+      warnings.push(`Row ${r + 1}: skipped "${code}", no prices found in any tier column`);
       continue;
     }
 

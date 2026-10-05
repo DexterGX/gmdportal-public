@@ -16,6 +16,9 @@ import {
   discountPercentLabel,
   DISCOUNT_PERCENT_OPTIONS,
   formatCurrency,
+  generateRandomDigits,
+  formatEstimateReferenceNumber,
+  computeCabinetsCost,
 } from "@/lib/cabinetEstimateCalc";
 import { installationServiceItemPricesById } from "@/lib/cabinetEstimateParameters";
 
@@ -62,9 +65,15 @@ type LineItem = {
   // $0 to the per-item Installation total, same tolerant behavior as a
   // missing summaryBucket already has for Cabinets Summary.
   installationItemId: string | null;
+  // Round 13: reference photo cropped from the vendor's catalog PDF (see
+  // CabinetCatalogItem.catalogImageUrl), snapshotted at selection time
+  // purely for display - never persisted with the estimate, never used in
+  // any pricing/summary calc. Null for manually-typed rows or when no
+  // catalog image has been extracted for this item yet.
+  catalogImageUrl: string | null;
 };
 
-type CatalogVendor = { id: string; name: string; displayName: string };
+type CatalogVendor = { id: string; name: string; displayName: string; factor?: number | null };
 type CatalogPriceTier = { id: string; name: string };
 type CatalogItemSuggestion = {
   id: string;
@@ -73,6 +82,7 @@ type CatalogItemSuggestion = {
   category: string | null;
   summaryBucket: CabinetSummaryBucket;
   installationItemId: string | null;
+  catalogImageUrl: string | null;
   unitPrice: number | null;
 };
 
@@ -107,6 +117,7 @@ function emptyLineItem(): LineItem {
     catalogItemId: null,
     summaryBucket: null,
     installationItemId: null,
+    catalogImageUrl: null,
   };
 }
 
@@ -213,11 +224,15 @@ export default function CabinetEstimateForm(props: Props) {
     }
   }
 
-  // Standard/Double/Custom/Misc counts are no longer manual entry - they're
-  // computed below (see cabinetsSummaryCounts) from each line item's
-  // catalog-resolved summaryBucket, the same way cabinetsTotal is computed.
-  const [itemsQuantity, setItemsQuantity] = useState(0);
+  // Standard/Double/Custom/Misc counts, and Quantity of Items below, are
+  // no longer manual entry - they're computed (see cabinetsSummaryCounts
+  // and totalItemsQuantity) from the line items themselves, the same way
+  // cabinetsTotal is computed.
   const [microwaveInstallation, setMicrowaveInstallation] = useState(false);
+  // Stable for the life of this form session (not regenerated on every
+  // keystroke/total change) - only the cost-derived groups in
+  // formatEstimateReferenceNumber update live as the total changes.
+  const [referenceRandomDigits] = useState(() => generateRandomDigits(8));
 
   const [discountPercent, setDiscountPercent] = useState(0);
   // Round 9: Installation is no longer a typed $ amount - the user only
@@ -366,7 +381,6 @@ export default function CabinetEstimateForm(props: Props) {
         setRemovalTypeId(json.removalTypeId || "");
         setProjectType(json.projectType || "");
         setVersion(json.version || "");
-        setItemsQuantity(json.itemsQuantity || 0);
         setMicrowaveInstallation(Boolean(json.microwaveInstallation));
         setDiscountPercent(json.discountPercent || 0);
         setInstallationTypeId(json.installationTypeId || "");
@@ -388,9 +402,54 @@ export default function CabinetEstimateForm(props: Props) {
                 unitPrice: item.unitPrice ?? 0,
                 catalogItemId: item.catalogItemId || null,
                 summaryBucket: item.summaryBucket || null,
+                // Not stored with the estimate (it's a live reference to the
+                // catalog, not a snapshot) - backfilled just below, by
+                // catalogItemId only, so it shows up on a saved/reopened
+                // estimate without touching its saved price/description.
+                catalogImageUrl: null,
               }))
             : makeBlankRows(MIN_BLANK_ROWS),
         );
+
+        // Backfill reference images for a reopened estimate. Deliberately
+        // separate from repriceCatalogItems (used when Brand/Group-Color
+        // changes) - that function also overwrites price/description/
+        // bucket from the CURRENT catalog, which would silently drift a
+        // saved estimate's locked-in numbers. This only ever touches
+        // catalogImageUrl, a purely cosmetic field, leaving everything
+        // else exactly as saved.
+        const catalogItemIds = Array.from(
+          new Set(
+            (json.lineItems || [])
+              .map((item: any) => item.catalogItemId)
+              .filter((id: unknown): id is string => Boolean(id)),
+          ),
+        );
+        if (catalogItemIds.length > 0 && json.vendorId) {
+          try {
+            const imgParams = new URLSearchParams({
+              vendorId: json.vendorId,
+              ids: catalogItemIds.join(","),
+            });
+            if (json.priceTierId) imgParams.set("tierId", json.priceTierId);
+            const imgRes = await fetch(`/api/cabinet-catalog/items?${imgParams.toString()}`);
+            const imgJson = await imgRes.json();
+            if (imgRes.ok) {
+              const imageByCatalogId = new Map<string, string | null>(
+                (imgJson.items || []).map((it: any) => [it.id, it.catalogImageUrl || null]),
+              );
+              setLineItems((prev) =>
+                prev.map((item) =>
+                  item.catalogItemId && imageByCatalogId.has(item.catalogItemId)
+                    ? { ...item, catalogImageUrl: imageByCatalogId.get(item.catalogItemId) ?? null }
+                    : item,
+                ),
+              );
+            }
+          } catch {
+            // non-fatal - saved estimate just won't show a reference image
+          }
+        }
       } catch (err: any) {
         setError(err?.message || "Failed to load estimate");
       } finally {
@@ -563,6 +622,7 @@ export default function CabinetEstimateForm(props: Props) {
       catalogItemId: suggestion.id,
       summaryBucket: suggestion.summaryBucket,
       installationItemId: suggestion.installationItemId,
+      catalogImageUrl: suggestion.catalogImageUrl,
     });
     setCodeQuery(null);
   }
@@ -609,6 +669,7 @@ export default function CabinetEstimateForm(props: Props) {
             unitPrice: match.unitPrice,
             summaryBucket: match.summaryBucket,
             installationItemId: match.installationItemId,
+            catalogImageUrl: match.catalogImageUrl,
           };
         }),
       );
@@ -718,6 +779,13 @@ export default function CabinetEstimateForm(props: Props) {
     return counts;
   }, [lineItems]);
 
+  // Total piece count across every row (catalog-linked or free-typed) -
+  // same "compute, don't type" treatment as the bucket counts above.
+  const totalItemsQuantity = useMemo(
+    () => lineItems.reduce((sum, item) => sum + (item.qty || 0), 0),
+    [lineItems],
+  );
+
   const { cabinetsSubtotal, installationTotal, total } = useMemo(
     () =>
       computeCabinetEstimateFooterTotals({
@@ -809,7 +877,6 @@ export default function CabinetEstimateForm(props: Props) {
     setProjectType("");
     setVersion("");
     setLineItems(makeBlankRows(MIN_BLANK_ROWS));
-    setItemsQuantity(0);
     setMicrowaveInstallation(false);
     setDiscountPercent(0);
     setInstallationTypeId(
@@ -851,7 +918,7 @@ export default function CabinetEstimateForm(props: Props) {
         doubleCabinetsCount: cabinetsSummaryCounts.DOUBLE,
         customCabinetsCount: cabinetsSummaryCounts.CUSTOM,
         miscCabinetsCount: cabinetsSummaryCounts.MISC,
-        itemsQuantity,
+        itemsQuantity: totalItemsQuantity,
         microwaveInstallation,
         discountPercent,
         installationTypeId: installationTypeId || null,
@@ -984,6 +1051,15 @@ export default function CabinetEstimateForm(props: Props) {
                     Phone: {props.companyPhone}
                   </div>
                 )}
+                <div className="font-mono text-[15px] font-bold tracking-wide text-gray-800 dark:text-gray-200">
+                  {formatEstimateReferenceNumber(
+                    computeCabinetsCost(
+                      cabinetsTotal,
+                      vendors.find((v) => v.id === vendorId)?.factor,
+                    ),
+                    referenceRandomDigits,
+                  )}
+                </div>
               </div>
 
               <div className="divide-y divide-gray-300 border-b border-gray-300 dark:divide-gray-600 dark:border-gray-600 lg:border-b-0 lg:border-r">
@@ -1007,7 +1083,7 @@ export default function CabinetEstimateForm(props: Props) {
                       autoComplete="off"
                     />
                     {clientDropdownOpen && customerName.trim().length >= 2 && (
-                      <div className="absolute left-0 top-full z-50 max-h-64 w-80 overflow-y-auto rounded-md border border-gray-200 bg-white py-1 text-sm shadow-lg dark:border-gray-600 dark:bg-gray-800">
+                      <div className="absolute left-0 top-full z-50 max-h-80 w-[26rem] max-w-[90vw] overflow-y-auto rounded-md border border-gray-200 bg-white py-1 text-sm shadow-lg dark:border-gray-600 dark:bg-gray-800">
                         {clientSearching ? (
                           <div className="px-3 py-2 text-xs text-gray-500 dark:text-gray-400">
                             Searching...
@@ -1025,15 +1101,15 @@ export default function CabinetEstimateForm(props: Props) {
                                 e.preventDefault();
                                 selectClient(result);
                               }}
-                              className="block w-full truncate px-3 py-1.5 text-left hover:bg-blue-50 dark:hover:bg-gray-700"
+                              className="block w-full px-3 py-1.5 text-left hover:bg-blue-50 dark:hover:bg-gray-700"
                             >
-                              <span className="font-medium text-gray-900 dark:text-gray-100">
+                              <div className="truncate font-medium text-gray-900 dark:text-gray-100">
                                 {result.displayName}
-                              </span>
+                              </div>
                               {result.customerAddress && (
-                                <span className="ml-2 text-xs text-gray-500 dark:text-gray-400">
+                                <div className="truncate text-xs text-gray-500 dark:text-gray-400">
                                   {result.customerAddress}
-                                </span>
+                                </div>
                               )}
                             </button>
                           ))
@@ -1242,7 +1318,7 @@ export default function CabinetEstimateForm(props: Props) {
                     <th className="w-14 border border-gray-300 px-2 py-1.5 text-center dark:border-gray-600">
                       Qty
                     </th>
-                    <th className="w-24 border border-gray-300 px-2 py-1.5 text-left dark:border-gray-600">
+                    <th className="w-24 border border-gray-300 px-2 py-1.5 text-center dark:border-gray-600">
                       Code
                     </th>
                     <th className="w-72 border border-gray-300 px-2 py-1.5 text-left dark:border-gray-600">
@@ -1254,10 +1330,10 @@ export default function CabinetEstimateForm(props: Props) {
                     <th className="border border-gray-300 px-2 py-1.5 text-left dark:border-gray-600">
                       Note
                     </th>
-                    <th className="w-28 border border-gray-300 px-2 py-1.5 text-right dark:border-gray-600">
+                    <th className="w-28 border border-gray-300 px-2 py-1.5 text-center dark:border-gray-600">
                       P.Unit
                     </th>
-                    <th className="w-28 border border-gray-300 px-2 py-1.5 text-right dark:border-gray-600">
+                    <th className="w-28 border border-gray-300 px-2 py-1.5 text-center dark:border-gray-600">
                       P.Total
                     </th>
                     <th className="w-10 border border-gray-300 px-1 py-2 dark:border-gray-600" />
@@ -1272,7 +1348,7 @@ export default function CabinetEstimateForm(props: Props) {
                     return (
                     <tr key={item.key} className="border-b border-gray-200 dark:border-gray-700">
                       <td
-                        className={`border border-gray-200 p-1 align-top dark:border-gray-700 ${
+                        className={`border border-gray-200 p-1 text-center align-middle dark:border-gray-700 ${
                           item.code && item.qty === 0 ? "bg-red-50 dark:bg-red-950/30" : ""
                         }`}
                       >
@@ -1291,7 +1367,7 @@ export default function CabinetEstimateForm(props: Props) {
                           className="w-full bg-transparent px-1.5 py-0.5 text-center text-xs text-gray-900 outline-none dark:text-gray-100 [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
                         />
                       </td>
-                      <td className="relative border border-gray-200 p-1 align-top dark:border-gray-700">
+                      <td className="relative border border-gray-200 p-1 text-center align-middle dark:border-gray-700">
                         <input
                           ref={(el) => registerCellRef(index, "code", el)}
                           value={item.code}
@@ -1336,7 +1412,7 @@ export default function CabinetEstimateForm(props: Props) {
                                 ? "Select a Group/Color above to see prices"
                                 : undefined
                           }
-                          className="w-full bg-transparent px-1.5 py-0.5 text-xs text-gray-900 outline-none dark:text-gray-100"
+                          className="w-full bg-transparent px-1.5 py-0.5 text-center text-xs text-gray-900 outline-none dark:text-gray-100"
                         />
                         {codeQuery?.index === index &&
                           codeSuggestions.length > 0 &&
@@ -1362,13 +1438,23 @@ export default function CabinetEstimateForm(props: Props) {
                                   key={s.id}
                                   onMouseDown={(e) => e.preventDefault()}
                                   onClick={() => selectCatalogItem(index, s)}
-                                  className="block w-full px-2 py-1 text-left hover:bg-blue-50 dark:hover:bg-gray-700"
+                                  className="flex w-full items-center gap-2 px-2 py-1 text-left hover:bg-blue-50 dark:hover:bg-gray-700"
                                 >
-                                  <span className="font-semibold text-gray-900 dark:text-gray-100">
-                                    {s.code}
-                                  </span>{" "}
-                                  <span className="text-gray-500 dark:text-gray-400">
-                                    {s.description}
+                                  {s.catalogImageUrl ? (
+                                    // eslint-disable-next-line @next/next/no-img-element
+                                    <img
+                                      src={s.catalogImageUrl}
+                                      alt=""
+                                      className="h-8 w-8 shrink-0 rounded border border-gray-200 object-contain dark:border-gray-600"
+                                    />
+                                  ) : null}
+                                  <span className="min-w-0">
+                                    <span className="font-semibold text-gray-900 dark:text-gray-100">
+                                      {s.code}
+                                    </span>{" "}
+                                    <span className="text-gray-500 dark:text-gray-400">
+                                      {s.description}
+                                    </span>
                                   </span>
                                 </button>
                               ))}
@@ -1377,18 +1463,36 @@ export default function CabinetEstimateForm(props: Props) {
                           )}
                       </td>
                       <td className="border border-gray-200 p-1 align-top dark:border-gray-700">
-                        <div
-                          className="min-h-[1.5rem] whitespace-pre-wrap break-words px-1.5 py-0.5 text-xs text-gray-900 dark:text-gray-100"
-                          title={item.description || undefined}
-                        >
-                          {item.description || (
-                            <span className="text-gray-400 dark:text-gray-500">
-                              {item.code ? "No catalog match" : "Pick a code"}
-                            </span>
-                          )}
+                        <div className="flex items-start gap-1.5">
+                          {item.catalogImageUrl ? (
+                            <a
+                              href={item.catalogImageUrl}
+                              target="_blank"
+                              rel="noopener noreferrer"
+                              title="View catalog image"
+                              className="mt-0.5 shrink-0"
+                            >
+                              {/* eslint-disable-next-line @next/next/no-img-element */}
+                              <img
+                                src={item.catalogImageUrl}
+                                alt=""
+                                className="h-8 w-8 rounded border border-gray-200 object-contain hover:border-blue-400 dark:border-gray-600"
+                              />
+                            </a>
+                          ) : null}
+                          <div
+                            className="min-h-[1.5rem] min-w-0 whitespace-pre-wrap break-words px-1.5 py-0.5 text-xs text-gray-900 dark:text-gray-100"
+                            title={item.description || undefined}
+                          >
+                            {item.description || (
+                              <span className="text-gray-400 dark:text-gray-500">
+                                {item.code ? "No catalog match" : "Pick a code"}
+                              </span>
+                            )}
+                          </div>
                         </div>
                       </td>
-                      <td className="border border-gray-200 p-1 text-center align-top dark:border-gray-700">
+                      <td className="border border-gray-200 p-1 text-center align-middle dark:border-gray-700">
                         <label
                           className="flex w-full cursor-pointer items-center justify-center py-0.5"
                           title="Adds the GMD Parameters Custom surcharge % to Installation"
@@ -1420,7 +1524,7 @@ export default function CabinetEstimateForm(props: Props) {
                         />
                       </td>
                       <td
-                        className={`border border-gray-200 p-1 align-top text-right dark:border-gray-700 ${
+                        className={`border border-gray-200 p-1 text-center align-middle dark:border-gray-700 ${
                           (item.code && item.qty === 0) || hasMissingPrice ? "bg-red-50 dark:bg-red-950/30" : ""
                         }`}
                       >
@@ -1437,7 +1541,7 @@ export default function CabinetEstimateForm(props: Props) {
                           {hasMissingPrice ? "N/A" : formatCurrency(item.unitPrice)}
                         </div>
                       </td>
-                      <td className="border border-gray-200 px-2 py-0.5 align-top text-right text-xs font-medium text-gray-900 dark:border-gray-700 dark:text-gray-100">
+                      <td className="border border-gray-200 p-1 text-center align-middle text-xs font-medium text-gray-900 dark:border-gray-700 dark:text-gray-100">
                         {hasMissingPrice ? (
                           <span className="text-red-600 dark:text-red-400">N/A</span>
                         ) : (
@@ -1524,7 +1628,12 @@ export default function CabinetEstimateForm(props: Props) {
                   </span>
                 </CategoryRow>
                 <CategoryRow label="Quantity of Items">
-                  <NumberField value={itemsQuantity} onChange={setItemsQuantity} />
+                  <span
+                    className="text-[11px] font-semibold text-gray-900 dark:text-gray-100"
+                    title="Auto-computed: sum of every row's quantity"
+                  >
+                    {totalItemsQuantity}
+                  </span>
                 </CategoryRow>
                 <CategoryRow label="Microwave Installation">
                   <select

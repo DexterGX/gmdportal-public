@@ -54,6 +54,15 @@
   color: #374151;
 }
 
+.referenceNumber {
+  font-family: "Courier New", Courier, monospace;
+  font-weight: 700;
+  font-size: 11.5pt;
+  letter-spacing: 0.5px;
+  margin-top: 2px;
+  color: #1f2937;
+}
+
 .infoGrid {
   display: grid;
   grid-template-columns: 1fr;
@@ -145,6 +154,7 @@
 }
 .colCode {
   width: 10%;
+  text-align: center;
 }
 .colDescription {
   width: 24%;
@@ -158,11 +168,22 @@
 }
 .colPUnit {
   width: 15%;
-  text-align: right;
+  text-align: center;
 }
 .colPTotal {
   width: 15%;
-  text-align: right;
+  text-align: center;
+}
+
+.customCheckbox {
+  display: inline-block;
+  width: 8px;
+  height: 8px;
+  border: 1px solid #111827;
+  vertical-align: middle;
+}
+.customCheckboxChecked {
+  background: #111827;
 }
 
 .specialCustomizationBox {
