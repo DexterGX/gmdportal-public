@@ -6,6 +6,9 @@ import {
   computeLineItemsCustomizationSurchargeTotal,
   discountPercentLabel,
   formatCurrency,
+  generateRandomDigits,
+  formatEstimateReferenceNumber,
+  computeCabinetsCost,
 } from "@/lib/cabinetEstimateCalc";
 import AutoPrintClient from "./AutoPrintClient";
 import PrintButton from "./PrintButton";
@@ -84,6 +87,17 @@ export default async function CabinetEstimatePrintPage({
     notFound();
   }
 
+  const vendorForCost = estimate.vendorId
+    ? await prismaAny.cabinetVendor.findUnique({
+        where: { id: estimate.vendorId },
+        select: { provider: { select: { factor: true } } },
+      })
+    : null;
+  const estimateCost = computeCabinetsCost(
+    toNumber(estimate.cabinetsTotal),
+    vendorForCost?.provider ? Number(vendorForCost.provider.factor) : 1,
+  );
+
   const pageTitle = `${estimate.customerName || "Client"} - Cabinet Estimate ${
     estimate.estimateNumber || ""
   }`;
@@ -135,6 +149,9 @@ export default async function CabinetEstimatePrintPage({
                 Phone: {companySettings.phoneNumber}
               </div>
             )}
+            <div className={styles.referenceNumber}>
+              {formatEstimateReferenceNumber(estimateCost, generateRandomDigits(8))}
+            </div>
           </div>
 
           <div className={styles.infoGrid}>
@@ -187,7 +204,7 @@ export default async function CabinetEstimatePrintPage({
           <thead>
             <tr>
               <th className={styles.colQty}>Qty</th>
-              <th>Code</th>
+              <th className={styles.colCode}>Code</th>
               <th>Description</th>
               <th className={styles.colCustomization}>Custom</th>
               <th>Note</th>
@@ -206,10 +223,15 @@ export default async function CabinetEstimatePrintPage({
               estimate.lineItems.map((item: any) => (
                 <tr key={item.id}>
                   <td className={styles.colQty}>{toNumber(item.qty)}</td>
-                  <td>{item.code || ""}</td>
+                  <td className={styles.colCode}>{item.code || ""}</td>
                   <td>{item.description || ""}</td>
                   <td className={styles.colCustomization}>
-                    {item.isCustomization ? "Yes" : ""}
+                    <span
+                      className={`${styles.customCheckbox} ${
+                        item.isCustomization ? styles.customCheckboxChecked : ""
+                      }`}
+                      aria-label={item.isCustomization ? "Yes" : "No"}
+                    />
                   </td>
                   <td>{item.note || ""}</td>
                   <td className={styles.colPUnit}>
