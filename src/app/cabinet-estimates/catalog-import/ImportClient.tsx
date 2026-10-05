@@ -1,12 +1,14 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
+import { supabase } from "@/lib/supabase/client";
 import {
   Upload,
   FileSpreadsheet,
   AlertCircle,
   CheckCircle2,
   Sparkles,
+  Image as ImageIcon,
 } from "lucide-react";
 
 type CabinetSummaryBucket = "STANDARD" | "DOUBLE" | "CUSTOM" | "MISC";
@@ -27,12 +29,35 @@ const COL_W = {
   changedFields: 192,
 };
 
+// overflow: hidden on every cell (fixed and sticky) is what actually stops
+// a neighbor's content from ever visually bleeding past its own column - a
+// native <select>/number-input can render a sliver outside its cell's
+// declared box, and a sticky cell's z-index only controls paint ORDER, not
+// whether that sliver is clipped in the first place.
 function fixedColStyle(width: number) {
-  return { width, minWidth: width, maxWidth: width };
+  return { width, minWidth: width, maxWidth: width, overflow: "hidden" as const };
 }
 
-function stickyColStyle(width: number, left: number) {
-  return { width, minWidth: width, maxWidth: width, position: "sticky" as const, left, zIndex: 10 };
+function stickyColStyle(width: number, left: number, edge = false) {
+  return {
+    width,
+    minWidth: width,
+    maxWidth: width,
+    overflow: "hidden" as const,
+    position: "sticky" as const,
+    left,
+    zIndex: 10,
+    // Chrome can leave stale pixels ("ghosting") at the boundary of a
+    // sticky cell when a wide, many-column fixed-layout table scrolls
+    // underneath it - promoting the cell to its own compositing layer
+    // forces a clean repaint of that boundary instead of a partial one.
+    transform: "translateZ(0)" as const,
+    willChange: "transform",
+    // A soft shadow on the last sticky column's right edge makes the
+    // frozen/scrolling boundary visually obvious and doubles as cover for
+    // any stray sub-pixel seam at that edge.
+    ...(edge ? { boxShadow: "4px 0 6px -4px rgba(0,0,0,0.25)" } : {}),
+  };
 }
 
 type ParsePlan = {
@@ -99,6 +124,12 @@ type Vendor = {
   providerId: string | null;
   discount: number | null;
   factor: number | null;
+  // Round 13: optional reference catalog PDF attached to this vendor - see
+  // the schema comment on CabinetVendor.catalogPdfUrl. Used for better AI
+  // classification hints during import and for "Extract item images".
+  catalogPdfUrl: string | null;
+  catalogPdfFileName: string | null;
+  catalogUploadedAt: string | null;
 };
 
 function formatCurrency(value: number) {
@@ -215,6 +246,7 @@ export default function ImportClient() {
   const [isApplying, setIsApplying] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [warnings, setWarnings] = useState<string[]>([]);
+  const [showAllWarnings, setShowAllWarnings] = useState(false);
 
   const [resolvedVendorName, setResolvedVendorName] = useState("");
   const [parsePlan, setParsePlan] = useState<ParsePlan | null>(null);
@@ -227,20 +259,146 @@ export default function ImportClient() {
   const [installationItems, setInstallationItems] = useState<InstallationItemOption[]>([]);
   const [activeTab, setActiveTab] = useState<"new" | "changed" | "discontinued">("new");
 
-  useEffect(() => {
-    async function loadVendors() {
-      try {
-        const res = await fetch("/api/cabinet-catalog/vendors");
-        if (res.ok) {
-          const data = await res.json();
-          setVendors(data.vendors || []);
-        }
-      } catch {
-        // non-fatal - vendor list just stays empty, "new vendor" still works
+  // Round 13: vendor catalog PDF panel (attach/replace + "Extract item
+  // images"). Lives alongside the price-list upload step since both are
+  // per-vendor admin actions, but is otherwise independent of the
+  // preview/apply flow above - a catalog can be attached any time, not
+  // just during a fresh import.
+  const [catalogFile, setCatalogFile] = useState<File | null>(null);
+  const [isUploadingCatalog, setIsUploadingCatalog] = useState(false);
+  const [catalogError, setCatalogError] = useState<string | null>(null);
+  const [isExtractingImages, setIsExtractingImages] = useState(false);
+  const [extractResult, setExtractResult] = useState<{
+    itemsUpdated: number;
+    totalCodes: number;
+    warnings: string[];
+  } | null>(null);
+  const [extractError, setExtractError] = useState<string | null>(null);
+  // Elapsed-time counters for the two long-running catalog actions below.
+  // Neither Supabase's uploadToSignedUrl nor our single extract-images POST
+  // exposes real byte/step progress, so these drive an indeterminate
+  // "still working" bar + a ticking timer rather than a fake percentage.
+  const [uploadElapsedSec, setUploadElapsedSec] = useState(0);
+  const [extractElapsedSec, setExtractElapsedSec] = useState(0);
+
+  const loadVendors = useCallback(async () => {
+    try {
+      const res = await fetch("/api/cabinet-catalog/vendors");
+      if (res.ok) {
+        const data = await res.json();
+        setVendors(data.vendors || []);
       }
+    } catch {
+      // non-fatal - vendor list just stays empty, "new vendor" still works
     }
-    loadVendors();
   }, []);
+
+  useEffect(() => {
+    loadVendors();
+  }, [loadVendors]);
+
+  const selectedVendor = useMemo(
+    () => vendors.find((v) => v.id === vendorId) || null,
+    [vendors, vendorId],
+  );
+
+  // Round 13 follow-up: a real vendor catalog can easily be 100MB+ (80+
+  // pages of full-color photos), well past what a normal Vercel serverless
+  // function can accept as a request body. So this uploads the file
+  // straight from the browser to Supabase Storage using a short-lived
+  // signed URL our server hands out (step 1) - the PDF bytes never pass
+  // through our own API route at all - then tells the server the
+  // resulting path so it can attach it to the vendor (step 2).
+  async function uploadCatalogPdf() {
+    if (!catalogFile || !vendorId) return;
+    setIsUploadingCatalog(true);
+    setCatalogError(null);
+    setExtractResult(null);
+    setExtractError(null);
+    setUploadElapsedSec(0);
+    const uploadStartedAt = Date.now();
+    const uploadTimer = setInterval(() => {
+      setUploadElapsedSec(Math.round((Date.now() - uploadStartedAt) / 1000));
+    }, 500);
+    try {
+      const signRes = await fetch(
+        `/api/cabinet-catalog/admin/vendors/${vendorId}/catalog/sign-upload`,
+        {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ fileName: catalogFile.name }),
+        },
+      );
+      const signData = await signRes.json();
+      if (!signRes.ok) {
+        throw new Error(signData.error || "Failed to prepare upload");
+      }
+
+      const { error: uploadError } = await supabase.storage
+        .from(signData.bucket)
+        .uploadToSignedUrl(signData.path, signData.token, catalogFile, {
+          contentType: "application/pdf",
+        });
+      if (uploadError) {
+        throw new Error(uploadError.message || "Failed to upload catalog to storage");
+      }
+
+      const res = await fetch(`/api/cabinet-catalog/admin/vendors/${vendorId}/catalog`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ storagePath: signData.path, fileName: catalogFile.name }),
+      });
+      const data = await res.json();
+      if (!res.ok) {
+        throw new Error(data.error || "Failed to attach uploaded catalog");
+      }
+      setCatalogFile(null);
+      await loadVendors();
+    } catch (err: any) {
+      setCatalogError(err.message);
+    } finally {
+      clearInterval(uploadTimer);
+      setIsUploadingCatalog(false);
+    }
+  }
+
+  async function extractCatalogImages() {
+    if (!vendorId) return;
+    if (
+      !confirm(
+        "Scan the attached catalog and (re)generate reference images for every item? A large, image-heavy catalog is read in several passes and can take a few minutes - keep this tab open until it finishes.",
+      )
+    ) {
+      return;
+    }
+    setIsExtractingImages(true);
+    setExtractError(null);
+    setExtractResult(null);
+    setExtractElapsedSec(0);
+    const extractStartedAt = Date.now();
+    const extractTimer = setInterval(() => {
+      setExtractElapsedSec(Math.round((Date.now() - extractStartedAt) / 1000));
+    }, 500);
+    try {
+      const res = await fetch(`/api/cabinet-catalog/admin/vendors/${vendorId}/extract-images`, {
+        method: "POST",
+      });
+      const data = await res.json();
+      if (!res.ok) {
+        throw new Error(data.error || "Failed to extract catalog images");
+      }
+      setExtractResult({
+        itemsUpdated: data.itemsUpdated,
+        totalCodes: data.totalCodes,
+        warnings: data.warnings || [],
+      });
+    } catch (err: any) {
+      setExtractError(err.message);
+    } finally {
+      clearInterval(extractTimer);
+      setIsExtractingImages(false);
+    }
+  }
 
   // Pre-fill the discount from the selected vendor's linked company, if any -
   // still freely editable per Diego's ask ("let user mod it when uploading").
@@ -272,6 +430,21 @@ export default function ImportClient() {
     return tierNameOverrides[name] ?? name;
   }
 
+  // Each tier column sizes itself to roughly fit its own label instead of
+  // every column sharing one cramped width (COL_W.tier as a floor) - a
+  // sheet with a handful of short codes and a couple of long color names
+  // no longer forces every column that narrow, or every column that wide.
+  // Capped so a run of very long names can't blow the table out entirely;
+  // the cell still truncates with a hover tooltip past the cap.
+  const tierColWidths = useMemo(() => {
+    const widths: Record<string, number> = {};
+    for (const name of tierNames) {
+      const label = tierNameOverrides[name] ?? name;
+      widths[name] = Math.min(190, Math.max(COL_W.tier, label.length * 7 + 48));
+    }
+    return widths;
+  }, [tierNames, tierNameOverrides]);
+
   const hasDiff = parsePlan !== null;
 
   function resetPreview() {
@@ -281,6 +454,7 @@ export default function ImportClient() {
     setDiscontinuedItems([]);
     setDiscontinuedSelected(new Set());
     setWarnings([]);
+    setShowAllWarnings(false);
   }
 
   async function runPreview(existingPlan?: ParsePlan) {
@@ -330,6 +504,7 @@ export default function ImportClient() {
         new Set<string>(data.diff.discontinuedItems.map((i: ExistingItem) => i.id)),
       );
       setWarnings(data.warnings || []);
+      setShowAllWarnings(false);
       setActiveTab("new");
     } catch (err: any) {
       setError(err.message);
@@ -503,6 +678,133 @@ export default function ImportClient() {
               </p>
             </div>
 
+            {!useNewVendor && vendorId && (
+              <div className="rounded-lg border border-gray-200 bg-gray-50 p-4 dark:border-gray-700 dark:bg-gray-900/40">
+                <label className="mb-2 block text-sm font-medium text-gray-700 dark:text-gray-300">
+                  Vendor catalog (optional)
+                </label>
+                <p className="mb-2 text-xs text-gray-500 dark:text-gray-400">
+                  Attach this vendor&apos;s product catalog (PDF with photos) to help the AI tell
+                  real cabinets apart from accessories during import, and to show a reference
+                  picture when building an estimate. Never used for prices - those always come
+                  from the price list file above.
+                </p>
+                <p className="mb-2 text-xs text-gray-500 dark:text-gray-400">
+                  These are two separate steps: <strong>Attach/Replace catalog</strong> only
+                  uploads and stores the PDF itself - it doesn&apos;t touch any item images.{" "}
+                  <strong>Extract item images</strong> is what actually reads the PDF afterward and
+                  crops out a picture for each item code, which is why it&apos;s a second click and
+                  can take a little while. Re-run it any time (e.g. after replacing the catalog) to
+                  refresh the pictures.
+                </p>
+                {selectedVendor?.catalogPdfUrl ? (
+                  <div className="mb-2 flex flex-wrap items-center gap-2 text-xs text-gray-600 dark:text-gray-400">
+                    <CheckCircle2 className="h-4 w-4 text-green-600 dark:text-green-400" />
+                    <a
+                      href={selectedVendor.catalogPdfUrl}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="text-blue-700 hover:underline dark:text-blue-300"
+                    >
+                      {selectedVendor.catalogPdfFileName || "Current catalog"}
+                    </a>
+                    {selectedVendor.catalogUploadedAt && (
+                      <span>
+                        (uploaded {new Date(selectedVendor.catalogUploadedAt).toLocaleDateString()})
+                      </span>
+                    )}
+                  </div>
+                ) : (
+                  <p className="mb-2 text-xs text-gray-500 dark:text-gray-400">
+                    No catalog attached yet.
+                  </p>
+                )}
+
+                <div className="flex flex-wrap items-center gap-2">
+                  <input
+                    type="file"
+                    accept=".pdf"
+                    onChange={(e) => {
+                      setCatalogFile(e.target.files?.[0] || null);
+                      setCatalogError(null);
+                    }}
+                    className="block max-w-xs flex-1 cursor-pointer rounded-lg border border-gray-300 bg-white text-xs text-gray-900 focus:outline-none dark:border-gray-600 dark:bg-gray-700 dark:text-gray-100"
+                  />
+                  <button
+                    onClick={uploadCatalogPdf}
+                    disabled={!catalogFile || isUploadingCatalog}
+                    className="flex items-center gap-1.5 whitespace-nowrap rounded-lg bg-gray-700 px-3 py-1.5 text-xs font-medium text-white hover:bg-gray-800 disabled:cursor-not-allowed disabled:opacity-50"
+                  >
+                    <Upload className="h-3.5 w-3.5" />
+                    {isUploadingCatalog
+                      ? "Uploading..."
+                      : selectedVendor?.catalogPdfUrl
+                        ? "Replace catalog"
+                        : "Attach catalog"}
+                  </button>
+                  <button
+                    onClick={extractCatalogImages}
+                    disabled={!selectedVendor?.catalogPdfUrl || isExtractingImages}
+                    title={
+                      !selectedVendor?.catalogPdfUrl
+                        ? "Attach a catalog PDF first"
+                        : "Scan the catalog and update item images"
+                    }
+                    className="flex items-center gap-1.5 whitespace-nowrap rounded-lg bg-blue-600 px-3 py-1.5 text-xs font-medium text-white hover:bg-blue-700 disabled:cursor-not-allowed disabled:opacity-50"
+                  >
+                    <ImageIcon className="h-3.5 w-3.5" />
+                    {isExtractingImages ? "Extracting..." : "Extract item images"}
+                  </button>
+                </div>
+
+                {isUploadingCatalog && (
+                  <div className="mt-2">
+                    <div className="h-1.5 w-full overflow-hidden rounded-full bg-gray-200 dark:bg-gray-700">
+                      <div className="h-full w-full animate-pulse bg-gray-700" />
+                    </div>
+                    <p className="mt-1 text-xs text-gray-500 dark:text-gray-400">
+                      Uploading
+                      {catalogFile ? ` ${(catalogFile.size / (1024 * 1024)).toFixed(1)} MB` : ""}
+                      ... {uploadElapsedSec}s elapsed. Large catalogs can take a few minutes - keep
+                      this tab open.
+                    </p>
+                  </div>
+                )}
+                {isExtractingImages && (
+                  <div className="mt-2">
+                    <div className="h-1.5 w-full overflow-hidden rounded-full bg-gray-200 dark:bg-gray-700">
+                      <div className="h-full w-full animate-pulse bg-blue-600" />
+                    </div>
+                    <p className="mt-1 text-xs text-gray-500 dark:text-gray-400">
+                      Reading the catalog and matching item photos... {extractElapsedSec}s elapsed.
+                      A large catalog is read in several passes and can take a few minutes.
+                    </p>
+                  </div>
+                )}
+                {catalogError && (
+                  <p className="mt-2 text-xs text-red-700 dark:text-red-300">{catalogError}</p>
+                )}
+                {extractError && (
+                  <p className="mt-2 text-xs text-red-700 dark:text-red-300">{extractError}</p>
+                )}
+                {extractResult && (
+                  <div className="mt-2 text-xs text-gray-700 dark:text-gray-300">
+                    <p>
+                      Matched images for {extractResult.itemsUpdated} of {extractResult.totalCodes}{" "}
+                      items.
+                    </p>
+                    {extractResult.warnings.length > 0 && (
+                      <ul className="mt-1 list-inside list-disc text-amber-700 dark:text-amber-400">
+                        {extractResult.warnings.map((w, i) => (
+                          <li key={i}>{w}</li>
+                        ))}
+                      </ul>
+                    )}
+                  </div>
+                )}
+              </div>
+            )}
+
             <div>
               <label className="mb-2 block text-sm font-medium text-gray-700 dark:text-gray-300">
                 Pricing
@@ -596,10 +898,10 @@ export default function ImportClient() {
       {hasDiff && parsePlan && (
         <div className="space-y-4">
           <div className="rounded-lg bg-white p-4 shadow dark:bg-gray-800">
-            <div className="flex items-center justify-between">
-              <div className="flex items-center gap-4">
-                <CheckCircle2 className="h-6 w-6 text-green-600 dark:text-green-400" />
-                <div>
+            <div className="flex flex-wrap items-start justify-between gap-4">
+              <div className="flex min-w-0 flex-1 items-start gap-4">
+                <CheckCircle2 className="h-6 w-6 shrink-0 text-green-600 dark:text-green-400" />
+                <div className="min-w-0">
                   <h3 className="text-lg font-semibold text-gray-900 dark:text-white">
                     Import Preview - {resolvedVendorName}
                   </h3>
@@ -607,14 +909,17 @@ export default function ImportClient() {
                     {newItems.length} new, {changedItems.length} updated,{" "}
                     {discontinuedItems.length} no longer in the file
                   </p>
-                  <p className="text-xs text-gray-500 dark:text-gray-400">
+                  <p
+                    className="truncate text-xs text-gray-500 dark:text-gray-400"
+                    title={`Read sheet "${parsePlan.sheetName}" - ${tierNames.length} price tier${tierNames.length === 1 ? "" : "s"}: ${tierNames.map((t) => tierLabel(t)).join(", ")}`}
+                  >
                     Read sheet &quot;{parsePlan.sheetName}&quot; - {tierNames.length} price
                     tier{tierNames.length === 1 ? "" : "s"}:{" "}
                     {tierNames.map((t) => tierLabel(t)).join(", ")}
                   </p>
                 </div>
               </div>
-              <div className="flex gap-2">
+              <div className="flex shrink-0 flex-wrap gap-2">
                 <button
                   onClick={() => runPreview()}
                   disabled={isUploading}
@@ -646,11 +951,18 @@ export default function ImportClient() {
               <div className="mt-3 rounded-lg border border-amber-200 bg-amber-50 p-3 text-xs text-amber-800 dark:border-amber-800 dark:bg-amber-900/20 dark:text-amber-200">
                 <p className="mb-1 font-medium">{warnings.length} row(s) skipped:</p>
                 <ul className="list-inside list-disc space-y-0.5">
-                  {warnings.slice(0, 10).map((w, i) => (
+                  {(showAllWarnings ? warnings : warnings.slice(0, 10)).map((w, i) => (
                     <li key={i}>{w}</li>
                   ))}
-                  {warnings.length > 10 && <li>...and {warnings.length - 10} more</li>}
                 </ul>
+                {warnings.length > 10 && (
+                  <button
+                    onClick={() => setShowAllWarnings((v) => !v)}
+                    className="mt-1.5 font-medium text-amber-900 underline hover:no-underline dark:text-amber-100"
+                  >
+                    {showAllWarnings ? "Show less" : `Show all ${warnings.length}`}
+                  </button>
+                )}
               </div>
             )}
 
@@ -687,20 +999,20 @@ export default function ImportClient() {
 
             <div className="overflow-x-auto p-4">
               {activeTab === "new" && (
-                <table className="text-left text-xs" style={{ tableLayout: "fixed" }}>
+                <table className="text-left text-xs" style={{ tableLayout: "fixed", borderSpacing: 0 }}>
                   <thead>
                     <tr className="text-gray-500 dark:text-gray-400">
                       <th className="bg-white p-2 dark:bg-gray-800" style={stickyColStyle(COL_W.code, 0)}>Code</th>
                       <th
                         className="border-r border-gray-200 bg-white p-2 dark:border-gray-700 dark:bg-gray-800"
-                        style={stickyColStyle(COL_W.description, COL_W.code)}
+                        style={stickyColStyle(COL_W.description, COL_W.code, true)}
                       >
                         Description
                       </th>
                       <th className="p-2" style={fixedColStyle(COL_W.bucket)}>Bucket</th>
                       <th className="p-2" style={fixedColStyle(COL_W.installationItem)}>Installation Item</th>
                       {tierNames.map((tierName) => (
-                        <th key={tierName} className="p-2" style={fixedColStyle(COL_W.tier)}>
+                        <th key={tierName} className="p-2" style={fixedColStyle(tierColWidths[tierName])}>
                           <EditableText
                             value={tierLabel(tierName)}
                             onChange={(v) =>
@@ -723,7 +1035,7 @@ export default function ImportClient() {
                         </td>
                         <td
                           className="border-r border-gray-200 bg-white p-2 dark:border-gray-700 dark:bg-gray-800"
-                          style={stickyColStyle(COL_W.description, COL_W.code)}
+                          style={stickyColStyle(COL_W.description, COL_W.code, true)}
                         >
                           <EditableText
                             value={item.description}
@@ -749,7 +1061,7 @@ export default function ImportClient() {
                         {tierNames.map((tierName) => {
                           const price = item.prices.find((p) => p.tierName === tierName);
                           return (
-                            <td key={tierName} className="p-2" style={fixedColStyle(COL_W.tier)}>
+                            <td key={tierName} className="p-2" style={fixedColStyle(tierColWidths[tierName])}>
                               <input
                                 type="number"
                                 step="0.01"
@@ -759,7 +1071,7 @@ export default function ImportClient() {
                                 onChange={(e) =>
                                   updateNewItemPrice(i, tierName, Number(e.target.value) || 0)
                                 }
-                                className="w-20 rounded border border-gray-300 bg-white px-2 py-1 text-right text-xs text-gray-900 outline-none placeholder:text-gray-400 placeholder:italic dark:border-gray-600 dark:bg-gray-900 dark:text-gray-100 dark:placeholder:text-gray-600"
+                                className="w-full rounded border border-gray-300 bg-white px-2 py-1 text-center text-xs text-gray-900 outline-none placeholder:text-gray-400 placeholder:italic dark:border-gray-600 dark:bg-gray-900 dark:text-gray-100 dark:placeholder:text-gray-600"
                               />
                             </td>
                           );
@@ -778,13 +1090,13 @@ export default function ImportClient() {
               )}
 
               {activeTab === "changed" && (
-                <table className="text-left text-xs" style={{ tableLayout: "fixed" }}>
+                <table className="text-left text-xs" style={{ tableLayout: "fixed", borderSpacing: 0 }}>
                   <thead>
                     <tr className="text-gray-500 dark:text-gray-400">
                       <th className="bg-white p-2 dark:bg-gray-800" style={stickyColStyle(COL_W.code, 0)}>Code</th>
                       <th
                         className="border-r border-gray-200 bg-white p-2 dark:border-gray-700 dark:bg-gray-800"
-                        style={stickyColStyle(COL_W.description, COL_W.code)}
+                        style={stickyColStyle(COL_W.description, COL_W.code, true)}
                       >
                         Description
                       </th>
@@ -792,7 +1104,7 @@ export default function ImportClient() {
                       <th className="p-2" style={fixedColStyle(COL_W.installationItem)}>Installation Item</th>
                       <th className="p-2" style={fixedColStyle(COL_W.changedFields)}>Changed fields</th>
                       {tierNames.map((tierName) => (
-                        <th key={tierName} className="p-2" style={fixedColStyle(COL_W.tier)}>
+                        <th key={tierName} className="p-2" style={fixedColStyle(tierColWidths[tierName])}>
                           <EditableText
                             value={tierLabel(tierName)}
                             onChange={(v) =>
@@ -816,7 +1128,7 @@ export default function ImportClient() {
                         </td>
                         <td
                           className="border-r border-gray-200 bg-white p-2 dark:border-gray-700 dark:bg-gray-800"
-                          style={stickyColStyle(COL_W.description, COL_W.code)}
+                          style={stickyColStyle(COL_W.description, COL_W.code, true)}
                         >
                           <EditableText
                             value={c.incoming.description}
@@ -851,7 +1163,7 @@ export default function ImportClient() {
                             (p) => p.tier.name === tierName,
                           );
                           return (
-                            <td key={tierName} className="p-2" style={fixedColStyle(COL_W.tier)}>
+                            <td key={tierName} className="p-2" style={fixedColStyle(tierColWidths[tierName])}>
                               <input
                                 type="number"
                                 step="0.01"
@@ -867,7 +1179,7 @@ export default function ImportClient() {
                                       : "new tier"
                                     : "Not offered in this color/tier"
                                 }
-                                className="w-20 rounded border border-gray-300 bg-white px-2 py-1 text-right text-xs text-gray-900 outline-none placeholder:text-gray-400 placeholder:italic dark:border-gray-600 dark:bg-gray-900 dark:text-gray-100 dark:placeholder:text-gray-600"
+                                className="w-full rounded border border-gray-300 bg-white px-2 py-1 text-center text-xs text-gray-900 outline-none placeholder:text-gray-400 placeholder:italic dark:border-gray-600 dark:bg-gray-900 dark:text-gray-100 dark:placeholder:text-gray-600"
                               />
                             </td>
                           );

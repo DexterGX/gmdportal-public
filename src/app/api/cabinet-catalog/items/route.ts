@@ -84,6 +84,7 @@ export async function GET(request: Request) {
         category: true,
         summaryBucket: true,
         installationItemId: true,
+        catalogImageUrl: true,
         prices: tierId ? { where: { tierId }, select: { price: true } } : false,
       },
       orderBy: { code: "asc" },
@@ -98,6 +99,7 @@ export async function GET(request: Request) {
         category: item.category,
         summaryBucket: item.summaryBucket,
         installationItemId: item.installationItemId,
+        catalogImageUrl: item.catalogImageUrl || null,
         unitPrice:
           tierId && Array.isArray(item.prices) && item.prices.length > 0
             ? computeCabinetSellPrice(Number(item.prices[0].price), factor)

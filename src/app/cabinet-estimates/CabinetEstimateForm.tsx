@@ -62,6 +62,12 @@ type LineItem = {
   // $0 to the per-item Installation total, same tolerant behavior as a
   // missing summaryBucket already has for Cabinets Summary.
   installationItemId: string | null;
+  // Round 13: reference photo cropped from the vendor's catalog PDF (see
+  // CabinetCatalogItem.catalogImageUrl), snapshotted at selection time
+  // purely for display - never persisted with the estimate, never used in
+  // any pricing/summary calc. Null for manually-typed rows or when no
+  // catalog image has been extracted for this item yet.
+  catalogImageUrl: string | null;
 };
 
 type CatalogVendor = { id: string; name: string; displayName: string };
@@ -73,6 +79,7 @@ type CatalogItemSuggestion = {
   category: string | null;
   summaryBucket: CabinetSummaryBucket;
   installationItemId: string | null;
+  catalogImageUrl: string | null;
   unitPrice: number | null;
 };
 
@@ -107,6 +114,7 @@ function emptyLineItem(): LineItem {
     catalogItemId: null,
     summaryBucket: null,
     installationItemId: null,
+    catalogImageUrl: null,
   };
 }
 
@@ -388,6 +396,10 @@ export default function CabinetEstimateForm(props: Props) {
                 unitPrice: item.unitPrice ?? 0,
                 catalogItemId: item.catalogItemId || null,
                 summaryBucket: item.summaryBucket || null,
+                // Not stored with the estimate (it's a live reference to the
+                // catalog, not a snapshot) - repriceCatalogItems backfills it
+                // the first time Brand/Group-Color gets (re)selected.
+                catalogImageUrl: null,
               }))
             : makeBlankRows(MIN_BLANK_ROWS),
         );
@@ -563,6 +575,7 @@ export default function CabinetEstimateForm(props: Props) {
       catalogItemId: suggestion.id,
       summaryBucket: suggestion.summaryBucket,
       installationItemId: suggestion.installationItemId,
+      catalogImageUrl: suggestion.catalogImageUrl,
     });
     setCodeQuery(null);
   }
@@ -609,6 +622,7 @@ export default function CabinetEstimateForm(props: Props) {
             unitPrice: match.unitPrice,
             summaryBucket: match.summaryBucket,
             installationItemId: match.installationItemId,
+            catalogImageUrl: match.catalogImageUrl,
           };
         }),
       );
@@ -1362,13 +1376,23 @@ export default function CabinetEstimateForm(props: Props) {
                                   key={s.id}
                                   onMouseDown={(e) => e.preventDefault()}
                                   onClick={() => selectCatalogItem(index, s)}
-                                  className="block w-full px-2 py-1 text-left hover:bg-blue-50 dark:hover:bg-gray-700"
+                                  className="flex w-full items-center gap-2 px-2 py-1 text-left hover:bg-blue-50 dark:hover:bg-gray-700"
                                 >
-                                  <span className="font-semibold text-gray-900 dark:text-gray-100">
-                                    {s.code}
-                                  </span>{" "}
-                                  <span className="text-gray-500 dark:text-gray-400">
-                                    {s.description}
+                                  {s.catalogImageUrl ? (
+                                    // eslint-disable-next-line @next/next/no-img-element
+                                    <img
+                                      src={s.catalogImageUrl}
+                                      alt=""
+                                      className="h-8 w-8 shrink-0 rounded border border-gray-200 object-contain dark:border-gray-600"
+                                    />
+                                  ) : null}
+                                  <span className="min-w-0">
+                                    <span className="font-semibold text-gray-900 dark:text-gray-100">
+                                      {s.code}
+                                    </span>{" "}
+                                    <span className="text-gray-500 dark:text-gray-400">
+                                      {s.description}
+                                    </span>
                                   </span>
                                 </button>
                               ))}
@@ -1377,15 +1401,33 @@ export default function CabinetEstimateForm(props: Props) {
                           )}
                       </td>
                       <td className="border border-gray-200 p-1 align-top dark:border-gray-700">
-                        <div
-                          className="min-h-[1.5rem] whitespace-pre-wrap break-words px-1.5 py-0.5 text-xs text-gray-900 dark:text-gray-100"
-                          title={item.description || undefined}
-                        >
-                          {item.description || (
-                            <span className="text-gray-400 dark:text-gray-500">
-                              {item.code ? "No catalog match" : "Pick a code"}
-                            </span>
-                          )}
+                        <div className="flex items-start gap-1.5">
+                          {item.catalogImageUrl ? (
+                            <a
+                              href={item.catalogImageUrl}
+                              target="_blank"
+                              rel="noopener noreferrer"
+                              title="View catalog image"
+                              className="mt-0.5 shrink-0"
+                            >
+                              {/* eslint-disable-next-line @next/next/no-img-element */}
+                              <img
+                                src={item.catalogImageUrl}
+                                alt=""
+                                className="h-8 w-8 rounded border border-gray-200 object-contain hover:border-blue-400 dark:border-gray-600"
+                              />
+                            </a>
+                          ) : null}
+                          <div
+                            className="min-h-[1.5rem] min-w-0 whitespace-pre-wrap break-words px-1.5 py-0.5 text-xs text-gray-900 dark:text-gray-100"
+                            title={item.description || undefined}
+                          >
+                            {item.description || (
+                              <span className="text-gray-400 dark:text-gray-500">
+                                {item.code ? "No catalog match" : "Pick a code"}
+                              </span>
+                            )}
+                          </div>
                         </div>
                       </td>
                       <td className="border border-gray-200 p-1 text-center align-top dark:border-gray-700">
