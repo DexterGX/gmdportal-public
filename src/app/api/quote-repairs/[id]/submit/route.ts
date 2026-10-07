@@ -1,13 +1,13 @@
 import { NextResponse } from "next/server";
-import { getCurrentUserWithRole } from "@/lib/authHelpers";
+import { getProgramUserContext } from "@/lib/programPermissions";
 import { prisma } from "@/lib/prisma";
-import { canViewQuoteRepair } from "@/lib/quoteRepairs";
+
 
 export async function POST(_request: Request, context: { params: Promise<{ id: string }> }) {
   const { id } = await context.params;
-  const { user, appRole } = await getCurrentUserWithRole();
-  if (!user || appRole === "unassigned") return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-  if (!canViewQuoteRepair(appRole)) return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+  const { user, appRole, appRoles, canAccess } = await getProgramUserContext("quoteRepairs");
+  if (!user || appRoles.length === 0) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  if (!canAccess) return NextResponse.json({ error: "Forbidden" }, { status: 403 });
 
   const repair = await prisma.quoteRepair.findUnique({ where: { id }, include: { currentVersion: { include: { items: true } } } });
   if (!repair?.currentVersion) return NextResponse.json({ error: "Not found" }, { status: 404 });

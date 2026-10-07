@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { getCurrentUserWithRole } from "@/lib/authHelpers";
+import { getProgramUserContext } from "@/lib/programPermissions";
 import { prisma } from "@/lib/prisma";
 import { canEditQuoteRepair, toCurrencyDecimal } from "@/lib/quoteRepairs";
 
@@ -13,8 +13,8 @@ export async function POST(
 ) {
   try {
     const { id } = await context.params;
-    const { user, appRole } = await getCurrentUserWithRole();
-    if (!user || appRole === "unassigned") {
+    const { user, appRole, appRoles } = await getProgramUserContext("quoteRepairs");
+    if (!user || appRoles.length === 0) {
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
     }
 

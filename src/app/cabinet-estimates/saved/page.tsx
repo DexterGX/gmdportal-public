@@ -1,11 +1,11 @@
 import { redirect } from "next/navigation";
-import { getCurrentUserWithRole } from "@/lib/authHelpers";
+import { getProgramUserContext } from "@/lib/programPermissions";
 import SavedEstimatesClient from "./SavedEstimatesClient";
 
 export default async function SavedCabinetEstimatesPage() {
-  const { user, appRole, isActive } = await getCurrentUserWithRole();
+  const { user, appRole, isActive, appRoles } = await getProgramUserContext("cabinetEstimates");
 
-  if (!user || !isActive || appRole === "unassigned") {
+  if (!user || !isActive || appRoles.length === 0) {
     redirect("/login");
   }
 

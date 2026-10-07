@@ -1,4 +1,4 @@
-import { getCurrentUserWithRole } from "@/lib/authHelpers";
+import { getProgramUserContext } from "@/lib/programPermissions";
 import { prisma } from "@/lib/prisma";
 import CustomersV2Client from "./CustomersV2Client";
 
@@ -19,7 +19,7 @@ export default async function CustomersV2Page({
     jobType?: string;
   }>;
 }) {
-  const { appRole } = await getCurrentUserWithRole();
+  const { appRole } = await getProgramUserContext("customersV2");
 
   // Access to this program is governed by Settings > Program Access (see
   // the canAccessProgramId check in customers-v2/layout.tsx), which is the

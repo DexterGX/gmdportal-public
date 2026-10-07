@@ -2,6 +2,8 @@
 
 import { useEffect, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
+import RoundedSelect from "@/components/forms/RoundedSelect";
+import CopyQBooksButton from "./CopyQBooksButton";
 import { useRouter, useSearchParams } from "next/navigation";
 import { Plus, Trash2, Save, Printer, RotateCcw } from "lucide-react";
 import {
@@ -20,7 +22,10 @@ import {
   formatEstimateReferenceNumber,
   computeCabinetsCost,
 } from "@/lib/cabinetEstimateCalc";
-import { installationServiceItemPricesById } from "@/lib/cabinetEstimateParameters";
+import {
+  computeMicrowaveInstallationAmount,
+  installationServiceItemPricesById,
+} from "@/lib/cabinetEstimateParameters";
 
 type LookupJob = {
   id: string;
@@ -272,6 +277,12 @@ export default function CabinetEstimateForm(props: Props) {
       percent: number;
       isActive: boolean;
     }[];
+    discountOptions?: {
+      id: string;
+      percent: number;
+      label: string;
+      isActive: boolean;
+    }[];
     projectTypes: {
       id: string;
       name: string;
@@ -283,6 +294,7 @@ export default function CabinetEstimateForm(props: Props) {
     installationTypes: [],
     removalTypes: [],
     projectTypes: [],
+    discountOptions: [],
   });
   // Special Customization - an admin-managed catalog of customization types
   // (see GMD Parameters > Cabinet Estimates). The user just picks a qty per type;
@@ -296,6 +308,8 @@ export default function CabinetEstimateForm(props: Props) {
   const [saving, setSaving] = useState(false);
   const [message, setMessage] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
+
+  const [specialCustomizationSearch, setSpecialCustomizationSearch] = useState("");
 
   function setSpecialCustomizationQty(itemId: string, qty: number) {
     setSpecialCustomizationQtyById((prev) => ({ ...prev, [itemId]: qty }));
@@ -700,10 +714,43 @@ export default function CabinetEstimateForm(props: Props) {
     [lineItems],
   );
 
+  // Discount dropdown choices come from GMD Parameters (active ones, plus
+  // whatever this estimate currently has so an old/deactivated discount still
+  // displays). Falls back to the original fixed list until they load.
+  const discountSelectOptions = useMemo(() => {
+    const configured = gmdParameters.discountOptions || [];
+    const base =
+      configured.length > 0
+        ? configured
+            .filter((d) => d.isActive || d.percent === discountPercent)
+            .map((d) => ({ value: String(d.percent), label: discountPercentLabel(d.percent, d.label) }))
+        : DISCOUNT_PERCENT_OPTIONS.map((pct) => ({
+            value: String(pct),
+            label: discountPercentLabel(pct),
+          }));
+    if (!base.some((o) => o.value === String(discountPercent))) {
+      base.push({
+        value: String(discountPercent),
+        label: discountPercentLabel(discountPercent),
+      });
+    }
+    return base;
+  }, [gmdParameters.discountOptions, discountPercent]);
+
   const discountAmount = useMemo(
     () => computeDiscountAmount(cabinetsTotal, discountPercent),
     [cabinetsTotal, discountPercent],
   );
+
+  // Search only hides rows in the list - quantities already entered on
+  // hidden rows are kept and still count toward the total.
+  const filteredSpecialCustomizationItems = useMemo(() => {
+    const q = specialCustomizationSearch.trim().toLowerCase();
+    if (!q) return props.specialCustomizationItems;
+    return props.specialCustomizationItems.filter((item) =>
+      item.name.toLowerCase().includes(q),
+    );
+  }, [props.specialCustomizationItems, specialCustomizationSearch]);
 
   const specialCustomizationTotal = useMemo(
     () =>
@@ -759,9 +806,25 @@ export default function CabinetEstimateForm(props: Props) {
     [gmdParameters.installationTypes, installationTypeId],
   );
 
+  // Flat add-on from the Installers Price Table "Microwave" row - see
+  // computeMicrowaveInstallationAmount (not scaled by the type multiplier).
+  const microwaveInstallationAmount = useMemo(
+    () =>
+      computeMicrowaveInstallationAmount(
+        microwaveInstallation,
+        gmdParameters.installationServiceItems,
+      ),
+    [microwaveInstallation, gmdParameters.installationServiceItems],
+  );
+
   const installationAmount = useMemo(
-    () => Math.round(baseInstallationAmount * (selectedInstallationType?.multiplier ?? 1) * 100) / 100,
-    [baseInstallationAmount, selectedInstallationType],
+    () =>
+      Math.round(
+        (baseInstallationAmount * (selectedInstallationType?.multiplier ?? 1) +
+          microwaveInstallationAmount) *
+          100,
+      ) / 100,
+    [baseInstallationAmount, selectedInstallationType, microwaveInstallationAmount],
   );
 
   // Round 12: Removal - a live preview only, same caveat as Installation
@@ -1006,6 +1069,20 @@ export default function CabinetEstimateForm(props: Props) {
           >
             <RotateCcw className="h-4 w-4" /> New
           </button>
+          <CopyQBooksButton
+            estimateNumber={estimateNumber}
+            brand={brand}
+            color={groupColor}
+            onResult={(ok) => {
+              if (ok) {
+                setError(null);
+                setMessage("Copied Estimate#, Brand and Color for QuickBooks.");
+              } else {
+                setMessage(null);
+                setError("Couldn't copy to the clipboard.");
+              }
+            }}
+          />
           <button
             type="button"
             onClick={handlePrint}
@@ -1126,7 +1203,7 @@ export default function CabinetEstimateForm(props: Props) {
                   ref={clientBoxRef}
                   className="relative grid grid-cols-[130px_1fr] divide-x divide-gray-300 dark:divide-gray-600"
                 >
-                  <div className="flex items-center bg-blue-600 px-2 py-0.5 text-[9px] font-semibold text-white">
+                  <div className="flex items-center bg-blue-600 px-2 py-0.5 text-[11px] font-semibold text-white">
                     Customer Name
                   </div>
                   <div className="relative">
@@ -1179,22 +1256,23 @@ export default function CabinetEstimateForm(props: Props) {
                 </div>
 
                 <div className="grid grid-cols-[130px_1fr] divide-x divide-gray-300 dark:divide-gray-600">
-                  <div className="flex items-center bg-blue-600 px-2 py-0.5 text-[9px] font-semibold text-white">
+                  <div className="flex items-center bg-blue-600 px-2 py-0.5 text-[11px] font-semibold text-white">
                     Job Name
                   </div>
                   {clientJobs.length > 0 ? (
-                    <select
+                    <RoundedSelect
                       value={selectedJobId}
-                      onChange={(e) => selectJob(e.target.value)}
-                      className="w-full bg-transparent px-2 py-0.5 text-[11px] text-gray-900 outline-none dark:text-gray-100"
-                    >
-                      <option value="">Select a job/deal...</option>
-                      {clientJobs.map((job) => (
-                        <option key={job.id} value={job.id}>
-                          {job.dealName || job.id}
-                        </option>
-                      ))}
-                    </select>
+                      onChange={selectJob}
+                      placeholder="Select a job/deal..."
+                      options={[
+                        { value: "", label: "Select a job/deal..." },
+                        ...clientJobs.map((job) => ({
+                          value: job.id,
+                          label: job.dealName || job.id,
+                        })),
+                      ]}
+                      menuMinWidth={260}
+                    />
                   ) : (
                     <input
                       value={jobName}
@@ -1232,11 +1310,10 @@ export default function CabinetEstimateForm(props: Props) {
                 </HeaderRow>
 
                 <HeaderRow label="Brand" highlight={!vendorId}>
-                  <select
+                  <RoundedSelect
                     value={vendorId}
-                    onChange={(e) => {
-                      const nextVendorId = e.target.value;
-                      const vendor = vendors.find((v) => v.id === nextVendorId);
+                    onChange={(nextVendorId) => {
+                                            const vendor = vendors.find((v) => v.id === nextVendorId);
                       setVendorId(nextVendorId);
                       setBrand(vendor?.displayName || "");
                       setPriceTierId("");
@@ -1261,23 +1338,19 @@ export default function CabinetEstimateForm(props: Props) {
                         ),
                       );
                     }}
-                    className="w-full bg-transparent px-2 py-0.5 text-[11px] text-gray-900 outline-none dark:text-gray-100"
-                  >
-                    <option value="">{brand || "-- Select brand --"}</option>
-                    {vendors.map((v) => (
-                      <option key={v.id} value={v.id}>
-                        {v.displayName}
-                      </option>
-                    ))}
-                  </select>
+                    placeholder={brand || "-- Select brand --"}
+                    options={[
+                      { value: "", label: brand || "-- Select brand --" },
+                      ...vendors.map((v) => ({ value: v.id, label: v.displayName })),
+                    ]}
+                  />
                 </HeaderRow>
 
                 <HeaderRow label="Group / Color" highlight={Boolean(vendorId) && !priceTierId}>
-                  <select
+                  <RoundedSelect
                     value={priceTierId}
-                    onChange={(e) => {
-                      const nextTierId = e.target.value;
-                      const tier = priceTiers.find((t) => t.id === nextTierId);
+                    onChange={(nextTierId) => {
+                                            const tier = priceTiers.find((t) => t.id === nextTierId);
                       setPriceTierId(nextTierId);
                       setGroupColor(tier?.name || "");
                       // Swapping the color/tier keeps the same catalog items
@@ -1288,57 +1361,49 @@ export default function CabinetEstimateForm(props: Props) {
                       repriceCatalogItems(vendorId, nextTierId);
                     }}
                     disabled={!vendorId}
-                    className="w-full bg-transparent px-2 py-0.5 text-[11px] text-gray-900 outline-none disabled:opacity-50 dark:text-gray-100"
-                  >
-                    <option value="">{groupColor || (vendorId ? "-- Select group/color --" : "Select a brand first")}</option>
-                    {priceTiers.map((t) => (
-                      <option key={t.id} value={t.id}>
-                        {t.name}
-                      </option>
-                    ))}
-                  </select>
+                    placeholder={groupColor || (vendorId ? "-- Select group/color --" : "Select a brand first")}
+                    options={[
+                      {
+                        value: "",
+                        label: groupColor || (vendorId ? "-- Select group/color --" : "Select a brand first"),
+                      },
+                      ...priceTiers.map((t) => ({ value: t.id, label: t.name })),
+                    ]}
+                  />
                 </HeaderRow>
 
                 <HeaderRow label="Removal">
-                  <select
+                  <RoundedSelect
                     value={removalTypeId}
-                    onChange={(e) => setRemovalTypeId(e.target.value)}
-                    className="w-full bg-transparent px-2 py-0.5 text-[11px] text-gray-900 outline-none dark:text-gray-100"
-                  >
-                    <option value="">-- None --</option>
-                    {gmdParameters.removalTypes
-                      .filter((t) => t.isActive || t.id === removalTypeId)
-                      .map((t) => (
-                        <option key={t.id} value={t.id}>
-                          {t.name}
-                        </option>
-                      ))}
-                  </select>
+                    onChange={setRemovalTypeId}
+                    options={[
+                      { value: "", label: "-- None --" },
+                      ...gmdParameters.removalTypes
+                        .filter((t) => t.isActive || t.id === removalTypeId)
+                        .map((t) => ({ value: t.id, label: t.name })),
+                    ]}
+                  />
                 </HeaderRow>
 
                 <HeaderRow label="Project Type">
-                  <select
+                  <RoundedSelect
                     value={projectType}
-                    onChange={(e) => setProjectType(e.target.value)}
-                    className="w-full bg-transparent px-2 py-0.5 text-[11px] text-gray-900 outline-none dark:text-gray-100"
-                  >
-                    <option value="">-- None --</option>
-                    {gmdParameters.projectTypes
-                      .filter((t) => t.isActive || t.name === projectType)
-                      .map((t) => (
-                        <option key={t.id} value={t.name}>
-                          {t.name}
-                        </option>
-                      ))}
-                    {/* A saved estimate's projectType may hold a value from
-                        before this dropdown existed (free text) or one that
-                        no longer matches any configured option - show it so
-                        it isn't silently blanked out on load. */}
-                    {projectType &&
-                      !gmdParameters.projectTypes.some((t) => t.name === projectType) && (
-                        <option value={projectType}>{projectType}</option>
-                      )}
-                  </select>
+                    onChange={setProjectType}
+                    options={[
+                      { value: "", label: "-- None --" },
+                      ...gmdParameters.projectTypes
+                        .filter((t) => t.isActive || t.name === projectType)
+                        .map((t) => ({ value: t.name, label: t.name })),
+                      // A saved estimate's projectType may hold a value from
+                      // before this dropdown existed (free text) or one that
+                      // no longer matches any configured option - keep it
+                      // selectable so it isn't silently blanked out on load.
+                      ...(projectType &&
+                      !gmdParameters.projectTypes.some((t) => t.name === projectType)
+                        ? [{ value: projectType, label: projectType }]
+                        : []),
+                    ]}
+                  />
                 </HeaderRow>
               </div>
 
@@ -1700,14 +1765,17 @@ export default function CabinetEstimateForm(props: Props) {
                   </span>
                 </CategoryRow>
                 <CategoryRow label="Microwave Installation">
-                  <select
+                  <RoundedSelect
+                    variant="boxed"
+                    className="w-20"
+                    menuMinWidth={80}
                     value={microwaveInstallation ? "yes" : "no"}
-                    onChange={(e) => setMicrowaveInstallation(e.target.value === "yes")}
-                    className="w-20 rounded border border-gray-300 bg-white px-1.5 py-0.5 text-[11px] text-gray-900 dark:border-gray-600 dark:bg-gray-900 dark:text-gray-100"
-                  >
-                    <option value="no">No</option>
-                    <option value="yes">Yes</option>
-                  </select>
+                    onChange={(v) => setMicrowaveInstallation(v === "yes")}
+                    options={[
+                      { value: "no", label: "No" },
+                      { value: "yes", label: "Yes" },
+                    ]}
+                  />
                 </CategoryRow>
               </div>
             </div>
@@ -1724,17 +1792,14 @@ export default function CabinetEstimateForm(props: Props) {
                 </TotalsRow>
                 <TotalsRow label="Discount" className="bg-red-50 dark:bg-red-950/30">
                   <div className="flex items-center gap-1.5">
-                    <select
-                      value={discountPercent}
-                      onChange={(e) => setDiscountPercent(Number(e.target.value) || 0)}
-                      className="rounded border border-gray-300 bg-white px-1.5 py-0.5 text-[11px] text-gray-900 dark:border-gray-600 dark:bg-gray-900 dark:text-gray-100"
-                    >
-                      {DISCOUNT_PERCENT_OPTIONS.map((percent) => (
-                        <option key={percent} value={percent}>
-                          {discountPercentLabel(percent)}
-                        </option>
-                      ))}
-                    </select>
+                    <RoundedSelect
+                      variant="boxed"
+                      className="w-24"
+                      menuMinWidth={110}
+                      value={String(discountPercent)}
+                      onChange={(v) => setDiscountPercent(Number(v) || 0)}
+                      options={discountSelectOptions}
+                    />
                     <span className="text-[11px] font-medium text-red-700 dark:text-red-300">
                       {formatCurrency(discountAmount)}
                     </span>
@@ -1755,22 +1820,17 @@ export default function CabinetEstimateForm(props: Props) {
                 </TotalsRow>
                 <TotalsRow label="Installation" className="bg-green-50 dark:bg-green-950/30">
                   <div className="flex items-center gap-1.5">
-                    <select
+                    <RoundedSelect
+                      variant="boxed"
+                      className="w-24"
+                      menuMinWidth={110}
                       value={installationTypeId}
-                      onChange={(e) => setInstallationTypeId(e.target.value)}
-                      className="rounded border border-gray-300 bg-white px-1.5 py-0.5 text-[11px] text-gray-900 dark:border-gray-600 dark:bg-gray-900 dark:text-gray-100"
-                    >
-                      {gmdParameters.installationTypes.length === 0 && (
-                        <option value="">Loading...</option>
-                      )}
-                      {gmdParameters.installationTypes
+                      onChange={setInstallationTypeId}
+                      placeholder="Loading..."
+                      options={gmdParameters.installationTypes
                         .filter((t) => t.isActive || t.id === installationTypeId)
-                        .map((t) => (
-                          <option key={t.id} value={t.id}>
-                            {t.name}
-                          </option>
-                        ))}
-                    </select>
+                        .map((t) => ({ value: t.id, label: t.name }))}
+                    />
                     <span
                       className="text-[11px] font-semibold text-gray-900 dark:text-gray-100"
                       title="Computed from GMD Parameters, plus Special Customization and per-item Custom surcharges - not editable"
@@ -1813,8 +1873,24 @@ export default function CabinetEstimateForm(props: Props) {
                 GMD Parameters &gt; Cabinet Estimates.
               </div>
             ) : (
+              <>
+              <div className="flex-shrink-0 border-b border-gray-200 p-1.5 dark:border-gray-700">
+                <input
+                  type="search"
+                  value={specialCustomizationSearch}
+                  onChange={(e) => setSpecialCustomizationSearch(e.target.value)}
+                  placeholder="Search customizations..."
+                  aria-label="Search special customizations"
+                  className="w-full rounded-md border border-gray-300 bg-white px-2 py-1 text-xs text-gray-900 outline-none placeholder:text-gray-400 focus:border-blue-500 dark:border-gray-600 dark:bg-gray-900 dark:text-gray-100"
+                />
+              </div>
               <div className="min-h-0 flex-1 divide-y divide-gray-200 overflow-y-auto text-xs dark:divide-gray-700">
-                {props.specialCustomizationItems.map((item) => (
+                {filteredSpecialCustomizationItems.length === 0 && (
+                  <div className="p-3 text-gray-500 dark:text-gray-400">
+                    No customizations match your search.
+                  </div>
+                )}
+                {filteredSpecialCustomizationItems.map((item) => (
                   <div
                     key={item.id}
                     className="flex items-center justify-between gap-2 px-2.5 py-1"
@@ -1833,6 +1909,7 @@ export default function CabinetEstimateForm(props: Props) {
                   </div>
                 ))}
               </div>
+              </>
             )}
           </div>
           </div>
@@ -1858,7 +1935,7 @@ function HeaderRow({
       }`}
     >
       <div
-        className={`flex items-center px-2 py-0.5 text-[9px] font-semibold text-white ${
+        className={`flex items-center px-2 py-0.5 text-[11px] font-semibold text-white ${
           highlight ? "bg-red-600" : "bg-blue-600"
         }`}
         title={highlight ? "Select this to search the catalog and pull real prices" : undefined}

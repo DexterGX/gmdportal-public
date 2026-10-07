@@ -1,6 +1,6 @@
 import { notFound, redirect } from "next/navigation";
 import { prisma } from "@/lib/prisma";
-import { getCurrentUserWithRole } from "@/lib/authHelpers";
+import { getProgramUserContext } from "@/lib/programPermissions";
 import AutoPrintClient from "./AutoPrintClient";
 
 const prismaAny = prisma as any;
@@ -67,13 +67,13 @@ export default async function PaymentTermCurrentPrintPage({
   params: Promise<{ artifactId: string }>;
   searchParams: Promise<Record<string, string | string[] | undefined>>;
 }) {
-  const { user, appRole, isActive } = await getCurrentUserWithRole();
+  const { user, appRole, isActive, appRoles, canAccess } = await getProgramUserContext("paymentTerms");
 
-  if (!user || !isActive || appRole === "unassigned") {
+  if (!user || !isActive || appRoles.length === 0) {
     redirect("/login");
   }
 
-  if (!["admin", "sales", "office", "finance"].includes(appRole)) {
+  if (!canAccess) {
     redirect("/dashboard");
   }
 

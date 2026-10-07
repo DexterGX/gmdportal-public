@@ -1,5 +1,5 @@
 import { notFound, redirect } from "next/navigation";
-import { getCurrentUserWithRole } from "@/lib/authHelpers";
+import { getProgramUserContext } from "@/lib/programPermissions";
 import { prisma } from "@/lib/prisma";
 import {
   computeInstallationTotal,
@@ -12,11 +12,10 @@ import {
 } from "@/lib/cabinetEstimateCalc";
 import AutoPrintClient from "./AutoPrintClient";
 import PrintButton from "./PrintButton";
+import CopyQBooksButton from "../../CopyQBooksButton";
 import styles from "./page.module.css";
 
 const prismaAny = prisma as any;
-
-const VIEW_ROLES = ["admin", "sales", "office", "finance"];
 
 // How many Special Customization (name, qty) pairs are laid out per print
 // row - matches Diego's "4 items per row, table-like" request.
@@ -57,11 +56,11 @@ export default async function CabinetEstimatePrintPage({
   params: Promise<{ id: string }>;
   searchParams: Promise<Record<string, string | string[] | undefined>>;
 }) {
-  const { user, appRole, isActive } = await getCurrentUserWithRole();
-  if (!user || !isActive || appRole === "unassigned") {
+  const { user, appRole, isActive, appRoles, canAccess } = await getProgramUserContext("cabinetEstimates");
+  if (!user || !isActive || appRoles.length === 0) {
     redirect("/login");
   }
-  if (!VIEW_ROLES.includes(appRole)) {
+  if (!canAccess) {
     redirect("/dashboard");
   }
 
@@ -104,6 +103,16 @@ export default async function CabinetEstimatePrintPage({
   const printedOn = new Date().toLocaleString("en-US");
   const printedBy = user.name || user.email || "Unknown";
   const discountPercent = toNumber(estimate.discountPercent);
+  // Admin-managed label for this discount (e.g. "Contractor"), if configured.
+  let discountLabel: string | undefined;
+  try {
+    const option = await prismaAny.cabinetDiscountOption.findUnique({
+      where: { percent: Math.trunc(discountPercent) },
+    });
+    if (option) discountLabel = option.label || "";
+  } catch {
+    discountLabel = undefined;
+  }
   const specialCustomizationRows = chunkArray(
     estimate.specialCustomizationLines,
     SPECIAL_CUSTOMIZATION_COLUMNS,
@@ -126,7 +135,17 @@ export default async function CabinetEstimatePrintPage({
     <div className={styles.screen}>
       {shouldAutoPrint && <AutoPrintClient title={pageTitle} />}
       <div className="print:hidden">
-        <PrintButton />
+        <div
+          className="mx-auto mb-3 flex items-center justify-center gap-2"
+          style={{ maxWidth: "850px" }}
+        >
+          <PrintButton />
+          <CopyQBooksButton
+            estimateNumber={estimate.estimateNumber}
+            brand={estimate.brand}
+            color={estimate.groupColor}
+          />
+        </div>
       </div>
       <div className={styles.sheet}>
         <div className={styles.printedBy}>
@@ -227,11 +246,23 @@ export default async function CabinetEstimatePrintPage({
                   <td>{item.description || ""}</td>
                   <td className={styles.colCustomization}>
                     <span
-                      className={`${styles.customCheckbox} ${
-                        item.isCustomization ? styles.customCheckboxChecked : ""
-                      }`}
-                      aria-label={item.isCustomization ? "Yes" : "No"}
-                    />
+                      className={styles.customCheckbox}
+                      role="img"
+                      aria-label={item.isCustomization ? "Custom: yes" : "Custom: no"}
+                    >
+                      {item.isCustomization ? (
+                        <svg viewBox="0 0 12 12" aria-hidden="true">
+                          <path
+                            d="M2 6.5 L5 9.5 L10 2.5"
+                            fill="none"
+                            stroke="#111827"
+                            strokeWidth="2"
+                            strokeLinecap="round"
+                            strokeLinejoin="round"
+                          />
+                        </svg>
+                      ) : null}
+                    </span>
                   </td>
                   <td>{item.note || ""}</td>
                   <td className={styles.colPUnit}>
@@ -319,7 +350,7 @@ export default async function CabinetEstimatePrintPage({
               <strong>{formatCurrency(toNumber(estimate.cabinetsTotal))}</strong>
             </div>
             <div className={`${styles.totalsRow} ${styles.discount}`}>
-              <span>Discount ({discountPercentLabel(discountPercent)})</span>
+              <span>Discount ({discountPercentLabel(discountPercent, discountLabel)})</span>
               <strong>{formatCurrency(toNumber(estimate.discount))}</strong>
             </div>
             <div className={`${styles.totalsRow} ${styles.subtotal}`}>

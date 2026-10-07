@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getServerSession } from "next-auth";
 import authOptions from "@/lib/auth";
-import { getCurrentUserWithRole } from "@/lib/authHelpers";
+import { getProgramUserContext } from "@/lib/programPermissions";
 import { prisma } from "@/lib/prisma";
 import { supabaseAdmin } from "@/lib/supabase/server";
 
@@ -31,7 +31,7 @@ export async function DELETE(
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
     }
 
-    const { appRole } = await getCurrentUserWithRole();
+    const { appRole } = await getProgramUserContext("sinks");
     if (appRole !== "admin") {
       return NextResponse.json({ error: "Forbidden" }, { status: 403 });
     }

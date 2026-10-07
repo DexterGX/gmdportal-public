@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { getServerSession } from "next-auth";
 import authOptions from "@/lib/auth";
-import { getCurrentUserWithRole } from "@/lib/authHelpers";
+import { getProgramUserContext } from "@/lib/programPermissions";
 import postgres from "postgres";
 
 const connectionString =
@@ -94,7 +94,7 @@ export async function GET(request: Request) {
   }
 
   await ensureOnce();
-  const { user, appRole } = await getCurrentUserWithRole();
+  const { user, appRole } = await getProgramUserContext("slabs");
 
   const expiredHolds = await sql`
     UPDATE "PromotionalSlab"
@@ -242,7 +242,7 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
 
-  const { appRole } = await getCurrentUserWithRole();
+  const { appRole } = await getProgramUserContext("slabs");
   if (appRole !== "admin") {
     return NextResponse.json({ error: "Forbidden" }, { status: 403 });
   }

@@ -1,5 +1,5 @@
 import { redirect } from "next/navigation";
-import { getCurrentUserWithRole } from "@/lib/authHelpers";
+import { getProgramUserContext } from "@/lib/programPermissions";
 import { prisma } from "@/lib/prisma";
 import { Prisma } from "@prisma/client";
 import PrintQuoteLayout from "./PrintQuoteLayout";
@@ -12,7 +12,7 @@ type PrintQuotePageProps = {
 export default async function PrintQuotePage(props: PrintQuotePageProps) {
   const { jobId, quoteId } = await props.params;
   const searchParams = await props.searchParams;
-  const { user, appRole, isActive } = await getCurrentUserWithRole();
+  const { user, appRole, isActive } = await getProgramUserContext("closetJobs");
 
   // Only ADMIN and SALES can print quotes
   if (!user || !isActive || !["admin", "sales"].includes(appRole)) {

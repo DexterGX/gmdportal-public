@@ -1,13 +1,8 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
-import { getCurrentUserWithRole } from "@/lib/authHelpers";
+import { getProgramUserContext } from "@/lib/programPermissions";
 
 const prismaAny = prisma as any;
-
-// Any role that can create/edit estimates can read the active catalog (they
-// need it to fill out the Special Customization section); only admins can
-// manage the catalog itself.
-const VIEW_ROLES = ["admin", "sales", "office", "finance"];
 
 function toNumber(value: unknown): number {
   const parsed = Number(value);
@@ -15,11 +10,11 @@ function toNumber(value: unknown): number {
 }
 
 async function requireViewer() {
-  const { user, appRole, isActive } = await getCurrentUserWithRole();
-  if (!user || !isActive || appRole === "unassigned") {
+  const { user, appRole, isActive, appRoles, canAccess } = await getProgramUserContext("cabinetEstimates");
+  if (!user || !isActive || appRoles.length === 0) {
     return { ok: false as const, status: 401, error: "Unauthorized" };
   }
-  if (!VIEW_ROLES.includes(appRole)) {
+  if (!canAccess) {
     return { ok: false as const, status: 403, error: "Forbidden" };
   }
   return { ok: true as const, user, appRole };

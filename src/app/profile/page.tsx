@@ -1,7 +1,12 @@
 import { prisma } from "@/lib/prisma";
 import { getCurrentUserWithRole } from "@/lib/authHelpers";
 import UsersManagementClient from "./UsersManagementClient";
-import { mapDbRoleToAppRole } from "@/lib/programsConfig";
+import {
+  isProgramAdminEligible,
+  mapDbRoleToAppRole,
+  programs,
+} from "@/lib/programsConfig";
+import { getEffectiveProgramAccessMap } from "@/lib/programAccess";
 
 export default async function ProfilePage() {
   const { appRole, isActive } = await getCurrentUserWithRole();
@@ -19,9 +24,22 @@ export default async function ProfilePage() {
       image: true,
       role: true,
       roles: true,
+      programAdminFor: true,
       active: true,
     },
   });
+
+  // Programs that support a per-user "Program Admin" level, with the roles
+  // allowed into each one (Settings → Program Access). null = open to all.
+  const accessMap = await getEffectiveProgramAccessMap();
+  const programAdminOptions = programs
+    .filter((program) => isProgramAdminEligible(program.id))
+    .map((program) => ({
+      id: program.id,
+      name: program.name,
+      allowedRoles: accessMap[program.id] ?? null,
+    }))
+    .sort((a, b) => a.name.localeCompare(b.name));
 
   const usersForClient = users.map((user) => {
     const normalizedRoles = Array.from(
@@ -37,6 +55,9 @@ export default async function ProfilePage() {
       ...user,
       role: mapDbRoleToAppRole(user.role),
       roles: normalizedRoles,
+      programAdminFor: (user.programAdminFor || []).filter(
+        (value): value is string => typeof value === "string" && Boolean(value)
+      ),
     };
   });
 
@@ -53,7 +74,11 @@ export default async function ProfilePage() {
       </p>
 
       {/* Client component adds interactivity for admin; read-only for others */}
-      <UsersManagementClient users={usersForClient} canManage={canManage} />
+      <UsersManagementClient
+        users={usersForClient}
+        canManage={canManage}
+        programAdminOptions={programAdminOptions}
+      />
     </div>
   );
 }

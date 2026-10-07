@@ -1,17 +1,18 @@
 import { redirect } from "next/navigation";
-import { getCurrentUserWithRole } from "@/lib/authHelpers";
+import { getProgramUserContext } from "@/lib/programPermissions";
 import NewAccessoryTrackerClient from "./NewAccessoryTrackerClient";
 
 export default async function NewAccessoryTrackerPage() {
-  const { user, appRole, isActive } = await getCurrentUserWithRole();
+  const { user, appRole, isActive, canAccess } =
+    await getProgramUserContext("accessories");
 
-  if (!user || !isActive || appRole === "unassigned") {
+  if (!user || !isActive) {
     redirect("/login");
   }
 
-  // Only authorized roles can create trackers
-  if (!["admin", "office", "finance"].includes(appRole)) {
-    redirect("/accessories");
+  // Access is managed in Settings → Program Access
+  if (!canAccess) {
+    redirect("/dashboard");
   }
 
   return <NewAccessoryTrackerClient userId={user.id} userRole={appRole} />;

@@ -1,5 +1,8 @@
 import { notFound, redirect } from "next/navigation";
-import { getCurrentUserWithRole } from "@/lib/authHelpers";
+import {
+  canAccessAnyProgram,
+  getProgramUserContext,
+} from "@/lib/programPermissions";
 import BatchAutoPrintClient from "./BatchAutoPrintClient";
 
 type AgreementKey =
@@ -58,13 +61,15 @@ export default async function BatchPrintPage({
   params: Promise<{ artifactId: string }>;
   searchParams: Promise<Record<string, string | string[] | undefined>>;
 }) {
-  const { user, appRole, isActive } = await getCurrentUserWithRole();
+  const { user, appRoles, isActive } =
+    await getProgramUserContext("paymentTerms");
 
-  if (!user || !isActive || appRole === "unassigned") {
+  if (!user || !isActive || appRoles.length === 0) {
     redirect("/login");
   }
 
-  if (!["admin", "sales", "office", "finance"].includes(appRole)) {
+  // Access is managed in Settings → Program Access (Payment Terms or Customers)
+  if (!(await canAccessAnyProgram(["paymentTerms", "customersV2"]))) {
     redirect("/dashboard");
   }
 

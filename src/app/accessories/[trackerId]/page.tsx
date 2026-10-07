@@ -1,5 +1,5 @@
 import { redirect } from "next/navigation";
-import { getCurrentUserWithRole } from "@/lib/authHelpers";
+import { getProgramUserContext } from "@/lib/programPermissions";
 import { getAccessoryTracker } from "@/lib/accessories";
 import AccessoryTrackerDetailClient from "./AccessoryTrackerDetailClient";
 
@@ -11,14 +11,15 @@ interface Props {
 
 export default async function AccessoryTrackerDetailPage({ params }: Props) {
   const { trackerId } = await params;
-  const { user, appRole, isActive } = await getCurrentUserWithRole();
+  const { user, isActive, canAccess } =
+    await getProgramUserContext("accessories");
 
-  if (!user || !isActive || appRole === "unassigned") {
+  if (!user || !isActive) {
     redirect("/login");
   }
 
-  // Only authorized roles can access
-  if (!["admin", "office", "finance", "sales"].includes(appRole)) {
+  // Access is managed in Settings → Program Access
+  if (!canAccess) {
     redirect("/dashboard");
   }
 
@@ -49,7 +50,7 @@ export default async function AccessoryTrackerDetailPage({ params }: Props) {
     <AccessoryTrackerDetailClient
       tracker={safeTracker}
       userId={user.id}
-      userRole={appRole}
+      canEdit={canAccess}
     />
   );
 }

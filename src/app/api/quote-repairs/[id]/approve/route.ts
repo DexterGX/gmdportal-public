@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { Prisma } from "@prisma/client";
-import { getCurrentUserWithRole } from "@/lib/authHelpers";
+import { getProgramUserContext } from "@/lib/programPermissions";
 import { prisma } from "@/lib/prisma";
 import {
   isQuoteRepairItemMeaningful,
@@ -50,8 +50,8 @@ export async function POST(
   context: { params: Promise<{ id: string }> },
 ) {
   const { id } = await context.params;
-  const { user, appRole } = await getCurrentUserWithRole();
-  if (!user || appRole === "unassigned")
+  const { user, appRole, appRoles } = await getProgramUserContext("quoteRepairs");
+  if (!user || appRoles.length === 0)
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
 
   const repair = await prisma.quoteRepair.findUnique({

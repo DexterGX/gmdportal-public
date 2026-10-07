@@ -53,6 +53,40 @@ export async function getEffectiveProgramAccessMap(): Promise<ProgramAccessMap> 
   return map;
 }
 
+/**
+ * Pure check against an already-loaded access map (no DB call). Use this when
+ * checking many users/programs at once (e.g. the Users & Profiles page).
+ */
+export function rolesCanAccessProgram(
+  accessMap: ProgramAccessMap,
+  programId: ProgramId,
+  roles: string[],
+  isActive: boolean
+): boolean {
+  if (!isActive || roles.length === 0) {
+    return false;
+  }
+
+  const allowedRoles = accessMap[programId];
+  if (allowedRoles === undefined) {
+    return true;
+  }
+
+  return roles.some((role) => allowedRoles.includes(role));
+}
+
+export function computeAccessibleProgramIds(
+  accessMap: ProgramAccessMap,
+  roles: string[],
+  isActive: boolean
+): ProgramId[] {
+  return programs
+    .filter((program) =>
+      rolesCanAccessProgram(accessMap, program.id, roles, isActive)
+    )
+    .map((program) => program.id);
+}
+
 export async function canAccessProgramId(
   programId: ProgramId,
   roles: string[],
@@ -63,13 +97,7 @@ export async function canAccessProgramId(
   }
 
   const accessMap = await getEffectiveProgramAccessMap();
-  const allowedRoles = accessMap[programId];
-
-  if (allowedRoles === undefined) {
-    return true;
-  }
-
-  return roles.some((role) => allowedRoles.includes(role));
+  return rolesCanAccessProgram(accessMap, programId, roles, isActive);
 }
 
 export async function getAccessibleProgramIds(
@@ -77,21 +105,7 @@ export async function getAccessibleProgramIds(
   isActive: boolean
 ): Promise<ProgramId[]> {
   const accessMap = await getEffectiveProgramAccessMap();
-
-  return programs
-    .filter((program) => {
-      if (!isActive || roles.length === 0) {
-        return false;
-      }
-
-      const allowedRoles = accessMap[program.id];
-      if (allowedRoles === undefined) {
-        return true;
-      }
-
-      return roles.some((role) => allowedRoles.includes(role));
-    })
-    .map((program) => program.id);
+  return computeAccessibleProgramIds(accessMap, roles, isActive);
 }
 
 export function getProgramAccessManagedIds(): ProgramId[] {

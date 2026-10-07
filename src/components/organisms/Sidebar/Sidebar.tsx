@@ -38,7 +38,12 @@ function renderIcon(icon: any, name: string) {
   return null;
 }
 
-const AppSidebar: React.FC<{ userRole?: AppRole }> = ({ userRole }) => {
+const AppSidebar: React.FC<{
+  /** Effective role inside the current program ("admin" for Program Admins). */
+  userRole?: AppRole;
+  /** All of the user's roles (built-in + custom), used for per-item allowedRoles. */
+  userRoles?: string[];
+}> = ({ userRole, userRoles }) => {
   const {
     isExpanded,
     isMobileOpen,
@@ -52,12 +57,18 @@ const AppSidebar: React.FC<{ userRole?: AppRole }> = ({ userRole }) => {
   // Get the current program based on pathname
   const program = getProgramForPath(pathname);
 
-  // Filter nav items based on user role - hide adminOnly items for non-admins
+  // Filter nav items based on user role - hide adminOnly items unless the user
+  // is an Admin / Program Admin for this program (userRole === "admin").
+  const roleSet = new Set<string>(
+    [userRole, ...(userRoles ?? [])].filter((value): value is string =>
+      Boolean(value),
+    ),
+  );
   const navItems = program.navItems.filter(
     (item) =>
       (!item.adminOnly || userRole === "admin") &&
       (!item.allowedRoles ||
-        (userRole ? item.allowedRoles.includes(userRole) : false)),
+        item.allowedRoles.some((role) => roleSet.has(role))),
   );
 
   // Split items into regular and admin-only for grouping

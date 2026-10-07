@@ -1,11 +1,11 @@
 import { NextRequest, NextResponse } from "next/server";
-import { getCurrentUserWithRole } from "@/lib/authHelpers";
+import { getProgramUserContext } from "@/lib/programPermissions";
 import { prisma } from "@/lib/prisma";
 import { ensureStoreTaxonomySeeded, normalizeKey, canManageStoreInventory } from "@/lib/storeInventory";
 
 export async function GET() {
-  const { user, appRole } = await getCurrentUserWithRole();
-  if (!user || appRole === "unassigned") {
+  const { user, appRole, appRoles } = await getProgramUserContext("storeInventory");
+  if (!user || appRoles.length === 0) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
 
@@ -19,7 +19,7 @@ export async function GET() {
 }
 
 export async function POST(request: NextRequest) {
-  const { user, appRole } = await getCurrentUserWithRole();
+  const { user, appRole, appRoles } = await getProgramUserContext("storeInventory");
   if (!user || !canManageStoreInventory(appRole)) {
     return NextResponse.json({ error: "Forbidden" }, { status: 403 });
   }
@@ -50,7 +50,7 @@ export async function POST(request: NextRequest) {
 }
 
 export async function PATCH(request: NextRequest) {
-  const { user, appRole } = await getCurrentUserWithRole();
+  const { user, appRole, appRoles } = await getProgramUserContext("storeInventory");
   if (!user || !canManageStoreInventory(appRole)) {
     return NextResponse.json({ error: "Forbidden" }, { status: 403 });
   }

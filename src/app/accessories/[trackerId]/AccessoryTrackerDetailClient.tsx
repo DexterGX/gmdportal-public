@@ -49,13 +49,13 @@ import EditItemModal from "./EditItemModal";
 interface Props {
   tracker: any;
   userId: string;
-  userRole: string;
+  canEdit: boolean;
 }
 
 export default function AccessoryTrackerDetailClient({
   tracker: initialTracker,
   userId,
-  userRole,
+  canEdit,
 }: Props) {
   const router = useRouter();
   const [tracker, setTracker] = useState(initialTracker);
@@ -110,7 +110,7 @@ export default function AccessoryTrackerDetailClient({
     ? Math.round((deliveredItems / totalItems) * 100)
     : 0;
 
-  const canEdit = ["admin", "office", "finance"].includes(userRole);
+
 
   const refreshTracker = async () => {
     try {

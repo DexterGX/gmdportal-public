@@ -4,7 +4,7 @@ import { redirect } from "next/navigation";
 import AppSidebar from "@/components/organisms/Sidebar/Sidebar";
 import NavbarClient from "@/components/organisms/Navbar/NavbarClient";
 import { SidebarProvider } from "@/context/SidebarContext";
-import { getCurrentUserWithRole } from "@/lib/authHelpers";
+import { getProgramUserContext } from "@/lib/programPermissions";
 import { canAccessProgramId, getAccessibleProgramIds } from "@/lib/programAccess";
 
 export default async function ClosetJobsLayout({
@@ -18,7 +18,7 @@ export default async function ClosetJobsLayout({
   }
 
   // Check if user is inactive or unassigned
-  const { appRole, appRoles, isActive } = await getCurrentUserWithRole();
+  const { appRole, appRoles, isActive } = await getProgramUserContext("closetJobs");
 
   if (!isActive) {
     redirect("/auth/status?reason=inactive");
@@ -40,7 +40,7 @@ export default async function ClosetJobsLayout({
   return (
     <SidebarProvider>
       <div className="min-h-screen flex bg-gray-50 dark:bg-gray-900 w-full">
-        <AppSidebar userRole={appRole} />
+        <AppSidebar userRole={appRole} userRoles={appRoles} />
         <div className="flex-1 flex flex-col min-w-0">
           <NavbarClient user={user} accessibleProgramIds={accessibleProgramIds} />
           <main className="p-6 overflow-auto min-w-0 bg-gray-50 dark:bg-gray-900">

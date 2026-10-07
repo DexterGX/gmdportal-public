@@ -1,9 +1,8 @@
 import { NextRequest, NextResponse } from "next/server";
 import { Prisma } from "@prisma/client";
-import { getCurrentUserWithRole } from "@/lib/authHelpers";
+import { getProgramUserContext } from "@/lib/programPermissions";
 import { prisma } from "@/lib/prisma";
 import {
-  canViewQuoteRepair,
   formatQuoteRepairNumber,
   normalizeQuoteRepairAreas,
   normalizeQuoteRepairText,
@@ -35,11 +34,11 @@ function isUniqueSequenceConflict(error: unknown) {
 
 export async function GET(request: NextRequest) {
   try {
-    const { user, appRole } = await getCurrentUserWithRole();
-    if (!user || appRole === "unassigned") {
+    const { user, appRoles, canAccess } = await getProgramUserContext("quoteRepairs");
+    if (!user || appRoles.length === 0) {
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
     }
-    if (!canViewQuoteRepair(appRole)) {
+    if (!canAccess) {
       return NextResponse.json({ error: "Forbidden" }, { status: 403 });
     }
 
@@ -179,8 +178,8 @@ export async function GET(request: NextRequest) {
 
 export async function POST(request: NextRequest) {
   try {
-    const { user, appRole } = await getCurrentUserWithRole();
-    if (!user || appRole === "unassigned") {
+    const { user, appRole, appRoles } = await getProgramUserContext("quoteRepairs");
+    if (!user || appRoles.length === 0) {
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
     }
     if (!["admin", "sales"].includes(appRole)) {

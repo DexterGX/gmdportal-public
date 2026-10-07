@@ -1,11 +1,11 @@
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
-import { getCurrentUserWithRole } from "@/lib/authHelpers";
+import { getProgramUserContext } from "@/lib/programPermissions";
 
 const prismaAny = prisma as any;
 
 async function requireAdmin() {
-  const { user, appRole, isActive } = await getCurrentUserWithRole();
+  const { user, appRole, isActive } = await getProgramUserContext("cabinetEstimates");
   if (!user || !isActive || appRole !== "admin") return null;
   return { user, appRole };
 }

@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { getServerSession } from "next-auth";
 import authOptions from "@/lib/auth";
-import { getCurrentUserWithRole } from "@/lib/authHelpers";
+import { getProgramUserContext } from "@/lib/programPermissions";
 import { prisma } from "@/lib/prisma";
 
 export async function POST(request: Request) {
@@ -11,7 +11,7 @@ export async function POST(request: Request) {
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
     }
 
-    const { appRole } = await getCurrentUserWithRole();
+    const { appRole } = await getProgramUserContext("slabs");
     if (appRole !== "admin") {
       return NextResponse.json({ error: "Forbidden" }, { status: 403 });
     }
@@ -82,7 +82,7 @@ export async function DELETE(request: Request) {
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
     }
 
-    const { appRole } = await getCurrentUserWithRole();
+    const { appRole } = await getProgramUserContext("slabs");
     if (appRole !== "admin") {
       return NextResponse.json({ error: "Forbidden" }, { status: 403 });
     }

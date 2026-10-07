@@ -1,4 +1,4 @@
-import { getCurrentUserWithRole } from "@/lib/authHelpers";
+import { getProgramUserContext } from "@/lib/programPermissions";
 import { redirect } from "next/navigation";
 import { prisma } from "@/lib/prisma";
 import SavedEstimatesClient from "./SavedEstimatesClient";
@@ -8,13 +8,13 @@ export const metadata = {
 };
 
 export default async function SavedEstimatesPage() {
-  const { user, appRole, isActive } = await getCurrentUserWithRole();
+  const { user, appRole, isActive, appRoles, canAccess } = await getProgramUserContext("miscEstimates");
 
-  if (!user || !isActive || appRole === "unassigned") {
+  if (!user || !isActive || appRoles.length === 0) {
     redirect("/login");
   }
 
-  if (!["admin", "sales", "office"].includes(appRole)) {
+  if (!canAccess) {
     redirect("/dashboard");
   }
 

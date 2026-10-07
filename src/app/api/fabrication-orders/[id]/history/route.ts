@@ -1,19 +1,17 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
-import { getCurrentUserWithRole } from "@/lib/authHelpers";
+import { getProgramUserContext } from "@/lib/programPermissions";
 
 const prismaAny = prisma as any;
-const CREATE_ROLES = ["admin", "sales", "office"];
-
 export async function GET(
   _request: NextRequest,
   context: { params: Promise<{ id: string }> },
 ) {
-  const { user, appRole, isActive } = await getCurrentUserWithRole();
-  if (!user || !isActive || appRole === "unassigned") {
+  const { user, appRole, isActive, appRoles, canAccess } = await getProgramUserContext("fabricationOrders");
+  if (!user || !isActive || appRoles.length === 0) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
-  if (!CREATE_ROLES.includes(appRole)) {
+  if (!canAccess) {
     return NextResponse.json({ error: "Forbidden" }, { status: 403 });
   }
 

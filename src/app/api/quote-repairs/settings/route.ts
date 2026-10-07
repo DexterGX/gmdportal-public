@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { getCurrentUserWithRole } from "@/lib/authHelpers";
+import { getProgramUserContext } from "@/lib/programPermissions";
 import { prisma } from "@/lib/prisma";
 import { QUOTE_REPAIR_SERVICE_DEFAULTS } from "@/lib/quoteRepairs";
 
@@ -8,8 +8,8 @@ function normalizeText(value: unknown) {
 }
 
 export async function GET() {
-  const { user, appRole } = await getCurrentUserWithRole();
-  if (!user || appRole === "unassigned") return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  const { user, appRole, appRoles } = await getProgramUserContext("quoteRepairs");
+  if (!user || appRoles.length === 0) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   const settings = await prisma.quoteRepairSettings.findFirst();
   const ensuredSettings = settings || await prisma.quoteRepairSettings.create({ data: {} });
   let services = await prisma.quoteRepairService.findMany({
@@ -38,7 +38,7 @@ export async function GET() {
 }
 
 export async function PATCH(request: NextRequest) {
-  const { user, appRole } = await getCurrentUserWithRole();
+  const { user, appRole, appRoles } = await getProgramUserContext("quoteRepairs");
   if (!user || appRole !== "admin") return NextResponse.json({ error: "Forbidden" }, { status: 403 });
   const body = await request.json();
 

@@ -744,6 +744,22 @@ export function userCanAccessProgram(
   return program.allowedRoles.includes(role);
 }
 
+// Programs that can NOT be granted per-user "Program Admin" (highest access
+// level). Settings and Users & Profiles control access itself, so only the
+// global Admin role may manage them.
+export const PROGRAM_ADMIN_EXCLUDED_IDS: ProgramId[] = [
+  "main",
+  "settings",
+  "users",
+];
+
+export function isProgramAdminEligible(programId: string): programId is ProgramId {
+  return (
+    programs.some((program) => program.id === programId) &&
+    !PROGRAM_ADMIN_EXCLUDED_IDS.includes(programId as ProgramId)
+  );
+}
+
 export function getDefaultAllowedRolesForProgram(
   programId: ProgramId,
 ): AppRole[] | undefined {

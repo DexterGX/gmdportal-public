@@ -1,11 +1,11 @@
 import { NextRequest, NextResponse } from "next/server";
-import { getCurrentUserWithRole } from "@/lib/authHelpers";
+import { getProgramUserContext } from "@/lib/programPermissions";
 import { setHiddenPriceListCategories } from "@/lib/fabricationPriceListVisibility";
 import { FABRICATION_SETTINGS_CATEGORIES } from "@/lib/fabricationSettings";
 
 export async function PUT(request: NextRequest) {
-  const { user, appRole, isActive } = await getCurrentUserWithRole();
-  if (!user || !isActive || appRole === "unassigned") {
+  const { user, appRole, isActive, appRoles } = await getProgramUserContext("fabricationOrders");
+  if (!user || !isActive || appRoles.length === 0) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
   if (appRole !== "admin") {

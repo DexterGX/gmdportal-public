@@ -1,17 +1,8 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
-import { getCurrentUserWithRole } from "@/lib/authHelpers";
+import { getProgramUserContext } from "@/lib/programPermissions";
 
 const prismaAny = prisma as any;
-
-const VIEW_ROLES = [
-  "admin",
-  "sales",
-  "office",
-  "finance",
-  "specialist",
-  "installer",
-];
 
 type DriverBody = {
   id?: string;
@@ -22,19 +13,19 @@ type DriverBody = {
 };
 
 async function requireViewer() {
-  const { user, appRole, isActive } = await getCurrentUserWithRole();
-  if (!user || !isActive || appRole === "unassigned") {
+  const { user, appRole, isActive, appRoles, canAccess } = await getProgramUserContext("vehicles");
+  if (!user || !isActive || appRoles.length === 0) {
     return { ok: false as const, status: 401, error: "Unauthorized" };
   }
-  if (!VIEW_ROLES.includes(appRole)) {
+  if (!canAccess) {
     return { ok: false as const, status: 403, error: "Forbidden" };
   }
   return { ok: true as const, user };
 }
 
 async function requireAdmin() {
-  const { user, appRole, isActive } = await getCurrentUserWithRole();
-  if (!user || !isActive || appRole === "unassigned") {
+  const { user, appRole, isActive, appRoles } = await getProgramUserContext("vehicles");
+  if (!user || !isActive || appRoles.length === 0) {
     return { ok: false as const, status: 401, error: "Unauthorized" };
   }
   if (appRole !== "admin") {

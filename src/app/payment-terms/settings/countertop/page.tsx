@@ -1,11 +1,11 @@
 import { redirect } from "next/navigation";
-import { getCurrentUserWithRole } from "@/lib/authHelpers";
+import { getProgramUserContext } from "@/lib/programPermissions";
 import CountertopSettingsClient from "./CountertopSettingsClient";
 
 export default async function CountertopSettingsPage() {
-  const { user, appRole, isActive } = await getCurrentUserWithRole();
+  const { user, appRole, isActive, appRoles } = await getProgramUserContext("paymentTerms");
 
-  if (!user || !isActive || appRole === "unassigned") {
+  if (!user || !isActive || appRoles.length === 0) {
     redirect("/login");
   }
 

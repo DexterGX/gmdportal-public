@@ -1,4 +1,4 @@
-import { getCurrentUserWithRole } from "@/lib/authHelpers";
+import { getProgramUserContext } from "@/lib/programPermissions";
 import { redirect } from "next/navigation";
 import RackSettingsClient from "../ui/RackSettingsClient";
 
@@ -7,7 +7,7 @@ export const metadata = {
 };
 
 export default async function RackSettingsPage() {
-  const { appRole } = await getCurrentUserWithRole();
+  const { appRole } = await getProgramUserContext("slabRack");
   if (appRole !== "admin") {
     redirect("/dashboard");
   }

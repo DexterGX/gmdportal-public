@@ -1,30 +1,19 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
-import { getCurrentUserWithRole } from "@/lib/authHelpers";
+import { getProgramUserContext } from "@/lib/programPermissions";
 import { computeMaintenanceStatus } from "@/lib/vehicleMaintenanceCalc";
 
 const prismaAny = prisma as any;
-
-// Same broad access as logging a regular inspection — whoever completes the
-// oil change (often the driver themselves) should be able to record it.
-const ACTION_ROLES = [
-  "admin",
-  "sales",
-  "office",
-  "finance",
-  "specialist",
-  "installer",
-];
 
 export async function POST(
   request: NextRequest,
   context: { params: Promise<{ id: string }> },
 ) {
-  const { user, appRole, isActive } = await getCurrentUserWithRole();
-  if (!user || !isActive || appRole === "unassigned") {
+  const { user, appRole, isActive, appRoles, canAccess } = await getProgramUserContext("vehicles");
+  if (!user || !isActive || appRoles.length === 0) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
-  if (!ACTION_ROLES.includes(appRole)) {
+  if (!canAccess) {
     return NextResponse.json({ error: "Forbidden" }, { status: 403 });
   }
 

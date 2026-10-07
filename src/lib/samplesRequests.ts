@@ -1,7 +1,7 @@
 "use server";
 
 import { prisma } from "@/lib/prisma";
-import { getCurrentUserWithRole } from "@/lib/authHelpers";
+import { getProgramUserContext } from "@/lib/programPermissions";
 
 export type SampleRequestStatus =
   | "REQUESTED"
@@ -453,7 +453,8 @@ export async function updateSampleRequestStatus(data: {
   message?: string;
 }): Promise<SampleRequestWithRelations> {
   try {
-    const { user, appRole, isActive } = await getCurrentUserWithRole();
+    const { user, appRole, isActive } =
+      await getProgramUserContext("samplesRequest");
     if (!user || !isActive) {
       throw new Error("Not authorized");
     }

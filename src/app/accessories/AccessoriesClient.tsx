@@ -21,11 +21,11 @@ import type {
 import type { AccessoryItemStatus, AccessoryDepartment } from "@prisma/client";
 
 interface Props {
-  userRole: string;
+  canEdit: boolean;
   userId: string;
 }
 
-export default function AccessoriesClient({ userRole, userId }: Props) {
+export default function AccessoriesClient({ canEdit, userId }: Props) {
   const router = useRouter();
   const { isMobileOpen, isMobile } = useSidebar();
   const [trackers, setTrackers] = useState<AccessoryTrackerWithRelations[]>([]);
@@ -159,7 +159,7 @@ export default function AccessoriesClient({ userRole, userId }: Props) {
             Track accessory purchases for jobs
           </p>
         </div>
-        {["admin", "office", "finance"].includes(userRole) && (
+        {canEdit && (
           <Link
             href="/accessories/new"
             className="inline-flex items-center gap-2 px-4 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700 transition-colors"
@@ -247,7 +247,7 @@ export default function AccessoriesClient({ userRole, userId }: Props) {
           <p className="text-gray-500 dark:text-gray-400">
             No accessory trackers found
           </p>
-          {["admin", "office", "finance"].includes(userRole) && (
+          {canEdit && (
             <Link
               href="/accessories/new"
               className="inline-block mt-4 text-blue-600 hover:text-blue-700"

@@ -1,7 +1,7 @@
 import { getServerSession } from "next-auth";
 import { redirect } from "next/navigation";
 import authOptions from "@/lib/auth";
-import { getCurrentUserWithRole } from "@/lib/authHelpers";
+import { getProgramUserContext } from "@/lib/programPermissions";
 import SlabDeliveryClient from "./SlabDeliveryClient";
 
 export const metadata = {
@@ -14,7 +14,7 @@ export default async function SlabDeliveryPage() {
     redirect("/api/auth/signin?callbackUrl=/slab-rack-display/delivery");
   }
 
-  const { appRole } = await getCurrentUserWithRole();
+  const { appRole } = await getProgramUserContext("slabRack");
   if (appRole !== "admin" && appRole !== "office") {
     redirect("/slab-rack-display");
   }

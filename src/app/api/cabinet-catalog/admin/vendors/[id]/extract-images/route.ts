@@ -1,9 +1,9 @@
 import { NextResponse } from "next/server";
-import { getCurrentUserWithRole } from "@/lib/authHelpers";
+import { getProgramUserContext } from "@/lib/programPermissions";
 import { extractCatalogItemVisuals } from "@/lib/cabinetCatalogVisuals";
 
 async function requireAdmin() {
-  const { user, appRole, isActive } = await getCurrentUserWithRole();
+  const { user, appRole, isActive } = await getProgramUserContext("cabinetEstimates");
   if (!user || !isActive || appRole !== "admin") return null;
   return { user, appRole };
 }

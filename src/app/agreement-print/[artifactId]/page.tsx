@@ -1,7 +1,10 @@
 import { notFound, redirect } from "next/navigation";
 import { Globe, Mail, MapPin, Phone } from "lucide-react";
 import { prisma } from "@/lib/prisma";
-import { getCurrentUserWithRole } from "@/lib/authHelpers";
+import {
+  canAccessAnyProgram,
+  getProgramUserContext,
+} from "@/lib/programPermissions";
 import { normalizeOptionKey } from "@/lib/countertopAgreementOptions";
 import AutoPrintClient from "../../payment-term-print/[artifactId]/AutoPrintClient";
 import styles from "./page.module.css";
@@ -264,13 +267,15 @@ export default async function AgreementPrintPage({
   params: Promise<{ artifactId: string }>;
   searchParams: Promise<Record<string, string | string[] | undefined>>;
 }) {
-  const { user, appRole, isActive } = await getCurrentUserWithRole();
+  const { user, appRoles, isActive } =
+    await getProgramUserContext("paymentTerms");
 
-  if (!user || !isActive || appRole === "unassigned") {
+  if (!user || !isActive || appRoles.length === 0) {
     redirect("/login");
   }
 
-  if (!["admin", "sales", "office", "finance"].includes(appRole)) {
+  // Access is managed in Settings → Program Access (Payment Terms or Customers)
+  if (!(await canAccessAnyProgram(["paymentTerms", "customersV2"]))) {
     redirect("/dashboard");
   }
 

@@ -1,18 +1,19 @@
 import { redirect } from "next/navigation";
-import { getCurrentUserWithRole } from "@/lib/authHelpers";
+import { getProgramUserContext } from "@/lib/programPermissions";
 import AccessoriesClient from "./AccessoriesClient";
 
 export default async function AccessoriesPage() {
-  const { user, appRole, isActive } = await getCurrentUserWithRole();
+  const { user, isActive, canAccess } =
+    await getProgramUserContext("accessories");
 
-  if (!user || !isActive || appRole === "unassigned") {
+  if (!user || !isActive) {
     redirect("/login");
   }
 
-  // Only authorized roles can access
-  if (!["admin", "office", "finance", "sales"].includes(appRole)) {
+  // Access is managed in Settings → Program Access
+  if (!canAccess) {
     redirect("/dashboard");
   }
 
-  return <AccessoriesClient userRole={appRole} userId={user.id} />;
+  return <AccessoriesClient canEdit={canAccess} userId={user.id} />;
 }

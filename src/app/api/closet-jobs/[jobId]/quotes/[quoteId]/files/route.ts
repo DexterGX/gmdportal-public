@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getServerSession } from "next-auth";
 import authOptions from "@/lib/auth";
-import { getCurrentUserWithRole } from "@/lib/authHelpers";
+import { getProgramUserContext } from "@/lib/programPermissions";
 import { prisma } from "@/lib/prisma";
 import { supabaseAdmin } from "@/lib/supabase/server";
 
@@ -28,7 +28,7 @@ export async function POST(
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
     }
 
-    const { user, appRole } = await getCurrentUserWithRole();
+    const { user, appRole } = await getProgramUserContext("closetJobs");
     if (!user) {
       return NextResponse.json({ error: "User not found" }, { status: 401 });
     }

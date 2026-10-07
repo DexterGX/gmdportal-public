@@ -1,5 +1,5 @@
 import { redirect } from "next/navigation";
-import { getCurrentUserWithRole } from "@/lib/authHelpers";
+import { getProgramUserContext } from "@/lib/programPermissions";
 import { prisma } from "@/lib/prisma";
 import { Prisma } from "@prisma/client";
 import ClosetJobDetailClient from "./ClosetJobDetailClient";
@@ -12,14 +12,14 @@ export default async function ClosetJobDetailPage(
   props: ClosetJobDetailPageProps
 ) {
   const { jobId } = await props.params;
-  const { user, appRole, isActive } = await getCurrentUserWithRole();
+  const { user, appRole, isActive, appRoles, canAccess } = await getProgramUserContext("closetJobs");
 
-  if (!user || !isActive || appRole === "unassigned") {
+  if (!user || !isActive || appRoles.length === 0) {
     redirect("/login");
   }
 
-  // Allow ADMIN, SALES, and INSTALLER roles
-  if (!["admin", "sales", "installer"].includes(appRole)) {
+  // Access is managed in Settings → Program Access
+  if (!canAccess) {
     redirect("/dashboard");
   }
 

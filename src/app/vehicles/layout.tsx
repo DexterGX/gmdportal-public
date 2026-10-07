@@ -4,7 +4,7 @@ import { redirect } from "next/navigation";
 import AppSidebar from "@/components/organisms/Sidebar/Sidebar";
 import NavbarClient from "@/components/organisms/Navbar/NavbarClient";
 import { SidebarProvider } from "@/context/SidebarContext";
-import { getCurrentUserWithRole } from "@/lib/authHelpers";
+import { getProgramUserContext } from "@/lib/programPermissions";
 import {
   canAccessProgramId,
   getAccessibleProgramIds,
@@ -20,7 +20,7 @@ export default async function VehiclesLayout({
     redirect("/api/auth/signin?callbackUrl=/vehicles");
   }
 
-  const { appRole, appRoles, isActive } = await getCurrentUserWithRole();
+  const { appRole, appRoles, isActive } = await getProgramUserContext("vehicles");
 
   if (!isActive) {
     redirect("/auth/status?reason=inactive");
@@ -46,7 +46,7 @@ export default async function VehiclesLayout({
     <SidebarProvider>
       <div className="min-h-screen flex bg-gray-50 dark:bg-gray-900 w-full">
         <div className="print:hidden">
-          <AppSidebar userRole={appRole} />
+          <AppSidebar userRole={appRole} userRoles={appRoles} />
         </div>
         <div className="flex-1 flex flex-col min-w-0">
           <div className="print:hidden">

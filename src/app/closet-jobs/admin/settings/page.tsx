@@ -1,11 +1,11 @@
 import { redirect } from "next/navigation";
-import { getCurrentUserWithRole } from "@/lib/authHelpers";
+import { getProgramUserContext } from "@/lib/programPermissions";
 import { prisma } from "@/lib/prisma";
 import { getInstallers } from "@/lib/users";
 import EstimateSettingsClient from "./EstimateSettingsClient";
 
 export default async function EstimateSettingsPage() {
-  const { user, appRole, isActive } = await getCurrentUserWithRole();
+  const { user, appRole, isActive } = await getProgramUserContext("closetJobs");
 
   if (!user || !isActive || appRole !== "admin") {
     redirect("/closet-jobs");

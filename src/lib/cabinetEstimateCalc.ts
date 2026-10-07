@@ -32,7 +32,16 @@ export function computeCabinetsTotal(
 // a number, anywhere it's selectable.
 export const DISCOUNT_PERCENT_OPTIONS = [0, 5, 10, 15, 20, 25] as const;
 
-export function discountPercentLabel(percent: number): string {
+// `label` comes from the admin-managed CabinetDiscountOption row (GMD
+// Parameters). When it is passed (even blank) it wins; without it we fall
+// back to the original hard-coded 25 -> "Contractor" naming.
+export function discountPercentLabel(
+  percent: number,
+  label?: string | null,
+): string {
+  if (label !== undefined && label !== null) {
+    return label.trim() || `${percent}%`;
+  }
   return percent === 25 ? "Contractor" : `${percent}%`;
 }
 

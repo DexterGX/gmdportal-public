@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
-import { getCurrentUserWithRole } from "@/lib/authHelpers";
+import { getProgramUserContext } from "@/lib/programPermissions";
 
 const prismaAny = prisma as any;
 
@@ -10,8 +10,8 @@ function toNumber(value: unknown): number {
 }
 
 async function requireAdmin() {
-  const { user, appRole, isActive } = await getCurrentUserWithRole();
-  if (!user || !isActive || appRole === "unassigned") {
+  const { user, appRole, isActive, appRoles } = await getProgramUserContext("cabinetEstimates");
+  if (!user || !isActive || appRoles.length === 0) {
     return { ok: false as const, status: 401, error: "Unauthorized" };
   }
   if (appRole !== "admin") {

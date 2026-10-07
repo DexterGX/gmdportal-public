@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { getServerSession } from "next-auth";
 import authOptions from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
-import { getCurrentUserWithRole } from "@/lib/authHelpers";
+import { getProgramUserContext } from "@/lib/programPermissions";
 
 function parseAmount(value: unknown): number {
   const raw = typeof value === "string" ? value : String(value ?? "");
@@ -353,7 +353,7 @@ export async function DELETE(request: NextRequest) {
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
     }
 
-    const { appRole, isActive } = await getCurrentUserWithRole();
+    const { appRole, isActive } = await getProgramUserContext("paymentTerms");
     if (!isActive || appRole !== "admin") {
       return NextResponse.json(
         { error: "Only admin users can delete saved payment terms." },

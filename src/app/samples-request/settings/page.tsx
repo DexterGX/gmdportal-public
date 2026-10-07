@@ -1,12 +1,12 @@
 import { redirect } from "next/navigation";
-import { getCurrentUserWithRole } from "@/lib/authHelpers";
+import { getProgramUserContext } from "@/lib/programPermissions";
 import { getSampleRequestProviders } from "@/lib/samplesRequests";
 import SamplesRequestSettingsClient from "./SamplesRequestSettingsClient";
 
 export default async function SamplesRequestSettingsPage() {
-  const { user, appRole, isActive } = await getCurrentUserWithRole();
+  const { user, appRole, isActive, appRoles } = await getProgramUserContext("samplesRequest");
 
-  if (!user || !isActive || appRole === "unassigned") {
+  if (!user || !isActive || appRoles.length === 0) {
     redirect("/login");
   }
 

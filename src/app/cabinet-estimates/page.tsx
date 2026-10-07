@@ -1,5 +1,5 @@
 import { redirect } from "next/navigation";
-import { getCurrentUserWithRole } from "@/lib/authHelpers";
+import { getProgramUserContext } from "@/lib/programPermissions";
 import { prisma } from "@/lib/prisma";
 import CabinetEstimateForm from "./CabinetEstimateForm";
 
@@ -11,9 +11,9 @@ function toNumber(value: unknown): number {
 }
 
 export default async function NewCabinetEstimatePage() {
-  const { user, appRole, isActive } = await getCurrentUserWithRole();
+  const { user, isActive, appRoles } = await getProgramUserContext("cabinetEstimates");
 
-  if (!user || !isActive || appRole === "unassigned") {
+  if (!user || !isActive || appRoles.length === 0) {
     redirect("/login");
   }
 

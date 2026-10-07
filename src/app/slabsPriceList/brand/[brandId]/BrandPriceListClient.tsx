@@ -115,7 +115,13 @@ export default function BrandPriceListClient({ brand, filterOptions }: Props) {
   const [selectedSeries, setSelectedSeries] = useState<string[]>([]);
   const [selectedFinishes, setSelectedFinishes] = useState<string[]>([]);
   const [selectedThicknesses, setSelectedThicknesses] = useState<string[]>([]);
-  const [selectedStatuses, setSelectedStatuses] = useState<string[]>([]);
+  // Price lists open showing AVAILABLE slabs only - uncheck it in the Status
+  // filter (or pick other statuses) to see unavailable/discontinued ones.
+  const defaultStatuses = useMemo(
+    () => (filterOptions.statuses.includes("AVAILABLE") ? ["AVAILABLE"] : []),
+    [filterOptions.statuses],
+  );
+  const [selectedStatuses, setSelectedStatuses] = useState<string[]>(defaultStatuses);
   const [selectedSizes, setSelectedSizes] = useState<string[]>([]);
   const [sortField, setSortField] = useState<keyof SerializedSlab | "sf">(
     "color",
@@ -236,15 +242,19 @@ export default function BrandPriceListClient({ brand, filterOptions }: Props) {
     setSelectedSeries([]);
     setSelectedFinishes([]);
     setSelectedThicknesses([]);
-    setSelectedStatuses([]);
+    setSelectedStatuses(defaultStatuses);
     setSelectedSizes([]);
   };
+
+  const statusesAreDefault =
+    selectedStatuses.length === defaultStatuses.length &&
+    selectedStatuses.every((s) => defaultStatuses.includes(s));
 
   const hasActiveFilters =
     selectedSeries.length > 0 ||
     selectedFinishes.length > 0 ||
     selectedThicknesses.length > 0 ||
-    selectedStatuses.length > 0 ||
+    !statusesAreDefault ||
     selectedSizes.length > 0;
 
   async function handleCreateNote() {
@@ -572,6 +582,12 @@ export default function BrandPriceListClient({ brand, filterOptions }: Props) {
       {/* Results count */}
       <div className="text-sm text-gray-600 dark:text-gray-400">
         Showing {filteredSlabs.length} of {brand.slabs.length} slabs
+        {statusesAreDefault && defaultStatuses.length > 0 && filteredSlabs.length < brand.slabs.length && (
+          <span className="text-gray-500 dark:text-gray-500">
+            {" "}
+            · available only - change the Status filter to see unavailable slabs
+          </span>
+        )}
       </div>
 
       {isNotesOpen && (

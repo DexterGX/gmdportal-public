@@ -79,8 +79,10 @@ export function getStockStatus(quantity: number, minQuantity: number): StoreItem
   return "ok";
 }
 
+// Who can USE Store Inventory is managed in Settings → Program Access.
+// These are in-program workflow rules; pass the effective program role from
+// getProgramUserContext("storeInventory") so Program Admins pass as "admin".
 export const STORE_ROLES_CAN_MANAGE = ["admin", "specialist"] as const;
-export const STORE_ROLES_CAN_USE = ["admin", "sales", "office", "specialist", "installer"] as const;
 export const STORE_ROLES_CAN_ACTION_REQUESTS = ["admin", "office"] as const;
 
 export function canManageStoreInventory(role: string) {

@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getServerSession } from "next-auth";
 import authOptions from "@/lib/auth";
-import { getCurrentUserWithRole } from "@/lib/authHelpers";
+import { getProgramUserContext } from "@/lib/programPermissions";
 import { prisma } from "@/lib/prisma";
 
 const prismaAny = prisma as any;
@@ -14,8 +14,9 @@ async function ensureAdmin() {
     };
   }
 
-  const { appRole } = await getCurrentUserWithRole();
-  if (appRole !== "admin") {
+  // Admins, plus Program Admins of Cabinet Estimate (Cabinet Companies page).
+  const { isProgramAdmin } = await getProgramUserContext("cabinetEstimates");
+  if (!isProgramAdmin) {
     return {
       error: NextResponse.json({ error: "Forbidden" }, { status: 403 }),
     };

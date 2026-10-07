@@ -2,16 +2,16 @@ import { getServerSession } from "next-auth";
 import { redirect } from "next/navigation";
 import authOptions from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
-import { getCurrentUserWithRole } from "@/lib/authHelpers";
+import { getProgramUserContext } from "@/lib/programPermissions";
 import SalesRepStatusClient from "./SalesRepStatusClient";
 
 const p = prisma as any;
 
 export default async function SalesCommissionStatusPage() {
   const session = await getServerSession(authOptions);
-  const { user, appRole, isActive } = await getCurrentUserWithRole();
+  const { user, isActive, appRoles } = await getProgramUserContext("salesCommission");
 
-  if (!session || !user || !isActive || appRole === "unassigned") {
+  if (!session || !user || !isActive || appRoles.length === 0) {
     redirect("/login");
   }
 

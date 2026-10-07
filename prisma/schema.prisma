@@ -21,6 +21,9 @@ model User {
   role                         Role                   @default(UNASSIGNED)
   active                       Boolean                @default(false)
   roles                        String[]               @default([])
+  /// Program IDs (see src/lib/programsConfig.ts) where this user has the
+  /// highest access level ("Program Admin"), on top of their roles.
+  programAdminFor              String[]               @default([])
   accessoryItemsAssigned       AccessoryItem[]        @relation("AccessoryItemAssignedTo")
   accessoryItemsCreated        AccessoryItem[]        @relation("AccessoryItemCreatedBy")
   accessoryItemsUpdated        AccessoryItem[]        @relation("AccessoryItemUpdatedBy")
@@ -2637,4 +2640,18 @@ model ApiKey {
   updatedAt     DateTime  @updatedAt
 
   @@index([isActive])
+}
+
+// Discount choices offered in a Cabinet Estimate's Total Summary dropdown
+// (managed on GMD Parameters). Whole-number percent, same convention as
+// CabinetEstimate.discountPercent - estimates store the percent itself, not
+// an FK, so changing/deactivating an option never rewrites a saved estimate.
+// Self-seeds 0/5/10/15/20/25 ("Contractor" = 25) on first read.
+model CabinetDiscountOption {
+  id        String  @id @default(cuid())
+  percent   Int     @unique
+  // Optional word shown instead of "N%" (e.g. "Contractor"). Blank = "N%".
+  label     String  @default("")
+  sortOrder Int     @default(0)
+  isActive  Boolean @default(true)
 }

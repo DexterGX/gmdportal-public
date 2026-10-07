@@ -1,7 +1,7 @@
 import { notFound } from "next/navigation";
 import { prisma } from "@/lib/prisma";
 import SinkBrandClient from "./SinkBrandClient";
-import { getCurrentUserWithRole } from "@/lib/authHelpers";
+import { getProgramUserContext } from "@/lib/programPermissions";
 
 export default async function SinkBrandPage({
   params,
@@ -9,7 +9,7 @@ export default async function SinkBrandPage({
   params: Promise<{ brandId: string }>;
 }) {
   const { brandId } = await params;
-  const { appRole } = await getCurrentUserWithRole();
+  const { appRole } = await getProgramUserContext("sinks");
   const brand = await prisma.sinkBrand.findUnique({
     where: { id: brandId },
     select: {

@@ -1,15 +1,15 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
-import { getCurrentUserWithRole } from "@/lib/authHelpers";
+import { getProgramUserContext } from "@/lib/programPermissions";
 
 const prismaAny = prisma as any;
 
 // GET /api/payment-terms/settings - Get Payment Term settings
 export async function GET() {
   try {
-    const { user, appRole } = await getCurrentUserWithRole();
+    const { user, appRole, appRoles } = await getProgramUserContext("paymentTerms");
 
-    if (!user || appRole === "unassigned") {
+    if (!user || appRoles.length === 0) {
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
     }
 
@@ -34,7 +34,7 @@ export async function GET() {
 // PATCH /api/payment-terms/settings - Update Payment Term settings (Admin only)
 export async function PATCH(request: NextRequest) {
   try {
-    const { user, appRole } = await getCurrentUserWithRole();
+    const { user, appRole, appRoles } = await getProgramUserContext("paymentTerms");
 
     if (!user || appRole !== "admin") {
       return NextResponse.json({ error: "Forbidden" }, { status: 403 });

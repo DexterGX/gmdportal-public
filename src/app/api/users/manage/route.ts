@@ -1,7 +1,10 @@
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { getCurrentUserWithRole } from "@/lib/authHelpers";
-import { ASSIGNABLE_APP_ROLES } from "@/lib/programsConfig";
+import {
+  ASSIGNABLE_APP_ROLES,
+  isProgramAdminEligible,
+} from "@/lib/programsConfig";
 import { normalizeRoleKey } from "@/lib/systemRoles";
 
 export async function POST(req: Request) {
@@ -13,11 +16,12 @@ export async function POST(req: Request) {
   }
 
   const body = await req.json();
-  const { userId, role, roles, active } = body as {
+  const { userId, role, roles, active, programAdminFor } = body as {
     userId: string;
     role?: string;
     roles?: string[];
     active?: boolean;
+    programAdminFor?: string[];
   };
 
   if (!userId) {
@@ -72,10 +76,29 @@ export async function POST(req: Request) {
 
   if (typeof active === "boolean") data.active = active;
 
+  // Per-user "Program Admin" (highest access level) grants. Settings and
+  // Users & Profiles can never be granted this way.
+  if (Array.isArray(programAdminFor)) {
+    data.programAdminFor = Array.from(
+      new Set(
+        programAdminFor.filter(
+          (value): value is string =>
+            typeof value === "string" && isProgramAdminEligible(value)
+        )
+      )
+    );
+  }
+
   const updated = await prisma.user.update({
     where: { id: userId },
     data,
-    select: { id: true, role: true, roles: true, active: true },
+    select: {
+      id: true,
+      role: true,
+      roles: true,
+      programAdminFor: true,
+      active: true,
+    },
   });
 
   return NextResponse.json(updated);
