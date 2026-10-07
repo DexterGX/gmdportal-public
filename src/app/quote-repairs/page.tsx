@@ -1,16 +1,16 @@
 import { redirect } from "next/navigation";
-import { getCurrentUserWithRole } from "@/lib/authHelpers";
+import { getProgramUserContext } from "@/lib/programPermissions";
 import { getSalesAssignableUsers } from "@/lib/users";
 import QuoteRepairsClient from "./QuoteRepairsClient";
 
 export default async function QuoteRepairsPage() {
-  const { user, appRole, isActive } = await getCurrentUserWithRole();
+  const { user, appRole, isActive, appRoles, canAccess } = await getProgramUserContext("quoteRepairs");
 
-  if (!user || !isActive || appRole === "unassigned") {
+  if (!user || !isActive || appRoles.length === 0) {
     redirect("/login");
   }
 
-  if (!["admin", "sales", "office", "finance"].includes(appRole)) {
+  if (!canAccess) {
     redirect("/dashboard");
   }
 

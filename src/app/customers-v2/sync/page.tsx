@@ -1,7 +1,7 @@
 import { getServerSession } from "next-auth";
 import { redirect } from "next/navigation";
 import authOptions from "@/lib/auth";
-import { getCurrentUserWithRole } from "@/lib/authHelpers";
+import { getProgramUserContext } from "@/lib/programPermissions";
 import CustomersSyncClient from "./CustomersSyncClient";
 
 export const metadata = {
@@ -16,7 +16,7 @@ export default async function CustomersSyncPage() {
     redirect("/login");
   }
 
-  const { appRole } = await getCurrentUserWithRole();
+  const { appRole } = await getProgramUserContext("customersV2");
 
   if (appRole !== "admin") {
     redirect("/customers-v2");

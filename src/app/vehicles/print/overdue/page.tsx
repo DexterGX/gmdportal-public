@@ -1,12 +1,12 @@
 import { redirect } from "next/navigation";
-import { getCurrentUserWithRole } from "@/lib/authHelpers";
+import { getProgramUserContext } from "@/lib/programPermissions";
 import { prisma } from "@/lib/prisma";
 import PrintButton from "./PrintButton";
 
 const prismaAny = prisma as any;
 
 export default async function OverdueVehiclesPrintPage() {
-  const { user, isActive } = await getCurrentUserWithRole();
+  const { user, isActive } = await getProgramUserContext("vehicles");
   if (!user || !isActive) {
     redirect("/login");
   }

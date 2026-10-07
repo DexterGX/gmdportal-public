@@ -1,6 +1,6 @@
 import { notFound, redirect } from "next/navigation";
 import { prisma } from "@/lib/prisma";
-import { getCurrentUserWithRole } from "@/lib/authHelpers";
+import { getProgramUserContext } from "@/lib/programPermissions";
 import { QUOTE_REPAIR_SERVICE_DEFAULTS } from "@/lib/quoteRepairs";
 import QuoteRepairVersionClient from "./QuoteRepairVersionClient";
 
@@ -10,10 +10,10 @@ type PageProps = {
 
 export default async function QuoteRepairVersionPage({ params }: PageProps) {
   const { id, versionId } = await params;
-  const { user, appRole, isActive } = await getCurrentUserWithRole();
+  const { user, appRole, isActive, appRoles, canAccess } = await getProgramUserContext("quoteRepairs");
 
-  if (!user || !isActive || appRole === "unassigned") redirect("/login");
-  if (!["admin", "sales", "office", "finance"].includes(appRole)) {
+  if (!user || !isActive || appRoles.length === 0) redirect("/login");
+  if (!canAccess) {
     redirect("/dashboard");
   }
 

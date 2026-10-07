@@ -1,7 +1,7 @@
 import { getServerSession } from "next-auth";
 import authOptions from "@/lib/auth";
 import { redirect } from "next/navigation";
-import { getCurrentUserWithRole } from "@/lib/authHelpers";
+import { getProgramUserContext } from "@/lib/programPermissions";
 import { prisma } from "@/lib/prisma";
 import SinkBrandSettingsTable from "../../components/SinkBrandSettingsTable";
 
@@ -11,7 +11,7 @@ export default async function SinkBrandSettingsPage() {
     redirect("/api/auth/signin?callbackUrl=/sinksPriceList/admin/brands");
   }
 
-  const { appRole } = await getCurrentUserWithRole();
+  const { appRole } = await getProgramUserContext("sinks");
   if (appRole !== "admin") {
     redirect("/sinksPriceList");
   }

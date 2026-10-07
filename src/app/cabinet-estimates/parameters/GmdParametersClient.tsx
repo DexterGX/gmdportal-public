@@ -46,12 +46,21 @@ type ProjectType = {
   isActive: boolean;
 };
 
+type DiscountOption = {
+  id: string;
+  percent: number;
+  label: string;
+  sortOrder: number;
+  isActive: boolean;
+};
+
 type ParametersBundle = {
   settings: Settings;
   installationServiceItems: InstallationServiceItem[];
   installationTypes: InstallationType[];
   removalTypes: RemovalType[];
   projectTypes: ProjectType[];
+  discountOptions: DiscountOption[];
 };
 
 // Round 11 follow-up: moved in from the old standalone Special
@@ -155,6 +164,16 @@ export default function GmdParametersClient({
   const [projectTypes, setProjectTypes] = useState<ProjectType[]>(
     initialParameters.projectTypes,
   );
+  const [discountOptions, setDiscountOptions] = useState<DiscountOption[]>(
+    initialParameters.discountOptions || [],
+  );
+  const [discountsExpanded, setDiscountsExpanded] = useState(false);
+  const [discountForm, setDiscountForm] = useState<{
+    id: string | null;
+    percent: number;
+    label: string;
+    isActive: boolean;
+  }>({ id: null, percent: 0, label: "", isActive: true });
 
   // Round 11: the real Installers Price Table - fetched separately from the
   // shared initialParameters bundle (which only carries active items, for
@@ -268,6 +287,99 @@ export default function GmdParametersClient({
 
   function editType(t: InstallationType) {
     setTypeForm({ id: t.id, name: t.name, multiplier: t.multiplier, isActive: t.isActive });
+  }
+
+  function resetDiscountForm() {
+    setDiscountForm({ id: null, percent: 0, label: "", isActive: true });
+  }
+
+  function editDiscount(d: DiscountOption) {
+    setDiscountForm({ id: d.id, percent: d.percent, label: d.label, isActive: d.isActive });
+  }
+
+  async function saveDiscount(event: FormEvent) {
+    event.preventDefault();
+    setSavingKey("discounts");
+    setMessage(null);
+    setError(null);
+    try {
+      const payload = {
+        percent: Math.trunc(discountForm.percent),
+        label: discountForm.label.trim(),
+        isActive: discountForm.isActive,
+      };
+      if (discountForm.id) {
+        const res = await fetch(
+          `/api/cabinet-estimates/parameters/discount-options/${discountForm.id}`,
+          {
+            method: "PATCH",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify(payload),
+          },
+        );
+        const json = await res.json();
+        if (!res.ok) throw new Error(json?.error || "Failed to save");
+        setDiscountOptions((prev) =>
+          prev
+            .map((d) => (d.id === discountForm.id ? json : d))
+            .sort((a, b) => a.sortOrder - b.sortOrder || a.percent - b.percent),
+        );
+      } else {
+        const res = await fetch("/api/cabinet-estimates/parameters/discount-options", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(payload),
+        });
+        const json = await res.json();
+        if (!res.ok) throw new Error(json?.error || "Failed to create");
+        setDiscountOptions((prev) => [...prev, json]);
+      }
+      resetDiscountForm();
+      setMessage("Discounts saved.");
+    } catch (err: any) {
+      setError(err?.message || "Failed to save discount");
+    } finally {
+      setSavingKey(null);
+    }
+  }
+
+  async function toggleDiscountActive(d: DiscountOption) {
+    setSavingKey("discounts");
+    setError(null);
+    try {
+      const res = await fetch(`/api/cabinet-estimates/parameters/discount-options/${d.id}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ isActive: !d.isActive }),
+      });
+      const json = await res.json();
+      if (!res.ok) throw new Error(json?.error || "Failed to update");
+      setDiscountOptions((prev) => prev.map((x) => (x.id === d.id ? json : x)));
+    } catch (err: any) {
+      setError(err?.message || "Failed to update discount");
+    } finally {
+      setSavingKey(null);
+    }
+  }
+
+  async function deleteDiscount(d: DiscountOption) {
+    if (!window.confirm(`Permanently delete the ${d.percent}% discount option?`)) return;
+    setSavingKey("discounts");
+    setError(null);
+    try {
+      const res = await fetch(`/api/cabinet-estimates/parameters/discount-options/${d.id}`, {
+        method: "DELETE",
+      });
+      const json = await res.json();
+      if (!res.ok) throw new Error(json?.error || "Failed to delete");
+      setDiscountOptions((prev) => prev.filter((x) => x.id !== d.id));
+      if (discountForm.id === d.id) resetDiscountForm();
+      setMessage("Discount deleted.");
+    } catch (err: any) {
+      setError(err?.message || "Failed to delete discount");
+    } finally {
+      setSavingKey(null);
+    }
   }
 
   function resetRemovalTypeForm() {
@@ -1730,6 +1842,161 @@ export default function GmdParametersClient({
                   </table>
                 </div>
               </div>
+            )}
+          </section>
+
+          <section className="space-y-4 rounded-xl border border-gray-200 bg-white p-5 dark:border-gray-700 dark:bg-gray-800">
+            <button
+              type="button"
+              onClick={() => setDiscountsExpanded((p) => !p)}
+              className="flex w-full items-center justify-between rounded-md px-1 py-1 text-left"
+            >
+              <div>
+                <h2 className="text-lg font-semibold text-gray-900 dark:text-gray-100">
+                  Discounts
+                </h2>
+                <p className="mt-1 text-xs text-gray-500 dark:text-gray-400">
+                  Choices for the Discount dropdown in the estimate&apos;s Total Summary. Each
+                  is a percent of the Cabinets total. Add an optional label (e.g.
+                  &quot;Contractor&quot;) to show a word instead of the percent. Saved estimates
+                  keep the discount they were billed at; deactivate an option to hide it from
+                  new estimates.
+                </p>
+              </div>
+              {discountsExpanded ? (
+                <ChevronDown className="h-5 w-5 text-gray-500" />
+              ) : (
+                <ChevronRight className="h-5 w-5 text-gray-500" />
+              )}
+            </button>
+
+            {discountsExpanded && (
+              <>
+                <form
+                  onSubmit={saveDiscount}
+                  className="space-y-3 rounded-lg border border-gray-200 p-4 dark:border-gray-700"
+                >
+                  <h3 className="text-sm font-semibold text-gray-900 dark:text-gray-100">
+                    {discountForm.id ? "Edit Discount" : "Add Discount"}
+                  </h3>
+                  <div className="grid grid-cols-1 gap-4 md:grid-cols-3">
+                    <div>
+                      <label className="mb-1 block text-xs text-gray-600 dark:text-gray-400">
+                        Percent (%)
+                      </label>
+                      <input
+                        type="number"
+                        min="0"
+                        max="100"
+                        step="1"
+                        value={discountForm.percent}
+                        onChange={(e) =>
+                          setDiscountForm((f) => ({ ...f, percent: toNumber(e.target.value) }))
+                        }
+                        className={inputClassName}
+                      />
+                    </div>
+                    <div>
+                      <label className="mb-1 block text-xs text-gray-600 dark:text-gray-400">
+                        Label (optional)
+                      </label>
+                      <input
+                        value={discountForm.label}
+                        onChange={(e) =>
+                          setDiscountForm((f) => ({ ...f, label: e.target.value }))
+                        }
+                        placeholder="e.g. Contractor"
+                        className={inputClassName}
+                      />
+                    </div>
+                    <div className="flex items-end gap-2">
+                      <label className="flex items-center gap-2 text-sm">
+                        <input
+                          type="checkbox"
+                          checked={discountForm.isActive}
+                          onChange={(e) =>
+                            setDiscountForm((f) => ({ ...f, isActive: e.target.checked }))
+                          }
+                        />
+                        Active
+                      </label>
+                    </div>
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <button
+                      type="submit"
+                      disabled={savingKey === "discounts"}
+                      className="inline-flex items-center gap-2 rounded-md bg-teal-600 px-4 py-2 text-white hover:bg-teal-700 disabled:opacity-60"
+                    >
+                      <Save className="h-4 w-4" />
+                      {discountForm.id ? "Save Changes" : "Add Discount"}
+                    </button>
+                    {discountForm.id && (
+                      <button
+                        type="button"
+                        onClick={resetDiscountForm}
+                        className="inline-flex items-center gap-1 rounded-md border border-gray-300 px-3 py-2 text-sm dark:border-gray-600"
+                      >
+                        <X className="h-4 w-4" />
+                        Cancel
+                      </button>
+                    )}
+                  </div>
+                </form>
+
+                <div className="overflow-x-auto rounded-lg border border-gray-200 dark:border-gray-700">
+                  <table className="w-full text-sm">
+                    <thead className="bg-gray-50 text-xs uppercase text-gray-500 dark:bg-gray-900 dark:text-gray-400">
+                      <tr>
+                        <th className="px-3 py-2 text-left">Percent</th>
+                        <th className="px-3 py-2 text-left">Shown as</th>
+                        <th className="px-3 py-2 text-left">Status</th>
+                        <th className="px-3 py-2 text-right">Actions</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-gray-100 dark:divide-gray-700">
+                      {discountOptions.length === 0 ? (
+                        <tr>
+                          <td className="px-3 py-4 text-center text-gray-400" colSpan={4}>
+                            No discounts yet - add one above.
+                          </td>
+                        </tr>
+                      ) : (
+                        discountOptions.map((d) => (
+                          <tr key={d.id}>
+                            <td className="px-3 py-2">{d.percent}%</td>
+                            <td className="px-3 py-2">{d.label.trim() || `${d.percent}%`}</td>
+                            <td className="px-3 py-2">{d.isActive ? "Active" : "Inactive"}</td>
+                            <td className="px-3 py-2 text-right">
+                              <button
+                                type="button"
+                                onClick={() => editDiscount(d)}
+                                className="mr-3 text-teal-600 hover:underline"
+                              >
+                                Edit
+                              </button>
+                              <button
+                                type="button"
+                                onClick={() => toggleDiscountActive(d)}
+                                className="mr-3 text-gray-500 hover:underline"
+                              >
+                                {d.isActive ? "Deactivate" : "Activate"}
+                              </button>
+                              <button
+                                type="button"
+                                onClick={() => deleteDiscount(d)}
+                                className="text-red-600 hover:underline"
+                              >
+                                Delete
+                              </button>
+                            </td>
+                          </tr>
+                        ))
+                      )}
+                    </tbody>
+                  </table>
+                </div>
+              </>
             )}
           </section>
 

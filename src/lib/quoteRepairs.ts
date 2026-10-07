@@ -55,7 +55,6 @@ export const QUOTE_REPAIR_SERVICE_DEFAULTS = [
   "Others",
 ];
 
-const QUOTE_REPAIR_VIEW_ROLES = ["admin", "sales", "office", "finance"];
 
 export function formatQuoteRepairNumber(date: Date, sequence: number) {
   const yy = String(date.getFullYear()).slice(-2);
@@ -113,10 +112,9 @@ export function sumQuoteRepairItemPrices(
   }, new Prisma.Decimal(0));
 }
 
-export function canViewQuoteRepair(role: string) {
-  return QUOTE_REPAIR_VIEW_ROLES.includes(role);
-}
 
+// Who can VIEW Quote Repairs is managed in Settings → Program Access.
+// `role` here is the effective program role ("admin" for Program Admins).
 export function canEditQuoteRepair(role: string, isOwnerOrCreator: boolean) {
   if (role === "admin") return true;
   if (role === "sales") return isOwnerOrCreator;

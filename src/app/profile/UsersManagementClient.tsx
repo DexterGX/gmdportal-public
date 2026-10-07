@@ -1,8 +1,8 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import Image from "next/image";
-import { Trash2 } from "lucide-react";
+import { ShieldCheck, Trash2 } from "lucide-react";
 
 type UserDto = {
   id: string;
@@ -11,7 +11,15 @@ type UserDto = {
   image: string | null;
   role: string;
   roles: string[];
+  programAdminFor: string[];
   active: boolean;
+};
+
+type ProgramAdminOption = {
+  id: string;
+  name: string;
+  /** Roles allowed into the program (Settings → Program Access); null = everyone. */
+  allowedRoles: string[] | null;
 };
 
 type SystemRole = {
@@ -23,12 +31,26 @@ type SystemRole = {
 export default function UsersManagementClient({
   users,
   canManage,
+  programAdminOptions,
 }: {
   users: UserDto[];
   canManage: boolean;
+  programAdminOptions: ProgramAdminOption[];
 }) {
   const [localUsers, setLocalUsers] = useState(users);
   const [roles, setRoles] = useState<SystemRole[]>([]);
+  const [toast, setToast] = useState<{
+    type: "success" | "error";
+    message: string;
+  } | null>(null);
+
+  const showToast = useCallback(
+    (type: "success" | "error", message: string) => {
+      setToast({ type, message });
+      setTimeout(() => setToast(null), 3500);
+    },
+    []
+  );
 
   useEffect(() => {
     if (!canManage) return;
@@ -45,7 +67,13 @@ export default function UsersManagementClient({
       });
   }, [canManage]);
 
-  const handleChange = async (userId: string, update: Partial<UserDto>) => {
+  const handleChange = async (
+    userId: string,
+    update: Partial<UserDto>,
+    successMessage = "User updated."
+  ) => {
+    const previous = localUsers.find((u) => u.id === userId);
+
     setLocalUsers((prev) =>
       prev.map((u) => (u.id === userId ? { ...u, ...update } : u))
     );
@@ -55,7 +83,7 @@ export default function UsersManagementClient({
         ? update.roles.filter((value) => value !== "unassigned")
         : undefined;
 
-      await fetch("/api/users/manage", {
+      const response = await fetch("/api/users/manage", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
@@ -63,11 +91,26 @@ export default function UsersManagementClient({
           role: update.role,
           roles: rolesPayload,
           active: update.active,
+          programAdminFor: update.programAdminFor,
         }),
       });
+
+      if (!response.ok) {
+        throw new Error((await response.text()) || "Failed to update user");
+      }
+
+      showToast("success", successMessage);
     } catch (e) {
       console.error(e);
-      // TODO: show error, maybe revert state
+      if (previous) {
+        setLocalUsers((prev) =>
+          prev.map((u) => (u.id === userId ? previous : u))
+        );
+      }
+      showToast(
+        "error",
+        e instanceof Error ? e.message : "Failed to update user"
+      );
     }
   };
 
@@ -125,6 +168,109 @@ export default function UsersManagementClient({
     return [];
   };
 
+  const canRolesAccess = (option: ProgramAdminOption, userRoles: string[]) =>
+    option.allowedRoles === null ||
+    userRoles.some((role) => option.allowedRoles?.includes(role));
+
+  const toggleProgramAdmin = (user: UserDto, option: ProgramAdminOption) => {
+    const current = user.programAdminFor || [];
+    const enabling = !current.includes(option.id);
+    const next = enabling
+      ? [...current, option.id]
+      : current.filter((value) => value !== option.id);
+
+    handleChange(
+      user.id,
+      { programAdminFor: next },
+      `${user.name ?? "User"} is ${enabling ? "now" : "no longer"} a Program Admin for ${option.name}.`
+    );
+  };
+
+  const renderProgramAdminSection = (user: UserDto) => {
+    const userRoles = getEffectiveRoles(user);
+
+    if (userRoles.includes("admin")) {
+      return (
+        <p className="text-xs text-gray-500 dark:text-gray-400">
+          Admin role &mdash; full access to every program.
+        </p>
+      );
+    }
+
+    const granted = user.programAdminFor || [];
+    const accessible = programAdminOptions.filter((option) =>
+      canRolesAccess(option, userRoles)
+    );
+    // Grants kept on programs the user can no longer open (role/access changed)
+    const dormant = programAdminOptions.filter(
+      (option) =>
+        granted.includes(option.id) && !canRolesAccess(option, userRoles)
+    );
+
+    if (!canManage) {
+      const active = accessible.filter((option) =>
+        granted.includes(option.id)
+      );
+      return active.length ? (
+        <div className="flex flex-wrap gap-1.5">
+          {active.map((option) => (
+            <span
+              key={`${user.id}-pa-${option.id}`}
+              className="inline-flex items-center gap-1 rounded-full bg-indigo-50 px-2 py-0.5 text-xs font-medium text-indigo-700 dark:bg-indigo-900/40 dark:text-indigo-300"
+            >
+              <ShieldCheck className="h-3 w-3" />
+              {option.name}
+            </span>
+          ))}
+        </div>
+      ) : (
+        <p className="text-xs text-gray-500 dark:text-gray-400">None</p>
+      );
+    }
+
+    if (accessible.length === 0 && dormant.length === 0) {
+      return (
+        <p className="text-xs text-gray-500 dark:text-gray-400">
+          This user&apos;s roles don&apos;t give access to any program yet.
+        </p>
+      );
+    }
+
+    return (
+      <div className="flex flex-wrap gap-1.5">
+        {[...accessible, ...dormant].map((option) => {
+          const isOn = granted.includes(option.id);
+          const isDormant = dormant.includes(option);
+          return (
+            <button
+              key={`${user.id}-pa-${option.id}`}
+              type="button"
+              onClick={() => toggleProgramAdmin(user, option)}
+              aria-pressed={isOn}
+              title={
+                isDormant
+                  ? "User can't open this program with their current roles. Click to remove."
+                  : isOn
+                    ? "Program Admin — click to remove"
+                    : "Click to make Program Admin"
+              }
+              className={`inline-flex items-center gap-1 rounded-full border px-2.5 py-1 text-xs font-medium transition-colors ${
+                isDormant
+                  ? "border-dashed border-gray-300 text-gray-400 line-through dark:border-gray-600 dark:text-gray-500"
+                  : isOn
+                    ? "border-indigo-600 bg-indigo-600 text-white hover:bg-indigo-700"
+                    : "border-gray-300 bg-white text-gray-700 hover:border-indigo-400 hover:text-indigo-700 dark:border-gray-700 dark:bg-gray-800 dark:text-gray-300 dark:hover:border-indigo-500"
+              }`}
+            >
+              {isOn && !isDormant && <ShieldCheck className="h-3 w-3" />}
+              {option.name}
+            </button>
+          );
+        })}
+      </div>
+    );
+  };
+
   const toggleRole = (user: UserDto, role: string) => {
     const current = getEffectiveRoles(user);
     const next = current.includes(role)
@@ -139,6 +285,30 @@ export default function UsersManagementClient({
 
   return (
     <div className="space-y-3 max-w-5xl mx-auto">
+      {toast && (
+        <div
+          role="status"
+          className={`fixed top-4 right-4 z-[60] rounded-lg px-4 py-3 text-sm font-medium text-white shadow-lg ${
+            toast.type === "success" ? "bg-green-600" : "bg-red-600"
+          }`}
+        >
+          {toast.message}
+        </div>
+      )}
+
+      {canManage && (
+        <p className="text-xs text-gray-500 dark:text-gray-400">
+          <span className="font-medium text-gray-700 dark:text-gray-300">
+            Program Admin
+          </span>{" "}
+          gives a user the highest access level inside a program (admin-only
+          pages like Settings, Price Lists and Imports, plus every action),
+          without making them a full Admin. Only programs their roles can open
+          are listed; manage which roles open each program in Settings &rarr;
+          Program Access.
+        </p>
+      )}
+
       {localUsers.map((user) => (
         <div
           key={user.id}
@@ -240,6 +410,15 @@ export default function UsersManagementClient({
                 </button>
               )}
             </div>
+          </div>
+
+          {/* Program Admin (highest access level per program) */}
+          <div className="mt-3 border-t border-gray-100 pt-3 dark:border-gray-800">
+            <div className="mb-1.5 flex items-center gap-1.5 text-xs text-gray-500 dark:text-gray-400">
+              <ShieldCheck className="h-3.5 w-3.5" />
+              <span>Program Admin:</span>
+            </div>
+            {renderProgramAdminSection(user)}
           </div>
         </div>
       ))}

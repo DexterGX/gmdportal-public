@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
-import { getCurrentUserWithRole } from "@/lib/authHelpers";
+import { getProgramUserContext } from "@/lib/programPermissions";
 
 const prismaAny = prisma as any;
 
@@ -11,13 +11,13 @@ function toNumber(value: unknown) {
 
 export async function GET(request: NextRequest) {
   try {
-    const { user, appRole, isActive } = await getCurrentUserWithRole();
+    const { user, appRole, isActive, appRoles, canAccess } = await getProgramUserContext("miscEstimates");
 
-    if (!user || !isActive || appRole === "unassigned") {
+    if (!user || !isActive || appRoles.length === 0) {
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
     }
 
-    if (!["admin", "sales", "office"].includes(appRole)) {
+    if (!canAccess) {
       return NextResponse.json({ error: "Forbidden" }, { status: 403 });
     }
 

@@ -1,5 +1,5 @@
 import { notFound, redirect } from "next/navigation";
-import { getCurrentUserWithRole } from "@/lib/authHelpers";
+import { getProgramUserContext } from "@/lib/programPermissions";
 import { prisma } from "@/lib/prisma";
 import {
   formatQuoteRepairAreas,
@@ -22,13 +22,13 @@ export default async function QuoteRepairPrintPage({
   params: Promise<{ versionId: string }>;
 }) {
   const { versionId } = await params;
-  const { user, appRole, isActive } = await getCurrentUserWithRole();
+  const { user, appRole, isActive, appRoles, canAccess } = await getProgramUserContext("quoteRepairs");
 
-  if (!user || !isActive || appRole === "unassigned") {
+  if (!user || !isActive || appRoles.length === 0) {
     redirect("/login");
   }
 
-  if (!["admin", "sales", "office", "finance"].includes(appRole)) {
+  if (!canAccess) {
     redirect("/dashboard");
   }
 

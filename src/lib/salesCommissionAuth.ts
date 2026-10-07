@@ -1,8 +1,9 @@
-import { canAccessProgramId } from "@/lib/programAccess";
-import { getCurrentUserWithRole } from "@/lib/authHelpers";
+import { getProgramUserContext } from "@/lib/programPermissions";
 
 export async function requireSalesCommissionAccess() {
-  const { user, appRole, appRoles, isActive } = await getCurrentUserWithRole();
+  // appRole is the effective program role ("admin" for Program Admins).
+  const { user, appRole, appRoles, isActive, canAccess } =
+    await getProgramUserContext("salesCommission");
 
   if (!user || !isActive || appRoles.length === 0) {
     return {
@@ -14,12 +15,7 @@ export async function requireSalesCommissionAccess() {
     };
   }
 
-  const hasAccess = await canAccessProgramId(
-    "salesCommission",
-    appRoles,
-    isActive,
-  );
-  if (!hasAccess) {
+  if (!canAccess) {
     return {
       ok: false as const,
       status: 403,

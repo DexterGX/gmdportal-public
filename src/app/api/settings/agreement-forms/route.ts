@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { getServerSession } from "next-auth";
 import authOptions from "@/lib/auth";
 import { getCurrentUserWithRole } from "@/lib/authHelpers";
+import { getProgramUserContext } from "@/lib/programPermissions";
 import { prisma } from "@/lib/prisma";
 
 const prismaAny = prisma as any;
@@ -70,8 +71,10 @@ async function ensureAgreementReader() {
     };
   }
 
-  const { appRole, isActive } = await getCurrentUserWithRole();
-  if (!isActive || !["admin", "sales", "office", "finance"].includes(appRole)) {
+  // Read access follows Payment Terms access (Settings → Program Access).
+  const { isActive, canAccess, isGlobalAdmin } =
+    await getProgramUserContext("paymentTerms");
+  if (!isActive || !(canAccess || isGlobalAdmin)) {
     return {
       error: NextResponse.json({ error: "Forbidden" }, { status: 403 }),
     };

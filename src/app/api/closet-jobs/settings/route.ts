@@ -1,13 +1,13 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
-import { getCurrentUserWithRole } from "@/lib/authHelpers";
+import { getProgramUserContext } from "@/lib/programPermissions";
 
 // GET /api/closet-jobs/settings - Get settings
 export async function GET(request: NextRequest) {
   try {
-    const { user, appRole } = await getCurrentUserWithRole();
+    const { user, appRole, appRoles } = await getProgramUserContext("closetJobs");
 
-    if (!user || appRole === "unassigned") {
+    if (!user || appRoles.length === 0) {
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
     }
 
@@ -47,7 +47,7 @@ export async function GET(request: NextRequest) {
 // PATCH /api/closet-jobs/settings - Update settings (Admin only)
 export async function PATCH(request: NextRequest) {
   try {
-    const { user, appRole } = await getCurrentUserWithRole();
+    const { user, appRole, appRoles } = await getProgramUserContext("closetJobs");
 
     if (!user || appRole !== "admin") {
       return NextResponse.json({ error: "Forbidden" }, { status: 403 });

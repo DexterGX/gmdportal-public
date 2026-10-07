@@ -4,7 +4,7 @@
  * customer's linked Jobs/Deals so the form can offer a Job/Deal dropdown.
  */
 import { NextRequest, NextResponse } from "next/server";
-import { getCurrentUserWithRole } from "@/lib/authHelpers";
+import { getProgramUserContext } from "@/lib/programPermissions";
 import { prisma } from "@/lib/prisma";
 
 type JobRecord = {
@@ -46,8 +46,8 @@ function inferContractor(
 
 export async function GET(request: NextRequest) {
   try {
-    const { user, appRole, isActive } = await getCurrentUserWithRole();
-    if (!user || !isActive || appRole === "unassigned") {
+    const { user, isActive, appRoles } = await getProgramUserContext("fabricationOrders");
+    if (!user || !isActive || appRoles.length === 0) {
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
     }
 

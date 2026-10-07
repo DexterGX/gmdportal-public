@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { getServerSession } from "next-auth";
 import authOptions from "@/lib/auth";
-import { getCurrentUserWithRole } from "@/lib/authHelpers";
+import { getProgramUserContext } from "@/lib/programPermissions";
 import postgres from "postgres";
 
 const connectionString =
@@ -86,7 +86,7 @@ export async function PATCH(
   }
 
   await ensureOnce();
-  const { user, appRole } = await getCurrentUserWithRole();
+  const { user, appRole } = await getProgramUserContext("slabs");
 
   if (!user) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
@@ -314,7 +314,7 @@ export async function DELETE(
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
 
-  const { appRole } = await getCurrentUserWithRole();
+  const { appRole } = await getProgramUserContext("slabs");
   if (appRole !== "admin") {
     return NextResponse.json({ error: "Forbidden" }, { status: 403 });
   }

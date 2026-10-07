@@ -1,17 +1,17 @@
 import { redirect } from "next/navigation";
-import { getCurrentUserWithRole } from "@/lib/authHelpers";
+import { getProgramUserContext } from "@/lib/programPermissions";
 import { getInstallers, getSalesAssignableUsers } from "@/lib/users";
 import ClosetJobsClient from "./ClosetJobsClient";
 
 export default async function ClosetJobsPage() {
-  const { user, appRole, isActive } = await getCurrentUserWithRole();
+  const { user, appRole, isActive, appRoles, canAccess } = await getProgramUserContext("closetJobs");
 
-  if (!user || !isActive || appRole === "unassigned") {
+  if (!user || !isActive || appRoles.length === 0) {
     redirect("/login");
   }
 
-  // Only ADMIN, SALES, and INSTALLER can access
-  if (!["admin", "sales", "installer"].includes(appRole)) {
+  // Access is managed in Settings → Program Access
+  if (!canAccess) {
     redirect("/dashboard");
   }
 

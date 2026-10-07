@@ -1,4 +1,4 @@
-import { getCurrentUserWithRole } from "@/lib/authHelpers";
+import { getProgramUserContext } from "@/lib/programPermissions";
 import { prisma } from "@/lib/prisma";
 import { notFound } from "next/navigation";
 import CustomerV2DetailClient from "./CustomerV2DetailClient";
@@ -8,7 +8,7 @@ export default async function CustomerV2DetailPage({
 }: {
   params: Promise<{ id: string }>;
 }) {
-  const { appRole } = await getCurrentUserWithRole();
+  const { appRole } = await getProgramUserContext("customersV2");
   const { id } = await params;
 
   const customer = await prisma.customer.findUnique({

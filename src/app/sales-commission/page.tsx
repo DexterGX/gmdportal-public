@@ -2,7 +2,7 @@ import { getServerSession } from "next-auth";
 import authOptions from "@/lib/auth";
 import { redirect } from "next/navigation";
 import { prisma } from "@/lib/prisma";
-import { getCurrentUserWithRole } from "@/lib/authHelpers";
+import { getProgramUserContext } from "@/lib/programPermissions";
 import SalesCommissionClient from "./SalesCommissionClient";
 
 const p = prisma as any;
@@ -13,7 +13,7 @@ export default async function SalesCommissionPage({
   searchParams?: Promise<{ [key: string]: string | string[] | undefined }>;
 }) {
   const session = await getServerSession(authOptions);
-  const { user, appRole, isActive } = await getCurrentUserWithRole();
+  const { user, isActive, appRoles } = await getProgramUserContext("salesCommission");
   const resolvedSearchParams = searchParams ? await searchParams : undefined;
   const viewWeekIdRaw = resolvedSearchParams?.viewWeekId;
   const openDraftRaw = resolvedSearchParams?.openDraft;
@@ -24,7 +24,7 @@ export default async function SalesCommissionPage({
     ? openDraftRaw[0] === "1"
     : openDraftRaw === "1";
 
-  if (!session || !user || !isActive || appRole === "unassigned") {
+  if (!session || !user || !isActive || appRoles.length === 0) {
     redirect("/login");
   }
 

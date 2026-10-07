@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
-import { getCurrentUserWithRole } from "@/lib/authHelpers";
+import { getProgramUserContext } from "@/lib/programPermissions";
 import { computeCabinetSellPrice } from "@/lib/cabinetCatalogPricing";
 
 const prismaAny = prisma as any;
@@ -30,7 +30,7 @@ const prismaAny = prisma as any;
  */
 export async function GET(request: Request) {
   try {
-    const { isActive } = await getCurrentUserWithRole();
+    const { isActive } = await getProgramUserContext("cabinetEstimates");
     if (!isActive) {
       return NextResponse.json({ error: "Forbidden" }, { status: 403 });
     }

@@ -4,7 +4,7 @@ import { redirect } from "next/navigation";
 import AppSidebar from "@/components/organisms/Sidebar/Sidebar";
 import NavbarClient from "@/components/organisms/Navbar/NavbarClient";
 import { SidebarProvider } from "@/context/SidebarContext";
-import { getCurrentUserWithRole } from "@/lib/authHelpers";
+import { getProgramUserContext } from "@/lib/programPermissions";
 import { canAccessProgramId, getAccessibleProgramIds } from "@/lib/programAccess";
 import type { Metadata } from "next";
 
@@ -23,7 +23,7 @@ export default async function QuoteRepairsLayout({
     redirect("/api/auth/signin?callbackUrl=/quote-repairs");
   }
 
-  const { appRole, appRoles, isActive } = await getCurrentUserWithRole();
+  const { appRole, appRoles, isActive } = await getProgramUserContext("quoteRepairs");
 
   if (!isActive) {
     redirect("/auth/status?reason=inactive");
@@ -43,7 +43,7 @@ export default async function QuoteRepairsLayout({
   return (
     <SidebarProvider>
       <div className="min-h-screen flex bg-gray-50 dark:bg-gray-900 w-full">
-        <AppSidebar userRole={appRole} />
+        <AppSidebar userRole={appRole} userRoles={appRoles} />
         <div className="flex-1 flex flex-col min-w-0">
           <NavbarClient user={session.user ?? null} accessibleProgramIds={accessibleProgramIds} />
           <main className="p-6 overflow-auto min-w-0 bg-gray-50 dark:bg-gray-900">

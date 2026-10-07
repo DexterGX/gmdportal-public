@@ -4,14 +4,15 @@
  * Handles parsing, normalization, and diff logic for importing price lists.
  */
 
-import type {
-  Slab,
-  SlabBrandConfig,
-  SlabThickness,
-  SlabFinish,
-} from "@prisma/client";
+import type { Slab, SlabBrandConfig, SlabThickness } from "@prisma/client";
 import { Decimal } from "@prisma/client/runtime/library";
 import { computeFinalPrice } from "./slabsPricing";
+import {
+  normalizeFinishStrict,
+  normalizeThicknessStrict,
+  slabSizeKey,
+  type SlabTemplateRow,
+} from "./slabsTemplate";
 
 /**
  * Raw row from uploaded template
@@ -34,7 +35,7 @@ export type ImportRow = {
  * Normalized import slab with computed values
  */
 export type NormalizedImportSlab = {
-  key: string; // `${brand}|${color}|${finish}|${thickness}`
+  key: string; // `${brand}|${color}|${finish}|${thickness}|${size}|${code}` - see slabMatchKeys
   brand: string;
   series: string | null;
   code: string | null;
@@ -67,113 +68,20 @@ export type ImportDiff = {
 };
 
 /**
- * Normalize thickness string to canonical format
+ * Normalize thickness string to canonical format.
+ * Unknown values fall back to "2cm" here for legacy callers - the import
+ * review screen uses normalizeThicknessStrict directly so unknowns get
+ * flagged instead of silently becoming 2cm.
  */
 export function normalizeThickness(input: string): string {
-  const lower = input.toLowerCase().replace(/\s+/g, "");
-
-  // Map various formats to canonical strings
-  if (
-    lower.includes("2cm") ||
-    lower.includes("20mm") ||
-    lower === "two_cm" ||
-    lower === "twocm"
-  ) {
-    return "2cm";
-  }
-  if (
-    lower.includes("3cm") ||
-    lower.includes("30mm") ||
-    lower === "three_cm" ||
-    lower === "threecm"
-  ) {
-    return "3cm";
-  }
-  if (lower.includes("8mm") || lower === "eight_mm" || lower === "eightmm") {
-    return "8mm";
-  }
-  if (lower.includes("12mm") || lower === "twelve_mm" || lower === "twelvemm") {
-    return "12mm";
-  }
-
-  if (
-    lower.includes("15mm") ||
-    lower === "fifteen_mm" ||
-    lower === "fifteenmm"
-  ) {
-    return "15mm";
-  }
-
-  // Unknown values are accepted by mapping to a safe canonical default.
-  return "2cm";
+  return normalizeThicknessStrict(input) || "2cm";
 }
 
 /**
- * Normalize finish string to uppercase enum format
+ * Normalize finish string to uppercase enum format (unknown -> OTHER)
  */
 export function normalizeFinish(input: string): string {
-  const normalized = input
-    .trim()
-    .toUpperCase()
-    .replace(/[^A-Z0-9]+/g, "_")
-    .replace(/^_+|_+$/g, "");
-
-  const knownFinishes = new Set<string>([
-    "CONCRETE",
-    "DUAL",
-    "HONED",
-    "LEATHER",
-    "MATTE",
-    "NATURAL",
-    "OTHER",
-    "POLISHED",
-    "ROUGH",
-    "STONE",
-    "ULTRA_ROUGH",
-    "SATIN",
-    "SATIN_HONED",
-    "PATINATO",
-    "LEVIGATO_PEARL",
-    "GLAM",
-    "GINZA",
-    "HOLOS",
-    "TWILL",
-    "JUTA",
-    "DENIM",
-    "DAMIER",
-    "LAVA",
-    "SILK",
-    "LUXE",
-    "BRUSHED",
-    "TEXTURED",
-    "SMOOTH_MATTE",
-    "TEXTURED_MATTE",
-    "VELVET",
-    "TEXTURED_VELVET",
-    "SATIN_RIDGE",
-    "SUEDE",
-    "DECOR_POLISHED",
-    "NANOTECH_POLISHED",
-    "NATURAL_TOUCH",
-    "RIVERWASHED",
-    "SLATE",
-    "ULTRASOFT",
-    "SOFT_TOUCH",
-    "BOOKMATCH",
-  ]);
-
-  if (knownFinishes.has(normalized)) {
-    return normalized;
-  }
-
-  if (normalized.includes("SOFT_TOUCH")) return "SOFT_TOUCH";
-  if (normalized.includes("MATTE")) return "MATTE";
-  if (normalized.includes("POLISHED")) return "POLISHED";
-  if (normalized.includes("HONED")) return "HONED";
-  if (normalized.includes("LEATHER")) return "LEATHER";
-  if (normalized.includes("NATURAL")) return "NATURAL";
-
-  return "OTHER";
+  return normalizeFinishStrict(input).finish;
 }
 
 /**
@@ -234,7 +142,12 @@ export function normalizeImportRow(
 ): NormalizedImportSlab {
   const normalizedFinish = normalizeFinish(row.finish);
   const normalizedThickness = normalizeThickness(row.thickness);
-  const key = generateSlabKey(brandName, row.color, row.finish, row.thickness);
+  const key = slabMatchKeys(
+    generateSlabKey(brandName, row.color, row.finish, row.thickness),
+    row.heightIn,
+    row.widthIn,
+    row.code,
+  ).full;
   const squareFeet = computeSquareFeet(row.heightIn, row.widthIn);
 
   // Determine listed price: use slabPrice if present, otherwise compute from sfPrice
@@ -242,7 +155,7 @@ export function normalizeImportRow(
   if (row.slabPrice != null && row.slabPrice > 0) {
     listedPrice = row.slabPrice;
   } else if (row.sfPrice != null && row.sfPrice > 0) {
-    listedPrice = squareFeet * row.sfPrice;
+    listedPrice = Math.round(squareFeet * row.sfPrice * 100) / 100;
   } else {
     listedPrice = 0; // fallback if neither provided
   }
@@ -315,7 +228,26 @@ export function detectChanges(
 }
 
 /**
- * Build key for existing slab in database
+ * The three identities a slab can be matched on, most to least specific:
+ *  - full:  brand|color|finish|thickness|size|code
+ *  - sized: brand|color|finish|thickness|size
+ *  - base:  brand|color|finish|thickness
+ * A brand can sell the same color/finish/thickness in several sizes (e.g.
+ * jumbo full slab and jumbo half slab, each with its own code), so size and
+ * code are part of what makes a slab unique.
+ */
+export function slabMatchKeys(
+  baseKey: string,
+  heightIn: number | null | undefined,
+  widthIn: number | null | undefined,
+  code: string | null | undefined,
+): { base: string; sized: string; full: string } {
+  const sized = `${baseKey}|${slabSizeKey(heightIn, widthIn)}`;
+  return { base: baseKey, sized, full: `${sized}|${(code || "").trim().toLowerCase()}` };
+}
+
+/**
+ * Build base key (brand|color|finish|thickness) for an existing slab
  */
 export function buildExistingKey(
   slab: Slab & { brand: { name: string } }
@@ -329,58 +261,94 @@ export function buildExistingKey(
   );
 }
 
+function existingMatchKeys(slab: Slab & { brand: { name: string } }) {
+  return slabMatchKeys(
+    buildExistingKey(slab),
+    parseFloat(slab.heightIn.toString()),
+    parseFloat(slab.widthIn.toString()),
+    slab.providerCode,
+  );
+}
+
 /**
- * Compute diff between existing slabs and import data
+ * Compute diff between existing slabs and import data.
+ *
+ * Matching runs in three passes so several sizes of one color can coexist
+ * while real changes are still detected:
+ *  1. exact match on color+finish+thickness+size+code;
+ *  2. same color+finish+thickness+size (only the code changed) - when it's
+ *     a one-to-one pairing;
+ *  3. same color+finish+thickness (the size changed) - only when exactly one
+ *     unmatched slab is left on each side, so a jumbo is never "updated"
+ *     into a regular slab when both exist.
+ * Anything still unmatched is NEW (incoming) or NOT IN NEW LIST (existing).
  */
 export function computeImportDiff(
   importSlabs: NormalizedImportSlab[],
   existingSlabs: (Slab & { brand: { name: string } })[],
   selectedBrandName: string
 ): ImportDiff {
-  // Build map of existing slabs by key
-  const existingMap = new Map<string, Slab & { brand: { name: string } }>();
-  const seenKeys = new Set<string>();
+  type Existing = Slab & { brand: { name: string } };
+  const existingKeys = existingSlabs.map((slab) => ({ slab, keys: existingMatchKeys(slab) }));
+  const incomingKeys = importSlabs.map((incoming) => ({
+    incoming,
+    keys: slabMatchKeys(
+      generateSlabKey(incoming.brand, incoming.color, incoming.finish, incoming.thickness),
+      incoming.heightIn,
+      incoming.widthIn,
+      incoming.code,
+    ),
+  }));
 
-  for (const slab of existingSlabs) {
-    const key = buildExistingKey(slab);
-    existingMap.set(key, slab);
-  }
+  const matchedExisting = new Set<string>();
+  const pairs = new Map<number, Existing>(); // incoming index -> existing slab
 
-  const newSlabs: NormalizedImportSlab[] = [];
-  const changedSlabs: ImportDiff["changedSlabs"] = [];
+  for (const level of ["full", "sized", "base"] as const) {
+    const existingGroups = new Map<string, Existing[]>();
+    for (const { slab, keys } of existingKeys) {
+      if (matchedExisting.has(slab.id)) continue;
+      const list = existingGroups.get(keys[level]) || [];
+      list.push(slab);
+      existingGroups.set(keys[level], list);
+    }
+    const incomingGroups = new Map<string, number[]>();
+    incomingKeys.forEach(({ keys }, index) => {
+      if (pairs.has(index)) return;
+      const list = incomingGroups.get(keys[level]) || [];
+      list.push(index);
+      incomingGroups.set(keys[level], list);
+    });
 
-  // Process each import row
-  for (const incoming of importSlabs) {
-    seenKeys.add(incoming.key);
-    const existing = existingMap.get(incoming.key);
-
-    if (!existing) {
-      // NEW SLAB
-      newSlabs.push(incoming);
-    } else {
-      // POSSIBLE UPDATE
-      const changes = detectChanges(existing, incoming);
-      if (changes.length > 0) {
-        changedSlabs.push({ existing, incoming, changes });
+    for (const [key, incomingIdx] of incomingGroups) {
+      const candidates = existingGroups.get(key) || [];
+      if (candidates.length === 0) continue;
+      // Exact identity: pair in order. Looser levels: only an unambiguous 1:1.
+      if (level !== "full" && !(incomingIdx.length === 1 && candidates.length === 1)) continue;
+      const count = Math.min(incomingIdx.length, candidates.length);
+      for (let i = 0; i < count; i++) {
+        pairs.set(incomingIdx[i], candidates[i]);
+        matchedExisting.add(candidates[i].id);
       }
     }
   }
 
-  // Find discontinued slabs (existing but not in import for selected brand only)
-  const discontinuedSlabs: (Slab & { brand: { name: string } })[] = [];
-  for (const slab of existingSlabs) {
-    const key = buildExistingKey(slab);
-    // Only mark as discontinued if it belongs to selected brand and wasn't seen
-    if (!seenKeys.has(key) && slab.brand.name === selectedBrandName) {
-      discontinuedSlabs.push(slab);
+  const newSlabs: NormalizedImportSlab[] = [];
+  const changedSlabs: ImportDiff["changedSlabs"] = [];
+  importSlabs.forEach((incoming, index) => {
+    const existing = pairs.get(index);
+    if (!existing) {
+      newSlabs.push(incoming);
+      return;
     }
-  }
+    const changes = detectChanges(existing, incoming);
+    if (changes.length > 0) changedSlabs.push({ existing, incoming, changes });
+  });
 
-  return {
-    newSlabs,
-    changedSlabs,
-    discontinuedSlabs,
-  };
+  const discontinuedSlabs = existingSlabs.filter(
+    (slab) => !matchedExisting.has(slab.id) && slab.brand.name === selectedBrandName,
+  );
+
+  return { newSlabs, changedSlabs, discontinuedSlabs };
 }
 
 /**
@@ -408,4 +376,25 @@ export function mapThicknessToEnum(thickness: string): string {
     default:
       return "TWO_CM"; // default fallback
   }
+}
+
+/**
+ * Convert a reviewed SlabTemplateRow (from the Import page's edit grid) into
+ * the ImportRow shape normalizeImportRow() expects. Callers must have already
+ * rejected rows with blocking issues (see computeRowIssues).
+ */
+export function templateRowToImportRow(row: SlabTemplateRow, brandName: string): ImportRow {
+  return {
+    brand: brandName,
+    series: row.series?.trim() || null,
+    code: row.code?.trim() || null,
+    color: row.color.trim(),
+    finish: row.finish,
+    heightIn: row.heightIn || 0,
+    widthIn: row.widthIn || 0,
+    thickness: row.thickness,
+    sfPrice: row.sfPrice != null && row.sfPrice > 0 ? row.sfPrice : null,
+    slabPrice: row.slabPrice != null && row.slabPrice > 0 ? row.slabPrice : null,
+    status: row.status || "AVAILABLE",
+  };
 }

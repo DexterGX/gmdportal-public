@@ -1,5 +1,5 @@
 import { redirect } from "next/navigation";
-import { getCurrentUserWithRole } from "@/lib/authHelpers";
+import { getProgramUserContext } from "@/lib/programPermissions";
 import { prisma } from "@/lib/prisma";
 import { Prisma } from "@prisma/client";
 import QuoteReviewClient from "./QuoteReviewClient";
@@ -10,9 +10,9 @@ type QuoteReviewPageProps = {
 
 export default async function QuoteReviewPage(props: QuoteReviewPageProps) {
   const { jobId, quoteId } = await props.params;
-  const { user, appRole, isActive } = await getCurrentUserWithRole();
+  const { user, appRole, isActive, appRoles } = await getProgramUserContext("closetJobs");
 
-  if (!user || !isActive || appRole === "unassigned") {
+  if (!user || !isActive || appRoles.length === 0) {
     redirect("/login");
   }
 

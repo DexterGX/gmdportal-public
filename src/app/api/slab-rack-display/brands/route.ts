@@ -2,7 +2,7 @@ import { NextResponse } from "next/server";
 import { getServerSession } from "next-auth";
 import authOptions from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
-import { getCurrentUserWithRole } from "@/lib/authHelpers";
+import { getProgramUserContext } from "@/lib/programPermissions";
 
 // Seed list: these are the brands SlabBay originally shipped with as a
 // hardcoded dropdown. They're inserted once, the first time this table is
@@ -125,7 +125,7 @@ export async function POST(request: Request) {
 // Archive / restore (soft delete). Admin only, matching the rest of
 // SlabBay's admin-gated settings (Rack Settings).
 export async function PATCH(request: Request) {
-  const { appRole } = await getCurrentUserWithRole();
+  const { appRole } = await getProgramUserContext("slabRack");
   if (appRole !== "admin") {
     return NextResponse.json({ error: "Forbidden" }, { status: 403 });
   }
@@ -164,7 +164,7 @@ export async function PATCH(request: Request) {
 // keep whatever brand text they already have - deleting an entry here only
 // removes it from the picker offered for new slabs.
 export async function DELETE(request: Request) {
-  const { appRole } = await getCurrentUserWithRole();
+  const { appRole } = await getProgramUserContext("slabRack");
   if (appRole !== "admin") {
     return NextResponse.json({ error: "Forbidden" }, { status: 403 });
   }

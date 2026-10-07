@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getServerSession } from "next-auth";
 import authOptions from "@/lib/auth";
-import { getCurrentUserWithRole } from "@/lib/authHelpers";
+import { getProgramUserContext } from "@/lib/programPermissions";
 import { prisma } from "@/lib/prisma";
 
 // Helper to map DB thickness enum to UI format
@@ -28,7 +28,7 @@ export async function GET(request: NextRequest) {
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
     }
 
-    const { appRole } = await getCurrentUserWithRole();
+    const { appRole } = await getProgramUserContext("slabs");
     if (appRole !== "admin") {
       return NextResponse.json({ error: "Forbidden" }, { status: 403 });
     }

@@ -1,7 +1,7 @@
 import { getServerSession } from "next-auth";
 import authOptions from "@/lib/auth";
 import { redirect } from "next/navigation";
-import { getCurrentUserWithRole } from "@/lib/authHelpers";
+import { getProgramUserContext } from "@/lib/programPermissions";
 import { prisma } from "@/lib/prisma";
 import CabinetCompaniesClient from "./CabinetCompaniesClient";
 
@@ -13,7 +13,7 @@ export default async function CabinetCompaniesPage() {
     redirect("/api/auth/signin?callbackUrl=/cabinet-estimates/companies");
   }
 
-  const { appRole } = await getCurrentUserWithRole();
+  const { appRole } = await getProgramUserContext("cabinetEstimates");
   if (appRole !== "admin") {
     redirect("/cabinet-estimates");
   }

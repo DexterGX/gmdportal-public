@@ -1,5 +1,5 @@
 import { redirect } from "next/navigation";
-import { getCurrentUserWithRole } from "@/lib/authHelpers";
+import { getProgramUserContext } from "@/lib/programPermissions";
 import { prisma } from "@/lib/prisma";
 import { getInstallers } from "@/lib/users";
 import NewQuoteForm from "./NewQuoteForm";
@@ -10,7 +10,7 @@ type NewQuotePageProps = {
 
 export default async function NewQuotePage(props: NewQuotePageProps) {
   const { jobId } = await props.params;
-  const { user, appRole, isActive } = await getCurrentUserWithRole();
+  const { user, appRole, isActive } = await getProgramUserContext("closetJobs");
 
   if (!user || !isActive) {
     redirect("/login");

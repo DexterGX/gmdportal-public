@@ -25,6 +25,7 @@ export async function getCurrentUserWithRole() {
       user: null,
       appRole: "unassigned" as AppRole,
       appRoles: [] as string[],
+      programAdminFor: [] as string[],
       isActive: false,
     };
   }
@@ -38,6 +39,7 @@ export async function getCurrentUserWithRole() {
       image: true,
       role: true,
       roles: true,
+      programAdminFor: true,
       active: true,
     },
   });
@@ -47,6 +49,7 @@ export async function getCurrentUserWithRole() {
       user: null,
       appRole: "unassigned" as AppRole,
       appRoles: [] as string[],
+      programAdminFor: [] as string[],
       isActive: false,
     };
   }
@@ -73,6 +76,11 @@ export async function getCurrentUserWithRole() {
     user: dbUser,
     appRole,
     appRoles: appRoles as string[],
+    programAdminFor: Array.isArray(dbUser.programAdminFor)
+      ? dbUser.programAdminFor.filter(
+          (value): value is string => typeof value === "string" && Boolean(value),
+        )
+      : [],
     isActive: dbUser.active,
   };
 }

@@ -98,7 +98,9 @@ export default function SamplesRequestClient({
       .map((provider) => provider.name);
   }, [providers, sampleType]);
 
-  const canManage = ["admin", "sales", "office"].includes(userRole);
+  // Anyone allowed into Samples Request (Settings → Program Access) can
+  // create requests; status changes are restricted on the detail page.
+  const canManage = Boolean(userRole);
 
   useEffect(() => {
     fetchRequests();

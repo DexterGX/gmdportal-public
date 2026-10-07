@@ -1,5 +1,5 @@
 import { redirect } from "next/navigation";
-import { getCurrentUserWithRole } from "@/lib/authHelpers";
+import { getProgramUserContext } from "@/lib/programPermissions";
 import { prisma } from "@/lib/prisma";
 import NewInspectionClient from "./NewInspectionClient";
 
@@ -10,8 +10,8 @@ export default async function NewInspectionPage({
 }: {
   searchParams: Promise<{ vehicleId?: string }>;
 }) {
-  const { user, appRole, isActive } = await getCurrentUserWithRole();
-  if (!user || !isActive || appRole === "unassigned") {
+  const { user, isActive, appRoles } = await getProgramUserContext("vehicles");
+  if (!user || !isActive || appRoles.length === 0) {
     redirect("/login");
   }
 

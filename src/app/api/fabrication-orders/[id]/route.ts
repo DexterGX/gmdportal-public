@@ -1,19 +1,17 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
-import { getCurrentUserWithRole } from "@/lib/authHelpers";
+import { getProgramUserContext } from "@/lib/programPermissions";
 import { computeAreaTotals, type CalcAreaInput } from "@/lib/fabricationCalc";
 import { saveOrderAreaImages, deleteOrderAreaImages } from "@/lib/fabricationImages";
 import { syncFabricationOrderArtifact } from "@/lib/fabricationOrderArtifact";
 
 const prismaAny = prisma as any;
-const CREATE_ROLES = ["admin", "sales", "office"];
-
 async function requireCreator() {
-  const { user, appRole, isActive } = await getCurrentUserWithRole();
-  if (!user || !isActive || appRole === "unassigned") {
+  const { user, appRole, isActive, appRoles, canAccess } = await getProgramUserContext("fabricationOrders");
+  if (!user || !isActive || appRoles.length === 0) {
     return { ok: false as const, status: 401, error: "Unauthorized" };
   }
-  if (!CREATE_ROLES.includes(appRole)) {
+  if (!canAccess) {
     return { ok: false as const, status: 403, error: "Forbidden" };
   }
   return { ok: true as const, user, appRole };
@@ -467,8 +465,8 @@ export async function DELETE(
   _request: NextRequest,
   context: { params: Promise<{ id: string }> },
 ) {
-  const { user, appRole, isActive } = await getCurrentUserWithRole();
-  if (!user || !isActive || appRole === "unassigned") {
+  const { user, appRole, isActive, appRoles } = await getProgramUserContext("fabricationOrders");
+  if (!user || !isActive || appRoles.length === 0) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
   if (appRole !== "admin") {

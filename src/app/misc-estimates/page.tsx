@@ -1,4 +1,4 @@
-import { getCurrentUserWithRole } from "@/lib/authHelpers";
+import { getProgramUserContext } from "@/lib/programPermissions";
 import { redirect } from "next/navigation";
 import { prisma } from "@/lib/prisma";
 import MiscEstimatesClient from "./MiscEstimatesClient";
@@ -6,13 +6,13 @@ import MiscEstimatesClient from "./MiscEstimatesClient";
 const prismaAny = prisma as any;
 
 export default async function MiscEstimatesPage() {
-  const { user, appRole, isActive } = await getCurrentUserWithRole();
+  const { user, appRole, isActive, appRoles, canAccess } = await getProgramUserContext("miscEstimates");
 
-  if (!user || !isActive || appRole === "unassigned") {
+  if (!user || !isActive || appRoles.length === 0) {
     redirect("/login");
   }
 
-  if (!["admin", "sales", "office"].includes(appRole)) {
+  if (!canAccess) {
     redirect("/dashboard");
   }
 

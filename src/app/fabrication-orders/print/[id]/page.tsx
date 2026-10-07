@@ -1,5 +1,5 @@
 import { notFound, redirect } from "next/navigation";
-import { getCurrentUserWithRole } from "@/lib/authHelpers";
+import { getProgramUserContext } from "@/lib/programPermissions";
 import { prisma } from "@/lib/prisma";
 import { formatCurrency } from "@/lib/fabricationCalc";
 import PrintButton from "./PrintButton";
@@ -77,7 +77,7 @@ export default async function FabricationOrderPrintPage({
 }: {
   params: Promise<{ id: string }>;
 }) {
-  const { user, isActive } = await getCurrentUserWithRole();
+  const { user, isActive } = await getProgramUserContext("fabricationOrders");
   if (!user || !isActive) {
     redirect("/login");
   }

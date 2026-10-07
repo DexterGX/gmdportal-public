@@ -1,7 +1,7 @@
 import { getServerSession } from "next-auth";
 import authOptions from "@/lib/auth";
 import { redirect } from "next/navigation";
-import { getCurrentUserWithRole } from "@/lib/authHelpers";
+import { getProgramUserContext } from "@/lib/programPermissions";
 import ImportClient from "./ImportClient";
 
 export default async function CabinetEstimatesCatalogImportPage() {
@@ -10,7 +10,7 @@ export default async function CabinetEstimatesCatalogImportPage() {
     redirect("/api/auth/signin?callbackUrl=/cabinet-estimates/catalog-import");
   }
 
-  const { appRole } = await getCurrentUserWithRole();
+  const { appRole } = await getProgramUserContext("cabinetEstimates");
   if (appRole !== "admin") {
     redirect("/cabinet-estimates");
   }

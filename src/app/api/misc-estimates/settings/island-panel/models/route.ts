@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
-import { getCurrentUserWithRole } from "@/lib/authHelpers";
+import { getProgramUserContext } from "@/lib/programPermissions";
 
 const prismaAny = prisma as any;
 
@@ -19,9 +19,9 @@ type IslandPanelModelBody = {
 
 export async function POST(request: Request) {
   try {
-    const { user, appRole, isActive } = await getCurrentUserWithRole();
+    const { user, appRole, isActive, appRoles } = await getProgramUserContext("miscEstimates");
 
-    if (!user || !isActive || appRole === "unassigned") {
+    if (!user || !isActive || appRoles.length === 0) {
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
     }
 

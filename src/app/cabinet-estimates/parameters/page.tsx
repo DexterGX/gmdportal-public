@@ -1,7 +1,7 @@
 import { getServerSession } from "next-auth";
 import authOptions from "@/lib/auth";
 import { redirect } from "next/navigation";
-import { getCurrentUserWithRole } from "@/lib/authHelpers";
+import { getProgramUserContext } from "@/lib/programPermissions";
 import { prisma } from "@/lib/prisma";
 import { getCabinetEstimateParameters } from "@/lib/cabinetEstimateParameters";
 import GmdParametersClient from "./GmdParametersClient";
@@ -19,7 +19,7 @@ export default async function GmdParametersPage() {
     redirect("/api/auth/signin?callbackUrl=/cabinet-estimates/parameters");
   }
 
-  const { appRole } = await getCurrentUserWithRole();
+  const { appRole } = await getProgramUserContext("cabinetEstimates");
   if (appRole !== "admin") {
     redirect("/cabinet-estimates");
   }

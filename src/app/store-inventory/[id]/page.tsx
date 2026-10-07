@@ -1,5 +1,5 @@
 import { redirect } from "next/navigation";
-import { getCurrentUserWithRole } from "@/lib/authHelpers";
+import { getProgramUserContext } from "@/lib/programPermissions";
 import { canManageStoreInventory } from "@/lib/storeInventory";
 import ItemDetailClient from "./ItemDetailClient";
 
@@ -9,9 +9,9 @@ interface Props {
 
 export default async function StoreInventoryItemPage({ params }: Props) {
   const { id } = await params;
-  const { user, appRole, isActive } = await getCurrentUserWithRole();
+  const { user, appRole, isActive, appRoles } = await getProgramUserContext("storeInventory");
 
-  if (!user || !isActive || appRole === "unassigned") {
+  if (!user || !isActive || appRoles.length === 0) {
     redirect("/login");
   }
 

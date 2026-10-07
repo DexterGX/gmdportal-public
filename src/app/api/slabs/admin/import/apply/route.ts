@@ -1,269 +1,152 @@
 import { NextResponse } from "next/server";
-import { getServerSession } from "next-auth";
-import authOptions from "@/lib/auth";
-import { getCurrentUserWithRole } from "@/lib/authHelpers";
 import { prisma } from "@/lib/prisma";
 import { Decimal } from "@prisma/client/runtime/library";
-import type { NormalizedImportSlab } from "@/lib/slabsImport";
-import type { SlabFinish, SlabThickness, SlabStatus } from "@prisma/client";
+import { Prisma, type SlabFinish, type SlabStatus, type SlabThickness } from "@prisma/client";
+import { mapThicknessToEnum } from "@/lib/slabsImport";
+import { SLAB_FINISH_OPTIONS } from "@/lib/slabsTemplate";
+import { computeRowsDiff, requireSlabAdmin, sanitizeTemplateRows } from "@/lib/slabsImportServer";
+import { isValidImportPath, removeSlabImportFile } from "@/lib/slabsImportStorage";
 
-function mapFinishToEnum(finish: string): SlabFinish {
-  const normalized = finish.toUpperCase().replace(/[^A-Z0-9]+/g, "_").replace(/^_+|_+$/g, "");
+export const maxDuration = 60;
 
-  const knownFinishes = new Set<SlabFinish>([
-    "CONCRETE",
-    "DUAL",
-    "HONED",
-    "LEATHER",
-    "MATTE",
-    "NATURAL",
-    "OTHER",
-    "POLISHED",
-    "ROUGH",
-    "STONE",
-    "ULTRA_ROUGH",
-    "SATIN",
-    "SATIN_HONED",
-    "PATINATO",
-    "LEVIGATO_PEARL",
-    "GLAM",
-    "GINZA",
-    "HOLOS",
-    "TWILL",
-    "JUTA",
-    "DENIM",
-    "DAMIER",
-    "LAVA",
-    "SILK",
-    "LUXE",
-    "BRUSHED",
-    "TEXTURED",
-    "SMOOTH_MATTE",
-    "TEXTURED_MATTE",
-    "VELVET",
-    "TEXTURED_VELVET",
-    "SATIN_RIDGE",
-    "SUEDE",
-    "DECOR_POLISHED",
-    "NANOTECH_POLISHED",
-    "NATURAL_TOUCH",
-    "RIVERWASHED",
-    "SLATE",
-    "ULTRASOFT",
-    "SOFT_TOUCH",
-    "BOOKMATCH",
-  ]);
+// Rows per bulk UPDATE statement (9 bind parameters each - well under Postgres's limit).
+const UPDATE_BATCH_SIZE = 250;
 
-  if (knownFinishes.has(normalized as SlabFinish)) {
-    return normalized as SlabFinish;
-  }
-
-  // Common vendor prefixes/suffixes should still map to an existing enum.
-  if (normalized.includes("SOFT_TOUCH")) return "SOFT_TOUCH";
-  if (normalized.includes("MATTE")) return "MATTE";
-  if (normalized.includes("POLISHED")) return "POLISHED";
-  if (normalized.includes("HONED")) return "HONED";
-  if (normalized.includes("LEATHER")) return "LEATHER";
-  if (normalized.includes("NATURAL")) return "NATURAL";
-
-  // Unknown finish values are accepted by mapping to OTHER.
-  return "OTHER";
+function toFinish(finish: string): SlabFinish {
+  return (SLAB_FINISH_OPTIONS.includes(finish) ? finish : "OTHER") as SlabFinish;
 }
 
-function mapStatusToEnum(status: string): SlabStatus {
-  const upper = status.toUpperCase().replace(/\s/g, "_");
-  switch (upper) {
-    case "AVAILABLE":
-      return "AVAILABLE";
-    case "DISCONTINUED":
-      return "DISCONTINUED";
-    case "UNAVAILABLE":
-      return "UNAVAILABLE";
-    default:
-      return "AVAILABLE";
-  }
+function toStatus(status: string): SlabStatus {
+  const upper = status.toUpperCase();
+  return (["AVAILABLE", "DISCONTINUED", "UNAVAILABLE"].includes(upper) ? upper : "AVAILABLE") as SlabStatus;
 }
-
-function mapThicknessStringToEnum(thickness: string): SlabThickness {
-  const lower = thickness.toLowerCase().replace(/\s/g, "");
-
-  if (
-    lower.includes("2cm") ||
-    lower.includes("20mm") ||
-    lower === "two_cm" ||
-    lower === "twocm"
-  ) {
-    return "TWO_CM";
-  }
-
-  if (
-    lower.includes("3cm") ||
-    lower.includes("30mm") ||
-    lower === "three_cm" ||
-    lower === "threecm"
-  ) {
-    return "THREE_CM";
-  }
-
-  if (
-    lower.includes("15mm") ||
-    lower === "fifteen_mm" ||
-    lower === "fifteenmm"
-  ) {
-    return "FIFTEEN_MM";
-  }
-
-  if (lower.includes("12mm") || lower === "twelve_mm" || lower === "twelvemm") {
-    return "TWELVE_MM";
-  }
-
-  if (lower.includes("10mm") || lower === "ten_mm" || lower === "tenmm") {
-    return "TEN_MM";
-  }
-
-  if (lower.includes("8mm") || lower === "eight_mm" || lower === "eightmm") {
-    return "EIGHT_MM";
-  }
-
-  if (lower.includes("6mm") || lower === "six_mm" || lower === "sixmm") {
-    return "SIX_MM";
-  }
-
-  // Unknown thickness values are accepted by mapping to a safe default.
-  return "TWO_CM";
-}
-
-type ApplyPayload = {
-  newSlabs: NormalizedImportSlab[];
-  changedSlabs: {
-    existingId: string;
-    incoming: NormalizedImportSlab;
-  }[];
-  discontinuedIds: string[];
-};
 
 /**
  * POST /api/slabs/admin/import/apply
- * Apply import changes to database
+ * Body: { brandId, rows: SlabTemplateRow[], discontinuedIds: string[], storagePath? }
+ *
+ * Re-validates the reviewed rows and RE-COMPUTES the diff server-side (the
+ * browser's preview is never trusted), then creates new slabs, updates
+ * changed ones and marks the checked discontinued slabs UNAVAILABLE.
+ * Discontinued slabs are soft-flagged, never deleted.
  */
 export async function POST(request: Request) {
   try {
-    // Auth check
-    const session = await getServerSession(authOptions);
-    if (!session) {
-      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-    }
-
-    const { appRole } = await getCurrentUserWithRole();
-    if (appRole !== "admin") {
+    if (!(await requireSlabAdmin())) {
       return NextResponse.json({ error: "Forbidden" }, { status: 403 });
     }
 
-    const payload: ApplyPayload = await request.json();
-    const { newSlabs, changedSlabs, discontinuedIds } = payload;
+    const body = await request.json().catch(() => ({}));
+    const brandId = typeof body?.brandId === "string" ? body.brandId : "";
+    if (!brandId) return NextResponse.json({ error: "Brand not selected" }, { status: 400 });
 
-    let createdCount = 0;
-    let updatedCount = 0;
-    let discontinuedCount = 0;
+    const rows = sanitizeTemplateRows(body?.rows);
+    const requestedDiscontinued = new Set<string>(
+      Array.isArray(body?.discontinuedIds) ? body.discontinuedIds.filter((id: unknown) => typeof id === "string") : [],
+    );
 
-    // Get brand configs before transaction
-    const brandNames = new Set<string>();
-    newSlabs.forEach((s) => brandNames.add(s.brand));
-    changedSlabs.forEach((c) => brandNames.add(c.incoming.brand));
+    const result = await computeRowsDiff(brandId, rows);
+    if (!result.ok) {
+      return NextResponse.json({ error: result.error, issues: result.issues }, { status: result.status });
+    }
+    const { brand, diff } = result;
 
-    const brandConfigs = await prisma.slabBrandConfig.findMany({
-      where: { name: { in: Array.from(brandNames) } },
-    });
-    const brandConfigMap = new Map(brandConfigs.map((bc) => [bc.name, bc]));
+    // Only slabs that really are missing from this brand's new list can be discontinued.
+    const discontinuedIds = diff.discontinuedSlabs
+      .filter((s) => requestedDiscontinued.has(s.id))
+      .map((s) => s.id);
 
-    // Get starting slab number before transaction
     const maxSlab = await prisma.slab.findFirst({
       orderBy: { slabNumber: "desc" },
       select: { slabNumber: true },
     });
     let nextSlabNumber = (maxSlab?.slabNumber ?? 0) + 1;
 
-    // Prepare data for batch operations
-    const newSlabsData = newSlabs.map((slab) => {
-      const brandConfig = brandConfigMap.get(slab.brand);
-      if (!brandConfig) {
-        throw new Error(`Brand config not found for: ${slab.brand}`);
-      }
+    const newSlabsData = diff.newSlabs.map((slab) => ({
+      slabNumber: nextSlabNumber++,
+      brandId: brand.id,
+      series: slab.series,
+      providerCode: slab.code || "",
+      color: slab.color,
+      finish: toFinish(slab.finish),
+      widthIn: new Decimal(slab.widthIn),
+      heightIn: new Decimal(slab.heightIn),
+      thickness: mapThicknessToEnum(slab.thickness) as SlabThickness,
+      providerPrice: new Decimal(slab.listedPrice),
+      finalPrice: new Decimal(slab.finalPrice),
+      status: toStatus(slab.status),
+    }));
 
-      return {
-        slabNumber: nextSlabNumber++,
-        brandId: brandConfig.id,
-        series: slab.series,
-        providerCode: slab.code || "",
-        color: slab.color,
-        finish: mapFinishToEnum(slab.finish),
-        widthIn: new Decimal(slab.widthIn),
-        heightIn: new Decimal(slab.heightIn),
-        thickness: mapThicknessStringToEnum(slab.thickness),
-        providerPrice: new Decimal(slab.listedPrice),
-        finalPrice: new Decimal(slab.finalPrice),
-        status: mapStatusToEnum(slab.status),
-      };
-    });
+    // Everything goes in ONE batch transaction with a handful of statements,
+    // instead of one UPDATE round trip per slab inside an interactive
+    // transaction (hundreds of round trips to Supabase blew past Prisma's
+    // interactive-transaction timeout on a full price list).
+    const operations: Prisma.PrismaPromise<unknown>[] = [];
 
-    // Use transaction for consistency
-    await prisma.$transaction(
-      async (tx) => {
-        // 1. Create new slabs in batch
-        if (newSlabsData.length > 0) {
-          await tx.slab.createMany({
-            data: newSlabsData,
-          });
-          createdCount = newSlabsData.length;
-        }
+    if (newSlabsData.length > 0) {
+      operations.push(prisma.slab.createMany({ data: newSlabsData }));
+    }
 
-        // 2. Update changed slabs individually (required for different data per row)
-        for (const change of changedSlabs) {
-          await tx.slab.update({
-            where: { id: change.existingId },
-            data: {
-              series: change.incoming.series,
-              providerCode: change.incoming.code || "",
-              widthIn: new Decimal(change.incoming.widthIn),
-              heightIn: new Decimal(change.incoming.heightIn),
-              thickness: mapThicknessStringToEnum(change.incoming.thickness),
-              providerPrice: new Decimal(change.incoming.listedPrice),
-              finalPrice: new Decimal(change.incoming.finalPrice),
-              status: mapStatusToEnum(change.incoming.status),
-            },
-          });
-          updatedCount++;
-        }
+    for (let i = 0; i < diff.changedSlabs.length; i += UPDATE_BATCH_SIZE) {
+      const batch = diff.changedSlabs.slice(i, i + UPDATE_BATCH_SIZE);
+      const values = batch.map(({ existing, incoming }) => {
+        return Prisma.sql`(${existing.id}::text, ${incoming.series}::text, ${incoming.code || ""}::text, ${String(
+          incoming.widthIn,
+        )}::numeric, ${String(incoming.heightIn)}::numeric, ${mapThicknessToEnum(incoming.thickness)}::text, ${String(
+          incoming.listedPrice,
+        )}::numeric, ${String(incoming.finalPrice)}::numeric, ${toStatus(incoming.status)}::text)`;
+      });
+      operations.push(
+        prisma.$executeRaw`
+          UPDATE "Slab" AS s SET
+            "series" = v.series,
+            "providerCode" = v.code,
+            "widthIn" = v.width_in,
+            "heightIn" = v.height_in,
+            "thickness" = v.thickness::"SlabThickness",
+            "providerPrice" = v.listed,
+            "finalPrice" = v.final,
+            "status" = v.status::"SlabStatus",
+            "updatedAt" = NOW()
+          FROM (VALUES ${Prisma.join(values)})
+            AS v(id, series, code, width_in, height_in, thickness, listed, final, status)
+          WHERE s."id" = v.id AND s."brandId" = ${brand.id}`,
+      );
+    }
 
-        // 3. Mark discontinued slabs in batch
-        if (discontinuedIds.length > 0) {
-          await tx.slab.updateMany({
-            where: { id: { in: discontinuedIds } },
-            data: { status: "UNAVAILABLE" },
-          });
-          discontinuedCount = discontinuedIds.length;
-        }
-      },
-      {
-        maxWait: 10000, // 10 seconds max wait
-        timeout: 20000, // 20 seconds timeout
-      }
+    if (discontinuedIds.length > 0) {
+      operations.push(
+        prisma.slab.updateMany({
+          where: { id: { in: discontinuedIds }, brandId: brand.id },
+          data: { status: "UNAVAILABLE" },
+        }),
+      );
+    }
+
+    operations.push(
+      prisma.slabBrandConfig.update({
+        where: { id: brand.id },
+        data: { lastUpdate: new Date() },
+      }),
     );
+
+    await prisma.$transaction(operations);
+
+    if (isValidImportPath(body?.storagePath, brandId)) {
+      await removeSlabImportFile(body.storagePath);
+    }
 
     return NextResponse.json({
       success: true,
       message: "Import completed successfully",
       summary: {
-        created: createdCount,
-        updated: updatedCount,
-        discontinued: discontinuedCount,
+        created: newSlabsData.length,
+        updated: diff.changedSlabs.length,
+        discontinued: discontinuedIds.length,
       },
     });
   } catch (error: any) {
     console.error("Import apply error:", error);
-    return NextResponse.json(
-      { error: error.message || "Failed to apply changes" },
-      { status: 500 }
-    );
+    return NextResponse.json({ error: error.message || "Failed to apply changes" }, { status: 500 });
   }
 }

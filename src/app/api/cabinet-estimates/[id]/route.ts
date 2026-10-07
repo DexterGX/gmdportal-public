@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
-import { getCurrentUserWithRole } from "@/lib/authHelpers";
+import { getProgramUserContext } from "@/lib/programPermissions";
 import {
   computeCabinetsTotal,
   computeCabinetEstimateFooterTotals,
@@ -10,24 +10,23 @@ import {
   computeBaseInstallationAmount,
   computeRemovalAmount,
   round2,
-  DISCOUNT_PERCENT_OPTIONS,
 } from "@/lib/cabinetEstimateCalc";
 import {
   getCabinetEstimateParameters,
   resolveInstallationType,
   resolveRemovalType,
   installationServiceItemPricesById,
+  computeMicrowaveInstallationAmount,
+  resolveDiscountPercent,
 } from "@/lib/cabinetEstimateParameters";
 
 const prismaAny = prisma as any;
-const CREATE_ROLES = ["admin", "sales", "office", "finance"];
-
 async function requireCreator() {
-  const { user, appRole, isActive } = await getCurrentUserWithRole();
-  if (!user || !isActive || appRole === "unassigned") {
+  const { user, appRole, isActive, appRoles, canAccess } = await getProgramUserContext("cabinetEstimates");
+  if (!user || !isActive || appRoles.length === 0) {
     return { ok: false as const, status: 401, error: "Unauthorized" };
   }
-  if (!CREATE_ROLES.includes(appRole)) {
+  if (!canAccess) {
     return { ok: false as const, status: 403, error: "Forbidden" };
   }
   return { ok: true as const, user, appRole };
@@ -219,11 +218,10 @@ export async function PATCH(
     const cabinetsTotal = computeCabinetsTotal(
       lineItemsData.map((item) => ({ qty: item.qty, unitPrice: item.unitPrice })),
     );
-    const discountPercent = DISCOUNT_PERCENT_OPTIONS.includes(
-      Math.trunc(toNumber(body.discountPercent)) as any,
-    )
-      ? Math.trunc(toNumber(body.discountPercent))
-      : 0;
+    const discountPercent = resolveDiscountPercent(
+      parameters.discountOptions,
+      body.discountPercent,
+    );
     const discount = computeDiscountAmount(cabinetsTotal, discountPercent);
     // Round 12: Removal is no longer a client-typed dollar amount - it's
     // resolved the same way Installation Type is (never trust an
@@ -252,8 +250,13 @@ export async function PATCH(
       calcMode: parameters.settings.installationCalcMode,
       basePercent: parameters.settings.installationBasePercent,
     });
+    const microwaveInstallationAmount = computeMicrowaveInstallationAmount(
+      Boolean(body.microwaveInstallation),
+      parameters.installationServiceItems,
+    );
     const installationAmount = round2(
-      baseInstallationAmount * (resolvedInstallationType?.multiplier ?? 1),
+      baseInstallationAmount * (resolvedInstallationType?.multiplier ?? 1) +
+        microwaveInstallationAmount,
     );
     const specialCustomizationPayload: SpecialCustomizationLinePayload[] = Array.isArray(
       body.specialCustomizationLines,
@@ -380,8 +383,8 @@ export async function DELETE(
   request: NextRequest,
   context: { params: Promise<{ id: string }> },
 ) {
-  const { user, appRole, isActive } = await getCurrentUserWithRole();
-  if (!user || !isActive || appRole === "unassigned") {
+  const { user, appRole, isActive, appRoles } = await getProgramUserContext("cabinetEstimates");
+  if (!user || !isActive || appRoles.length === 0) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
   if (appRole !== "admin") {

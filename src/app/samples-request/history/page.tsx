@@ -1,15 +1,15 @@
 import { redirect } from "next/navigation";
-import { getCurrentUserWithRole } from "@/lib/authHelpers";
+import { getProgramUserContext } from "@/lib/programPermissions";
 import SamplesRequestHistoryClient from "./SamplesRequestHistoryClient";
 
 export default async function SamplesRequestHistoryPage() {
-  const { user, appRole, isActive } = await getCurrentUserWithRole();
+  const { user, appRole, isActive, appRoles, canAccess } = await getProgramUserContext("samplesRequest");
 
-  if (!user || !isActive || appRole === "unassigned") {
+  if (!user || !isActive || appRoles.length === 0) {
     redirect("/login");
   }
 
-  if (!(["admin", "sales", "office"] as string[]).includes(appRole)) {
+  if (!canAccess) {
     redirect("/dashboard");
   }
 

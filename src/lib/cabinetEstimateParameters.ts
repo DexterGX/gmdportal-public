@@ -76,12 +76,31 @@ export type CabinetProjectTypeRow = {
   isActive: boolean;
 };
 
+// Discount dropdown choices (see model CabinetDiscountOption).
+export type CabinetDiscountOptionRow = {
+  id: string;
+  percent: number;
+  label: string;
+  sortOrder: number;
+  isActive: boolean;
+};
+
+const DEFAULT_DISCOUNT_OPTIONS = [
+  { percent: 0, label: "", sortOrder: 0 },
+  { percent: 5, label: "", sortOrder: 1 },
+  { percent: 10, label: "", sortOrder: 2 },
+  { percent: 15, label: "", sortOrder: 3 },
+  { percent: 20, label: "", sortOrder: 4 },
+  { percent: 25, label: "Contractor", sortOrder: 5 },
+];
+
 export type CabinetEstimateParametersBundle = {
   settings: CabinetEstimateParametersSettings;
   installationServiceItems: CabinetInstallationServiceItemRow[];
   installationTypes: CabinetInstallationTypeRow[];
   removalTypes: CabinetRemovalTypeRow[];
   projectTypes: CabinetProjectTypeRow[];
+  discountOptions: CabinetDiscountOptionRow[];
 };
 
 function toCalcMode(value: unknown): "flat" | "perItem" | "higher" {
@@ -123,6 +142,20 @@ export async function getCabinetEstimateParameters(
     orderBy: [{ sortOrder: "asc" }, { name: "asc" }],
   });
 
+  // Discount options self-seed the original fixed list the first time
+  // they're read, so existing estimates/behavior are unchanged until an
+  // admin edits the list on GMD Parameters.
+  const existingDiscountCount = await prismaAny.cabinetDiscountOption.count();
+  if (existingDiscountCount === 0) {
+    await prismaAny.cabinetDiscountOption.createMany({
+      data: DEFAULT_DISCOUNT_OPTIONS,
+      skipDuplicates: true,
+    });
+  }
+  const discountOptionRows = await prismaAny.cabinetDiscountOption.findMany({
+    orderBy: [{ sortOrder: "asc" }, { percent: "asc" }],
+  });
+
   return {
     settings: {
       id: settingsRow.id,
@@ -157,7 +190,26 @@ export async function getCabinetEstimateParameters(
       sortOrder: t.sortOrder,
       isActive: t.isActive,
     })),
+    discountOptions: discountOptionRows.map((d: any) => ({
+      id: d.id,
+      percent: Number(d.percent),
+      label: d.label || "",
+      sortOrder: d.sortOrder,
+      isActive: d.isActive,
+    })),
   };
+}
+
+// Server-side check for the client-supplied discount percent: it must match
+// a configured option (active or not, so re-saving an old estimate that used
+// a since-deactivated discount keeps it). Anything else falls back to 0.
+export function resolveDiscountPercent(
+  options: CabinetDiscountOptionRow[],
+  requested: unknown,
+): number {
+  const pct = Math.trunc(Number(requested));
+  if (!Number.isFinite(pct)) return 0;
+  return options.some((o) => o.percent === pct) ? pct : 0;
 }
 
 // Picks the Installation Type to actually bill for a save: validates the
@@ -208,4 +260,19 @@ export function installationServiceItemPricesById(
   const map: Record<string, number> = {};
   for (const row of rows) map[row.id] = row.salePrice;
   return map;
+}
+
+// Microwave Installation (Yes/No on the estimate form) is billed at the sale
+// price of the Installers Price Table row whose description mentions
+// "microwave" (e.g. "Microwave" $190). It is a flat add-on: it is NOT scaled
+// by the Installation Type multiplier and not affected by the calc mode.
+// No matching active row (or "No" selected) means $0.
+export function computeMicrowaveInstallationAmount(
+  enabled: boolean,
+  rows: { description: string; salePrice: number }[],
+): number {
+  if (!enabled) return 0;
+  const row = rows.find((r) => /microwave/i.test(r.description || ""));
+  const price = Number(row?.salePrice) || 0;
+  return Math.round((price + Number.EPSILON) * 100) / 100;
 }

@@ -1,17 +1,8 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
-import { getCurrentUserWithRole } from "@/lib/authHelpers";
+import { getProgramUserContext } from "@/lib/programPermissions";
 
 const prismaAny = prisma as any;
-
-const VIEW_ROLES = [
-  "admin",
-  "sales",
-  "office",
-  "finance",
-  "specialist",
-  "installer",
-];
 
 async function getOrCreateSettings() {
   const existing = await prismaAny.vehicleProgramSettings.findFirst();
@@ -20,11 +11,11 @@ async function getOrCreateSettings() {
 }
 
 export async function GET() {
-  const { user, appRole, isActive } = await getCurrentUserWithRole();
-  if (!user || !isActive || appRole === "unassigned") {
+  const { user, appRole, isActive, appRoles, canAccess } = await getProgramUserContext("vehicles");
+  if (!user || !isActive || appRoles.length === 0) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
-  if (!VIEW_ROLES.includes(appRole)) {
+  if (!canAccess) {
     return NextResponse.json({ error: "Forbidden" }, { status: 403 });
   }
 
@@ -33,8 +24,8 @@ export async function GET() {
 }
 
 export async function PUT(request: NextRequest) {
-  const { user, appRole, isActive } = await getCurrentUserWithRole();
-  if (!user || !isActive || appRole === "unassigned") {
+  const { user, appRole, isActive, appRoles } = await getProgramUserContext("vehicles");
+  if (!user || !isActive || appRoles.length === 0) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
   if (appRole !== "admin") {

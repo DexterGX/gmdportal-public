@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
-import { getCurrentUserWithRole } from "@/lib/authHelpers";
+import { getProgramUserContext } from "@/lib/programPermissions";
 
 const LEGACY_AREA_KEYS = [
   "MASTER",
@@ -36,14 +36,14 @@ function mapToLegacyArea(areas: string[]):
 // GET /api/closet-jobs - List all closet jobs
 export async function GET(request: NextRequest) {
   try {
-    const { user, appRole } = await getCurrentUserWithRole();
+    const { user, appRole, appRoles, canAccess } = await getProgramUserContext("closetJobs");
 
-    if (!user || appRole === "unassigned") {
+    if (!user || appRoles.length === 0) {
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
     }
 
-    // Only ADMIN, SALES, and INSTALLER can view jobs
-    if (!["admin", "sales", "installer"].includes(appRole)) {
+    // Access is managed in Settings → Program Access
+    if (!canAccess) {
       return NextResponse.json({ error: "Forbidden" }, { status: 403 });
     }
 
@@ -75,9 +75,9 @@ export async function GET(request: NextRequest) {
 // POST /api/closet-jobs - Create a new closet job (Sales only)
 export async function POST(request: NextRequest) {
   try {
-    const { user, appRole } = await getCurrentUserWithRole();
+    const { user, appRole, appRoles } = await getProgramUserContext("closetJobs");
 
-    if (!user || appRole === "unassigned") {
+    if (!user || appRoles.length === 0) {
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
     }
 

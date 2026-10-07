@@ -2,7 +2,7 @@ import { NextResponse } from "next/server";
 import { getServerSession } from "next-auth";
 import postgres from "postgres";
 import authOptions from "@/lib/auth";
-import { getCurrentUserWithRole } from "@/lib/authHelpers";
+import { getProgramUserContext } from "@/lib/programPermissions";
 import type { CreateSlabDeliveryExpectationInput } from "@/app/slab-rack-display/ui/expectedDeliveries";
 
 const connectionString =
@@ -109,7 +109,7 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
 
-  const { appRole } = await getCurrentUserWithRole();
+  const { appRole } = await getProgramUserContext("slabRack");
   if (appRole !== "admin" && appRole !== "office") {
     return NextResponse.json({ error: "Forbidden" }, { status: 403 });
   }

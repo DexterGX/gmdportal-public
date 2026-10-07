@@ -1,5 +1,5 @@
 import { redirect } from "next/navigation";
-import { getCurrentUserWithRole } from "@/lib/authHelpers";
+import { getProgramUserContext } from "@/lib/programPermissions";
 import { prisma } from "@/lib/prisma";
 import { FABRICATION_SETTINGS_CATEGORIES } from "@/lib/fabricationSettings";
 import { getHiddenPriceListCategories } from "@/lib/fabricationPriceListVisibility";
@@ -17,9 +17,9 @@ function toNumber(value: unknown) {
 // the editable Settings page), so sales/office can look prices up without
 // needing admin access.
 export default async function FabricationPriceListPage() {
-  const { user, appRole, isActive } = await getCurrentUserWithRole();
+  const { user, isActive, appRoles } = await getProgramUserContext("fabricationOrders");
 
-  if (!user || !isActive || appRole === "unassigned") {
+  if (!user || !isActive || appRoles.length === 0) {
     redirect("/login");
   }
 

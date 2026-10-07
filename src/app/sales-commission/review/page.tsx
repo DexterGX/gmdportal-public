@@ -1,7 +1,7 @@
 import { redirect } from "next/navigation";
 import { getServerSession } from "next-auth";
 import authOptions from "@/lib/auth";
-import { getCurrentUserWithRole } from "@/lib/authHelpers";
+import { getProgramUserContext } from "@/lib/programPermissions";
 import { prisma } from "@/lib/prisma";
 import SalesCommissionClient from "../SalesCommissionClient";
 
@@ -9,8 +9,8 @@ const p = prisma as any;
 
 export default async function ReviewPage() {
   const session = await getServerSession(authOptions);
-  const { user, appRole, isActive } = await getCurrentUserWithRole();
-  if (!session || !user || !isActive || appRole === "unassigned")
+  const { user, isActive, appRoles } = await getProgramUserContext("salesCommission");
+  if (!session || !user || !isActive || appRoles.length === 0)
     redirect("/login");
 
   const [settings, activeWeek] = await Promise.all([

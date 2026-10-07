@@ -1,7 +1,7 @@
 import { getServerSession } from "next-auth";
 import authOptions from "@/lib/auth";
 import { redirect } from "next/navigation";
-import { getCurrentUserWithRole } from "@/lib/authHelpers";
+import { getProgramUserContext } from "@/lib/programPermissions";
 import SinkImportForm from "../../components/SinkImportForm";
 
 export default async function SinkImportPage() {
@@ -10,7 +10,7 @@ export default async function SinkImportPage() {
     redirect("/api/auth/signin?callbackUrl=/sinksPriceList/admin/import");
   }
 
-  const { appRole } = await getCurrentUserWithRole();
+  const { appRole } = await getProgramUserContext("sinks");
   if (appRole !== "admin") {
     redirect("/sinksPriceList");
   }

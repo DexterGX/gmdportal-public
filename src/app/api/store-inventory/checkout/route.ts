@@ -1,12 +1,12 @@
 import { NextRequest, NextResponse } from "next/server";
-import { getCurrentUserWithRole } from "@/lib/authHelpers";
+import { getProgramUserContext } from "@/lib/programPermissions";
 import { prisma } from "@/lib/prisma";
 
 type CheckoutLine = { itemId: string; quantity: number; reason?: string };
 
 export async function POST(request: NextRequest) {
-  const { user, appRole } = await getCurrentUserWithRole();
-  if (!user || appRole === "unassigned") {
+  const { user, appRoles } = await getProgramUserContext("storeInventory");
+  if (!user || appRoles.length === 0) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
 

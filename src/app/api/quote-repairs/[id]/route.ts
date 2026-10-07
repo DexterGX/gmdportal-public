@@ -1,8 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
-import { getCurrentUserWithRole } from "@/lib/authHelpers";
+import { getProgramUserContext } from "@/lib/programPermissions";
 import { prisma } from "@/lib/prisma";
 import {
-  canViewQuoteRepair,
   canEditQuoteRepair,
   normalizeQuoteRepairAreas,
   normalizeQuoteRepairText,
@@ -14,10 +13,10 @@ export async function GET(
 ) {
   try {
     const { id } = await context.params;
-    const { user, appRole } = await getCurrentUserWithRole();
-    if (!user || appRole === "unassigned")
+    const { user, appRoles, canAccess } = await getProgramUserContext("quoteRepairs");
+    if (!user || appRoles.length === 0)
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-    if (!canViewQuoteRepair(appRole))
+    if (!canAccess)
       return NextResponse.json({ error: "Forbidden" }, { status: 403 });
 
     const repair = await prisma.quoteRepair.findUnique({
@@ -80,8 +79,8 @@ export async function PATCH(
 ) {
   try {
     const { id } = await context.params;
-    const { user, appRole } = await getCurrentUserWithRole();
-    if (!user || appRole === "unassigned")
+    const { user, appRole, appRoles } = await getProgramUserContext("quoteRepairs");
+    if (!user || appRoles.length === 0)
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
 
     const repair = await prisma.quoteRepair.findUnique({
@@ -160,8 +159,8 @@ export async function DELETE(
 ) {
   try {
     const { id } = await context.params;
-    const { user, appRole } = await getCurrentUserWithRole();
-    if (!user || appRole === "unassigned")
+    const { user, appRole, appRoles } = await getProgramUserContext("quoteRepairs");
+    if (!user || appRoles.length === 0)
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
     if (appRole !== "admin")
       return NextResponse.json({ error: "Forbidden" }, { status: 403 });

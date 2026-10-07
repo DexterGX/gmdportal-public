@@ -2,7 +2,7 @@ import React from "react";
 import { getServerSession } from "next-auth";
 import authOptions from "@/lib/auth";
 import { redirect } from "next/navigation";
-import { getCurrentUserWithRole } from "@/lib/authHelpers";
+import { getProgramUserContext } from "@/lib/programPermissions";
 import { prisma } from "@/lib/prisma";
 import SlabsAdminTable from "./SlabsAdminTable";
 
@@ -29,7 +29,7 @@ export default async function SlabDataPage() {
   }
 
   // Check if user is ADMIN
-  const { appRole } = await getCurrentUserWithRole();
+  const { appRole } = await getProgramUserContext("slabs");
   if (appRole !== "admin") {
     redirect("/slabsPriceList");
   }

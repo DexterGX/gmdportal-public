@@ -1,11 +1,11 @@
 import { redirect } from "next/navigation";
-import { getCurrentUserWithRole } from "@/lib/authHelpers";
+import { getProgramUserContext } from "@/lib/programPermissions";
 import CheckoutCartClient from "./CheckoutCartClient";
 
 export default async function StoreInventoryCheckoutPage() {
-  const { user, appRole, isActive } = await getCurrentUserWithRole();
+  const { user, isActive, appRoles } = await getProgramUserContext("storeInventory");
 
-  if (!user || !isActive || appRole === "unassigned") {
+  if (!user || !isActive || appRoles.length === 0) {
     redirect("/login");
   }
 

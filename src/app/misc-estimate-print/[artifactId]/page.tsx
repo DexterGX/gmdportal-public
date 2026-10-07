@@ -1,6 +1,9 @@
 import { redirect, notFound } from "next/navigation";
 import { prisma } from "@/lib/prisma";
-import { getCurrentUserWithRole } from "@/lib/authHelpers";
+import {
+  canAccessAnyProgram,
+  getProgramUserContext,
+} from "@/lib/programPermissions";
 import AutoPrintClient from "./AutoPrintClient";
 import type { Metadata } from "next";
 
@@ -81,13 +84,15 @@ export default async function MiscEstimatePrintPage({
   params: Promise<{ artifactId: string }>;
   searchParams: Promise<Record<string, string | string[] | undefined>>;
 }) {
-  const { user, appRole, isActive } = await getCurrentUserWithRole();
+  const { user, appRoles, isActive } =
+    await getProgramUserContext("miscEstimates");
 
-  if (!user || !isActive || appRole === "unassigned") {
+  if (!user || !isActive || appRoles.length === 0) {
     redirect("/login");
   }
 
-  if (!["admin", "sales", "office"].includes(appRole)) {
+  // Access is managed in Settings → Program Access (Misc. Estimates or Customers)
+  if (!(await canAccessAnyProgram(["miscEstimates", "customersV2"]))) {
     redirect("/dashboard");
   }
 

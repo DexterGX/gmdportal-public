@@ -1,6 +1,6 @@
 import { redirect } from "next/navigation";
 import { prisma } from "@/lib/prisma";
-import { getCurrentUserWithRole } from "@/lib/authHelpers";
+import { getProgramUserContext } from "@/lib/programPermissions";
 import SavedPaymentTermsClient from "./SavedPaymentTermsClient";
 
 type SavedPaymentTermRow = {
@@ -17,13 +17,13 @@ type SavedPaymentTermRow = {
 };
 
 export default async function SavedPaymentTermsPage() {
-  const { user, appRole, isActive } = await getCurrentUserWithRole();
+  const { user, appRole, isActive, appRoles, canAccess } = await getProgramUserContext("paymentTerms");
 
-  if (!user || !isActive || appRole === "unassigned") {
+  if (!user || !isActive || appRoles.length === 0) {
     redirect("/login");
   }
 
-  if (!["admin", "sales", "office", "finance"].includes(appRole)) {
+  if (!canAccess) {
     redirect("/dashboard");
   }
 

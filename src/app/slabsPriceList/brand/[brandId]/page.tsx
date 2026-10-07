@@ -1,8 +1,8 @@
 import { notFound, redirect } from "next/navigation";
 import { getServerSession } from "next-auth";
 import authOptions from "@/lib/auth";
-import { getCurrentUserWithRole } from "@/lib/authHelpers";
-import { canAccessProgramId } from "@/lib/programAccess";
+import { getProgramUserContext } from "@/lib/programPermissions";
+
 import { prisma } from "@/lib/prisma";
 import BrandPriceListClient from "./BrandPriceListClient";
 
@@ -17,7 +17,8 @@ export default async function BrandPriceListPage({ params }: PageProps) {
     redirect("/api/auth/signin?callbackUrl=/slabsPriceList");
   }
 
-  const { appRole, appRoles, isActive } = await getCurrentUserWithRole();
+  const { appRole, appRoles, isActive, canAccess } =
+    await getProgramUserContext("slabs");
 
   if (!isActive) {
     redirect("/auth/status?reason=inactive");
@@ -27,9 +28,7 @@ export default async function BrandPriceListPage({ params }: PageProps) {
     redirect("/auth/status?reason=unassigned");
   }
 
-  const hasAccess = await canAccessProgramId("slabs", appRoles, isActive);
-
-  if (!hasAccess) {
+  if (!canAccess) {
     redirect("/dashboard");
   }
 

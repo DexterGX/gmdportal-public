@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getServerSession } from "next-auth";
 import authOptions from "@/lib/auth";
-import { getCurrentUserWithRole } from "@/lib/authHelpers";
+import { getProgramUserContext } from "@/lib/programPermissions";
 import { prisma } from "@/lib/prisma";
 import {
   COUNTERTOP_IMAGE_OPTIONS_BY_CATEGORY,
@@ -23,7 +23,7 @@ async function ensureAdmin() {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
 
-  const { appRole, isActive } = await getCurrentUserWithRole();
+  const { appRole, isActive } = await getProgramUserContext("paymentTerms");
   if (!isActive || appRole !== "admin") {
     return NextResponse.json({ error: "Forbidden" }, { status: 403 });
   }

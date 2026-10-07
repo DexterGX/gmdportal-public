@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
-import { getCurrentUserWithRole } from "@/lib/authHelpers";
+import { getProgramUserContext } from "@/lib/programPermissions";
 import { getCabinetEstimateParameters } from "@/lib/cabinetEstimateParameters";
 
 const prismaAny = prisma as any;
@@ -10,7 +10,7 @@ const prismaAny = prisma as any;
 // estimate, not just admins. Editing (PATCH below) stays admin-only.
 export async function GET() {
   try {
-    const { user, isActive } = await getCurrentUserWithRole();
+    const { user, isActive } = await getProgramUserContext("cabinetEstimates");
     if (!user || !isActive) {
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
     }
@@ -41,7 +41,7 @@ function toCalcMode(value: unknown): "flat" | "perItem" | "higher" {
 
 export async function PATCH(request: Request) {
   try {
-    const { user, appRole, isActive } = await getCurrentUserWithRole();
+    const { user, appRole, isActive } = await getProgramUserContext("cabinetEstimates");
     if (!user || !isActive) {
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
     }
