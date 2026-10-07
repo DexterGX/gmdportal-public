@@ -55,6 +55,7 @@ export async function POST(request: NextRequest) {
     const type = await prismaAny.cabinetInstallationType.create({
       data: {
         name,
+        description: String(body.description || "").trim(),
         multiplier: toNumber(body.multiplier) || 1,
         isActive: body.isActive === undefined ? true : Boolean(body.isActive),
         sortOrder: Number.isFinite(toNumber(body.sortOrder))

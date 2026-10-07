@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { getProgramUserContext } from "@/lib/programPermissions";
 import { getCabinetEstimateParameters } from "@/lib/cabinetEstimateParameters";
+import { getProgramVersion } from "@/lib/cabinetProgramVersion";
 
 const prismaAny = prisma as any;
 
@@ -10,12 +11,21 @@ const prismaAny = prisma as any;
 // estimate, not just admins. Editing (PATCH below) stays admin-only.
 export async function GET() {
   try {
-    const { user, isActive } = await getProgramUserContext("cabinetEstimates");
+    const { user, isActive, appRole } = await getProgramUserContext("cabinetEstimates");
     if (!user || !isActive) {
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
     }
     const bundle = await getCabinetEstimateParameters(prismaAny);
-    return NextResponse.json(bundle);
+    // Program version: everyone gets the public one; only admins also get
+    // the true one (they differ after a "don't show publicly" table update).
+    const version = await getProgramVersion(prismaAny);
+    return NextResponse.json({
+      ...bundle,
+      programVersion: {
+        public: version.public,
+        actual: appRole === "admin" ? version.actual : null,
+      },
+    });
   } catch (error: any) {
     return NextResponse.json(
       { error: error?.message || "Failed to load GMD Parameters" },
@@ -28,6 +38,7 @@ type PatchBody = {
   installationBasePercent?: number | string;
   installationCalcMode?: string;
   customSurchargePercent?: number | string;
+  costTaxPercent?: number | string;
 };
 
 function toNumber(value: unknown, fallback = 0): number {
@@ -55,6 +66,10 @@ export async function PATCH(request: Request) {
       installationBasePercent: toNumber(body.installationBasePercent),
       installationCalcMode: toCalcMode(body.installationCalcMode),
       customSurchargePercent: toNumber(body.customSurchargePercent),
+      // Only touched when sent, so older callers can't reset it to 0.
+      ...(body.costTaxPercent !== undefined
+        ? { costTaxPercent: toNumber(body.costTaxPercent) }
+        : {}),
     };
     const saved = existing
       ? await prismaAny.cabinetEstimateParameters.update({

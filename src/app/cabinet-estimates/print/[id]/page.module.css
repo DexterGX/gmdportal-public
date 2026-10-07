@@ -78,9 +78,11 @@
   border-bottom: 0;
 }
 
+/* Light blue tint with dark bold text: stays readable on any printer
+   (including black & white / "Background graphics" off). */
 .infoLabel {
-  background: #1e3a8a;
-  color: #fff;
+  background: #dbeafe;
+  color: #0f172a;
   font-size: 6.5pt;
   font-weight: 700;
   padding: 1px 6px;
@@ -364,4 +366,22 @@
   .footer {
     break-inside: avoid;
   }
+}
+
+/* Preco de Custo (cost) print view */
+.costBanner {
+  border: 1px solid #111827;
+  background: #fef3c7;
+  color: #111827;
+  font-size: 8pt;
+  font-weight: 700;
+  text-align: center;
+  padding: 3px 6px;
+  margin-bottom: 4px;
+}
+
+.costNote {
+  font-size: 7pt;
+  color: #374151;
+  padding: 3px 6px;
 }

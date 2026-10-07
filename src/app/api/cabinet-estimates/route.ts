@@ -23,6 +23,7 @@ import {
   computeMicrowaveInstallationAmount,
   resolveDiscountPercent,
 } from "@/lib/cabinetEstimateParameters";
+import { getProgramVersion } from "@/lib/cabinetProgramVersion";
 
 const prismaAny = prisma as any;
 
@@ -165,6 +166,8 @@ export async function GET(request: NextRequest) {
       salesRep: true,
       brand: true,
       isActive: true,
+      isRemeasure: true,
+      remeasureByName: true,
       total: true,
       createdAt: true,
       createdBy: { select: { name: true, email: true } },
@@ -206,6 +209,37 @@ export async function POST(request: NextRequest) {
         { status: 400 },
       );
     }
+
+    // Remeasure PK List: a re-creation of an already-saved (sold) estimate by
+    // the remeasure team. It is numbered <original number>R and points back
+    // at the original; only one remeasure per original is allowed.
+    let remeasureOriginal: any = null;
+    if (body.isRemeasure) {
+      if (!body.originalEstimateId) {
+        return NextResponse.json(
+          { error: "Open the saved estimate you want to remeasure first." },
+          { status: 400 },
+        );
+      }
+      remeasureOriginal = await prismaAny.cabinetEstimate.findUnique({
+        where: { id: String(body.originalEstimateId) },
+        select: { id: true, estimateNumber: true, isRemeasure: true },
+      });
+      if (!remeasureOriginal || !remeasureOriginal.estimateNumber) {
+        return NextResponse.json(
+          { error: "The original estimate was not found." },
+          { status: 404 },
+        );
+      }
+      if (remeasureOriginal.isRemeasure) {
+        return NextResponse.json(
+          { error: "A remeasure estimate can't be remeasured again." },
+          { status: 400 },
+        );
+      }
+    }
+    // Stamped server-side, never taken from the client.
+    const programVersion = await getProgramVersion(prismaAny);
 
     // GMD Parameters are always fetched fresh and are the sole authority for
     // every dollar Installation computes to - never trust anything the
@@ -292,7 +326,9 @@ export async function POST(request: NextRequest) {
     const maxAttempts = 3;
     let estimate: any = null;
     for (let attempt = 1; attempt <= maxAttempts; attempt += 1) {
-      const estimateNumber = await generateMonthlyCabinetEstimateNumber();
+      const estimateNumber = remeasureOriginal
+        ? `${remeasureOriginal.estimateNumber}R`
+        : await generateMonthlyCabinetEstimateNumber();
       try {
         estimate = await prismaAny.cabinetEstimate.create({
           data: {
@@ -318,7 +354,13 @@ export async function POST(request: NextRequest) {
             removalTypeId: resolvedRemovalType?.id || null,
             removal: resolvedRemovalType?.name || null,
             projectType: body.projectType || null,
-            version: body.version || null,
+            version: programVersion.public,
+            versionActual: programVersion.actual,
+            isRemeasure: Boolean(remeasureOriginal),
+            originalEstimateId: remeasureOriginal?.id || null,
+            remeasureByName: remeasureOriginal
+              ? auth.user.name || auth.user.email || null
+              : null,
             standardCabinetsCount: Math.max(
               0,
               Math.trunc(toNumber(body.standardCabinetsCount)),
@@ -355,11 +397,16 @@ export async function POST(request: NextRequest) {
         });
         break;
       } catch (error: any) {
-        if (
-          isEstimateNumberUniqueConstraintError(error) &&
-          attempt < maxAttempts
-        ) {
-          continue;
+        if (isEstimateNumberUniqueConstraintError(error)) {
+          if (remeasureOriginal) {
+            return NextResponse.json(
+              {
+                error: `A remeasure estimate (${remeasureOriginal.estimateNumber}R) already exists for this estimate. Open it from Saved Estimates to edit it.`,
+              },
+              { status: 409 },
+            );
+          }
+          if (attempt < maxAttempts) continue;
         }
         throw error;
       }
@@ -374,6 +421,8 @@ export async function POST(request: NextRequest) {
       data: {
         estimateId: estimate.id,
         action: "CREATED",
+        fieldName: remeasureOriginal ? "remeasureOf" : null,
+        newValue: remeasureOriginal ? remeasureOriginal.estimateNumber : null,
         changedById: auth.user.id,
       },
     });

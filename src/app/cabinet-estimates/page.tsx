@@ -1,6 +1,7 @@
 import { redirect } from "next/navigation";
 import { getProgramUserContext } from "@/lib/programPermissions";
 import { prisma } from "@/lib/prisma";
+import { canViewCabinetCost } from "@/lib/cabinetCostView";
 import CabinetEstimateForm from "./CabinetEstimateForm";
 
 const prismaAny = prisma as any;
@@ -11,7 +12,7 @@ function toNumber(value: unknown): number {
 }
 
 export default async function NewCabinetEstimatePage() {
-  const { user, isActive, appRoles } = await getProgramUserContext("cabinetEstimates");
+  const { user, isActive, appRoles, appRole } = await getProgramUserContext("cabinetEstimates");
 
   if (!user || !isActive || appRoles.length === 0) {
     redirect("/login");
@@ -28,6 +29,7 @@ export default async function NewCabinetEstimatePage() {
   return (
     <CabinetEstimateForm
       currentUserName={user.name || user.email || ""}
+      canViewCost={canViewCabinetCost({ appRole, appRoles })}
       companyName={companySettings?.companyName || "GM Design"}
       companyLogoUrl={companySettings?.logoUrl || "/logo.svg"}
       companyPhone={companySettings?.phoneNumber || null}

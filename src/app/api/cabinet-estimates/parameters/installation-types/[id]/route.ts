@@ -45,6 +45,9 @@ export async function PATCH(
       }
       data.name = name;
     }
+    if (body.description !== undefined) {
+      data.description = String(body.description || "").trim();
+    }
     if (body.multiplier !== undefined) {
       data.multiplier = toNumber(body.multiplier) || 1;
     }
