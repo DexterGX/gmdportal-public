@@ -10,9 +10,18 @@ import {
   formatEstimateReferenceNumber,
   computeCabinetsCost,
 } from "@/lib/cabinetEstimateCalc";
+import { findMicrowaveServiceItem } from "@/lib/cabinetEstimateParameters";
+import {
+  canViewCabinetCost,
+  computeCostSummary,
+  computeInstallerCost,
+  costsByItemIdForInstaller,
+} from "@/lib/cabinetCostView";
 import AutoPrintClient from "./AutoPrintClient";
 import PrintButton from "./PrintButton";
+import InstallerPicker from "./InstallerPicker";
 import CopyQBooksButton from "../../CopyQBooksButton";
+import Link from "next/link";
 import styles from "./page.module.css";
 
 const prismaAny = prisma as any;
@@ -67,6 +76,15 @@ export default async function CabinetEstimatePrintPage({
   const { id } = await params;
   const query = await searchParams;
   const shouldAutoPrint = query.autoprint === "1";
+  // PK List: the same sheet without any prices (for production/remeasure).
+  const isPkList = query.pk === "1";
+  // Preco de Custo: vendor/installer cost view, admins / finance only.
+  const canViewCost = canViewCabinetCost({ appRole, appRoles });
+  if (query.cost === "1" && !canViewCost) {
+    redirect(`/cabinet-estimates/print/${(await params).id}`);
+  }
+  const isCost = query.cost === "1" && !isPkList;
+  const installerParam = typeof query.installer === "string" ? query.installer : "";
 
   const [estimate, companySettings] = await Promise.all([
     prismaAny.cabinetEstimate.findUnique({
@@ -97,9 +115,70 @@ export default async function CabinetEstimatePrintPage({
     vendorForCost?.provider ? Number(vendorForCost.provider.factor) : 1,
   );
 
-  const pageTitle = `${estimate.customerName || "Client"} - Cabinet Estimate ${
-    estimate.estimateNumber || ""
-  }`;
+  // Preco de Custo data: installers, the selected installer's cost per
+  // Installers Price Table item, tax %.
+  let costInstallers: { id: string; name: string }[] = [];
+  let selectedInstallerId = "";
+  let costSummary = computeCostSummary({ cabinetsCost: 0, taxPercent: 0, installationCost: 0 });
+  let lineFactor = 1;
+  let installerMissingCount = 0;
+  let selectedInstallerName = "";
+  let costTaxPercentLabel = 0;
+  if (isCost) {
+    lineFactor = vendorForCost?.provider ? Number(vendorForCost.provider.factor) : 1;
+    const [installers, serviceItems, settings] = await Promise.all([
+      prismaAny.cabinetInstaller.findMany({
+        where: { isActive: true },
+        orderBy: [{ name: "asc" }],
+        select: { id: true, name: true },
+      }),
+      prismaAny.cabinetInstallationServiceItem.findMany({
+        where: { isActive: true },
+        select: { id: true, description: true },
+      }),
+      prismaAny.cabinetEstimateParameters.findFirst(),
+    ]);
+    costInstallers = installers;
+    selectedInstallerId = installers.some((i: any) => i.id === installerParam)
+      ? installerParam
+      : installers[0]?.id || "";
+    selectedInstallerName =
+      installers.find((i: any) => i.id === selectedInstallerId)?.name || "";
+    const costRows = selectedInstallerId
+      ? await prismaAny.cabinetInstallerServiceCost.findMany({
+          where: { installerId: selectedInstallerId },
+        })
+      : [];
+    const installerCost = computeInstallerCost({
+      lines: estimate.lineItems.map((item: any) => ({
+        qty: toNumber(item.qty),
+        installationItemId: item.installationItemId,
+      })),
+      costsByItemId: costsByItemIdForInstaller(
+        costRows.map((c: any) => ({
+          installerId: c.installerId,
+          itemId: c.itemId,
+          cost: toNumber(c.cost),
+        })),
+        selectedInstallerId,
+      ),
+      microwave: Boolean(estimate.microwaveInstallation),
+      microwaveItemId: findMicrowaveServiceItem<{ id: string; description: string }>(serviceItems)?.id,
+    });
+    installerMissingCount = installerCost.missingCount;
+    costTaxPercentLabel = toNumber(settings?.costTaxPercent);
+    costSummary = computeCostSummary({
+      cabinetsCost: estimateCost,
+      taxPercent: costTaxPercentLabel,
+      installationCost: installerCost.amount,
+    });
+  }
+  // PK List keeps the price columns/summary as empty placeholders.
+  const money = (value: number) => (isPkList ? "" : formatCurrency(value));
+  const lineCost = (value: number) => computeCabinetsCost(value, lineFactor);
+  const pageTitle = `${estimate.customerName || "Client"} - ${
+    isPkList ? "PK List" : isCost ? "Cost" : "Cabinet Estimate"
+  } ${estimate.estimateNumber || ""}`;
   const printedOn = new Date().toLocaleString("en-US");
   const printedBy = user.name || user.email || "Unknown";
   const discountPercent = toNumber(estimate.discountPercent);
@@ -140,6 +219,23 @@ export default async function CabinetEstimatePrintPage({
           style={{ maxWidth: "850px" }}
         >
           <PrintButton />
+          <Link
+            href={`/cabinet-estimates/print/${id}${isPkList ? "" : "?pk=1"}`}
+            className="flex items-center gap-2 rounded-md border border-gray-300 bg-white px-3 py-2 text-sm font-medium text-gray-700 hover:bg-gray-50"
+          >
+            {isPkList ? "View with prices" : "View PK List"}
+          </Link>
+          {canViewCost && !isPkList && (
+            <Link
+              href={`/cabinet-estimates/print/${id}${isCost ? "" : "?cost=1"}`}
+              className="flex items-center gap-2 rounded-md border border-amber-400 bg-amber-50 px-3 py-2 text-sm font-medium text-amber-900 hover:bg-amber-100"
+            >
+              {isCost ? "View with prices" : "View Preco de Custo"}
+            </Link>
+          )}
+          {isCost && (
+            <InstallerPicker installers={costInstallers} value={selectedInstallerId} />
+          )}
           <CopyQBooksButton
             estimateNumber={estimate.estimateNumber}
             brand={estimate.brand}
@@ -168,9 +264,11 @@ export default async function CabinetEstimatePrintPage({
                 Phone: {companySettings.phoneNumber}
               </div>
             )}
-            <div className={styles.referenceNumber}>
-              {formatEstimateReferenceNumber(estimateCost, generateRandomDigits(8))}
-            </div>
+            {!isPkList && !isCost && (
+              <div className={styles.referenceNumber}>
+                {formatEstimateReferenceNumber(estimateCost, generateRandomDigits(8))}
+              </div>
+            )}
           </div>
 
           <div className={styles.infoGrid}>
@@ -193,6 +291,7 @@ export default async function CabinetEstimatePrintPage({
               <div className={styles.metaLabel}>Estimate #</div>
               <div className={styles.metaValue}>
                 {estimate.estimateNumber || "-"}
+                {isPkList ? " PK" : isCost ? " COST" : ""}
               </div>
             </div>
             <div className={styles.metaItem}>
@@ -210,6 +309,11 @@ export default async function CabinetEstimatePrintPage({
           </div>
         </div>
 
+        {isCost && (
+          <div className={styles.costBanner}>
+            Preco de Custo - internal use only (vendor and installer cost, not customer prices)
+          </div>
+        )}
         <table className={styles.itemsTable}>
           <colgroup>
             <col className={styles.colQty} />
@@ -266,10 +370,14 @@ export default async function CabinetEstimatePrintPage({
                   </td>
                   <td>{item.note || ""}</td>
                   <td className={styles.colPUnit}>
-                    {formatCurrency(toNumber(item.unitPrice))}
+                    {isCost
+                      ? formatCurrency(lineCost(toNumber(item.unitPrice)))
+                      : money(toNumber(item.unitPrice))}
                   </td>
                   <td className={styles.colPTotal}>
-                    {formatCurrency(toNumber(item.totalPrice))}
+                    {isCost
+                      ? formatCurrency(lineCost(toNumber(item.totalPrice)))
+                      : money(toNumber(item.totalPrice))}
                   </td>
                 </tr>
               ))
@@ -343,38 +451,75 @@ export default async function CabinetEstimatePrintPage({
             </div>
           </div>
 
+          {isCost ? (
+            <div className={styles.totalsBox}>
+              <div className={styles.totalsTitle}>Total Summary (cost)</div>
+              <div className={styles.totalsRow}>
+                <span>Cabinets (cost)</span>
+                <strong>{formatCurrency(costSummary.cabinetsCost)}</strong>
+              </div>
+              <div className={`${styles.totalsRow} ${styles.discount}`}>
+                <span>Tax{costTaxPercentLabel > 0 ? ` (${costTaxPercentLabel}%)` : ""}</span>
+                <strong>{formatCurrency(costSummary.tax)}</strong>
+              </div>
+              <div className={`${styles.totalsRow} ${styles.subtotal}`}>
+                <span>Cabinets Subtotal</span>
+                <strong>{formatCurrency(costSummary.cabinetsSubtotal)}</strong>
+              </div>
+              <div className={`${styles.totalsRow} ${styles.installation}`}>
+                <span>
+                  Installation (cost){selectedInstallerName ? ` - ${selectedInstallerName}` : ""}
+                  {installerMissingCount > 0 ? " *" : ""}
+                </span>
+                <strong>{formatCurrency(costSummary.installationCost)}</strong>
+              </div>
+              <div className={styles.totalsFinal}>
+                <span>Total</span>
+                <span>{formatCurrency(costSummary.total)}</span>
+              </div>
+              {installerMissingCount > 0 && (
+                <div className={styles.costNote}>
+                  * {installerMissingCount} line(s) have no cost for this installer ($0 counted).
+                </div>
+              )}
+            </div>
+          ) : (
           <div className={styles.totalsBox}>
             <div className={styles.totalsTitle}>Total Summary</div>
             <div className={styles.totalsRow}>
               <span>Cabinets</span>
-              <strong>{formatCurrency(toNumber(estimate.cabinetsTotal))}</strong>
+              <strong>{money(toNumber(estimate.cabinetsTotal))}</strong>
             </div>
             <div className={`${styles.totalsRow} ${styles.discount}`}>
-              <span>Discount ({discountPercentLabel(discountPercent, discountLabel)})</span>
-              <strong>{formatCurrency(toNumber(estimate.discount))}</strong>
+              <span>
+                Discount
+                {isPkList ? "" : ` (${discountPercentLabel(discountPercent, discountLabel)})`}
+              </span>
+              <strong>{money(toNumber(estimate.discount))}</strong>
             </div>
             <div className={`${styles.totalsRow} ${styles.subtotal}`}>
               <span>Cabinets Subtotal</span>
-              <strong>
-                {formatCurrency(toNumber(estimate.cabinetsSubtotal))}
-              </strong>
+              <strong>{money(toNumber(estimate.cabinetsSubtotal))}</strong>
             </div>
             <div className={`${styles.totalsRow} ${styles.removal}`}>
               <span>Removal</span>
-              <strong>{formatCurrency(toNumber(estimate.removalAmount))}</strong>
+              <strong>{money(toNumber(estimate.removalAmount))}</strong>
             </div>
             <div className={`${styles.totalsRow} ${styles.installation}`}>
               <span>
                 Installation
-                {estimate.installationTypeName ? ` (${estimate.installationTypeName})` : ""}
+                {!isPkList && estimate.installationTypeName
+                  ? ` (${estimate.installationTypeName})`
+                  : ""}
               </span>
-              <strong>{formatCurrency(installationTotal)}</strong>
+              <strong>{money(installationTotal)}</strong>
             </div>
             <div className={styles.totalsFinal}>
               <span>Total</span>
-              <span>{formatCurrency(toNumber(estimate.total))}</span>
+              <span>{money(toNumber(estimate.total))}</span>
             </div>
           </div>
+          )}
         </div>
       </div>
     </div>

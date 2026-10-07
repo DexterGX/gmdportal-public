@@ -25,6 +25,8 @@ type EstimateRow = {
   salesRep: string;
   brand: string | null;
   isActive: boolean;
+  isRemeasure?: boolean;
+  remeasureByName?: string | null;
   total: number;
   createdAt: string;
   createdBy: { name: string | null; email: string | null } | null;
@@ -340,6 +342,11 @@ export default function SavedEstimatesClient({ isAdmin }: { isAdmin: boolean }) 
                   </td>
                   <td className="border-r border-gray-100 px-4 py-2 text-center dark:border-gray-700/60">
                     {estimate.salesRep || "-"}
+                    {estimate.isRemeasure && estimate.remeasureByName ? (
+                      <div className="mt-0.5 text-[10px] font-normal leading-tight text-gray-500 dark:text-gray-400">
+                        Remeasure: {estimate.remeasureByName}
+                      </div>
+                    ) : null}
                   </td>
                   <td className="border-r border-gray-100 px-4 py-2 text-center dark:border-gray-700/60">
                     {new Date(estimate.date || estimate.createdAt).toLocaleDateString()}

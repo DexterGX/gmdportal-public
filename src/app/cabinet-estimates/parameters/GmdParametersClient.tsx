@@ -9,6 +9,7 @@ type Settings = {
   installationBasePercent: number;
   installationCalcMode: CalcMode;
   customSurchargePercent: number;
+  costTaxPercent: number;
 };
 
 type InstallationServiceItem = {
@@ -22,6 +23,7 @@ type InstallationServiceItem = {
 type InstallationType = {
   id: string;
   name: string;
+  description?: string;
   multiplier: number;
   sortOrder: number;
   isActive: boolean;
@@ -150,9 +152,9 @@ export default function GmdParametersClient({
   initialParameters,
   initialSpecialCustomizationItems,
 }: Props) {
-  const [activeTab, setActiveTab] = useState<"cabinet-estimates" | "installation-calculation">(
-    "installation-calculation",
-  );
+  const [activeTab, setActiveTab] = useState<
+    "cabinet-estimates" | "installation-calculation" | "version-updates"
+  >("installation-calculation");
 
   const [settings, setSettings] = useState<Settings>(initialParameters.settings);
   const [installationTypes, setInstallationTypes] = useState<InstallationType[]>(
@@ -212,9 +214,10 @@ export default function GmdParametersClient({
   const [typeForm, setTypeForm] = useState<{
     id: string | null;
     name: string;
+    description: string;
     multiplier: number;
     isActive: boolean;
-  }>({ id: null, name: "", multiplier: 1, isActive: true });
+  }>({ id: null, name: "", description: "", multiplier: 1, isActive: true });
 
   const [removalTypeForm, setRemovalTypeForm] = useState<{
     id: string | null;
@@ -282,11 +285,82 @@ export default function GmdParametersClient({
   }, [priceTableExpanded, priceTableLoaded]);
 
   function resetTypeForm() {
-    setTypeForm({ id: null, name: "", multiplier: 1, isActive: true });
+    setTypeForm({ id: null, name: "", description: "", multiplier: 1, isActive: true });
   }
 
   function editType(t: InstallationType) {
-    setTypeForm({ id: t.id, name: t.name, multiplier: t.multiplier, isActive: t.isActive });
+    setTypeForm({
+      id: t.id,
+      name: t.name,
+      description: t.description || "",
+      multiplier: t.multiplier,
+      isActive: t.isActive,
+    });
+  }
+
+  // Version Updates tab - program/table version history (see
+  // cabinetProgramVersion.ts). Loaded the first time the tab is opened.
+  const [versionInfo, setVersionInfo] = useState<{
+    actual: string;
+    public: string;
+    log: {
+      id: string;
+      version: string;
+      kind: string;
+      note: string;
+      hidden: boolean;
+      createdByName: string;
+      createdAt: string;
+    }[];
+  } | null>(null);
+  const [versionLoading, setVersionLoading] = useState(false);
+  const [versionKind, setVersionKind] = useState<"major" | "minor" | "tables">("tables");
+  const [versionNote, setVersionNote] = useState("");
+  const [versionHidden, setVersionHidden] = useState(false);
+
+  useEffect(() => {
+    if (activeTab !== "version-updates" || versionInfo) return;
+    let cancelled = false;
+    (async () => {
+      setVersionLoading(true);
+      try {
+        const res = await fetch("/api/cabinet-estimates/parameters/versions");
+        const json = await res.json();
+        if (!res.ok) throw new Error(json?.error || "Failed to load versions");
+        if (!cancelled) setVersionInfo(json);
+      } catch (err: any) {
+        if (!cancelled) setError(err?.message || "Failed to load versions");
+      } finally {
+        if (!cancelled) setVersionLoading(false);
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [activeTab, versionInfo]);
+
+  async function logVersionUpdate(event: FormEvent) {
+    event.preventDefault();
+    setSavingKey("versions");
+    setMessage(null);
+    setError(null);
+    try {
+      const res = await fetch("/api/cabinet-estimates/parameters/versions", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ kind: versionKind, note: versionNote, hidden: versionHidden }),
+      });
+      const json = await res.json();
+      if (!res.ok) throw new Error(json?.error || "Failed to log update");
+      setVersionInfo(json);
+      setVersionNote("");
+      setVersionHidden(false);
+      setMessage(`Version updated to ${json.actual}.`);
+    } catch (err: any) {
+      setError(err?.message || "Failed to log update");
+    } finally {
+      setSavingKey(null);
+    }
   }
 
   function resetDiscountForm() {
@@ -442,6 +516,7 @@ export default function GmdParametersClient({
           installationBasePercent: settings.installationBasePercent,
           installationCalcMode: settings.installationCalcMode,
           customSurchargePercent: settings.customSurchargePercent,
+          costTaxPercent: settings.costTaxPercent,
         }),
       });
       if (!res.ok) {
@@ -550,6 +625,7 @@ export default function GmdParametersClient({
           installationBasePercent: settings.installationBasePercent,
           installationCalcMode: settings.installationCalcMode,
           customSurchargePercent: settings.customSurchargePercent,
+          costTaxPercent: settings.costTaxPercent,
         }),
       });
       if (!res.ok) throw new Error((await res.json())?.error || "Failed to save");
@@ -577,6 +653,7 @@ export default function GmdParametersClient({
             headers: { "Content-Type": "application/json" },
             body: JSON.stringify({
               name,
+              description: typeForm.description,
               multiplier: typeForm.multiplier,
               isActive: typeForm.isActive,
             }),
@@ -591,6 +668,7 @@ export default function GmdParametersClient({
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({
             name,
+            description: typeForm.description,
             multiplier: typeForm.multiplier,
             isActive: typeForm.isActive,
           }),
@@ -924,9 +1002,13 @@ export default function GmdParametersClient({
   const inputClassName =
     "w-full max-w-[220px] rounded-md border border-gray-300 bg-white px-3 py-2 dark:border-gray-600 dark:bg-gray-900";
 
-  const TABS: { id: "cabinet-estimates" | "installation-calculation"; label: string }[] = [
+  const TABS: {
+    id: "cabinet-estimates" | "installation-calculation" | "version-updates";
+    label: string;
+  }[] = [
     { id: "installation-calculation", label: "Installation Calculation" },
     { id: "cabinet-estimates", label: "Cabinet Estimates" },
+    { id: "version-updates", label: "Version Updates" },
   ];
 
   return (
@@ -1129,6 +1211,20 @@ export default function GmdParametersClient({
                       </label>
                     </div>
                   </div>
+                  <div>
+                    <label className="mb-1 block text-xs text-gray-600 dark:text-gray-400">
+                      Explanation (shown in the info pop-up next to Installation on the estimate)
+                    </label>
+                    <textarea
+                      rows={3}
+                      value={typeForm.description}
+                      onChange={(e) =>
+                        setTypeForm((f) => ({ ...f, description: e.target.value }))
+                      }
+                      placeholder="e.g. Standard: regular install, no extra work needed."
+                      className={inputClassName}
+                    />
+                  </div>
                   <div className="flex items-center gap-2">
                     <button
                       type="submit"
@@ -1157,6 +1253,7 @@ export default function GmdParametersClient({
                       <tr>
                         <th className="px-3 py-2 text-left">Name</th>
                         <th className="px-3 py-2 text-left">Multiplier</th>
+                        <th className="px-3 py-2 text-left">Explanation</th>
                         <th className="px-3 py-2 text-left">Status</th>
                         <th className="px-3 py-2 text-right">Actions</th>
                       </tr>
@@ -1166,6 +1263,9 @@ export default function GmdParametersClient({
                         <tr key={t.id}>
                           <td className="px-3 py-2">{t.name}</td>
                           <td className="px-3 py-2">{t.multiplier}x</td>
+                          <td className="max-w-xs px-3 py-2 text-xs text-gray-600 dark:text-gray-400">
+                            {t.description?.trim() || <span className="text-gray-400">-</span>}
+                          </td>
                           <td className="px-3 py-2">{t.isActive ? "Active" : "Inactive"}</td>
                           <td className="px-3 py-2 text-right">
                             <button
@@ -1658,6 +1758,27 @@ export default function GmdParametersClient({
                   />
                   <p className="mt-1 text-xs text-gray-500 dark:text-gray-400">
                     Of that line&apos;s own qty x unit price.
+                  </p>
+                </div>
+                <div>
+                  <label className="mb-1 block text-sm font-medium">
+                    Preco de Custo tax %
+                  </label>
+                  <input
+                    type="number"
+                    min="0"
+                    step="0.01"
+                    value={settings.costTaxPercent}
+                    onChange={(e) =>
+                      setSettings((s) => ({
+                        ...s,
+                        costTaxPercent: toNumber(e.target.value),
+                      }))
+                    }
+                    className={inputClassName}
+                  />
+                  <p className="mt-1 text-xs text-gray-500 dark:text-gray-400">
+                    Tax row of the cost-only view/print, applied to Cabinets (cost). 0 = not set.
                   </p>
                 </div>
                 <div className="md:col-span-2">
@@ -2270,6 +2391,134 @@ export default function GmdParametersClient({
                 </div>
               </>
             )}
+          </section>
+        </div>
+      )}
+
+      {activeTab === "version-updates" && (
+        <div className="space-y-6">
+          <section className="space-y-4 rounded-xl border border-gray-200 bg-white p-5 dark:border-gray-700 dark:bg-gray-800">
+            <div>
+              <h2 className="text-lg font-semibold text-gray-900 dark:text-gray-100">
+                Version Updates
+              </h2>
+              <p className="mt-1 text-xs text-gray-500 dark:text-gray-400">
+                Format <strong>A.B.C</strong>: A = program version, B = update to the program,
+                C = update to the tables (prices / new items). A bigger bump resets the digits to
+                its right to 0. New and re-saved Cabinet Estimates are stamped with the current
+                version automatically. Tick &quot;Don&apos;t show publicly&quot; to log an update
+                that only admins see - everyone else keeps seeing the previous public version
+                until the next public update.
+              </p>
+            </div>
+
+            {versionLoading && !versionInfo ? (
+              <div className="text-sm text-gray-500">Loading...</div>
+            ) : versionInfo ? (
+              <>
+                <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+                  <div className="rounded-lg border border-gray-200 p-4 dark:border-gray-700">
+                    <div className="text-xs uppercase text-gray-500 dark:text-gray-400">
+                      Actual version (admins)
+                    </div>
+                    <div className="mt-1 text-2xl font-bold text-gray-900 dark:text-gray-100">
+                      {versionInfo.actual}
+                    </div>
+                  </div>
+                  <div className="rounded-lg border border-gray-200 p-4 dark:border-gray-700">
+                    <div className="text-xs uppercase text-gray-500 dark:text-gray-400">
+                      Public version (everyone else)
+                    </div>
+                    <div className="mt-1 text-2xl font-bold text-gray-900 dark:text-gray-100">
+                      {versionInfo.public}
+                    </div>
+                  </div>
+                </div>
+
+                <form
+                  onSubmit={logVersionUpdate}
+                  className="space-y-3 rounded-lg border border-gray-200 p-4 dark:border-gray-700"
+                >
+                  <h3 className="text-sm font-semibold text-gray-900 dark:text-gray-100">
+                    Log an update
+                  </h3>
+                  <div className="grid grid-cols-1 gap-4 md:grid-cols-3">
+                    <div>
+                      <label className="mb-1 block text-xs text-gray-600 dark:text-gray-400">
+                        What changed
+                      </label>
+                      <select
+                        value={versionKind}
+                        onChange={(e) =>
+                          setVersionKind(e.target.value as "major" | "minor" | "tables")
+                        }
+                        className={inputClassName}
+                      >
+                        <option value="tables">Tables / prices / new items (third digit)</option>
+                        <option value="minor">Program update (second digit)</option>
+                        <option value="major">New program version (first digit)</option>
+                      </select>
+                    </div>
+                    <div className="md:col-span-2">
+                      <label className="mb-1 block text-xs text-gray-600 dark:text-gray-400">
+                        Note (optional)
+                      </label>
+                      <input
+                        value={versionNote}
+                        onChange={(e) => setVersionNote(e.target.value)}
+                        placeholder="e.g. Updated Jarlin price list"
+                        className={inputClassName}
+                      />
+                    </div>
+                  </div>
+                  <label className="flex items-center gap-2 text-sm">
+                    <input
+                      type="checkbox"
+                      checked={versionHidden}
+                      onChange={(e) => setVersionHidden(e.target.checked)}
+                    />
+                    Don&apos;t show publicly (admins only see this change)
+                  </label>
+                  <button
+                    type="submit"
+                    disabled={savingKey === "versions"}
+                    className="inline-flex items-center gap-2 rounded-md bg-teal-600 px-4 py-2 text-white hover:bg-teal-700 disabled:opacity-60"
+                  >
+                    <Save className="h-4 w-4" />
+                    Log update
+                  </button>
+                </form>
+
+                <div className="overflow-x-auto rounded-lg border border-gray-200 dark:border-gray-700">
+                  <table className="w-full text-sm">
+                    <thead className="bg-gray-50 text-xs uppercase text-gray-500 dark:bg-gray-900 dark:text-gray-400">
+                      <tr>
+                        <th className="px-3 py-2 text-left">Version</th>
+                        <th className="px-3 py-2 text-left">Type</th>
+                        <th className="px-3 py-2 text-left">Note</th>
+                        <th className="px-3 py-2 text-left">Visibility</th>
+                        <th className="px-3 py-2 text-left">By</th>
+                        <th className="px-3 py-2 text-left">Date</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-gray-100 dark:divide-gray-700">
+                      {versionInfo.log.map((entry) => (
+                        <tr key={entry.id}>
+                          <td className="px-3 py-2 font-semibold">{entry.version}</td>
+                          <td className="px-3 py-2 capitalize">{entry.kind}</td>
+                          <td className="px-3 py-2">{entry.note || "-"}</td>
+                          <td className="px-3 py-2">{entry.hidden ? "Admins only" : "Public"}</td>
+                          <td className="px-3 py-2">{entry.createdByName || "-"}</td>
+                          <td className="px-3 py-2">
+                            {new Date(entry.createdAt).toLocaleString("en-US")}
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              </>
+            ) : null}
           </section>
         </div>
       )}

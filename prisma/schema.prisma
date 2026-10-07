@@ -2250,6 +2250,9 @@ model CabinetEstimateParameters {
   installationBasePercent Decimal  @default(15) @db.Decimal(6, 2) // 15% - confirmed by Diego
   installationCalcMode    String   @default("higher") // "flat" | "perItem" | "higher" - confirmed default
   customSurchargePercent  Decimal  @default(0) @db.Decimal(6, 2) // NOT confirmed - set via GMD Parameters
+  // Sales-tax % used by the cost-only "Preco de Custo" view/print
+  // (Cabinets cost x tax%). Seeds 0 = visibly "not yet set".
+  costTaxPercent          Decimal  @default(0) @db.Decimal(6, 2)
   updatedAt               DateTime @updatedAt
   // Singleton row - same findFirst-or-create pattern as MiscWallUnitSetting.
 }
@@ -2260,6 +2263,9 @@ model CabinetInstallationType {
   multiplier Decimal           @default(1) @db.Decimal(6, 4)
   sortOrder  Int               @default(0)
   isActive   Boolean           @default(true)
+  // Plain-language explanation shown in the (i) pop-up next to the
+  // Installation selector on the estimate form. Edited on GMD Parameters.
+  description String           @default("")
   estimates  CabinetEstimate[]
   // Seeded: Standard 1.0, Special 1.5, Custom 2.0 - confirmed by Diego.
 }
@@ -2313,7 +2319,21 @@ model CabinetEstimate {
   priceTier    CabinetPriceTier? @relation(fields: [priceTierId], references: [id])
   removal      String?
   projectType  String?
+  // Program version stamped server-side at save time: `version` is the
+  // public one (what everyone sees), `versionActual` the true one (differs
+  // when an admin logged a table update as "don't show publicly").
   version      String?
+  versionActual String?
+
+  // Remeasure PK List: the remeasure team re-creates a sold estimate with
+  // what will actually be ordered. Such an estimate is numbered
+  // <original number>R and points back at the original estimate.
+  isRemeasure        Boolean           @default(false)
+  // Who created the remeasure (name snapshot, stamped server-side).
+  remeasureByName    String?
+  originalEstimateId String?
+  originalEstimate   CabinetEstimate?  @relation("CabinetEstimateRemeasure", fields: [originalEstimateId], references: [id], onDelete: SetNull)
+  remeasureEstimates CabinetEstimate[] @relation("CabinetEstimateRemeasure")
 
   // Round 9: which GMD Parameters Installation Type was billed - snapshotted
   // (denormalized name, same idea as brand/groupColor) so print/history keep
@@ -2370,6 +2390,7 @@ model CabinetEstimate {
   @@index([vendorId])
   @@index([priceTierId])
   @@index([installationTypeId])
+  @@index([originalEstimateId])
 }
 
 model CabinetEstimateLineItem {
@@ -2654,4 +2675,24 @@ model CabinetDiscountOption {
   label     String  @default("")
   sortOrder Int     @default(0)
   isActive  Boolean @default(true)
+}
+
+// Program/table version history shown (and bumped) on GMD Parameters >
+// Version Updates. Format: major.minor.tables - major = program version,
+// minor = update to the program, tables = update to prices/items. The newest
+// row is the true ("actual") version; the newest row with hidden=false is the
+// public version everyone sees. Append-only: never edited or deleted.
+model CabinetProgramVersionLog {
+  id            String   @id @default(cuid())
+  major         Int
+  minor         Int
+  tables        Int
+  kind          String   // initial | major | minor | tables
+  note          String   @default("")
+  hidden        Boolean  @default(false) // true = admins-only, public version unchanged
+  createdById   String?
+  createdByName String   @default("")
+  createdAt     DateTime @default(now())
+
+  @@index([createdAt])
 }

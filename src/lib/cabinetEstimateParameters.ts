@@ -29,6 +29,7 @@ export type CabinetEstimateParametersSettings = {
   installationBasePercent: number;
   installationCalcMode: "flat" | "perItem" | "higher";
   customSurchargePercent: number;
+  costTaxPercent: number;
 };
 
 export type CabinetInstallationServiceItemRow = {
@@ -46,6 +47,7 @@ export type CabinetInstallationServiceItemRow = {
 export type CabinetInstallationTypeRow = {
   id: string;
   name: string;
+  description: string;
   multiplier: number;
   sortOrder: number;
   isActive: boolean;
@@ -162,6 +164,7 @@ export async function getCabinetEstimateParameters(
       installationBasePercent: Number(settingsRow.installationBasePercent),
       installationCalcMode: toCalcMode(settingsRow.installationCalcMode),
       customSurchargePercent: Number(settingsRow.customSurchargePercent),
+      costTaxPercent: Number(settingsRow.costTaxPercent) || 0,
     },
     installationServiceItems: serviceItemRows.map((item: any) => ({
       id: item.id,
@@ -173,6 +176,7 @@ export async function getCabinetEstimateParameters(
     installationTypes: installationTypeRows.map((t: any) => ({
       id: t.id,
       name: t.name,
+      description: t.description || "",
       multiplier: Number(t.multiplier),
       sortOrder: t.sortOrder,
       isActive: t.isActive,
@@ -267,6 +271,13 @@ export function installationServiceItemPricesById(
 // "microwave" (e.g. "Microwave" $190). It is a flat add-on: it is NOT scaled
 // by the Installation Type multiplier and not affected by the calc mode.
 // No matching active row (or "No" selected) means $0.
+// The Installers Price Table row that bills Microwave Installation.
+export function findMicrowaveServiceItem<T extends { description: string }>(
+  rows: T[],
+): T | null {
+  return rows.find((r) => /microwave/i.test(r.description || "")) || null;
+}
+
 export function computeMicrowaveInstallationAmount(
   enabled: boolean,
   rows: { description: string; salePrice: number }[],

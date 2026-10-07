@@ -2,10 +2,12 @@
 
 import { useEffect, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
+import Link from "next/link";
 import RoundedSelect from "@/components/forms/RoundedSelect";
+import InfoPopover from "@/components/forms/InfoPopover";
 import CopyQBooksButton from "./CopyQBooksButton";
 import { useRouter, useSearchParams } from "next/navigation";
-import { Plus, Trash2, Save, Printer, RotateCcw } from "lucide-react";
+import { Plus, Trash2, Save, Printer, RotateCcw, ClipboardList, DollarSign } from "lucide-react";
 import {
   computeLineItemTotal,
   computeCabinetsTotal,
@@ -24,8 +26,14 @@ import {
 } from "@/lib/cabinetEstimateCalc";
 import {
   computeMicrowaveInstallationAmount,
+  findMicrowaveServiceItem,
   installationServiceItemPricesById,
 } from "@/lib/cabinetEstimateParameters";
+import {
+  computeCostSummary,
+  computeInstallerCost,
+  costsByItemIdForInstaller,
+} from "@/lib/cabinetCostView";
 
 type LookupJob = {
   id: string;
@@ -155,6 +163,8 @@ function autoResizeTextarea(el: HTMLTextAreaElement | null) {
 
 type Props = {
   currentUserName: string;
+  // Admins, finance and Program Admins only - may open the Preco de Custo view.
+  canViewCost: boolean;
   companyName: string;
   companyLogoUrl: string;
   companyPhone: string | null;
@@ -203,7 +213,37 @@ export default function CabinetEstimateForm(props: Props) {
   // yet, per Diego's explicit "for now" scoping) but is now chosen from a
   // GMD-Parameters-managed list instead of typed freely.
   const [projectType, setProjectType] = useState("");
+  // Version is stamped by the server (program/table version at save time) -
+  // never typed. `versionActual` only differs from `version` when an admin
+  // logged an update as "don't show publicly".
   const [version, setVersion] = useState("");
+  const [versionActual, setVersionActual] = useState("");
+  // Remeasure PK List: the remeasure team re-creates a sold estimate with what
+  // will actually be ordered. See the save logic in handleSave.
+  const [isRemeasure, setIsRemeasure] = useState(false);
+  const [loadedIsRemeasure, setLoadedIsRemeasure] = useState(false);
+  const [originalEstimate, setOriginalEstimate] = useState<{
+    id: string;
+    estimateNumber: string | null;
+  } | null>(null);
+  const [remeasureEstimates, setRemeasureEstimates] = useState<
+    { id: string; estimateNumber: string | null }[]
+  >([]);
+  // "Preco de Custo": view-only toggle that shows line prices at vendor cost.
+  const [showCost, setShowCost] = useState(false);
+  const [remeasureByName, setRemeasureByName] = useState("");
+  // Preco de Custo data (installers + their cost table + tax %), fetched the
+  // first time the view is turned on.
+  const [costData, setCostData] = useState<{
+    installers: { id: string; name: string }[];
+    costs: { installerId: string; itemId: string; cost: number }[];
+    taxPercent: number;
+  } | null>(null);
+  const [costInstallerId, setCostInstallerId] = useState("");
+  // "Unsaved changes" prompt shown before Print / PK List.
+  const [printPrompt, setPrintPrompt] = useState<"normal" | "pk" | "cost" | null>(null);
+  const [savedSnapshot, setSavedSnapshot] = useState<string | null>(null);
+  const snapshotForId = useRef<string | null>(null);
 
   const [lineItems, setLineItems] = useState<LineItem[]>(() =>
     makeBlankRows(MIN_BLANK_ROWS),
@@ -263,14 +303,17 @@ export default function CabinetEstimateForm(props: Props) {
       installationBasePercent: number;
       installationCalcMode: "flat" | "perItem" | "higher";
       customSurchargePercent: number;
+      costTaxPercent?: number;
     };
     installationServiceItems: { id: string; code: string | null; description: string; salePrice: number }[];
     installationTypes: {
       id: string;
       name: string;
+      description?: string;
       multiplier: number;
       isActive: boolean;
     }[];
+    programVersion?: { public: string; actual: string | null };
     removalTypes: {
       id: string;
       name: string;
@@ -383,6 +426,7 @@ export default function CabinetEstimateForm(props: Props) {
   // Load an existing estimate for editing.
   useEffect(() => {
     if (!editEstimateId) return;
+    snapshotForId.current = null;
     (async () => {
       setLoading(true);
       setError(null);
@@ -401,6 +445,8 @@ export default function CabinetEstimateForm(props: Props) {
         setEmail(json.email || "");
         setDealId(json.dealId || "");
         setDealName(json.dealName || "");
+        // Keep the linked job on re-save (it used to be dropped to null).
+        setSelectedJobId(json.jobId || "");
         setSalesRep(json.salesRep || "");
         setBrand(json.brand || "");
         setGroupColor(json.groupColor || "");
@@ -409,6 +455,12 @@ export default function CabinetEstimateForm(props: Props) {
         setRemovalTypeId(json.removalTypeId || "");
         setProjectType(json.projectType || "");
         setVersion(json.version || "");
+        setVersionActual(json.versionActual || "");
+        setIsRemeasure(Boolean(json.isRemeasure));
+        setLoadedIsRemeasure(Boolean(json.isRemeasure));
+        setOriginalEstimate(json.originalEstimate || null);
+        setRemeasureEstimates(json.remeasureEstimates || []);
+        setRemeasureByName(json.remeasureByName || "");
         setMicrowaveInstallation(Boolean(json.microwaveInstallation));
         setDiscountPercent(json.discountPercent || 0);
         setInstallationTypeId(json.installationTypeId || "");
@@ -953,6 +1005,15 @@ export default function CabinetEstimateForm(props: Props) {
     setRemovalTypeId("");
     setProjectType("");
     setVersion("");
+    setVersionActual("");
+    setIsRemeasure(false);
+    setLoadedIsRemeasure(false);
+    setOriginalEstimate(null);
+    setRemeasureEstimates([]);
+    setRemeasureByName("");
+    setShowCost(false);
+    setSavedSnapshot(null);
+    snapshotForId.current = null;
     setLineItems(makeBlankRows(MIN_BLANK_ROWS));
     setMicrowaveInstallation(false);
     setDiscountPercent(0);
@@ -968,60 +1029,109 @@ export default function CabinetEstimateForm(props: Props) {
     router.replace("/cabinet-estimates");
   }
 
-  async function handleSave() {
+  function buildPayload(creatingRemeasure: boolean) {
+    return {
+      date,
+      customerName,
+      customerId: customerId || null,
+      jobId: selectedJobId || null,
+      jobName,
+      jobAddress,
+      email,
+      dealId,
+      dealName,
+      salesRep,
+      brand,
+      groupColor,
+      vendorId: vendorId || null,
+      priceTierId: priceTierId || null,
+      removalTypeId: removalTypeId || null,
+      projectType,
+      isRemeasure,
+      originalEstimateId: creatingRemeasure ? estimateId : null,
+      standardCabinetsCount: cabinetsSummaryCounts.STANDARD,
+      doubleCabinetsCount: cabinetsSummaryCounts.DOUBLE,
+      customCabinetsCount: cabinetsSummaryCounts.CUSTOM,
+      miscCabinetsCount: cabinetsSummaryCounts.MISC,
+      itemsQuantity: totalItemsQuantity,
+      microwaveInstallation,
+      discountPercent,
+      installationTypeId: installationTypeId || null,
+      notes,
+      lineItems: lineItems.map((item) => ({
+        qty: item.qty,
+        code: item.code,
+        description: item.description,
+        isCustomization: item.isCustomization,
+        note: item.note,
+        unitPrice: item.unitPrice,
+        catalogItemId: item.catalogItemId,
+        summaryBucket: item.summaryBucket,
+        installationItemId: item.installationItemId,
+      })),
+      specialCustomizationLines: props.specialCustomizationItems
+        .map((item) => ({ itemId: item.id, qty: specialCustomizationQtyById[item.id] || 0 }))
+        .filter((line) => line.qty > 0),
+    };
+  }
+
+  const currentSnapshot = JSON.stringify(buildPayload(isRemeasure && !loadedIsRemeasure));
+  useEffect(() => {
+    if (loading || !estimateId) return;
+    if (snapshotForId.current === estimateId) return;
+    snapshotForId.current = estimateId;
+    setSavedSnapshot(currentSnapshot);
+  }, [loading, estimateId, currentSnapshot]);
+  const isDirty =
+    Boolean(estimateId) && savedSnapshot !== null && currentSnapshot !== savedSnapshot;
+
+  useEffect(() => {
+    if (!showCost || costData || !props.canViewCost) return;
+    let cancelled = false;
+    (async () => {
+      try {
+        const res = await fetch("/api/cabinet-estimates/cost-view");
+        const json = await res.json();
+        if (!res.ok) throw new Error(json?.error || "Failed to load cost data");
+        if (cancelled) return;
+        setCostData(json);
+        setCostInstallerId((prev) => prev || json.installers?.[0]?.id || "");
+      } catch (err: any) {
+        if (cancelled) return;
+        setError(err?.message || "Failed to load cost data");
+        setShowCost(false);
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [showCost, costData, props.canViewCost]);
+
+  async function handleSave(): Promise<string | null> {
+    if (showCost) {
+      setMessage(null);
+      setError("Saving is disabled in the Preco de Custo view. Turn it off to save.");
+      return null;
+    }
     setSaving(true);
     setMessage(null);
     setError(null);
+    // Ticking "Remeasure PK List" on an already-saved estimate creates a NEW
+    // estimate numbered <original>R instead of changing the original.
+    const creatingRemeasure = isRemeasure && !loadedIsRemeasure;
     try {
-      const payload = {
-        date,
-        customerName,
-        customerId: customerId || null,
-        jobId: selectedJobId || null,
-        jobName,
-        jobAddress,
-        email,
-        dealId,
-        dealName,
-        salesRep,
-        brand,
-        groupColor,
-        vendorId: vendorId || null,
-        priceTierId: priceTierId || null,
-        removalTypeId: removalTypeId || null,
-        projectType,
-        version,
-        standardCabinetsCount: cabinetsSummaryCounts.STANDARD,
-        doubleCabinetsCount: cabinetsSummaryCounts.DOUBLE,
-        customCabinetsCount: cabinetsSummaryCounts.CUSTOM,
-        miscCabinetsCount: cabinetsSummaryCounts.MISC,
-        itemsQuantity: totalItemsQuantity,
-        microwaveInstallation,
-        discountPercent,
-        installationTypeId: installationTypeId || null,
-        notes,
-        lineItems: lineItems.map((item) => ({
-          qty: item.qty,
-          code: item.code,
-          description: item.description,
-          isCustomization: item.isCustomization,
-          note: item.note,
-          unitPrice: item.unitPrice,
-          catalogItemId: item.catalogItemId,
-          summaryBucket: item.summaryBucket,
-          installationItemId: item.installationItemId,
-        })),
-        specialCustomizationLines: props.specialCustomizationItems
-          .map((item) => ({ itemId: item.id, qty: specialCustomizationQtyById[item.id] || 0 }))
-          .filter((line) => line.qty > 0),
-      };
+      if (creatingRemeasure && !estimateId) {
+        throw new Error("Open the saved estimate you want to remeasure first.");
+      }
+      const payload = buildPayload(creatingRemeasure);
 
+      const updatingInPlace = Boolean(estimateId) && !creatingRemeasure;
       const res = await fetch(
-        estimateId
+        updatingInPlace
           ? `/api/cabinet-estimates/${estimateId}`
           : "/api/cabinet-estimates",
         {
-          method: estimateId ? "PATCH" : "POST",
+          method: updatingInPlace ? "PATCH" : "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify(payload),
         },
@@ -1029,24 +1139,120 @@ export default function CabinetEstimateForm(props: Props) {
       const json = await res.json();
       if (!res.ok) throw new Error(json?.error || "Failed to save estimate");
 
+      if (json.unchanged) {
+        setMessage("No changes to save - the estimate # stays the same.");
+        setSavedSnapshot(JSON.stringify(payload));
+        return estimateId;
+      }
+
       setEstimateId(json.id);
       setEstimateNumber(json.estimateNumber || estimateNumber);
-      setMessage(estimateId ? "Estimate updated." : "Estimate saved.");
+      if (creatingRemeasure) {
+        setMessage(`Remeasure estimate #${json.estimateNumber} created.`);
+      } else if (json.renumbered) {
+        setMessage(
+          `Changes saved as new estimate #${json.estimateNumber}. The previous estimate #${json.previousEstimateNumber} was archived.`,
+        );
+      } else {
+        setMessage(estimateId ? "Estimate updated." : "Estimate saved.");
+      }
+      setSavedSnapshot(JSON.stringify(payload));
+      snapshotForId.current = json.id;
       router.replace(`/cabinet-estimates?estimateId=${json.id}`);
+      return json.id as string;
     } catch (err: any) {
       setError(err?.message || "Failed to save estimate");
+      return null;
     } finally {
       setSaving(false);
     }
   }
 
-  function handlePrint() {
+  function openPrintWindow(kind: "normal" | "pk" | "cost", id: string) {
+    const params = new URLSearchParams({ autoprint: "1" });
+    if (kind === "pk") params.set("pk", "1");
+    if (kind === "cost") {
+      params.set("cost", "1");
+      if (costInstallerId) params.set("installer", costInstallerId);
+    }
+    const win = window.open(`/cabinet-estimates/print/${id}?${params.toString()}`, "_blank");
+    if (!win) setError("The print page was blocked by the browser. Allow pop-ups and try again.");
+  }
+
+  function handlePrint(pkList = false) {
     if (!estimateId) {
       setError("Save the estimate before printing.");
       return;
     }
-    window.open(`/cabinet-estimates/print/${estimateId}?autoprint=1`, "_blank");
+    const kind = pkList ? "pk" : showCost && props.canViewCost ? "cost" : "normal";
+    // The print page shows the SAVED estimate, so ask what to do with edits.
+    if (isDirty) {
+      setPrintPrompt(kind);
+      return;
+    }
+    openPrintWindow(kind, estimateId);
   }
+
+  async function handleSaveAndPrint() {
+    const kind = printPrompt;
+    if (!kind) return;
+    setPrintPrompt(null);
+    const id = await handleSave();
+    if (id) openPrintWindow(kind, id);
+  }
+
+  // Version shown in the header: admins see the true version, everyone else
+  // the public one. A saved estimate shows the version it was saved under.
+  const programVersion = gmdParameters.programVersion;
+  const viewerIsAdmin = Boolean(programVersion?.actual);
+  const displayedVersion = estimateId
+    ? viewerIsAdmin
+      ? versionActual || version
+      : version
+    : (viewerIsAdmin ? programVersion?.actual : programVersion?.public) || "";
+
+  // Vendor cost ("Preco de Custo"): estimate prices are cost x the vendor
+  // company's sales factor, so cost = amount / factor.
+  const vendorFactor = vendors.find((v) => v.id === vendorId)?.factor;
+  const toCost = (amount: number) => computeCabinetsCost(amount, vendorFactor);
+
+  // Preco de Custo summary: Cabinets (cost) + Tax = Cabinets Subtotal, plus the
+  // chosen installer's cost, = Total.
+  const costInstallerResult = computeInstallerCost({
+    lines: lineItems
+      .filter((item) => !isEmptyLineItem(item))
+      .map((item) => ({ qty: item.qty, installationItemId: item.installationItemId })),
+    costsByItemId: costData ? costsByItemIdForInstaller(costData.costs, costInstallerId) : {},
+    microwave: microwaveInstallation,
+    microwaveItemId: findMicrowaveServiceItem(gmdParameters.installationServiceItems)?.id,
+  });
+  const costSummary = computeCostSummary({
+    cabinetsCost: toCost(cabinetsTotal),
+    taxPercent: costData?.taxPercent ?? gmdParameters.settings.costTaxPercent ?? 0,
+    installationCost: costInstallerResult.amount,
+  });
+
+  // Dropdown options are listed alphabetically.
+  const collator = useMemo(
+    () => new Intl.Collator("en", { numeric: true, sensitivity: "base" }),
+    [],
+  );
+  const sortedVendors = useMemo(
+    () => [...vendors].sort((a, b) => collator.compare(a.displayName, b.displayName)),
+    [vendors, collator],
+  );
+  const sortedPriceTiers = useMemo(
+    () => [...priceTiers].sort((a, b) => collator.compare(a.name, b.name)),
+    [priceTiers, collator],
+  );
+  const sortedRemovalTypes = useMemo(
+    () => [...gmdParameters.removalTypes].sort((a, b) => collator.compare(a.name, b.name)),
+    [gmdParameters.removalTypes, collator],
+  );
+  const sortedProjectTypes = useMemo(
+    () => [...gmdParameters.projectTypes].sort((a, b) => collator.compare(a.name, b.name)),
+    [gmdParameters.projectTypes, collator],
+  );
 
   return (
     <div className="mx-auto max-w-[100rem] space-y-4">
@@ -1057,9 +1263,34 @@ export default function CabinetEstimateForm(props: Props) {
           </h1>
           <p className="mt-0.5 text-sm text-gray-600 dark:text-gray-400">
             {estimateNumber
-              ? `Estimate #${estimateNumber}`
+              ? `${loadedIsRemeasure ? "Remeasure Estimate" : "Estimate"} #${estimateNumber}`
               : "New estimate - estimate # is assigned on save."}
           </p>
+          {((loadedIsRemeasure && originalEstimate) || remeasureEstimates.length > 0) && (
+            <p className="mt-0.5 text-xs text-gray-600 dark:text-gray-400">
+              {loadedIsRemeasure ? "Original Estimate#:" : "Remeasure Estimate#:"}{" "}
+              {loadedIsRemeasure && originalEstimate ? (
+                <Link
+                  href={`/cabinet-estimates?estimateId=${originalEstimate.id}`}
+                  className="font-semibold text-blue-600 hover:underline dark:text-blue-400"
+                >
+                  {originalEstimate.estimateNumber}
+                </Link>
+              ) : (
+                remeasureEstimates.map((r, i) => (
+                  <span key={r.id}>
+                    {i > 0 ? ", " : ""}
+                    <Link
+                      href={`/cabinet-estimates?estimateId=${r.id}`}
+                      className="font-semibold text-blue-600 hover:underline dark:text-blue-400"
+                    >
+                      {r.estimateNumber}
+                    </Link>
+                  </span>
+                ))
+              )}
+            </p>
+          )}
         </div>
         <div className="flex flex-wrap items-center gap-2">
           <button
@@ -1083,9 +1314,33 @@ export default function CabinetEstimateForm(props: Props) {
               }
             }}
           />
+          {props.canViewCost && (
           <button
             type="button"
-            onClick={handlePrint}
+            onClick={() => setShowCost((v) => !v)}
+            aria-pressed={showCost}
+            title="Show every price at the vendor's actual cost"
+            className={`inline-flex items-center gap-1.5 rounded-md border px-3 py-2 text-sm font-medium ${
+              showCost
+                ? "border-amber-500 bg-amber-100 text-amber-900 hover:bg-amber-200 dark:border-amber-500 dark:bg-amber-900/40 dark:text-amber-200"
+                : "border-gray-300 text-gray-700 hover:bg-gray-50 dark:border-gray-600 dark:text-gray-300 dark:hover:bg-gray-700"
+            }`}
+          >
+            <DollarSign className="h-4 w-4" /> Preco de Custo
+          </button>
+          )}
+          <button
+            type="button"
+            onClick={() => handlePrint(true)}
+            disabled={!estimateId}
+            title="Print the estimate without prices"
+            className="inline-flex items-center gap-1.5 rounded-md border border-gray-300 px-3 py-2 text-sm font-medium text-gray-700 hover:bg-gray-50 disabled:cursor-not-allowed disabled:opacity-50 dark:border-gray-600 dark:text-gray-300 dark:hover:bg-gray-700"
+          >
+            <ClipboardList className="h-4 w-4" /> PK List
+          </button>
+          <button
+            type="button"
+            onClick={() => handlePrint(false)}
             disabled={!estimateId}
             className="inline-flex items-center gap-1.5 rounded-md border border-gray-300 px-3 py-2 text-sm font-medium text-gray-700 hover:bg-gray-50 disabled:cursor-not-allowed disabled:opacity-50 dark:border-gray-600 dark:text-gray-300 dark:hover:bg-gray-700"
           >
@@ -1094,7 +1349,8 @@ export default function CabinetEstimateForm(props: Props) {
           <button
             type="button"
             onClick={handleSave}
-            disabled={saving || loading}
+            disabled={saving || loading || showCost}
+            title={showCost ? "Saving is disabled in the Preco de Custo view" : undefined}
             className="inline-flex items-center gap-1.5 rounded-md bg-blue-600 px-4 py-2 text-sm font-medium text-white hover:bg-blue-700 disabled:cursor-not-allowed disabled:opacity-60"
           >
             <Save className="h-4 w-4" /> {saving ? "Saving..." : "Save Estimate"}
@@ -1113,6 +1369,62 @@ export default function CabinetEstimateForm(props: Props) {
           {error || message}
         </div>
       )}
+
+      {printPrompt &&
+        typeof document !== "undefined" &&
+        createPortal(
+          <div
+            className="fixed inset-0 z-[60] flex items-center justify-center bg-black/60 p-4"
+            onClick={() => setPrintPrompt(null)}
+            role="dialog"
+            aria-modal="true"
+            aria-label="Unsaved changes"
+          >
+            <div
+              className="w-full max-w-md rounded-xl bg-white p-5 shadow-2xl dark:bg-gray-800"
+              onClick={(e) => e.stopPropagation()}
+            >
+              <h2 className="text-base font-semibold text-gray-900 dark:text-gray-100">
+                Save changes before printing?
+              </h2>
+              <p className="mt-1.5 text-sm text-gray-600 dark:text-gray-400">
+                {showCost
+                  ? "You have unsaved changes. The printed page shows the last saved version, and saving is turned off in the Preco de Custo view. Turn it off to save first."
+                  : "You have unsaved changes. The printed page shows the last saved version, so it would be missing your latest edits."}
+              </p>
+              <div className="mt-4 flex flex-wrap justify-end gap-2">
+                <button
+                  type="button"
+                  onClick={() => setPrintPrompt(null)}
+                  className="rounded-md border border-gray-300 px-3 py-1.5 text-sm font-medium text-gray-700 hover:bg-gray-50 dark:border-gray-600 dark:text-gray-300 dark:hover:bg-gray-700"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="button"
+                  onClick={() => {
+                    const kind = printPrompt;
+                    setPrintPrompt(null);
+                    if (kind && estimateId) openPrintWindow(kind, estimateId);
+                  }}
+                  className="rounded-md border border-gray-300 px-3 py-1.5 text-sm font-medium text-gray-700 hover:bg-gray-50 dark:border-gray-600 dark:text-gray-300 dark:hover:bg-gray-700"
+                >
+                  {showCost ? "Print anyway" : "Print without saving"}
+                </button>
+                {!showCost && (
+                  <button
+                    type="button"
+                    onClick={handleSaveAndPrint}
+                    className="rounded-md bg-blue-600 px-3 py-1.5 text-sm font-medium text-white hover:bg-blue-700"
+                  >
+                    Save &amp; print
+                  </button>
+                )}
+              </div>
+            </div>
+          </div>,
+          document.body,
+        )}
 
       {loading ? (
         <div className="rounded-xl border border-gray-200 bg-white p-10 text-center text-sm text-gray-500 dark:border-gray-700 dark:bg-gray-800 dark:text-gray-400">
@@ -1341,7 +1653,7 @@ export default function CabinetEstimateForm(props: Props) {
                     placeholder={brand || "-- Select brand --"}
                     options={[
                       { value: "", label: brand || "-- Select brand --" },
-                      ...vendors.map((v) => ({ value: v.id, label: v.displayName })),
+                      ...sortedVendors.map((v) => ({ value: v.id, label: v.displayName })),
                     ]}
                   />
                 </HeaderRow>
@@ -1367,7 +1679,7 @@ export default function CabinetEstimateForm(props: Props) {
                         value: "",
                         label: groupColor || (vendorId ? "-- Select group/color --" : "Select a brand first"),
                       },
-                      ...priceTiers.map((t) => ({ value: t.id, label: t.name })),
+                      ...sortedPriceTiers.map((t) => ({ value: t.id, label: t.name })),
                     ]}
                   />
                 </HeaderRow>
@@ -1378,7 +1690,7 @@ export default function CabinetEstimateForm(props: Props) {
                     onChange={setRemovalTypeId}
                     options={[
                       { value: "", label: "-- None --" },
-                      ...gmdParameters.removalTypes
+                      ...sortedRemovalTypes
                         .filter((t) => t.isActive || t.id === removalTypeId)
                         .map((t) => ({ value: t.id, label: t.name })),
                     ]}
@@ -1391,7 +1703,7 @@ export default function CabinetEstimateForm(props: Props) {
                     onChange={setProjectType}
                     options={[
                       { value: "", label: "-- None --" },
-                      ...gmdParameters.projectTypes
+                      ...sortedProjectTypes
                         .filter((t) => t.isActive || t.name === projectType)
                         .map((t) => ({ value: t.name, label: t.name })),
                       // A saved estimate's projectType may hold a value from
@@ -1422,16 +1734,55 @@ export default function CabinetEstimateForm(props: Props) {
                   />
                 </MetaBox>
                 <MetaBox label="Version">
-                  <input
-                    value={version}
-                    onChange={(e) => setVersion(e.target.value)}
-                    placeholder="optional"
-                    className="mt-0.5 w-full rounded border border-gray-300 bg-white px-1.5 py-px text-[10px] text-gray-900 dark:border-gray-600 dark:bg-gray-900 dark:text-gray-100"
-                  />
+                  <div
+                    className="mt-0.5 text-[11px] font-semibold text-gray-900 dark:text-gray-100"
+                    title={
+                      viewerIsAdmin && version && versionActual && version !== versionActual
+                        ? `Public version: ${version}`
+                        : "Set automatically from GMD Parameters > Version Updates"
+                    }
+                  >
+                    {displayedVersion || "-"}
+                  </div>
                 </MetaBox>
+                <div className="flex flex-col gap-0.5">
+                <label
+                  className={`flex items-center gap-1.5 rounded-md border border-gray-300 px-1.5 py-1 text-[11px] font-semibold text-gray-900 dark:border-gray-600 dark:text-gray-100 ${
+                    !estimateId || loadedIsRemeasure ? "opacity-60" : "cursor-pointer"
+                  }`}
+                  title={
+                    loadedIsRemeasure
+                      ? "This estimate is a remeasure"
+                      : estimateId
+                      ? "Saving with this checked creates a new estimate numbered <original>R"
+                      : "Open a saved estimate to create its remeasure"
+                  }
+                >
+                  <input
+                    type="checkbox"
+                    checked={isRemeasure}
+                    disabled={!estimateId || loadedIsRemeasure}
+                    onChange={(e) => setIsRemeasure(e.target.checked)}
+                  />
+                  Remeasure PK List
+                </label>
+                {isRemeasure && (
+                  <div className="px-1 text-[10px] text-gray-600 dark:text-gray-400">
+                    By: {loadedIsRemeasure ? remeasureByName || "-" : props.currentUserName}
+                  </div>
+                )}
+                </div>
               </div>
             </div>
           </div>
+
+          {showCost && (
+            <div className="rounded-md border border-amber-300 bg-amber-50 px-3 py-1.5 text-xs font-medium text-amber-900 dark:border-amber-700 dark:bg-amber-900/30 dark:text-amber-200">
+              Preco de Custo (view only): prices show the vendor&apos;s actual cost and the summary
+              shows cost-side totals with the selected installer&apos;s cost. Saving is turned off
+              in this view; you can still print it.
+            </div>
+          )}
 
           {/* Body - item table */}
           <div className="overflow-hidden rounded-xl border border-gray-300 bg-white dark:border-gray-600 dark:bg-gray-800">
@@ -1667,14 +2018,20 @@ export default function CabinetEstimateForm(props: Props) {
                               : "Set automatically from the selected catalog code, brand and group/color - not editable"
                           }
                         >
-                          {hasMissingPrice ? "N/A" : formatCurrency(item.unitPrice)}
+                          {hasMissingPrice
+                            ? "N/A"
+                            : formatCurrency(showCost ? toCost(item.unitPrice ?? 0) : item.unitPrice)}
                         </div>
                       </td>
                       <td className="border border-gray-200 p-1 text-center align-middle text-xs font-medium text-gray-900 dark:border-gray-700 dark:text-gray-100">
                         {hasMissingPrice ? (
                           <span className="text-red-600 dark:text-red-400">N/A</span>
                         ) : (
-                          formatCurrency(computeLineItemTotal(item.qty, item.unitPrice ?? 0))
+                          formatCurrency(
+                            showCost
+                              ? toCost(computeLineItemTotal(item.qty, item.unitPrice ?? 0))
+                              : computeLineItemTotal(item.qty, item.unitPrice ?? 0),
+                          )
                         )}
                       </td>
                       <td className="border border-gray-200 p-1 align-top text-center dark:border-gray-700">
@@ -1785,6 +2142,63 @@ export default function CabinetEstimateForm(props: Props) {
                 Total Summary
               </div>
               <div className="flex flex-1 flex-col divide-y divide-gray-200 text-xs dark:divide-gray-700">
+                {showCost && props.canViewCost ? (
+                  <>
+                    <TotalsRow label="Cabinets (cost)">
+                      <span className="font-medium text-gray-900 dark:text-gray-100">
+                        {formatCurrency(costSummary.cabinetsCost)}
+                      </span>
+                    </TotalsRow>
+                    <TotalsRow
+                      label={`Tax${
+                        (costData?.taxPercent ?? 0) > 0 ? ` (${costData?.taxPercent}%)` : ""
+                      }`}
+                      className="bg-red-50 dark:bg-red-950/30"
+                    >
+                      <span className="font-medium text-gray-900 dark:text-gray-100">
+                        {formatCurrency(costSummary.tax)}
+                      </span>
+                    </TotalsRow>
+                    <TotalsRow label="Cabinets Subtotal" className="bg-amber-50 dark:bg-amber-950/30">
+                      <span className="font-semibold text-gray-900 dark:text-gray-100">
+                        {formatCurrency(costSummary.cabinetsSubtotal)}
+                      </span>
+                    </TotalsRow>
+                    <TotalsRow label="Installation (cost)" className="bg-green-50 dark:bg-green-950/30">
+                      <div className="flex items-center gap-1.5">
+                        <RoundedSelect
+                          variant="boxed"
+                          className="w-28"
+                          menuMinWidth={140}
+                          value={costInstallerId}
+                          onChange={setCostInstallerId}
+                          placeholder={costData ? "No installers" : "Loading..."}
+                          ariaLabel="Installer"
+                          options={(costData?.installers ?? []).map((i) => ({
+                            value: i.id,
+                            label: i.name,
+                          }))}
+                        />
+                        <span
+                          className="text-[11px] font-semibold text-gray-900 dark:text-gray-100"
+                          title={
+                            costInstallerResult.missingCount > 0
+                              ? `${costInstallerResult.missingCount} line(s) have no cost for this installer and add $0`
+                              : "Selected installer's cost from the Installers Price Table"
+                          }
+                        >
+                          {formatCurrency(costSummary.installationCost)}
+                          {costInstallerResult.missingCount > 0 ? "*" : ""}
+                        </span>
+                      </div>
+                    </TotalsRow>
+                    <div className="mt-auto flex items-center justify-between bg-blue-600 px-2.5 py-1.5 text-white">
+                      <span className="text-xs font-semibold uppercase tracking-wide">Total</span>
+                      <span className="text-sm font-bold">{formatCurrency(costSummary.total)}</span>
+                    </div>
+                  </>
+                ) : (
+                  <>
                 <TotalsRow label="Cabinets">
                   <span className="font-medium text-gray-900 dark:text-gray-100">
                     {formatCurrency(cabinetsTotal)}
@@ -1820,6 +2234,14 @@ export default function CabinetEstimateForm(props: Props) {
                 </TotalsRow>
                 <TotalsRow label="Installation" className="bg-green-50 dark:bg-green-950/30">
                   <div className="flex items-center gap-1.5">
+                    <InfoPopover
+                      heading="Installation types"
+                      ariaLabel="Explain the installation types"
+                      emptyText="No installation types yet."
+                      items={gmdParameters.installationTypes
+                        .filter((t) => t.isActive)
+                        .map((t) => ({ title: t.name, text: t.description || "" }))}
+                    />
                     <RoundedSelect
                       variant="boxed"
                       className="w-24"
@@ -1843,6 +2265,8 @@ export default function CabinetEstimateForm(props: Props) {
                   <span className="text-xs font-semibold uppercase tracking-wide">Total</span>
                   <span className="text-sm font-bold">{formatCurrency(total)}</span>
                 </div>
+                  </>
+                )}
               </div>
             </div>
           </div>

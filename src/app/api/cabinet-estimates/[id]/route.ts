@@ -19,6 +19,12 @@ import {
   computeMicrowaveInstallationAmount,
   resolveDiscountPercent,
 } from "@/lib/cabinetEstimateParameters";
+import { getProgramVersion } from "@/lib/cabinetProgramVersion";
+import {
+  generateMonthlyCabinetEstimateNumber,
+  isEstimateNumberUniqueConstraintError,
+} from "@/lib/cabinetEstimateNumber";
+import { estimateSignature } from "@/lib/cabinetEstimateSignature";
 
 const prismaAny = prisma as any;
 async function requireCreator() {
@@ -139,6 +145,8 @@ export async function GET(
         include: { item: true },
         orderBy: { item: { sortOrder: "asc" } },
       },
+      originalEstimate: { select: { id: true, estimateNumber: true } },
+      remeasureEstimates: { select: { id: true, estimateNumber: true } },
     },
   });
   if (!estimate) {
@@ -181,7 +189,13 @@ export async function PATCH(
   }
   const { id } = await context.params;
 
-  const existing = await prismaAny.cabinetEstimate.findUnique({ where: { id } });
+  const existing = await prismaAny.cabinetEstimate.findUnique({
+    where: { id },
+    include: {
+      lineItems: { orderBy: { sortOrder: "asc" } },
+      specialCustomizationLines: true,
+    },
+  });
   if (!existing) {
     return NextResponse.json({ error: "Not found" }, { status: 404 });
   }
@@ -291,6 +305,178 @@ export async function PATCH(
       ? existing.date
       : parsedDate;
 
+    // Did the user actually change anything? Compare a fingerprint of what is
+    // being saved against what is stored (including the recomputed total, so a
+    // price/parameter change that moves the number counts too).
+    const programVersion = await getProgramVersion(prismaAny);
+    const signatureNew = estimateSignature({
+      date: nextDate,
+      customerName,
+      customerId: body.customerId || null,
+      jobId: body.jobId || null,
+      jobName: body.jobName || null,
+      jobAddress: body.jobAddress || null,
+      email: body.email || null,
+      dealId: body.dealId || null,
+      dealName: body.dealName || null,
+      salesRep,
+      brand: body.brand || null,
+      groupColor: body.groupColor || null,
+      vendorId: body.vendorId || null,
+      priceTierId: body.priceTierId || null,
+      removalTypeId: resolvedRemovalType?.id || null,
+      installationTypeId: resolvedInstallationType?.id || null,
+      projectType: body.projectType || null,
+      notes: body.notes || null,
+      microwaveInstallation: Boolean(body.microwaveInstallation),
+      discountPercent,
+      total,
+      lineItems: lineItemsData,
+      specialCustomizationLines: specialCustomizationLinesData,
+    });
+    const signatureOld = estimateSignature({
+      ...existing,
+      lineItems: existing.lineItems,
+      specialCustomizationLines: existing.specialCustomizationLines,
+    });
+    const changed = signatureNew !== signatureOld;
+
+    if (!changed) {
+      return NextResponse.json({
+        id: existing.id,
+        estimateNumber: existing.estimateNumber,
+        unchanged: true,
+      });
+    }
+
+    const commonData = {
+      date: nextDate,
+      customerName,
+      customerId: body.customerId || null,
+      jobId: body.jobId || null,
+      jobName: body.jobName || null,
+      jobAddress: body.jobAddress || null,
+      email: body.email || null,
+      dealId: body.dealId || null,
+      dealName: body.dealName || null,
+      salesRep,
+      brand: body.brand || null,
+      groupColor: body.groupColor || null,
+      vendorId: body.vendorId || null,
+      priceTierId: body.priceTierId || null,
+      installationTypeId: resolvedInstallationType?.id || null,
+      installationTypeName: resolvedInstallationType?.name || null,
+      removalTypeId: resolvedRemovalType?.id || null,
+      removal: resolvedRemovalType?.name || null,
+      projectType: body.projectType || null,
+      standardCabinetsCount: Math.max(
+        0,
+        Math.trunc(toNumber(body.standardCabinetsCount)),
+      ),
+      doubleCabinetsCount: Math.max(
+        0,
+        Math.trunc(toNumber(body.doubleCabinetsCount)),
+      ),
+      customCabinetsCount: Math.max(
+        0,
+        Math.trunc(toNumber(body.customCabinetsCount)),
+      ),
+      miscCabinetsCount: Math.max(
+        0,
+        Math.trunc(toNumber(body.miscCabinetsCount)),
+      ),
+      itemsQuantity: Math.max(0, Math.trunc(toNumber(body.itemsQuantity))),
+      microwaveInstallation: Boolean(body.microwaveInstallation),
+      cabinetsTotal,
+      discountPercent,
+      discount,
+      cabinetsSubtotal,
+      removalAmount,
+      installationAmount,
+      customizationLabel: null,
+      customizationAmount,
+      total,
+      notes: body.notes || null,
+    };
+    const versionFields = {
+      version: programVersion.public,
+      versionActual: programVersion.actual,
+    };
+
+    // A changed estimate gets a NEW Estimate # (the previous one is kept,
+    // archived, so the earlier version can still be found). Remeasure
+    // estimates keep their <original>R number and are updated in place.
+    if (!existing.isRemeasure) {
+      const maxAttempts = 3;
+      let created: any = null;
+      for (let attempt = 1; attempt <= maxAttempts; attempt += 1) {
+        const newNumber = await generateMonthlyCabinetEstimateNumber();
+        try {
+          created = await prismaAny.cabinetEstimate.create({
+            data: {
+              ...commonData,
+              ...versionFields,
+              estimateNumber: newNumber,
+              isRemeasure: false,
+              originalEstimateId: null,
+              createdById: auth.user.id,
+              lineItems: { create: lineItemsData },
+              specialCustomizationLines: { create: specialCustomizationLinesData },
+            },
+          });
+          break;
+        } catch (error: any) {
+          if (isEstimateNumberUniqueConstraintError(error) && attempt < maxAttempts) {
+            continue;
+          }
+          throw error;
+        }
+      }
+      if (!created) {
+        throw new Error(
+          "Failed to generate a unique estimate number. Please try saving again.",
+        );
+      }
+
+      // Any remeasure of the old version now points at the new one.
+      await prismaAny.cabinetEstimate.updateMany({
+        where: { originalEstimateId: id },
+        data: { originalEstimateId: created.id },
+      });
+      await prismaAny.cabinetEstimate.update({
+        where: { id },
+        data: { isActive: false },
+      });
+      await prismaAny.cabinetEstimateHistory.create({
+        data: {
+          estimateId: created.id,
+          action: "CREATED",
+          fieldName: "revisionOf",
+          oldValue: existing.estimateNumber,
+          newValue: created.estimateNumber,
+          changedById: auth.user.id,
+        },
+      });
+      await prismaAny.cabinetEstimateHistory.create({
+        data: {
+          estimateId: id,
+          action: "ARCHIVED",
+          fieldName: "replacedBy",
+          oldValue: existing.estimateNumber,
+          newValue: created.estimateNumber,
+          changedById: auth.user.id,
+        },
+      });
+
+      return NextResponse.json({
+        id: created.id,
+        estimateNumber: created.estimateNumber,
+        previousEstimateId: id,
+        previousEstimateNumber: existing.estimateNumber,
+        renumbered: true,
+      });
+    }
+
     // Simplest correct approach for v1: replace all line items (and
     // special customization lines) rather than diffing them - there's no
     // per-line history requirement yet.
@@ -304,54 +490,8 @@ export async function PATCH(
     const updated = await prismaAny.cabinetEstimate.update({
       where: { id },
       data: {
-        date: nextDate,
-        customerName,
-        customerId: body.customerId || null,
-        jobId: body.jobId || null,
-        jobName: body.jobName || null,
-        jobAddress: body.jobAddress || null,
-        email: body.email || null,
-        dealId: body.dealId || null,
-        dealName: body.dealName || null,
-        salesRep,
-        brand: body.brand || null,
-        groupColor: body.groupColor || null,
-        vendorId: body.vendorId || null,
-        priceTierId: body.priceTierId || null,
-        installationTypeId: resolvedInstallationType?.id || null,
-        installationTypeName: resolvedInstallationType?.name || null,
-        removalTypeId: resolvedRemovalType?.id || null,
-        removal: resolvedRemovalType?.name || null,
-        projectType: body.projectType || null,
-        version: body.version || null,
-        standardCabinetsCount: Math.max(
-          0,
-          Math.trunc(toNumber(body.standardCabinetsCount)),
-        ),
-        doubleCabinetsCount: Math.max(
-          0,
-          Math.trunc(toNumber(body.doubleCabinetsCount)),
-        ),
-        customCabinetsCount: Math.max(
-          0,
-          Math.trunc(toNumber(body.customCabinetsCount)),
-        ),
-        miscCabinetsCount: Math.max(
-          0,
-          Math.trunc(toNumber(body.miscCabinetsCount)),
-        ),
-        itemsQuantity: Math.max(0, Math.trunc(toNumber(body.itemsQuantity))),
-        microwaveInstallation: Boolean(body.microwaveInstallation),
-        cabinetsTotal,
-        discountPercent,
-        discount,
-        cabinetsSubtotal,
-        removalAmount,
-        installationAmount,
-        customizationLabel: null,
-        customizationAmount,
-        total,
-        notes: body.notes || null,
+        ...commonData,
+        ...versionFields,
         lineItems: { create: lineItemsData },
         specialCustomizationLines: { create: specialCustomizationLinesData },
       },
