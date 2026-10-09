@@ -11,6 +11,7 @@
  */
 
 import Anthropic from "@anthropic-ai/sdk";
+import { derivePdfPlanStructure } from "./cabinetPdfGrid";
 import {
   CABINET_SUMMARY_BUCKETS,
   gridToPromptText,
@@ -24,7 +25,23 @@ import {
 const MODEL = "claude-sonnet-5";
 const MAX_ROWS_PER_SHEET = 70;
 
-function buildParsePlanTool(installationItemKeys: string[]) {
+// Properties that describe where things sit in the grid. For a PDF the grid is
+// built by the app itself (Category, Code, Description, [Size], prices...), so
+// these are derived exactly instead of asked from the AI - which also keeps
+// the reply short when there are dozens of price columns.
+const STRUCTURE_PROPERTIES = [
+  "sheetName",
+  "dataStartRow",
+  "codeCol",
+  "descriptionCol",
+  "sizeCol",
+  "priceColumns",
+  "categoryMode",
+  "categoryColumn",
+  "sectionDetectColumn",
+];
+
+function buildParsePlanTool(installationItemKeys: string[], structureKnown: boolean) {
   const properties: Record<string, any> = {
       sheetName: {
         type: "string",
@@ -109,6 +126,16 @@ function buildParsePlanTool(installationItemKeys: string[]) {
       },
   };
 
+  properties.observations = {
+    type: "array",
+    items: { type: "string" },
+    description:
+      "A few SHORT notes for the admin about how you read this file: which sheet/columns you used " +
+      "and why, which price columns you treated as tiers and which you ignored, how category was " +
+      "read, and anything you were unsure about or that they should double-check. 2-8 notes, " +
+      "plain language, no jargon like column indexes.",
+  };
+
   const required = [
     "sheetName",
     "dataStartRow",
@@ -122,6 +149,13 @@ function buildParsePlanTool(installationItemKeys: string[]) {
     "categoryBucketHints",
     "defaultBucket",
   ];
+  if (structureKnown) {
+    for (const key of STRUCTURE_PROPERTIES) {
+      delete properties[key];
+      const at = required.indexOf(key);
+      if (at >= 0) required.splice(at, 1);
+    }
+  }
 
   // Only ask for installation-item hints when GMD actually has Installers
   // Price Table rows configured yet - a fresh install with none simply
@@ -217,6 +251,9 @@ function buildPrompt(
   vendorName: string,
   installationItems: CabinetInstallationItemOption[],
   catalogPdfAttached: boolean,
+  notes: string | null,
+  fromPdf: boolean,
+  pdfCategories: { category: string; example: string }[] | null,
 ): string {
   const sections = sheets.map((sheet) => {
     const preview = gridToPromptText(sheet.grid, MAX_ROWS_PER_SHEET);
@@ -257,9 +294,30 @@ function buildPrompt(
       `signal for installationItemExclusions even if its summary bucket says Standard/Double.\n\n`
     : "";
 
+  const notesSection = notes?.trim()
+    ? `NOTES FROM THE ADMIN - follow these exactly; they override every default below:\n${notes.trim()}\n\n`
+    : "";
+  const sourceText = fromPdf
+    ? `copied from a PDF into one table (the first row holds the column names)`
+    : `exported from a spreadsheet`;
+
+  const pdfSection = pdfCategories
+    ? `The app has ALREADY worked out this table's layout (category, code, description and price ` +
+      `columns), so you do NOT report any column positions - ignore every instruction below about ` +
+      `codeCol, descriptionCol, sizeCol, priceColumns, categoryMode, dataStartRow or sheetName. The ` +
+      `rows below are only a sample, with the price columns trimmed. Category is its own column on ` +
+      `every row. Your job is the rest: categoryBucketHints (one per distinct category listed here), ` +
+      `defaultBucket, any installation item hints/exclusions, and observations.\n\n` +
+      `All distinct categories in this price list, in order (with one example row each):\n` +
+      pdfCategories.map((c) => `- "${c.category}" - e.g. ${c.example}`).join("\n") +
+      `\n\n`
+    : "";
+
   return (
+    notesSection +
     catalogPdfSection +
-    `This is a cabinet price list from vendor "${vendorName}", exported from a spreadsheet. ` +
+    pdfSection +
+    `This is a cabinet price list from vendor "${vendorName}", ${sourceText}. ` +
     `Each row below is shown as "<row index>: <cell> | <cell> | ...". Column indexes are ` +
     `0-based and count from the left. Blank cells are empty between the pipes.\n\n` +
     `The file may have multiple sheets and only one may actually be the price list ` +
@@ -429,7 +487,12 @@ export async function inferCabinetImportParsePlan(input: {
   // attached, or it couldn't be fetched/was too large - the import simply
   // proceeds without it, same as always.
   catalogPdfBase64?: string | null;
-}): Promise<CabinetImportParsePlan> {
+  // Admin's free-text corrections/instructions ("the 3rd price column is
+  // retail, ignore it" ...) - passed on re-reads.
+  notes?: string | null;
+  // True when the grid was transcribed from a PDF price list.
+  fromPdf?: boolean;
+}): Promise<{ plan: CabinetImportParsePlan; observations: string[] }> {
   const apiKey = process.env.ANTHROPIC_API_KEY;
   if (!apiKey) {
     throw new Error(
@@ -449,13 +512,51 @@ export async function inferCabinetImportParsePlan(input: {
   const allInstallationItems = input.installationItems || [];
   const installationItems = allInstallationItems.filter((it) => !it.bucketDefault);
   const installationItemKeys = installationItems.map(installationItemOptionKey);
-  const parsePlanTool = buildParsePlanTool(installationItemKeys);
+  // PDF grids have a fixed, known layout - see derivePdfPlanStructure.
+  const pdfStructure = input.fromPdf && input.sheets.length === 1
+    ? derivePdfPlanStructure(input.sheets[0].grid, input.sheets[0].sheetName)
+    : null;
+  const parsePlanTool = buildParsePlanTool(installationItemKeys, Boolean(pdfStructure));
+
+  // For a PDF table the prompt only needs a sample of the rows (price columns
+  // trimmed - a price list with dozens of per-color columns would otherwise
+  // make the prompt huge) plus every distinct category.
+  let promptSheets = input.sheets;
+  let pdfCategories: { category: string; example: string }[] | null = null;
+  if (pdfStructure) {
+    const grid = input.sheets[0].grid;
+    const st = pdfStructure.structure;
+    const keep = new Set<number>([st.codeCol, st.descriptionCol]);
+    if (st.categoryColumn !== null) keep.add(st.categoryColumn);
+    if (st.sizeCol !== null) keep.add(st.sizeCol);
+    for (const pc of st.priceColumns.slice(0, 3)) keep.add(pc.col);
+    const cols = Array.from(keep).sort((a, b) => a - b);
+    promptSheets = [
+      { sheetName: input.sheets[0].sheetName, grid: grid.map((row) => cols.map((c) => row[c] ?? null)) },
+    ];
+    pdfCategories = [];
+    const seenCategories = new Set<string>();
+    for (let r = st.dataStartRow; r < grid.length; r++) {
+      const row = grid[r] || [];
+      const category = st.categoryColumn !== null ? String(row[st.categoryColumn] ?? "").trim() : "";
+      if (!category || seenCategories.has(category.toLowerCase())) continue;
+      seenCategories.add(category.toLowerCase());
+      pdfCategories.push({
+        category,
+        example: `${String(row[st.codeCol] ?? "").trim()} ${String(row[st.descriptionCol] ?? "").trim()}`.trim(),
+      });
+      if (pdfCategories.length >= 120) break;
+    }
+  }
 
   const promptText = buildPrompt(
-    input.sheets,
+    promptSheets,
     input.vendorName,
     installationItems,
     Boolean(input.catalogPdfBase64),
+    input.notes ?? null,
+    Boolean(input.fromPdf),
+    pdfCategories,
   );
 
   // Round 13: when a catalog PDF is attached, it goes in as its own
@@ -478,7 +579,7 @@ export async function inferCabinetImportParsePlan(input: {
 
   const message = await client.messages.create({
     model: MODEL,
-    max_tokens: 2048,
+    max_tokens: 16000,
     tools: [parsePlanTool],
     tool_choice: { type: "tool", name: parsePlanTool.name },
     messages: [
@@ -496,5 +597,30 @@ export async function inferCabinetImportParsePlan(input: {
     throw new Error("AI did not return a structured parse plan.");
   }
 
-  return validatePlan(toolUse.input, sheetNames, installationItemKeys);
+  if (message.stop_reason === "max_tokens") {
+    throw new Error(
+      "The AI's answer was cut off because this price list has too many columns or categories. Try again; if it keeps happening, split the file into smaller parts.",
+    );
+  }
+
+  const rawObservations = (toolUse.input as any)?.observations;
+  const observations: string[] = Array.isArray(rawObservations)
+    ? rawObservations
+        .filter((o: unknown): o is string => typeof o === "string" && o.trim().length > 0)
+        .map((o) => o.trim())
+        .slice(0, 12)
+    : [];
+  const rawPlan: any = pdfStructure
+    ? { ...(toolUse.input as any), ...pdfStructure.structure }
+    : { ...(toolUse.input as any) };
+  // A workbook with a single sheet can only mean that sheet - don't fail the
+  // whole import because the AI left the name out.
+  if (!sheetNames.includes(rawPlan.sheetName) && sheetNames.length === 1) {
+    rawPlan.sheetName = sheetNames[0];
+  }
+  if (pdfStructure) observations.push(...pdfStructure.notes);
+  return {
+    plan: validatePlan(rawPlan, sheetNames, installationItemKeys),
+    observations,
+  };
 }

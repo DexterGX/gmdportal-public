@@ -24,6 +24,7 @@ type EstimateRow = {
   dealName: string | null;
   salesRep: string;
   brand: string | null;
+  groupColor?: string | null;
   isActive: boolean;
   isRemeasure?: boolean;
   remeasureByName?: string | null;
@@ -339,6 +340,7 @@ export default function SavedEstimatesClient({ isAdmin }: { isAdmin: boolean }) 
                   </td>
                   <td className="border-r border-gray-100 px-4 py-2 text-center dark:border-gray-700/60">
                     {estimate.brand || "-"}
+                    {estimate.brand && estimate.groupColor ? ` - ${estimate.groupColor}` : ""}
                   </td>
                   <td className="border-r border-gray-100 px-4 py-2 text-center dark:border-gray-700/60">
                     {estimate.salesRep || "-"}

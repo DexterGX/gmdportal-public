@@ -347,6 +347,9 @@ export function applyParsePlan(
 ): { items: NormalizedImportItem[]; warnings: string[] } {
   const items: NormalizedImportItem[] = [];
   const warnings: string[] = [];
+  // A code that shows up on several rows (e.g. a toe kick printed once per
+  // section) is ONE catalog item - merge the rows instead of importing it twice.
+  const itemIndexByKey = new Map<string, number>();
   let currentCategory: string | null = null;
   const installationItemIdByKey = new Map(
     (installationItems || []).map((it) => [installationItemOptionKey(it), it.id]),
@@ -506,8 +509,27 @@ export function applyParsePlan(
     // "needs attention" treatment in the UI instead).
     const installationItemUncertain = Boolean(hintMatch && hintMatch.uncertain);
 
+    const itemKey = generateItemKey(vendorName, code);
+    const earlierIndex = itemIndexByKey.get(itemKey);
+    if (earlierIndex !== undefined) {
+      const earlier = items[earlierIndex];
+      const have = new Set(earlier.prices.map((p) => p.tierName.toLowerCase()));
+      let added = 0;
+      for (const p of prices) {
+        if (have.has(p.tierName.toLowerCase())) continue;
+        earlier.prices.push(p);
+        added += 1;
+      }
+      warnings.push(
+        `Row ${r + 1}: "${code}" already appears on row ${earlier.sourceRow + 1} - merged into one item${
+          added > 0 ? ` (added ${added} price${added === 1 ? "" : "s"})` : ""
+        }. Check that they are the same product.`,
+      );
+      continue;
+    }
+    itemIndexByKey.set(itemKey, items.length);
     items.push({
-      key: generateItemKey(vendorName, code),
+      key: itemKey,
       code,
       description,
       category,

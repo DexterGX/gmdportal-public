@@ -238,6 +238,9 @@ export default async function CabinetEstimatePrintPage({
           )}
           <CopyQBooksButton
             estimateNumber={estimate.estimateNumber}
+            customerName={estimate.customerName}
+            jobName={estimate.jobName || estimate.dealName}
+            salesperson={estimate.salesRep}
             brand={estimate.brand}
             color={estimate.groupColor}
           />
@@ -304,6 +307,28 @@ export default async function CabinetEstimatePrintPage({
               <div className={styles.metaItem}>
                 <div className={styles.metaLabel}>Version</div>
                 <div className={styles.metaValue}>{estimate.version}</div>
+              </div>
+            )}
+            {estimate.isRemeasure && (
+              <div className={styles.metaItem}>
+                <div className={styles.remeasureLine}>
+                  <span className={styles.customCheckbox} role="img" aria-label="Remeasure PK List: checked">
+                    <svg viewBox="0 0 12 12" aria-hidden="true">
+                      <path
+                        d="M2 6.5 L5 9.5 L10 2.5"
+                        fill="none"
+                        stroke="#111827"
+                        strokeWidth="2"
+                        strokeLinecap="round"
+                        strokeLinejoin="round"
+                      />
+                    </svg>
+                  </span>
+                  <span className={styles.metaLabel}>Remeasure PK List</span>
+                </div>
+                {estimate.remeasureByName && (
+                  <div className={styles.remeasureBy}>By: {estimate.remeasureByName}</div>
+                )}
               </div>
             )}
           </div>

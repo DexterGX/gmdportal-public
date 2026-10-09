@@ -25,6 +25,7 @@ import {
   isEstimateNumberUniqueConstraintError,
 } from "@/lib/cabinetEstimateNumber";
 import { estimateSignature } from "@/lib/cabinetEstimateSignature";
+import { isPriceLockExpired } from "@/lib/cabinetPriceLock";
 
 const prismaAny = prisma as any;
 async function requireCreator() {
@@ -309,7 +310,7 @@ export async function PATCH(
     // being saved against what is stored (including the recomputed total, so a
     // price/parameter change that moves the number counts too).
     const programVersion = await getProgramVersion(prismaAny);
-    const signatureNew = estimateSignature({
+    const signatureInput = {
       date: nextDate,
       customerName,
       customerId: body.customerId || null,
@@ -333,13 +334,22 @@ export async function PATCH(
       total,
       lineItems: lineItemsData,
       specialCustomizationLines: specialCustomizationLinesData,
-    });
+    };
+    const signatureNew = estimateSignature(signatureInput);
     const signatureOld = estimateSignature({
       ...existing,
       lineItems: existing.lineItems,
       specialCustomizationLines: existing.specialCustomizationLines,
     });
-    const changed = signatureNew !== signatureOld;
+    // Price lock: while the estimate's prices are still locked (younger than
+    // PRICE_LOCK_DAYS), a shift in the recomputed total caused only by
+    // parameter changes (installation rates, etc.) is not a user edit.
+    const lockExpired = isPriceLockExpired(existing.pricedAt || existing.createdAt);
+    let changed = signatureNew !== signatureOld;
+    if (changed && !lockExpired) {
+      const sameTotal = estimateSignature({ ...signatureInput, total: existing.total });
+      if (sameTotal === signatureOld) changed = false;
+    }
 
     if (!changed) {
       return NextResponse.json({
@@ -401,6 +411,10 @@ export async function PATCH(
     const versionFields = {
       version: programVersion.public,
       versionActual: programVersion.actual,
+      // Prices are refreshed from the price list once the lock has expired
+      // (the form does that when it opens the estimate); otherwise the
+      // original pricing date carries over.
+      pricedAt: lockExpired ? new Date() : existing.pricedAt || existing.createdAt,
     };
 
     // A changed estimate gets a NEW Estimate # (the previous one is kept,

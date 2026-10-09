@@ -188,3 +188,32 @@ export async function uploadCabinetCatalogItemImage(
   const storagePath = `vendors/${vendorId}/items/${slugifyCode(primaryCode)}-${unique}.png`;
   return uploadCabinetCatalogFile(storagePath, png, "image/png");
 }
+
+/**
+ * Deletes every cropped item reference image stored for a vendor
+ * ("vendors/<vendorId>/items/*"). Best-effort: a failure just leaves orphaned
+ * files in storage, never a reason to fail the caller's own operation.
+ * Returns how many files were removed.
+ */
+export async function removeCabinetCatalogItemImages(vendorId: string): Promise<number> {
+  const folder = `vendors/${vendorId}/items`;
+  let removed = 0;
+  try {
+    // Re-list from the start each round: removed files drop out of the listing.
+    for (let round = 0; round < 50; round += 1) {
+      const { data, error } = await supabaseAdmin.storage
+        .from(CABINET_CATALOG_BUCKET)
+        .list(folder, { limit: 1000 });
+      if (error || !data || data.length === 0) break;
+      const paths = data.filter((f) => f.name).map((f) => `${folder}/${f.name}`);
+      if (paths.length === 0) break;
+      const result = await supabaseAdmin.storage.from(CABINET_CATALOG_BUCKET).remove(paths);
+      if (result.error) break;
+      removed += paths.length;
+      if (data.length < 1000) break;
+    }
+  } catch {
+    // Non-fatal clutter.
+  }
+  return removed;
+}

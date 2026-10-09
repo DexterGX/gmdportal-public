@@ -3,6 +3,7 @@ import { prisma } from "@/lib/prisma";
 import { getProgramUserContext } from "@/lib/programPermissions";
 import {
   removeCabinetCatalogFile,
+  removeCabinetCatalogItemImages,
   resolveCabinetCatalogPublicUrl,
 } from "@/lib/cabinetCatalogStorage";
 
@@ -105,10 +106,11 @@ export async function POST(
 /**
  * DELETE /api/cabinet-catalog/admin/vendors/[id]/catalog
  *
- * Removes the attached catalog (file + the vendor's reference to it). Does
- * NOT clear any CabinetCatalogItem.catalogImageUrl already extracted from
- * it - those stay as a last-known-good reference image until a future
- * "Extract item images" run replaces them.
+ * Removes the attached catalog (file + the vendor's reference to it). By
+ * default it does NOT clear any CabinetCatalogItem.catalogImageUrl already
+ * extracted from it - those stay as a last-known-good reference image until
+ * a future "Extract item images" run replaces them. With ?images=1 it also
+ * clears those reference images (and deletes their files from storage).
  */
 export async function DELETE(
   request: Request,
@@ -121,6 +123,7 @@ export async function DELETE(
     }
 
     const { id: vendorId } = await params;
+    const alsoImages = new URL(request.url).searchParams.get("images") === "1";
     const vendor = await prismaAny.cabinetVendor.findUnique({
       where: { id: vendorId },
       select: { id: true, catalogPdfUrl: true },
@@ -138,7 +141,17 @@ export async function DELETE(
       await removeCabinetCatalogFile(vendor.catalogPdfUrl as string);
     }
 
-    return NextResponse.json({ success: true });
+    let imagesCleared = 0;
+    if (alsoImages) {
+      const cleared = await prismaAny.cabinetCatalogItem.updateMany({
+        where: { vendorId, catalogImageUrl: { not: null } },
+        data: { catalogImageUrl: null },
+      });
+      imagesCleared = cleared.count;
+      await removeCabinetCatalogItemImages(vendorId);
+    }
+
+    return NextResponse.json({ success: true, imagesCleared });
   } catch (error: any) {
     console.error("Cabinet vendor catalog delete error:", error);
     return NextResponse.json(

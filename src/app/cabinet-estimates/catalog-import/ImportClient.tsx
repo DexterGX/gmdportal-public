@@ -3,12 +3,23 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { supabase } from "@/lib/supabase/client";
 import {
+  collectPdfColors,
+  expandLevelColumns,
+  mergePdfTables,
+  type PdfColor,
+  type PdfTableChunk,
+} from "@/lib/cabinetPdfGrid";
+import type { RawGrid } from "@/lib/cabinetCatalogImport";
+import {
   Upload,
   FileSpreadsheet,
   AlertCircle,
   CheckCircle2,
   Sparkles,
   Image as ImageIcon,
+  FileText,
+  RefreshCw,
+  Trash2,
 } from "lucide-react";
 
 type CabinetSummaryBucket = "STANDARD" | "DOUBLE" | "CUSTOM" | "MISC";
@@ -242,6 +253,23 @@ export default function ImportClient() {
   const [pricingMode, setPricingMode] = useState<"net" | "retail">("net");
   const [discountInput, setDiscountInput] = useState("0");
   const [file, setFile] = useState<File | null>(null);
+  // Notes for the AI: free-text instructions/corrections used on the next read.
+  const [notes, setNotes] = useState("");
+  const [showNotes, setShowNotes] = useState(false);
+  // How the AI read the file: its own notes plus (for PDFs) reading warnings.
+  const [aiNotes, setAiNotes] = useState<string[]>([]);
+  const [pdfReadNotes, setPdfReadNotes] = useState<string[]>([]);
+  const [showAllReadNotes, setShowAllReadNotes] = useState(false);
+  // PDF price lists are read into a table first (page chunks, like the slab
+  // import), then go through the normal review.
+  const [pdfGrid, setPdfGrid] = useState<RawGrid | null>(null);
+  const [pdfStoragePath, setPdfStoragePath] = useState<string | null>(null);
+  const [pdfProgress, setPdfProgress] = useState<{
+    stage: string;
+    done: number;
+    total: number;
+  } | null>(null);
+  const [pdfElapsedSec, setPdfElapsedSec] = useState(0);
   const [isUploading, setIsUploading] = useState(false);
   const [isApplying, setIsApplying] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -280,6 +308,107 @@ export default function ImportClient() {
   // "still working" bar + a ticking timer rather than a fake percentage.
   const [uploadElapsedSec, setUploadElapsedSec] = useState(0);
   const [extractElapsedSec, setExtractElapsedSec] = useState(0);
+
+  // Clear price list (permanent) + remove catalog (PDF and its item images).
+  const [notice, setNotice] = useState<string | null>(null);
+  const [isRemovingCatalog, setIsRemovingCatalog] = useState(false);
+  const [clearDialog, setClearDialog] = useState<{
+    loading: boolean;
+    busy: boolean;
+    name: string;
+    itemCount: number;
+    priceCount: number;
+    estimateLineCount: number;
+    confirmText: string;
+    error: string | null;
+  } | null>(null);
+
+  async function removeCatalog() {
+    if (!vendorId || !selectedVendor) return;
+    if (
+      !confirm(
+        `Remove the catalog for ${selectedVendor.displayName}? This deletes the attached catalog PDF and the reference pictures extracted from it. Prices and items are not affected. This cannot be undone.`,
+      )
+    ) {
+      return;
+    }
+    setIsRemovingCatalog(true);
+    setCatalogError(null);
+    setNotice(null);
+    setExtractResult(null);
+    try {
+      const res = await fetch(`/api/cabinet-catalog/admin/vendors/${vendorId}/catalog?images=1`, {
+        method: "DELETE",
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(data.error || "Failed to remove the catalog");
+      await loadVendors();
+      setNotice(
+        `Catalog removed${
+          data.imagesCleared ? ` and ${data.imagesCleared} item picture${data.imagesCleared === 1 ? "" : "s"} cleared` : ""
+        }.`,
+      );
+    } catch (err: any) {
+      setCatalogError(err.message);
+    } finally {
+      setIsRemovingCatalog(false);
+    }
+  }
+
+  async function openClearDialog() {
+    if (!vendorId) return;
+    setNotice(null);
+    setClearDialog({
+      loading: true,
+      busy: false,
+      name: "",
+      itemCount: 0,
+      priceCount: 0,
+      estimateLineCount: 0,
+      confirmText: "",
+      error: null,
+    });
+    try {
+      const res = await fetch(`/api/cabinet-catalog/admin/vendors/${vendorId}/items`);
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || "Failed to load the price list");
+      setClearDialog((d) =>
+        d
+          ? {
+              ...d,
+              loading: false,
+              name: data.name,
+              itemCount: data.itemCount,
+              priceCount: data.priceCount,
+              estimateLineCount: data.estimateLineCount,
+            }
+          : d,
+      );
+    } catch (err: any) {
+      setClearDialog((d) => (d ? { ...d, loading: false, error: err.message } : d));
+    }
+  }
+
+  async function confirmClearPriceList() {
+    if (!clearDialog || !vendorId) return;
+    setClearDialog({ ...clearDialog, busy: true, error: null });
+    try {
+      const res = await fetch(`/api/cabinet-catalog/admin/vendors/${vendorId}/items`, {
+        method: "DELETE",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ confirmName: clearDialog.confirmText }),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(data.error || "Failed to clear the price list");
+      setNotice(
+        `Price list cleared: ${data.itemsDeleted} item${data.itemsDeleted === 1 ? "" : "s"} deleted for ${clearDialog.name}.`,
+      );
+      setClearDialog(null);
+      resetPreview();
+    } catch (err: any) {
+      setClearDialog((d) => (d ? { ...d, busy: false, error: err.message } : d));
+    }
+  }
 
   const loadVendors = useCallback(async () => {
     try {
@@ -446,8 +575,14 @@ export default function ImportClient() {
   }, [tierNames, tierNameOverrides]);
 
   const hasDiff = parsePlan !== null;
+  const readNotesAll = [...pdfReadNotes, ...aiNotes];
 
   function resetPreview() {
+    setAiNotes([]);
+    setPdfReadNotes([]);
+    setPdfGrid(null);
+    setPdfStoragePath(null);
+    setShowAllReadNotes(false);
     setParsePlan(null);
     setNewItems([]);
     setChangedItems([]);
@@ -457,7 +592,131 @@ export default function ImportClient() {
     setShowAllWarnings(false);
   }
 
-  async function runPreview(existingPlan?: ParsePlan) {
+  const isPdfFile = (f: File | null) => Boolean(f && f.name.toLowerCase().endsWith(".pdf"));
+
+  async function postJson(url: string, body: unknown) {
+    const res = await fetch(url, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(body),
+    });
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok) throw new Error(data.error || "Request failed");
+    return data;
+  }
+
+  /** Uploads the PDF (once), reads it chunk by chunk with the AI, returns one merged table. */
+  async function readPdfToGrid(pdf: File): Promise<{ grid: RawGrid; notes: string[] }> {
+    const vendorPayload = useNewVendor
+      ? { vendorName: newVendorName.trim() }
+      : { vendorId };
+
+    let path = pdfStoragePath;
+    if (!path) {
+      setPdfProgress({ stage: "Uploading the PDF", done: 0, total: 0 });
+      const sign = await postJson("/api/cabinet-catalog/admin/import/pdf-sign-upload", {
+        fileName: pdf.name,
+      });
+      const { error: uploadError } = await supabase.storage
+        .from(sign.bucket)
+        .uploadToSignedUrl(sign.path, sign.token, pdf, { contentType: "application/pdf" });
+      if (uploadError) {
+        throw new Error(uploadError.message || "Failed to upload the PDF");
+      }
+      path = sign.path as string;
+      setPdfStoragePath(path);
+    }
+
+    setPdfProgress({ stage: "Opening the PDF", done: 0, total: 0 });
+    const plan = await postJson("/api/cabinet-catalog/admin/import/pdf-analyze", {
+      storagePath: path,
+    });
+    const chunks: { index: number; label: string }[] = plan.chunks || [];
+    const notesOut: string[] = [...(plan.warnings || [])];
+    const results: (PdfTableChunk | undefined)[] = new Array(chunks.length);
+    const colorsPerChunk: (PdfColor[] | undefined)[] = new Array(chunks.length);
+    const failed: string[] = [];
+    let done = 0;
+    let knownColumns: string[] | null = null;
+    setPdfProgress({ stage: "Reading pages", done: 0, total: chunks.length });
+
+    async function readChunk(position: number) {
+      const chunk = chunks[position];
+      let lastError = "";
+      for (let attempt = 0; attempt < 2; attempt += 1) {
+        try {
+          const data = await postJson("/api/cabinet-catalog/admin/import/pdf-extract", {
+            storagePath: path,
+            chunkIndex: chunk.index,
+            ...vendorPayload,
+            notes: notes.trim() || null,
+            knownColumns,
+          });
+          results[position] = { columns: data.columns || [], rows: data.rows || [] };
+          colorsPerChunk[position] = Array.isArray(data.colors) ? data.colors : [];
+          for (const w of data.warnings || []) notesOut.push(w);
+          for (const o of data.observations || []) notesOut.push(o);
+          if (data.priceCheck === "unavailable") {
+            notesOut.push(
+              `${chunk.label}: no readable text in the PDF, so prices on these pages couldn't be double-checked automatically - compare them with the PDF.`,
+            );
+          }
+          return;
+        } catch (err: any) {
+          lastError = err?.message || "Failed";
+        }
+      }
+      failed.push(`${chunk.label} (${lastError})`);
+    }
+
+    // The first part that has a table sets the column names for the rest, so
+    // continuation pages without their own headings still line up.
+    let next = 0;
+    while (next < chunks.length && next < 3 && !knownColumns) {
+      await readChunk(next);
+      done += 1;
+      setPdfProgress({ stage: "Reading pages", done, total: chunks.length });
+      const first = results[next];
+      if (first && first.rows.length > 0 && first.columns.length > 0) knownColumns = first.columns;
+      next += 1;
+    }
+
+    const CONCURRENCY = 3;
+    let cursor = next;
+    async function worker() {
+      while (cursor < chunks.length) {
+        const position = cursor++;
+        await readChunk(position);
+        done += 1;
+        setPdfProgress({ stage: "Reading pages", done, total: chunks.length });
+      }
+    }
+    await Promise.all(
+      Array.from({ length: Math.min(CONCURRENCY, Math.max(chunks.length - next, 0)) }, () => worker()),
+    );
+
+    if (failed.length > 0) {
+      notesOut.unshift(
+        `${failed.length} part${failed.length === 1 ? "" : "s"} of the PDF couldn't be read and ${
+          failed.length === 1 ? "is" : "are"
+        } missing: ${failed.slice(0, 5).join("; ")}${failed.length > 5 ? "; ..." : ""}. Click "Re-read with notes" to try again.`,
+      );
+    }
+    const merged = mergePdfTables(results);
+    if (merged.length <= 1) {
+      throw new Error(
+        "The AI didn't find a price table in this PDF. Add notes for the AI describing the layout and try again, or upload the price list as an Excel file.",
+      );
+    }
+    // Colors are printed on their own pages and the tables only carry one
+    // price per level - combine them into one price column per color.
+    const colors = collectPdfColors(colorsPerChunk);
+    const expanded = expandLevelColumns(merged, colors);
+    notesOut.push(...expanded.notes);
+    return { grid: expanded.grid, notes: notesOut };
+  }
+
+  async function runPreview(existingPlan?: ParsePlan, opts?: { reread?: boolean }) {
     if (!file) return;
     if (!useNewVendor && !vendorId) {
       setError("Select a vendor or choose to create a new one");
@@ -470,10 +729,29 @@ export default function ImportClient() {
 
     setIsUploading(true);
     setError(null);
+    setPdfElapsedSec(0);
+    const startedAt = Date.now();
+    const timer = setInterval(() => {
+      setPdfElapsedSec(Math.round((Date.now() - startedAt) / 1000));
+    }, 1000);
 
     try {
+      const pdf = isPdfFile(file);
+      let grid = pdfGrid;
+      if (pdf && (!grid || opts?.reread)) {
+        const read = await readPdfToGrid(file);
+        grid = read.grid;
+        setPdfGrid(grid);
+        setPdfReadNotes(read.notes);
+      }
+      setPdfProgress(pdf ? { stage: "Analyzing the table", done: 0, total: 0 } : null);
+
       const formData = new FormData();
-      formData.append("file", file);
+      if (pdf && grid) {
+        formData.append("pdfGrid", JSON.stringify(grid));
+      } else {
+        formData.append("file", file);
+      }
       if (useNewVendor) {
         formData.append("newVendorName", newVendorName.trim());
       } else {
@@ -481,6 +759,9 @@ export default function ImportClient() {
       }
       if (existingPlan) {
         formData.append("parsePlan", JSON.stringify(existingPlan));
+      }
+      if (notes.trim()) {
+        formData.append("notes", notes.trim());
       }
       formData.append("pricingMode", pricingMode);
       formData.append("discount", pricingMode === "retail" ? discountInput : "0");
@@ -505,10 +786,14 @@ export default function ImportClient() {
       );
       setWarnings(data.warnings || []);
       setShowAllWarnings(false);
+      setAiNotes(data.aiNotes || []);
+      setShowAllReadNotes(false);
       setActiveTab("new");
     } catch (err: any) {
       setError(err.message);
     } finally {
+      clearInterval(timer);
+      setPdfProgress(null);
       setIsUploading(false);
     }
   }
@@ -625,6 +910,103 @@ export default function ImportClient() {
           before anything is saved to the price list. Nothing is saved until you click Apply.
         </p>
       </div>
+
+      {notice && (
+        <div className="flex items-start justify-between gap-3 rounded-lg border border-green-200 bg-green-50 p-3 text-sm text-green-800 dark:border-green-800 dark:bg-green-900/20 dark:text-green-200">
+          <span className="flex items-start gap-2">
+            <CheckCircle2 className="mt-0.5 h-4 w-4 shrink-0" />
+            {notice}
+          </span>
+          <button
+            onClick={() => setNotice(null)}
+            aria-label="Dismiss"
+            className="text-lg leading-none text-green-700 hover:text-green-900 dark:text-green-300"
+          >
+            &times;
+          </button>
+        </div>
+      )}
+
+      {clearDialog && (
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4"
+          role="dialog"
+          aria-modal="true"
+          aria-label="Clear price list"
+          onClick={() => !clearDialog.busy && setClearDialog(null)}
+        >
+          <div
+            className="w-full max-w-md rounded-xl bg-white p-5 shadow-2xl dark:bg-gray-800"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <h2 className="flex items-center gap-2 text-base font-semibold text-red-700 dark:text-red-300">
+              <AlertCircle className="h-5 w-5" /> Clear price list
+            </h2>
+            {clearDialog.loading ? (
+              <p className="mt-3 text-sm text-gray-600 dark:text-gray-400">Loading...</p>
+            ) : clearDialog.error && !clearDialog.name ? (
+              <p className="mt-3 text-sm text-red-700 dark:text-red-300">{clearDialog.error}</p>
+            ) : (
+              <>
+                <p className="mt-3 text-sm text-gray-700 dark:text-gray-300">
+                  This <strong>permanently deletes</strong> every imported item for{" "}
+                  <strong>{clearDialog.name}</strong>: {clearDialog.itemCount} item
+                  {clearDialog.itemCount === 1 ? "" : "s"} and {clearDialog.priceCount} price
+                  {clearDialog.priceCount === 1 ? "" : "s"}, plus their reference pictures. It
+                  cannot be undone - you would have to import the price list again.
+                </p>
+                <ul className="mt-2 list-inside list-disc space-y-1 text-xs text-gray-600 dark:text-gray-400">
+                  <li>
+                    Saved estimates are not deleted and keep their saved prices
+                    {clearDialog.estimateLineCount > 0
+                      ? `, but ${clearDialog.estimateLineCount} line${clearDialog.estimateLineCount === 1 ? "" : "s"} will no longer be linked to the catalog (no picture, no automatic price refresh)`
+                      : ""}
+                    .
+                  </li>
+                  <li>
+                    The vendor, its colors/groups (price tiers) and its attached catalog PDF are kept.
+                  </li>
+                </ul>
+                <label className="mt-3 block text-sm font-medium text-gray-700 dark:text-gray-300">
+                  Type <span className="font-semibold">{clearDialog.name}</span> to confirm
+                </label>
+                <input
+                  value={clearDialog.confirmText}
+                  onChange={(e) => setClearDialog({ ...clearDialog, confirmText: e.target.value })}
+                  autoFocus
+                  className="mt-1 w-full rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm text-gray-900 dark:border-gray-600 dark:bg-gray-700 dark:text-white"
+                />
+                {clearDialog.error && (
+                  <p className="mt-2 text-sm text-red-700 dark:text-red-300">{clearDialog.error}</p>
+                )}
+              </>
+            )}
+            <div className="mt-4 flex justify-end gap-2">
+              <button
+                onClick={() => setClearDialog(null)}
+                disabled={clearDialog.busy}
+                className="rounded-lg border border-gray-300 px-3 py-1.5 text-sm font-medium text-gray-700 hover:bg-gray-50 disabled:opacity-50 dark:border-gray-600 dark:text-gray-300 dark:hover:bg-gray-700"
+              >
+                Cancel
+              </button>
+              {!clearDialog.loading && clearDialog.name && (
+                <button
+                  onClick={confirmClearPriceList}
+                  disabled={
+                    clearDialog.busy ||
+                    clearDialog.confirmText.trim().toLowerCase() !==
+                      clearDialog.name.trim().toLowerCase()
+                  }
+                  className="inline-flex items-center gap-1.5 rounded-lg bg-red-600 px-3 py-1.5 text-sm font-medium text-white hover:bg-red-700 disabled:cursor-not-allowed disabled:opacity-50"
+                >
+                  <Trash2 className="h-4 w-4" />
+                  {clearDialog.busy ? "Deleting..." : "Delete price list permanently"}
+                </button>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
 
       {!hasDiff && (
         <div className="rounded-lg bg-white p-6 shadow dark:bg-gray-800">
@@ -755,6 +1137,15 @@ export default function ImportClient() {
                     <ImageIcon className="h-3.5 w-3.5" />
                     {isExtractingImages ? "Extracting..." : "Extract item images"}
                   </button>
+                  <button
+                    onClick={removeCatalog}
+                    disabled={isRemovingCatalog || isUploadingCatalog || isExtractingImages}
+                    title="Delete the attached catalog PDF and the pictures extracted from it"
+                    className="flex items-center gap-1.5 whitespace-nowrap rounded-lg border border-red-300 bg-white px-3 py-1.5 text-xs font-medium text-red-700 hover:bg-red-50 disabled:cursor-not-allowed disabled:opacity-50 dark:border-red-800 dark:bg-gray-800 dark:text-red-300 dark:hover:bg-red-900/20"
+                  >
+                    <Trash2 className="h-3.5 w-3.5" />
+                    {isRemovingCatalog ? "Removing..." : "Remove catalog"}
+                  </button>
                 </div>
 
                 {isUploadingCatalog && (
@@ -802,6 +1193,26 @@ export default function ImportClient() {
                     )}
                   </div>
                 )}
+              </div>
+            )}
+
+            {!useNewVendor && vendorId && (
+              <div className="flex flex-wrap items-center justify-between gap-3 rounded-lg border border-red-200 bg-red-50/60 p-4 dark:border-red-900 dark:bg-red-950/20">
+                <div className="min-w-0">
+                  <p className="text-sm font-medium text-gray-800 dark:text-gray-200">
+                    Clear imported price list
+                  </p>
+                  <p className="text-xs text-gray-600 dark:text-gray-400">
+                    Permanently deletes every imported item and price for{" "}
+                    {selectedVendor?.displayName || "this vendor"}. Saved estimates are kept.
+                  </p>
+                </div>
+                <button
+                  onClick={openClearDialog}
+                  className="inline-flex items-center gap-1.5 whitespace-nowrap rounded-lg border border-red-300 bg-white px-3 py-1.5 text-sm font-medium text-red-700 hover:bg-red-50 dark:border-red-800 dark:bg-gray-800 dark:text-red-300 dark:hover:bg-red-900/20"
+                >
+                  <Trash2 className="h-4 w-4" /> Clear price list
+                </button>
               </div>
             )}
 
@@ -856,23 +1267,84 @@ export default function ImportClient() {
               </label>
               <input
                 type="file"
-                accept=".csv,.xlsx,.xls"
+                accept=".csv,.xlsx,.xls,.pdf"
                 onChange={(e) => {
                   setFile(e.target.files?.[0] || null);
+                  setPdfGrid(null);
+                  setPdfStoragePath(null);
                   setError(null);
                 }}
                 className="block w-full cursor-pointer rounded-lg border border-gray-300 bg-gray-50 text-sm text-gray-900 focus:outline-none dark:border-gray-600 dark:bg-gray-700 dark:text-gray-100"
               />
               <p className="mt-1 text-xs text-gray-500 dark:text-gray-400">
-                CSV, XLS, or XLSX. Any layout - Claude figures out the columns.
+                PDF, CSV, XLS, or XLSX. Any layout - Claude figures out the columns. A PDF is read a
+                couple of pages at a time and every price is checked against the PDF&apos;s text, so it
+                takes longer than a spreadsheet.
               </p>
             </div>
 
             {file && (
               <div className="flex items-center gap-2 text-sm text-gray-600 dark:text-gray-400">
-                <FileSpreadsheet className="h-4 w-4" />
+                {isPdfFile(file) ? (
+                  <FileText className="h-4 w-4" />
+                ) : (
+                  <FileSpreadsheet className="h-4 w-4" />
+                )}
                 <span>{file.name}</span>
-                <span className="text-gray-400">({(file.size / 1024).toFixed(1)} KB)</span>
+                <span className="text-gray-400">
+                  ({file.size > 1024 * 1024
+                    ? `${(file.size / (1024 * 1024)).toFixed(1)} MB`
+                    : `${(file.size / 1024).toFixed(1)} KB`})
+                </span>
+              </div>
+            )}
+
+            <div>
+              <button
+                type="button"
+                onClick={() => setShowNotes((v) => !v)}
+                className="text-sm font-medium text-blue-600 hover:underline dark:text-blue-400"
+              >
+                {showNotes ? "Hide notes for the AI" : "Add notes for the AI (optional)"}
+              </button>
+              {showNotes && (
+                <div className="mt-2">
+                  <textarea
+                    value={notes}
+                    onChange={(e) => setNotes(e.target.value)}
+                    rows={4}
+                    maxLength={4000}
+                    placeholder='Tell the AI anything it should know, e.g. "The WS column is retail - ignore it" or "Codes starting with W are wall cabinets".'
+                    className="w-full rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm text-gray-900 dark:border-gray-600 dark:bg-gray-700 dark:text-white"
+                  />
+                  <p className="mt-1 text-xs text-gray-500 dark:text-gray-400">
+                    Used when the AI reads the file. If it gets something wrong, add a note after
+                    the preview and use &quot;Re-read with notes&quot;.
+                  </p>
+                </div>
+              )}
+            </div>
+
+            {isUploading && pdfProgress && (
+              <div className="rounded-lg border border-blue-200 bg-blue-50 p-3 text-sm text-blue-900 dark:border-blue-800 dark:bg-blue-900/20 dark:text-blue-100">
+                <div className="mb-1.5 flex items-center justify-between gap-2">
+                  <span>
+                    {pdfProgress.stage}
+                    {pdfProgress.total > 0 ? ` - part ${Math.min(pdfProgress.done, pdfProgress.total)} of ${pdfProgress.total}` : "..."}
+                  </span>
+                  <span className="text-xs">{pdfElapsedSec}s</span>
+                </div>
+                <div className="h-1.5 w-full overflow-hidden rounded-full bg-blue-200 dark:bg-blue-900">
+                  <div
+                    className={`h-full bg-blue-600 ${pdfProgress.total > 0 ? "" : "w-full animate-pulse"}`}
+                    style={
+                      pdfProgress.total > 0
+                        ? { width: `${Math.round((pdfProgress.done / pdfProgress.total) * 100)}%` }
+                        : undefined
+                    }
+                  />
+                </div>
+                <p className="mt-1.5 text-xs">Keep this tab open until it finishes.</p>
               </div>
             )}
 
@@ -913,7 +1385,7 @@ export default function ImportClient() {
                     className="truncate text-xs text-gray-500 dark:text-gray-400"
                     title={`Read sheet "${parsePlan.sheetName}" - ${tierNames.length} price tier${tierNames.length === 1 ? "" : "s"}: ${tierNames.map((t) => tierLabel(t)).join(", ")}`}
                   >
-                    Read sheet &quot;{parsePlan.sheetName}&quot; - {tierNames.length} price
+                    {isPdfFile(file) ? "Read PDF" : `Read sheet "${parsePlan.sheetName}"`} - {tierNames.length} price
                     tier{tierNames.length === 1 ? "" : "s"}:{" "}
                     {tierNames.map((t) => tierLabel(t)).join(", ")}
                   </p>
@@ -921,11 +1393,12 @@ export default function ImportClient() {
               </div>
               <div className="flex shrink-0 flex-wrap gap-2">
                 <button
-                  onClick={() => runPreview()}
+                  onClick={() => setShowNotes((v) => !v)}
                   disabled={isUploading}
-                  className="rounded-lg border border-gray-300 bg-white px-4 py-2 text-sm font-medium text-gray-700 transition-colors hover:bg-gray-50 disabled:opacity-50 dark:border-gray-600 dark:bg-gray-700 dark:text-gray-300 dark:hover:bg-gray-600"
+                  className="inline-flex items-center gap-1.5 rounded-lg border border-gray-300 bg-white px-4 py-2 text-sm font-medium text-gray-700 transition-colors hover:bg-gray-50 disabled:opacity-50 dark:border-gray-600 dark:bg-gray-700 dark:text-gray-300 dark:hover:bg-gray-600"
                 >
-                  {isUploading ? "Re-reading..." : "Re-run AI"}
+                  <RefreshCw className="h-4 w-4" />
+                  {isUploading ? "Re-reading..." : "Re-read with notes"}
                 </button>
                 <button
                   onClick={() => {
@@ -946,6 +1419,61 @@ export default function ImportClient() {
                 </button>
               </div>
             </div>
+
+            {showNotes && (
+              <div className="mt-3 rounded-lg border border-gray-200 p-3 dark:border-gray-700">
+                <label className="mb-1 block text-sm font-medium text-gray-700 dark:text-gray-300">
+                  Notes for the AI - tell it what it got wrong, then re-read the file
+                </label>
+                <textarea
+                  value={notes}
+                  onChange={(e) => setNotes(e.target.value)}
+                  rows={3}
+                  maxLength={4000}
+                  placeholder='e.g. "The last price column is retail - ignore it" or "Treat the section headings in capitals as categories".'
+                  className="w-full rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm text-gray-900 dark:border-gray-600 dark:bg-gray-700 dark:text-white"
+                />
+                <div className="mt-2 flex items-center gap-3">
+                  <button
+                    onClick={() => runPreview(undefined, { reread: true })}
+                    disabled={isUploading}
+                    className="inline-flex items-center gap-1.5 rounded-lg bg-blue-600 px-4 py-2 text-sm font-medium text-white hover:bg-blue-700 disabled:opacity-50"
+                  >
+                    <Sparkles className="h-4 w-4" />
+                    {isUploading ? "Re-reading..." : "Re-read file"}
+                  </button>
+                  {isUploading && pdfProgress && (
+                    <span className="text-xs text-gray-600 dark:text-gray-400">
+                      {pdfProgress.stage}
+                      {pdfProgress.total > 0 ? ` - part ${Math.min(pdfProgress.done, pdfProgress.total)} of ${pdfProgress.total}` : "..."} ({pdfElapsedSec}s)
+                    </span>
+                  )}
+                </div>
+                <p className="mt-1 text-xs text-gray-500 dark:text-gray-400">
+                  Re-reading replaces the rows below with a fresh read; edits you made in the review
+                  tables are lost.
+                </p>
+              </div>
+            )}
+
+            {readNotesAll.length > 0 && (
+              <div className="mt-3 rounded-lg border border-blue-200 bg-blue-50 p-3 text-xs text-blue-900 dark:border-blue-800 dark:bg-blue-900/20 dark:text-blue-100">
+                <p className="mb-1 font-medium">Notes from reading the file</p>
+                <ul className="list-inside list-disc space-y-0.5">
+                  {(showAllReadNotes ? readNotesAll : readNotesAll.slice(0, 4)).map((n, i) => (
+                    <li key={i}>{n}</li>
+                  ))}
+                </ul>
+                {readNotesAll.length > 4 && (
+                  <button
+                    onClick={() => setShowAllReadNotes((v) => !v)}
+                    className="mt-1.5 font-medium underline hover:no-underline"
+                  >
+                    {showAllReadNotes ? "Show less" : `Show all ${readNotesAll.length} notes`}
+                  </button>
+                )}
+              </div>
+            )}
 
             {warnings.length > 0 && (
               <div className="mt-3 rounded-lg border border-amber-200 bg-amber-50 p-3 text-xs text-amber-800 dark:border-amber-800 dark:bg-amber-900/20 dark:text-amber-200">
