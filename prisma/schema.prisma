@@ -396,18 +396,6 @@ model CountertopAgreementImage {
   @@index([category])
 }
 
-// Singleton row (like the other *Settings models). Temporary admin kill
-// switch for the still-in-testing template billing change (the "Cab.
-// Installed for Template" column). Defaults to false so it never silently
-// re-enables itself; once the feature is signed off this flag -- and the
-// branching in the POST /api/payment-terms handler and the print page --
-// can be removed.
-model PaymentTermSettings {
-  id                         String   @id @default(cuid())
-  templateLaborChargeEnabled Boolean  @default(false)
-  updatedAt                  DateTime @updatedAt
-}
-
 model ProgramAccessSetting {
   id           String   @id @default(cuid())
   programId    String   @unique
@@ -2324,6 +2312,9 @@ model CabinetEstimate {
   // when an admin logged a table update as "don't show publicly").
   version      String?
   versionActual String?
+  // When this estimate's line prices were last taken from the price list
+  // (see src/lib/cabinetPriceLock.ts). Null on older rows = use createdAt.
+  pricedAt      DateTime?
 
   // Remeasure PK List: the remeasure team re-creates a sold estimate with
   // what will actually be ordered. Such an estimate is numbered

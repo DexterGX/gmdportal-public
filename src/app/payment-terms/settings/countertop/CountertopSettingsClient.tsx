@@ -33,73 +33,6 @@ export default function CountertopSettingsClient() {
   const [status, setStatus] = useState<Status | null>(null);
   const fileInputRefs = useRef<Record<string, HTMLInputElement | null>>({});
 
-  const [templateLaborChargeEnabled, setTemplateLaborChargeEnabled] =
-    useState(false);
-  const [flagLoading, setFlagLoading] = useState(true);
-  const [flagSaving, setFlagSaving] = useState(false);
-  const [flagStatus, setFlagStatus] = useState<Status | null>(null);
-
-  useEffect(() => {
-    async function loadFlag() {
-      setFlagLoading(true);
-      try {
-        const response = await fetch("/api/payment-terms/settings", {
-          cache: "no-store",
-        });
-        const data = await response.json();
-        if (!response.ok) {
-          throw new Error(data?.error || "Failed to load settings");
-        }
-        setTemplateLaborChargeEnabled(
-          Boolean(data?.templateLaborChargeEnabled),
-        );
-      } catch (error: any) {
-        setFlagStatus({
-          kind: "error",
-          message:
-            error?.message || "Failed to load Payment Term settings.",
-        });
-      } finally {
-        setFlagLoading(false);
-      }
-    }
-
-    void loadFlag();
-  }, []);
-
-  async function handleToggleTemplateLaborCharge(next: boolean) {
-    const previous = templateLaborChargeEnabled;
-    setTemplateLaborChargeEnabled(next);
-    setFlagSaving(true);
-    setFlagStatus(null);
-
-    try {
-      const response = await fetch("/api/payment-terms/settings", {
-        method: "PATCH",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ templateLaborChargeEnabled: next }),
-      });
-      const data = await response.json().catch(() => ({}));
-      if (!response.ok) {
-        throw new Error(data?.error || "Failed to update setting");
-      }
-      setFlagStatus({
-        kind: "success",
-        message: next
-          ? "New Payment Terms will now use the new calculation."
-          : "New Payment Terms will use the original calculation again.",
-      });
-    } catch (error: any) {
-      setTemplateLaborChargeEnabled(previous);
-      setFlagStatus({
-        kind: "error",
-        message: error?.message || "Failed to update setting.",
-      });
-    } finally {
-      setFlagSaving(false);
-    }
-  }
-
   useEffect(() => {
     async function load() {
       setLoading(true);
@@ -251,53 +184,6 @@ export default function CountertopSettingsClient() {
         <p className="text-sm text-gray-500 mt-1">
           Upload and manage images used by Countertop Agreement details pages.
         </p>
-      </div>
-
-      <div className="rounded-xl border border-amber-200 bg-amber-50 p-5 shadow-sm">
-        <div className="flex items-start justify-between gap-4">
-          <div>
-            <h2 className="text-base font-semibold text-gray-900">
-              Use New Payment Term Calculation
-            </h2>
-            <p className="text-sm text-gray-600 mt-1 max-w-2xl">
-              Testing-only toggle for the new billing layout (adds a &quot;Cab.
-              Installed for Template&quot; column: 80% of the cabinet
-              install/removal/others balance collected at template). While
-              off, new Payment Terms print exactly like they always have.
-              Already-saved Payment Terms are never affected either way. This
-              toggle will be removed once the new calculation is finalized.
-            </p>
-          </div>
-          <label className="inline-flex items-center gap-2 shrink-0 pt-1">
-            <input
-              type="checkbox"
-              checked={templateLaborChargeEnabled}
-              disabled={flagLoading || flagSaving}
-              onChange={(event) =>
-                void handleToggleTemplateLaborCharge(event.target.checked)
-              }
-              className="w-4 h-4 rounded border-gray-300"
-            />
-            <span className="text-sm font-medium text-gray-700">
-              {flagSaving
-                ? "Saving..."
-                : templateLaborChargeEnabled
-                  ? "Enabled"
-                  : "Disabled"}
-            </span>
-          </label>
-        </div>
-        {flagStatus ? (
-          <div
-            className={`mt-3 rounded-lg px-3 py-1.5 text-xs ${
-              flagStatus.kind === "success"
-                ? "border border-green-300 bg-green-50 text-green-700"
-                : "border border-red-300 bg-red-50 text-red-700"
-            }`}
-          >
-            {flagStatus.message}
-          </div>
-        ) : null}
       </div>
 
       {status ? (

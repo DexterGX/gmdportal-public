@@ -385,3 +385,15 @@
   color: #374151;
   padding: 3px 6px;
 }
+
+.remeasureLine {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.remeasureBy {
+  font-size: 6.5pt;
+  color: #111827;
+  margin-top: 1px;
+}

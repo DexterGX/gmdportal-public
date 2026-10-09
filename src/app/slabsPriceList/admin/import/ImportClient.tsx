@@ -15,6 +15,7 @@ import {
   Loader2,
   RefreshCw,
   Sparkles,
+  Trash2,
   X,
 } from "lucide-react";
 import {
@@ -182,6 +183,16 @@ export default function ImportClient() {
   const [isApplying, setIsApplying] = useState(false);
   const [isExporting, setIsExporting] = useState(false);
   const [isDownloading, setIsDownloading] = useState(false);
+
+  // Permanent "Delete price list" for the selected brand (type-to-confirm).
+  const [deleteDialog, setDeleteDialog] = useState<{
+    loading: boolean;
+    busy: boolean;
+    total: number;
+    counts: Record<string, number>;
+    confirmText: string;
+    error: string | null;
+  } | null>(null);
 
   const [notices, setNotices] = useState<Notice[]>([]);
   const noticeId = useRef(0);
@@ -564,6 +575,37 @@ export default function ImportClient() {
     }
   }
 
+  async function openDeleteDialog() {
+    if (!brand) return;
+    setDeleteDialog({ loading: true, busy: false, total: 0, counts: {}, confirmText: "", error: null });
+    try {
+      const res = await fetch(`/api/slabs/admin/brands/${encodeURIComponent(brand.id)}/slabs`);
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(data.error || "Failed to load the price list");
+      setDeleteDialog((d) => (d ? { ...d, loading: false, total: data.total || 0, counts: data.counts || {} } : d));
+    } catch (err: any) {
+      setDeleteDialog((d) => (d ? { ...d, loading: false, error: err.message || "Failed to load the price list" } : d));
+    }
+  }
+
+  async function confirmDeletePriceList() {
+    if (!brand || !deleteDialog) return;
+    setDeleteDialog({ ...deleteDialog, busy: true, error: null });
+    try {
+      const res = await fetch(`/api/slabs/admin/brands/${encodeURIComponent(brand.id)}/slabs`, {
+        method: "DELETE",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ confirmName: deleteDialog.confirmText }),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(data.error || "Failed to delete the price list");
+      setDeleteDialog(null);
+      notify("success", `Deleted ${data.deleted} slab${data.deleted === 1 ? "" : "s"} from the ${brand.name} price list.`);
+    } catch (err: any) {
+      setDeleteDialog((d) => (d ? { ...d, busy: false, error: err.message || "Failed to delete the price list" } : d));
+    }
+  }
+
   async function downloadReviewedRows() {
     if (!brand) return;
     setIsDownloading(true);
@@ -697,6 +739,16 @@ export default function ImportClient() {
                   >
                     {isExporting ? <Loader2 className="h-4 w-4 animate-spin" /> : <Download className="h-4 w-4" />}
                     Export current price list
+                  </button>
+                  <button
+                    type="button"
+                    onClick={openDeleteDialog}
+                    disabled={!brand}
+                    title="Permanently delete every slab in this brand's price list"
+                    className="inline-flex h-10 items-center justify-center gap-2 rounded-lg border border-red-300 px-3 text-sm font-medium text-red-700 hover:bg-red-50 disabled:cursor-not-allowed disabled:opacity-50 dark:border-red-800 dark:text-red-300 dark:hover:bg-red-900/30"
+                  >
+                    <Trash2 className="h-4 w-4" />
+                    Delete price list
                   </button>
                 </div>
                 {brandsError ? (
@@ -1025,6 +1077,100 @@ export default function ImportClient() {
             onDiscontinuedChange={setDiscontinuedSelected}
           />
         </>
+      )}
+      {/* Delete price list (permanent) */}
+      {deleteDialog && brand && (
+        <div
+          className="fixed inset-0 z-[120] flex items-center justify-center bg-black/50 p-4"
+          onClick={() => !deleteDialog.busy && setDeleteDialog(null)}
+        >
+          <div
+            role="dialog"
+            aria-modal="true"
+            className="w-full max-w-md rounded-xl bg-white p-5 shadow-xl dark:bg-gray-800"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="flex items-start gap-3">
+              <div className="rounded-full bg-red-100 p-2 dark:bg-red-900/40">
+                <Trash2 className="h-5 w-5 text-red-600 dark:text-red-300" />
+              </div>
+              <div className="flex-1">
+                <h3 className="text-lg font-semibold text-gray-900 dark:text-white">
+                  Permanently delete the {brand.name} price list?
+                </h3>
+                {deleteDialog.loading ? (
+                  <p className="mt-2 flex items-center gap-2 text-sm text-gray-500 dark:text-gray-400">
+                    <Loader2 className="h-4 w-4 animate-spin" /> Counting slabs...
+                  </p>
+                ) : deleteDialog.total === 0 && !deleteDialog.error ? (
+                  <p className="mt-2 text-sm text-gray-600 dark:text-gray-300">
+                    This brand has no slabs - there is nothing to delete.
+                  </p>
+                ) : (
+                  <div className="mt-2 space-y-2 text-sm text-gray-600 dark:text-gray-300">
+                    <p>
+                      This deletes all <strong>{deleteDialog.total}</strong> slab{deleteDialog.total === 1 ? "" : "s"}
+                      {Object.keys(deleteDialog.counts).length > 0 &&
+                        ` (${Object.entries(deleteDialog.counts)
+                          .map(([status, count]) => `${count} ${status.toLowerCase()}`)
+                          .join(", ")})`}{" "}
+                      from the database. It cannot be undone.
+                    </p>
+                    <p>
+                      The brand itself - pricing settings, logo, contacts and notes - is kept, so you can re-import a
+                      clean price list right after.
+                    </p>
+                    <button
+                      type="button"
+                      onClick={exportCurrent}
+                      disabled={isExporting}
+                      className="inline-flex items-center gap-1.5 text-sm font-medium text-blue-600 hover:underline disabled:opacity-50 dark:text-blue-400"
+                    >
+                      {isExporting ? <Loader2 className="h-4 w-4 animate-spin" /> : <Download className="h-4 w-4" />}
+                      Export a backup first
+                    </button>
+                    <label className="block pt-1 text-xs font-medium text-gray-700 dark:text-gray-300">
+                      Type <span className="font-semibold">{brand.name}</span> to confirm
+                    </label>
+                    <input
+                      value={deleteDialog.confirmText}
+                      onChange={(e) => setDeleteDialog({ ...deleteDialog, confirmText: e.target.value })}
+                      autoFocus
+                      className="block h-10 w-full rounded-lg border border-gray-300 bg-white px-3 text-sm text-gray-900 focus:border-transparent focus:ring-2 focus:ring-red-500 dark:border-gray-600 dark:bg-gray-900 dark:text-white"
+                    />
+                  </div>
+                )}
+                {deleteDialog.error && (
+                  <p className="mt-2 text-sm text-red-600 dark:text-red-400">{deleteDialog.error}</p>
+                )}
+              </div>
+            </div>
+            <div className="mt-5 flex justify-end gap-2">
+              <button
+                type="button"
+                onClick={() => setDeleteDialog(null)}
+                disabled={deleteDialog.busy}
+                className="rounded-lg border border-gray-300 px-4 py-2 text-sm font-medium text-gray-700 hover:bg-gray-50 disabled:opacity-50 dark:border-gray-600 dark:text-gray-200 dark:hover:bg-gray-700"
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                onClick={confirmDeletePriceList}
+                disabled={
+                  deleteDialog.loading ||
+                  deleteDialog.busy ||
+                  deleteDialog.total === 0 ||
+                  deleteDialog.confirmText.trim().toLowerCase() !== brand.name.trim().toLowerCase()
+                }
+                className="inline-flex items-center gap-1.5 rounded-lg bg-red-600 px-4 py-2 text-sm font-medium text-white hover:bg-red-700 disabled:cursor-not-allowed disabled:opacity-50"
+              >
+                {deleteDialog.busy ? <Loader2 className="h-4 w-4 animate-spin" /> : <Trash2 className="h-4 w-4" />}
+                {deleteDialog.busy ? "Deleting..." : "Permanently delete"}
+              </button>
+            </div>
+          </div>
+        </div>
       )}
     </div>
   );

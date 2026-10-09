@@ -7,6 +7,7 @@ import RoundedSelect from "@/components/forms/RoundedSelect";
 import InfoPopover from "@/components/forms/InfoPopover";
 import CopyQBooksButton from "./CopyQBooksButton";
 import { useRouter, useSearchParams } from "next/navigation";
+import { isPriceLockExpired, PRICE_LOCK_DAYS } from "@/lib/cabinetPriceLock";
 import { Plus, Trash2, Save, Printer, RotateCcw, ClipboardList, DollarSign } from "lucide-react";
 import {
   computeLineItemTotal,
@@ -243,6 +244,12 @@ export default function CabinetEstimateForm(props: Props) {
   // "Unsaved changes" prompt shown before Print / PK List.
   const [printPrompt, setPrintPrompt] = useState<"normal" | "pk" | "cost" | null>(null);
   const [savedSnapshot, setSavedSnapshot] = useState<string | null>(null);
+  // Set when a reopened estimate is past the price lock: its catalog prices get
+  // refreshed once the form has finished loading (see the effect below).
+  const [repriceOnOpen, setRepriceOnOpen] = useState<{ vendorId: string; tierId: string } | null>(
+    null,
+  );
+  const remeasureBackup = useRef<LineItem[] | null>(null);
   const snapshotForId = useRef<string | null>(null);
 
   const [lineItems, setLineItems] = useState<LineItem[]>(() =>
@@ -461,6 +468,12 @@ export default function CabinetEstimateForm(props: Props) {
         setOriginalEstimate(json.originalEstimate || null);
         setRemeasureEstimates(json.remeasureEstimates || []);
         setRemeasureByName(json.remeasureByName || "");
+        remeasureBackup.current = null;
+        setRepriceOnOpen(
+          json.vendorId && isPriceLockExpired(json.pricedAt || json.createdAt)
+            ? { vendorId: json.vendorId, tierId: json.priceTierId || "" }
+            : null,
+        );
         setMicrowaveInstallation(Boolean(json.microwaveInstallation));
         setDiscountPercent(json.discountPercent || 0);
         setInstallationTypeId(json.installationTypeId || "");
@@ -720,7 +733,7 @@ export default function CabinetEstimateForm(props: Props) {
   // vendor/tier - this is what makes swapping Group/Color (or re-picking
   // the same Brand) instantly re-price already-added rows instead of
   // leaving their old price stale until the user re-picks the code.
-  async function repriceCatalogItems(forVendorId: string, forTierId: string) {
+  async function repriceCatalogItems(forVendorId: string, forTierId: string): Promise<number> {
     const ids = Array.from(
       new Set(
         lineItemsRef.current
@@ -728,16 +741,20 @@ export default function CabinetEstimateForm(props: Props) {
           .map((item) => item.catalogItemId as string),
       ),
     );
-    if (ids.length === 0 || !forVendorId) return;
+    if (ids.length === 0 || !forVendorId) return 0;
     try {
       const params = new URLSearchParams({ vendorId: forVendorId, ids: ids.join(",") });
       if (forTierId) params.set("tierId", forTierId);
       const res = await fetch(`/api/cabinet-catalog/items?${params.toString()}`);
       const json = await res.json();
-      if (!res.ok) return;
+      if (!res.ok) return 0;
       const byId = new Map<string, CatalogItemSuggestion>(
         (json.items || []).map((it: CatalogItemSuggestion) => [it.id, it]),
       );
+      const changedCount = lineItemsRef.current.filter((item) => {
+        const match = item.catalogItemId ? byId.get(item.catalogItemId) : null;
+        return match ? Number(match.unitPrice) !== Number(item.unitPrice ?? 0) : false;
+      }).length;
       setLineItems((prev) =>
         prev.map((item) => {
           if (!item.catalogItemId) return item;
@@ -753,8 +770,10 @@ export default function CabinetEstimateForm(props: Props) {
           };
         }),
       );
+      return changedCount;
     } catch {
       // non-fatal - line items simply keep their last known price/description
+      return 0;
     }
   }
 
@@ -1014,6 +1033,8 @@ export default function CabinetEstimateForm(props: Props) {
     setShowCost(false);
     setSavedSnapshot(null);
     snapshotForId.current = null;
+    setRepriceOnOpen(null);
+    remeasureBackup.current = null;
     setLineItems(makeBlankRows(MIN_BLANK_ROWS));
     setMicrowaveInstallation(false);
     setDiscountPercent(0);
@@ -1084,6 +1105,48 @@ export default function CabinetEstimateForm(props: Props) {
   }, [loading, estimateId, currentSnapshot]);
   const isDirty =
     Boolean(estimateId) && savedSnapshot !== null && currentSnapshot !== savedSnapshot;
+
+  // Past the price lock (older than PRICE_LOCK_DAYS): show the current price
+  // list's prices. Runs after the loaded estimate is snapshotted, so the
+  // refreshed prices count as unsaved changes.
+  useEffect(() => {
+    if (!repriceOnOpen || loading || !estimateId) return;
+    if (snapshotForId.current !== estimateId) return;
+    const target = repriceOnOpen;
+    setRepriceOnOpen(null);
+    (async () => {
+      const changedCount = await repriceCatalogItems(target.vendorId, target.tierId);
+      if (changedCount > 0) {
+        setMessage(
+          `This estimate is over ${PRICE_LOCK_DAYS} days old, so ${changedCount} line price${
+            changedCount === 1 ? " was" : "s were"
+          } refreshed from the current price list. Save to keep the new prices.`,
+        );
+      }
+    })();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [repriceOnOpen, loading, estimateId]);
+
+  // Remeasure always starts from the current price list; unticking restores
+  // the prices the estimate had.
+  function handleRemeasureToggle(checked: boolean) {
+    setIsRemeasure(checked);
+    if (checked) {
+      remeasureBackup.current = lineItemsRef.current.map((item) => ({ ...item }));
+      repriceCatalogItems(vendorId, priceTierId).then((changedCount) => {
+        if (changedCount > 0) {
+          setMessage(
+            `Remeasure uses the current price list: ${changedCount} line price${
+              changedCount === 1 ? "" : "s"
+            } updated.`,
+          );
+        }
+      });
+    } else if (remeasureBackup.current) {
+      setLineItems(remeasureBackup.current);
+      remeasureBackup.current = null;
+    }
+  }
 
   useEffect(() => {
     if (!showCost || costData || !props.canViewCost) return;
@@ -1302,12 +1365,15 @@ export default function CabinetEstimateForm(props: Props) {
           </button>
           <CopyQBooksButton
             estimateNumber={estimateNumber}
+            customerName={customerName}
+            jobName={jobName}
+            salesperson={salesRep}
             brand={brand}
             color={groupColor}
             onResult={(ok) => {
               if (ok) {
                 setError(null);
-                setMessage("Copied Estimate#, Brand and Color for QuickBooks.");
+                setMessage("Copied the estimate details for QuickBooks.");
               } else {
                 setMessage(null);
                 setError("Couldn't copy to the clipboard.");
@@ -1762,7 +1828,7 @@ export default function CabinetEstimateForm(props: Props) {
                     type="checkbox"
                     checked={isRemeasure}
                     disabled={!estimateId || loadedIsRemeasure}
-                    onChange={(e) => setIsRemeasure(e.target.checked)}
+                    onChange={(e) => handleRemeasureToggle(e.target.checked)}
                   />
                   Remeasure PK List
                 </label>

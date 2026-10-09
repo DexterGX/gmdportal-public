@@ -5,6 +5,9 @@ import { Check, ClipboardCopy } from "lucide-react";
 
 type Props = {
   estimateNumber: string | null | undefined;
+  customerName?: string | null;
+  jobName?: string | null;
+  salesperson?: string | null;
   brand: string | null | undefined;
   color: string | null | undefined;
   className?: string;
@@ -13,13 +16,20 @@ type Props = {
 };
 
 // Text pasted into QuickBooks: one field per line.
-export function buildQBooksText(
-  estimateNumber: string | null | undefined,
-  brand: string | null | undefined,
-  color: string | null | undefined,
-): string {
+export function buildQBooksText(fields: {
+  estimateNumber: string | null | undefined;
+  customerName?: string | null;
+  jobName?: string | null;
+  salesperson?: string | null;
+  brand: string | null | undefined;
+  color: string | null | undefined;
+}): string {
+  const { estimateNumber, customerName, jobName, salesperson, brand, color } = fields;
   return [
     `Estimate#: ${estimateNumber || ""}`.trimEnd(),
+    `Customer Name: ${customerName || ""}`.trimEnd(),
+    `Job Name: ${jobName || ""}`.trimEnd(),
+    `Salesperson: ${salesperson || ""}`.trimEnd(),
     `Brand: ${brand || ""}`.trimEnd(),
     `Color: ${color || ""}`.trimEnd(),
   ].join("\n");
@@ -52,6 +62,9 @@ async function copyText(text: string): Promise<boolean> {
 
 export default function CopyQBooksButton({
   estimateNumber,
+  customerName,
+  jobName,
+  salesperson,
   brand,
   color,
   className,
@@ -67,7 +80,14 @@ export default function CopyQBooksButton({
   }, []);
 
   async function handleClick() {
-    const text = buildQBooksText(estimateNumber, brand, color);
+    const text = buildQBooksText({
+      estimateNumber,
+      customerName,
+      jobName,
+      salesperson,
+      brand,
+      color,
+    });
     const ok = await copyText(text);
     onResult?.(ok, text);
     if (ok) {
@@ -84,7 +104,7 @@ export default function CopyQBooksButton({
       disabled={!estimateNumber}
       title={
         estimateNumber
-          ? "Copy Estimate#, Brand and Color for QuickBooks"
+          ? "Copy Estimate#, Customer, Job, Salesperson, Brand and Color for QuickBooks"
           : "Save the estimate first"
       }
       className={

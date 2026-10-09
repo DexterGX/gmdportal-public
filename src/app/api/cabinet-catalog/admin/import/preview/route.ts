@@ -7,6 +7,7 @@ import {
   computeImportDiff,
   type CabinetImportParsePlan,
   type ExistingCatalogItem,
+  type RawSheet,
 } from "@/lib/cabinetCatalogImport";
 import { inferCabinetImportParsePlan } from "@/lib/cabinetCatalogImportAi";
 import { fetchAndPrepareCatalogPdf } from "@/lib/cabinetCatalogPdf";
@@ -42,6 +43,11 @@ export async function POST(request: Request) {
 
     const formData = await request.formData();
     const file = formData.get("file") as File | null;
+    // PDF price lists are read into a grid by /pdf-extract first; that grid
+    // (JSON) is sent here instead of a file.
+    const pdfGridRaw = formData.get("pdfGrid") as string | null;
+    const notesRaw = formData.get("notes") as string | null;
+    const notes = notesRaw ? notesRaw.slice(0, 4000) : null;
     const vendorId = (formData.get("vendorId") as string | null) || null;
     const newVendorName = (formData.get("newVendorName") as string | null) || null;
     const parsePlanRaw = formData.get("parsePlan") as string | null;
@@ -50,7 +56,7 @@ export async function POST(request: Request) {
     const discountRaw = formData.get("discount") as string | null;
     const discount = discountRaw ? Number(discountRaw) || 0 : 0;
 
-    if (!file) {
+    if (!file && !pdfGridRaw) {
       return NextResponse.json({ error: "No file provided" }, { status: 400 });
     }
     if (!vendorId && !newVendorName?.trim()) {
@@ -73,12 +79,23 @@ export async function POST(request: Request) {
       vendorName = newVendorName!.trim();
     }
 
-    const buffer = await file.arrayBuffer();
-    let sheets;
-    try {
-      sheets = readWorkbookGrids(buffer, file.name);
-    } catch (err: any) {
-      return NextResponse.json({ error: err.message || "Failed to read file" }, { status: 400 });
+    let sheets: RawSheet[];
+    if (pdfGridRaw) {
+      try {
+        const grid = JSON.parse(pdfGridRaw);
+        if (!Array.isArray(grid) || !grid.every((r: unknown) => Array.isArray(r))) {
+          throw new Error("bad grid");
+        }
+        sheets = [{ sheetName: "PDF", grid }];
+      } catch {
+        return NextResponse.json({ error: "Invalid PDF table data" }, { status: 400 });
+      }
+    } else {
+      try {
+        sheets = readWorkbookGrids(await file!.arrayBuffer(), file!.name);
+      } catch (err: any) {
+        return NextResponse.json({ error: err.message || "Failed to read file" }, { status: 400 });
+      }
     }
     if (sheets.length === 0 || sheets.every((s) => s.grid.length === 0)) {
       return NextResponse.json({ error: "File is empty" }, { status: 400 });
@@ -91,6 +108,7 @@ export async function POST(request: Request) {
     });
 
     let parsePlan: CabinetImportParsePlan;
+    let aiNotes: string[] = [];
     if (parsePlanRaw) {
       try {
         parsePlan = JSON.parse(parsePlanRaw);
@@ -106,12 +124,16 @@ export async function POST(request: Request) {
       // never a reason to fail the whole preview.
       const catalogPdf = catalogPdfUrl ? await fetchAndPrepareCatalogPdf(catalogPdfUrl) : null;
       try {
-        parsePlan = await inferCabinetImportParsePlan({
+        const inferred = await inferCabinetImportParsePlan({
           sheets,
           vendorName,
           installationItems,
           catalogPdfBase64: catalogPdf?.base64 || null,
+          notes,
+          fromPdf: Boolean(pdfGridRaw),
         });
+        parsePlan = inferred.plan;
+        aiNotes = inferred.observations;
       } catch (err: any) {
         return NextResponse.json(
           { error: err.message || "AI parsing failed" },
@@ -169,6 +191,7 @@ export async function POST(request: Request) {
       success: true,
       vendorName,
       parsePlan,
+      aiNotes,
       sheetNames: sheets.map((s) => s.sheetName),
       installationItems,
       diff,

@@ -201,6 +201,13 @@
   white-space: nowrap;
 }
 
+.balanceNote {
+  margin: 6px 0 0;
+  font-size: 9px;
+  font-weight: 600;
+  line-height: 1.35;
+}
+
 .pageBottom {
   margin-top: auto;
   padding-top: 24px;
