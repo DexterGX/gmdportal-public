@@ -45,14 +45,23 @@ export async function PUT(req: NextRequest) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
 
   const body = await req.json();
+  // The settings form always submits the full CMSSettings shape. Before a
+  // row exists it starts from DEFAULT_SETTINGS, whose id/createdAt/updatedAt
+  // are empty-string placeholders -- passing those straight to Prisma fails
+  // create()/update() with an invalid ISO-8601 date. Strip them so Prisma
+  // generates/keeps its own id and timestamps.
+  const data: Record<string, unknown> = { ...(body ?? {}) };
+  delete data.id;
+  delete data.createdAt;
+  delete data.updatedAt;
   let settings = await p.cMSSettings.findFirst();
 
   if (!settings) {
-    settings = await p.cMSSettings.create({ data: body });
+    settings = await p.cMSSettings.create({ data });
   } else {
     settings = await p.cMSSettings.update({
       where: { id: settings.id },
-      data: body,
+      data,
     });
   }
 
