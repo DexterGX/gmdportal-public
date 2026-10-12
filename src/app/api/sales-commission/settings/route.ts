@@ -23,6 +23,7 @@ export async function GET() {
       data: {
         firstPaymentPercent: 60,
         secondPaymentPercent: 40,
+        minWeeklyPay: 560,
         colorPending: "#FFFFFF",
         colorFirstPayment: "#BFDBFE",
         colorFirstPaid: "#F0F9FF",

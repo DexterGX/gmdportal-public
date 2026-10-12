@@ -1163,7 +1163,7 @@ export default function SalesCommissionClient({
 
   // Per-rep summary
   const repSummary = useMemo(() => {
-    const minimumWeeklyCommissionByLaw = 560;
+    const minimumWeeklyCommissionByLaw = asNum(settings.minWeeklyPay);
     const referenceDate = checkDate || weekEnd || weekStart;
     const referenceMonthDate = referenceDate
       ? new Date(`${referenceDate.slice(0, 10)}T00:00:00`)
@@ -1264,7 +1264,7 @@ export default function SalesCommissionClient({
         Math.max(0, minimumWeeklyCommissionByLaw - vals.commissionThisWeek) +
         vals.bonus,
     }));
-  }, [filteredRows, checkDate, weekEnd, weekStart]);
+  }, [filteredRows, checkDate, weekEnd, weekStart, settings.minWeeklyPay]);
 
   const overallTotalCommission = repSummary.reduce(
     (sum, rep) => sum + rep.totalCms,
