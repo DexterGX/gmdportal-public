@@ -79,6 +79,7 @@ export interface CMSSettings {
   id: string;
   firstPaymentPercent: number;
   secondPaymentPercent: number;
+  minWeeklyPay: number;
   colorPending: string;
   colorFirstPayment: string;
   colorFirstPaid: string;
@@ -261,6 +262,7 @@ export const DEFAULT_SETTINGS: CMSSettings = {
   id: "",
   firstPaymentPercent: 60,
   secondPaymentPercent: 40,
+  minWeeklyPay: 560,
   colorPending: "#FFFFFF",
   colorFirstPayment: "#BFDBFE",
   colorFirstPaid: "#F0F9FF",

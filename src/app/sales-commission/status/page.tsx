@@ -15,24 +15,28 @@ export default async function SalesCommissionStatusPage() {
     redirect("/login");
   }
 
-  const approvedWeeks = await p.cMSWeek.findMany({
-    where: { status: "APPROVED" },
-    orderBy: { checkDate: "desc" },
-    include: {
-      invoices: {
-        orderBy: [
-          { sortOrder: "asc" },
-          { salesRep: "asc" },
-          { invoiceNumber: "asc" },
-        ],
+  const [approvedWeeks, settings] = await Promise.all([
+    p.cMSWeek.findMany({
+      where: { status: "APPROVED" },
+      orderBy: { checkDate: "desc" },
+      include: {
+        invoices: {
+          orderBy: [
+            { sortOrder: "asc" },
+            { salesRep: "asc" },
+            { invoiceNumber: "asc" },
+          ],
+        },
       },
-    },
-  });
+    }),
+    p.cMSSettings.findFirst(),
+  ]);
 
   return (
     <SalesRepStatusClient
       weeks={JSON.parse(JSON.stringify(approvedWeeks))}
       initialUserName={user.name || ""}
+      settings={settings ? JSON.parse(JSON.stringify(settings)) : null}
     />
   );
 }

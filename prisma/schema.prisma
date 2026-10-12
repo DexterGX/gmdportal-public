@@ -1200,6 +1200,7 @@ model CMSSettings {
   id                   String   @id @default(cuid())
   firstPaymentPercent  Float    @default(60)
   secondPaymentPercent Float    @default(40)
+  minWeeklyPay         Float    @default(560)
   colorPending         String   @default("#FFFFFF")
   colorFirstPayment    String   @default("#BFDBFE")
   colorFirstPaid       String   @default("#F0F9FF")

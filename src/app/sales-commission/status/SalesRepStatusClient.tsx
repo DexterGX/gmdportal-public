@@ -3,7 +3,9 @@
 import { useMemo, useState } from "react";
 import {
   CMSInvoice,
+  CMSSettings,
   CMSWeek,
+  DEFAULT_SETTINGS,
   formatCurrency,
   formatDate,
   isBonusCustomerName,
@@ -12,6 +14,7 @@ import {
 type Props = {
   weeks: CMSWeek[];
   initialUserName: string;
+  settings: CMSSettings | null;
 };
 
 type Metrics = {
@@ -32,8 +35,6 @@ type WeekSummary = Metrics & {
   checkDate: string;
   totalSalesForWeek: number;
 };
-
-const MIN_WEEKLY_PAY = 560;
 
 function asNum(v: unknown): number {
   const n = Number(v);
@@ -61,6 +62,7 @@ function computeMetrics(
   invoices: CMSInvoice[],
   monthStart: Date,
   monthEnd: Date,
+  minWeeklyPay: number,
 ): Metrics {
   let totalInvoiceSales = 0;
   let totalSalesForMonth = 0;
@@ -103,7 +105,7 @@ function computeMetrics(
     0,
     commissionLeftBase - commissionThisWeek,
   );
-  const minWageComplement = Math.max(0, MIN_WEEKLY_PAY - commissionThisWeek);
+  const minWageComplement = Math.max(0, minWeeklyPay - commissionThisWeek);
   const finalWeekPay = commissionThisWeek + minWageComplement + bonus;
 
   return {
@@ -121,7 +123,11 @@ function computeMetrics(
 export default function SalesRepStatusClient({
   weeks,
   initialUserName,
+  settings,
 }: Props) {
+  const minWeeklyPay = asNum(
+    settings?.minWeeklyPay ?? DEFAULT_SETTINGS.minWeeklyPay,
+  );
   const today = new Date();
   const defaultMonth = `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, "0")}`;
   const [selectedMonth, setSelectedMonth] = useState(defaultMonth);
@@ -174,6 +180,7 @@ export default function SalesRepStatusClient({
           repInvoices,
           monthRange.start,
           monthRange.end,
+          minWeeklyPay,
         );
         const row: WeekSummary = {
           weekId: week.id,
@@ -197,7 +204,7 @@ export default function SalesRepStatusClient({
     }
 
     return map;
-  }, [weeks, monthRange]);
+  }, [weeks, monthRange, minWeeklyPay]);
 
   const cardStats = useMemo(() => {
     return reps.map((rep) => {

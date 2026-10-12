@@ -5,6 +5,12 @@ import Link from "next/link";
 import { Save } from "lucide-react";
 import { CMSSettings, DEFAULT_SETTINGS } from "../types";
 
+const NUMERIC_SETTING_KEYS = new Set([
+  "firstPaymentPercent",
+  "secondPaymentPercent",
+  "minWeeklyPay",
+]);
+
 export default function SalesCommissionSettingsClient({
   settings,
 }: {
@@ -51,6 +57,7 @@ export default function SalesCommissionSettingsClient({
         {[
           ["firstPaymentPercent", "First payment %"],
           ["secondPaymentPercent", "Second payment %"],
+          ["minWeeklyPay", "Minimum weekly pay by law ($)"],
           ["colorPending", "Pending color"],
           ["colorFirstPayment", "First payment color"],
           ["colorFirstPaid", "First paid color"],
@@ -72,7 +79,7 @@ export default function SalesCommissionSettingsClient({
                   (prev) =>
                     ({
                       ...prev,
-                      [key]: key.includes("Percent")
+                      [key]: NUMERIC_SETTING_KEYS.has(key)
                         ? Number(e.target.value)
                         : e.target.value,
                     }) as CMSSettings,
