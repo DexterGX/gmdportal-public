@@ -50,11 +50,11 @@ export async function GET(
  * Body: { confirmName }  (must equal the vendor's name)
  *
  * PERMANENTLY deletes every imported catalog item (and, by cascade, its
- * prices) for the vendor, plus the item reference images in storage. Kept:
- * the vendor itself, its price tiers (colors/groups - saved estimates point
- * at them), its attached catalog PDF, and every saved estimate. Estimate
- * lines keep their saved price/description; they just lose the link to the
- * deleted catalog item.
+ * prices) for the vendor, plus the item reference images in storage, and its
+ * colors/groups (price tiers): deleted, or switched off when a saved estimate
+ * still points at one. Kept: the vendor itself, its attached catalog PDF, and
+ * every saved estimate. Estimate lines keep their saved price/description;
+ * they just lose the link to the deleted catalog item.
  */
 export async function DELETE(
   request: Request,
@@ -84,10 +84,25 @@ export async function DELETE(
     const result = await prismaAny.cabinetCatalogItem.deleteMany({ where: { vendorId } });
     const imagesRemoved = await removeCabinetCatalogItemImages(vendorId);
 
+    // Colors/groups (price tiers) go with the price list. A tier a saved
+    // estimate points at can't be deleted without breaking that estimate, so
+    // it is switched off instead: hidden from the Group / Color dropdown of
+    // new estimates, still resolvable on the estimate that used it, and
+    // switched back on if the same color is imported again.
+    const tiersDeleted = await prismaAny.cabinetPriceTier.deleteMany({
+      where: { vendorId, estimates: { none: {} } },
+    });
+    const tiersHidden = await prismaAny.cabinetPriceTier.updateMany({
+      where: { vendorId, isActive: true },
+      data: { isActive: false },
+    });
+
     return NextResponse.json({
       success: true,
       itemsDeleted: result.count,
       imagesRemoved,
+      tiersDeleted: tiersDeleted.count,
+      tiersHidden: tiersHidden.count,
     });
   } catch (error: any) {
     console.error("Cabinet vendor clear price list error:", error);

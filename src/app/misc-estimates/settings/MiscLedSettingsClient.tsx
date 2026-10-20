@@ -9,6 +9,9 @@ import {
   Save,
   X,
 } from "lucide-react";
+import PricingFormulaPanel, {
+  type PricingFormulaData,
+} from "./PricingFormulaPanel";
 
 type BaseItem = {
   id: string;
@@ -1787,6 +1790,20 @@ export default function MiscLedSettingsClient({
     );
   }
 
+  const pricingFormulaData: PricingFormulaData = {
+    ledTypes,
+    profiles,
+    sheetTypes,
+    mirrorColors,
+    mirrorBevelOptions,
+    glassDoorShelfTypes,
+    islandPanelModels,
+    mirrorFrameFinishes,
+    mirrorSetting,
+    wallUnitSetting,
+    mirrorFrameSetting,
+  };
+
   return (
     <div className="space-y-6">
       <div className="flex items-start justify-between gap-4">
@@ -1835,6 +1852,7 @@ export default function MiscLedSettingsClient({
 
       {activeSection === "LED_STRIP" ? (
         <div className="space-y-6">
+          <PricingFormulaPanel section="LED_STRIP" data={pricingFormulaData} />
           {renderCollectionSection("rooms")}
           {renderCollectionSection("types")}
           {renderCollectionSection("control-types")}
@@ -1842,12 +1860,14 @@ export default function MiscLedSettingsClient({
         </div>
       ) : activeSection === "LED_SHEET" ? (
         <div className="space-y-6">
+          <PricingFormulaPanel section="LED_SHEET" data={pricingFormulaData} />
           {renderCollectionSection("rooms")}
           {renderCollectionSection("sheet-types")}
           {renderCollectionSection("control-types")}
         </div>
       ) : activeSection === "MIRROR" ? (
         <div className="space-y-6">
+          <PricingFormulaPanel section="MIRROR" data={pricingFormulaData} />
           {renderCollectionSection("rooms")}
           {renderCollectionSection("mirror-colors")}
           {renderCollectionSection("mirror-bevel-options")}
@@ -1855,20 +1875,24 @@ export default function MiscLedSettingsClient({
         </div>
       ) : activeSection === "GLASS_DOOR_SHELF" ? (
         <div className="space-y-6">
+          <PricingFormulaPanel section="GLASS_DOOR_SHELF" data={pricingFormulaData} />
           {renderCollectionSection("glass-door-shelf-types")}
         </div>
       ) : activeSection === "ISLAND_PANEL" ? (
         <div className="space-y-6">
+          <PricingFormulaPanel section="ISLAND_PANEL" data={pricingFormulaData} />
           {renderCollectionSection("rooms")}
           {renderCollectionSection("island-panel-models")}
         </div>
       ) : activeSection === "WALL_UNIT" ? (
         <div className="space-y-6">
+          <PricingFormulaPanel section="WALL_UNIT" data={pricingFormulaData} />
           {renderCollectionSection("rooms")}
           {renderWallUnitFormulaSection()}
         </div>
       ) : activeSection === "MIRROR_FRAME" ? (
         <div className="space-y-6">
+          <PricingFormulaPanel section="MIRROR_FRAME" data={pricingFormulaData} />
           {renderCollectionSection("rooms")}
           {renderCollectionSection("mirror-frame-finishes")}
           {renderMirrorFrameFormulaSection()}

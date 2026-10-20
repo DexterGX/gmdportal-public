@@ -201,6 +201,10 @@ export default function CabinetEstimateForm(props: Props) {
   const [groupColor, setGroupColor] = useState("");
   const [vendorId, setVendorId] = useState("");
   const [priceTierId, setPriceTierId] = useState("");
+  // Read by the tiers fetch so a saved estimate's own (possibly switched-off)
+  // color stays in the dropdown without refetching on every selection.
+  const priceTierIdRef = useRef("");
+  priceTierIdRef.current = priceTierId;
   const [vendors, setVendors] = useState<CatalogVendor[]>([]);
   const [priceTiers, setPriceTiers] = useState<CatalogPriceTier[]>([]);
   // Round 12: Removal is no longer free text/a manual $ amount - the user
@@ -599,7 +603,10 @@ export default function CabinetEstimateForm(props: Props) {
     }
     (async () => {
       try {
-        const res = await fetch(`/api/cabinet-catalog/vendors/${vendorId}/tiers`);
+        const keep = priceTierIdRef.current;
+        const res = await fetch(
+          `/api/cabinet-catalog/vendors/${vendorId}/tiers${keep ? `?includeTierId=${encodeURIComponent(keep)}` : ""}`,
+        );
         const json = await res.json();
         if (res.ok) setPriceTiers(json.tiers || []);
       } catch {
@@ -922,7 +929,10 @@ export default function CabinetEstimateForm(props: Props) {
       number
     >;
     for (const item of lineItems) {
-      if (item.summaryBucket) counts[item.summaryBucket] += item.qty || 0;
+      // A line with the Custom box checked counts as a Custom cabinet,
+      // whatever bucket its catalog item normally falls in.
+      const bucket: CabinetSummaryBucket | null = item.isCustomization ? "CUSTOM" : item.summaryBucket;
+      if (bucket) counts[bucket] += item.qty || 0;
     }
     return counts;
   }, [lineItems]);

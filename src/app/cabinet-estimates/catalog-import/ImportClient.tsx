@@ -964,7 +964,9 @@ export default function ImportClient() {
                     .
                   </li>
                   <li>
-                    The vendor, its colors/groups (price tiers) and its attached catalog PDF are kept.
+                    The colors/groups are removed too, so they no longer show in new estimates (a color
+                    still used by a saved estimate is only hidden, and comes back if you import it
+                    again). The vendor and its attached catalog PDF are kept.
                   </li>
                 </ul>
                 <label className="mt-3 block text-sm font-medium text-gray-700 dark:text-gray-300">

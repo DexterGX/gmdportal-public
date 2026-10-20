@@ -75,6 +75,15 @@ export async function POST(request: Request) {
         const tierIdByName = new Map<string, string>(
           existingTiers.map((t: any) => [t.name, t.id]),
         );
+        // A color switched off by "Clear price list" comes back when it is
+        // imported again.
+        const inactiveTierIds = existingTiers.filter((t: any) => !t.isActive).map((t: any) => t.id);
+        if (inactiveTierIds.length > 0) {
+          await tx.cabinetPriceTier.updateMany({
+            where: { id: { in: inactiveTierIds } },
+            data: { isActive: true },
+          });
+        }
         for (const name of tierNames) {
           if (!tierIdByName.has(name)) {
             const tier = await tx.cabinetPriceTier.create({

@@ -87,9 +87,23 @@ export async function POST(request: NextRequest) {
           data: { bucketDefault: null },
         });
       }
+      // Codes are numbered automatically: a blank code becomes the next
+      // free whole number (existing codes are never touched).
+      let code: string | null = body.code ? String(body.code).trim() : null;
+      if (!code) {
+        const existingCodes = await tx.cabinetInstallationServiceItem.findMany({
+          select: { code: true },
+        });
+        let maxCode = 0;
+        for (const row of existingCodes) {
+          const value = typeof row.code === "string" ? row.code.trim() : "";
+          if (/^\d+$/.test(value)) maxCode = Math.max(maxCode, parseInt(value, 10));
+        }
+        code = String(maxCode + 1);
+      }
       return tx.cabinetInstallationServiceItem.create({
         data: {
-          code: body.code ? String(body.code).trim() : null,
+          code,
           description,
           salePrice: toNumber(body.salePrice),
           isActive: body.isActive === undefined ? true : Boolean(body.isActive),

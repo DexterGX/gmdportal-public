@@ -10,7 +10,7 @@ const prismaAny = prisma as any;
  * selector (scoped to the chosen Brand/vendor).
  */
 export async function GET(
-  _request: Request,
+  request: Request,
   { params }: { params: Promise<{ id: string }> },
 ) {
   try {
@@ -20,8 +20,14 @@ export async function GET(
     }
 
     const { id } = await params;
+    // An estimate saved with a color that has since been switched off still
+    // needs that color in its dropdown - the form passes its tier id here.
+    const includeTierId = new URL(request.url).searchParams.get("includeTierId");
     const tiers = await prismaAny.cabinetPriceTier.findMany({
-      where: { vendorId: id, isActive: true },
+      where: {
+        vendorId: id,
+        OR: [{ isActive: true }, ...(includeTierId ? [{ id: includeTierId }] : [])],
+      },
       select: { id: true, name: true },
       orderBy: [{ sortOrder: "asc" }, { name: "asc" }],
     });
