@@ -39,6 +39,7 @@ type PatchBody = {
   installationCalcMode?: string;
   customSurchargePercent?: number | string;
   costTaxPercent?: number | string;
+  catalogLinkUrl?: string | null;
 };
 
 function toNumber(value: unknown, fallback = 0): number {
@@ -70,7 +71,16 @@ export async function PATCH(request: Request) {
       ...(body.costTaxPercent !== undefined
         ? { costTaxPercent: toNumber(body.costTaxPercent) }
         : {}),
+      ...(body.catalogLinkUrl !== undefined
+        ? { catalogLinkUrl: String(body.catalogLinkUrl || "").trim() || null }
+        : {}),
     };
+    if (data.catalogLinkUrl && !/^https?:\/\/\S+$/i.test(data.catalogLinkUrl)) {
+      return NextResponse.json(
+        { error: "The catalog link must start with http:// or https://" },
+        { status: 400 },
+      );
+    }
     const saved = existing
       ? await prismaAny.cabinetEstimateParameters.update({
           where: { id: existing.id },

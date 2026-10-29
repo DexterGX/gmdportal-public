@@ -440,6 +440,11 @@ model CabinetProviderSettings {
   // changing it takes effect immediately, no re-import needed.
   discount Decimal @default(0) @db.Decimal(10, 4)
   factor   Decimal @default(1) @db.Decimal(10, 4)
+  // The discount the company really gives us (0.55 = 55%), when it differs
+  // from `discount` above - the "Applied discount" actually used to compute
+  // prices, kept lower on purpose as a margin for late price updates.
+  // Informational only: nothing computes with it. Null = same as `discount`.
+  trueDiscount Decimal? @db.Decimal(10, 4)
 
   // Optional link to the catalog/import vendor this company represents.
   cabinetVendor CabinetVendor?
@@ -2150,9 +2155,10 @@ model CabinetVendor {
   catalogPdfFileName String?
   catalogUploadedAt  DateTime?
 
-  priceTiers CabinetPriceTier[]
-  items      CabinetCatalogItem[]
-  estimates  CabinetEstimate[]
+  priceTiers   CabinetPriceTier[]
+  colorOptions CabinetColorOption[]
+  items        CabinetCatalogItem[]
+  estimates    CabinetEstimate[]
 
   @@index([isActive])
 }
@@ -2165,11 +2171,45 @@ model CabinetPriceTier {
   sortOrder Int           @default(0)
   isActive  Boolean       @default(true)
 
-  prices    CabinetCatalogItemPrice[]
-  estimates CabinetEstimate[]
+  prices       CabinetCatalogItemPrice[]
+  estimates    CabinetEstimate[]
+  colorOptions CabinetColorOption[]
 
   @@unique([vendorId, name])
   @@index([vendorId])
+}
+
+// Notes an admin typed for the price-list import AI, kept so long notes can be
+// reused instead of retyped (Catalog Import page, "Previous notes").
+model CabinetImportNote {
+  id         String   @id @default(cuid())
+  text       String
+  vendorName String   @default("")
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @default(now())
+
+  @@index([updatedAt])
+}
+
+// A color that is priced under a Level (price tier). Used by vendors with many
+// colors split into Levels 1/2/3/4: the price table only has one column per
+// Level (CabinetPriceTier), and this table lists which Level each color is in,
+// shown in the estimate as e.g. "Level 1 - Ivory White Shaker IWS".
+model CabinetColorOption {
+  id        String        @id @default(cuid())
+  vendorId  String
+  vendor    CabinetVendor @relation(fields: [vendorId], references: [id], onDelete: Cascade)
+  tierId    String
+  tier      CabinetPriceTier @relation(fields: [tierId], references: [id], onDelete: Cascade)
+  label     String        // "Level 1 - Ivory White Shaker IWS"
+  name      String        @default("")
+  code      String        @default("")
+  sortOrder Int           @default(0)
+  isActive  Boolean       @default(true)
+
+  @@unique([vendorId, label])
+  @@index([vendorId])
+  @@index([tierId])
 }
 
 enum CabinetSummaryBucket {
@@ -2242,6 +2282,9 @@ model CabinetEstimateParameters {
   // Sales-tax % used by the cost-only "Preco de Custo" view/print
   // (Cabinets cost x tax%). Seeds 0 = visibly "not yet set".
   costTaxPercent          Decimal  @default(0) @db.Decimal(6, 2)
+  // Link (usually a Google Drive folder) to all the cabinet catalogs, shown
+  // under the logo numbers on the estimate form. Null/empty = no link shown.
+  catalogLinkUrl          String?
   updatedAt               DateTime @updatedAt
   // Singleton row - same findFirst-or-create pattern as MiscWallUnitSetting.
 }

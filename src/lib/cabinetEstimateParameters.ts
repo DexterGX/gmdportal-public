@@ -30,6 +30,7 @@ export type CabinetEstimateParametersSettings = {
   installationCalcMode: "flat" | "perItem" | "higher";
   customSurchargePercent: number;
   costTaxPercent: number;
+  catalogLinkUrl: string;
 };
 
 export type CabinetInstallationServiceItemRow = {
@@ -165,6 +166,7 @@ export async function getCabinetEstimateParameters(
       installationCalcMode: toCalcMode(settingsRow.installationCalcMode),
       customSurchargePercent: Number(settingsRow.customSurchargePercent),
       costTaxPercent: Number(settingsRow.costTaxPercent) || 0,
+      catalogLinkUrl: settingsRow.catalogLinkUrl || "",
     },
     installationServiceItems: serviceItemRows.map((item: any) => ({
       id: item.id,

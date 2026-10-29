@@ -17,6 +17,13 @@ type ApplyPayload = {
   newItems: NormalizedImportItem[];
   changedItems: { existingId: string; incoming: NormalizedImportItem }[];
   discontinuedIds: string[];
+  // Colors grouped under Levels (see lib/cabinetColorLevels.ts); null/absent
+  // when the price list has one column per color.
+  colorGroups?: {
+    level: number;
+    levelName: string;
+    colors: { label: string; name: string; code: string }[];
+  }[] | null;
 };
 
 /**
@@ -37,6 +44,7 @@ export async function POST(request: Request) {
 
     const payload: ApplyPayload = await request.json();
     const { vendorId, newVendorName, newItems, changedItems, discontinuedIds } = payload;
+    const colorGroups = payload.colorGroups && payload.colorGroups.length > 0 ? payload.colorGroups : null;
 
     if (!vendorId && !newVendorName?.trim()) {
       return NextResponse.json(
@@ -68,6 +76,9 @@ export async function POST(request: Request) {
         for (const change of changedItems) {
           for (const p of change.incoming.prices) tierNames.add(p.tierName);
         }
+        if (colorGroups) {
+          for (const g of colorGroups) tierNames.add(g.levelName);
+        }
 
         const existingTiers = await tx.cabinetPriceTier.findMany({
           where: { vendorId: resolvedVendorId, name: { in: Array.from(tierNames) } },
@@ -90,6 +101,56 @@ export async function POST(request: Request) {
               data: { vendorId: resolvedVendorId, name },
             });
             tierIdByName.set(name, tier.id);
+          }
+        }
+
+        // 2b. Colors grouped under Levels: one option per color pointing at its
+        // Level tier. Colors no longer in the price list are switched off.
+        if (colorGroups) {
+          const wanted: { label: string; name: string; code: string; tierId: string; sortOrder: number }[] = [];
+          let order = 0;
+          for (const g of colorGroups) {
+            const tierId = tierIdByName.get(g.levelName);
+            if (!tierId) continue;
+            for (const c of g.colors) {
+              wanted.push({ label: c.label, name: c.name, code: c.code, tierId, sortOrder: order++ });
+            }
+          }
+          const existingOptions = await tx.cabinetColorOption.findMany({
+            where: { vendorId: resolvedVendorId },
+          });
+          const optionByLabel = new Map<string, any>(existingOptions.map((o: any) => [o.label, o]));
+          const toCreate = wanted.filter((w) => !optionByLabel.has(w.label));
+          if (toCreate.length > 0) {
+            await tx.cabinetColorOption.createMany({
+              data: toCreate.map((w) => ({ ...w, vendorId: resolvedVendorId })),
+            });
+          }
+          for (const w of wanted) {
+            const ex = optionByLabel.get(w.label);
+            if (!ex) continue;
+            if (
+              ex.tierId !== w.tierId ||
+              ex.name !== w.name ||
+              ex.code !== w.code ||
+              ex.sortOrder !== w.sortOrder ||
+              !ex.isActive
+            ) {
+              await tx.cabinetColorOption.update({
+                where: { id: ex.id },
+                data: { tierId: w.tierId, name: w.name, code: w.code, sortOrder: w.sortOrder, isActive: true },
+              });
+            }
+          }
+          const wantedLabels = new Set(wanted.map((w) => w.label));
+          const staleIds = existingOptions
+            .filter((o: any) => o.isActive && !wantedLabels.has(o.label))
+            .map((o: any) => o.id);
+          if (staleIds.length > 0) {
+            await tx.cabinetColorOption.updateMany({
+              where: { id: { in: staleIds } },
+              data: { isActive: false },
+            });
           }
         }
 

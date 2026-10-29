@@ -5,6 +5,7 @@ export type Settings = {
   installationCalcMode: CalcMode;
   customSurchargePercent: number;
   costTaxPercent: number;
+  catalogLinkUrl: string;
 };
 
 export type InstallationType = {

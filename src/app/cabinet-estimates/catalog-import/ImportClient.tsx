@@ -10,6 +10,17 @@ import {
   type PdfTableChunk,
 } from "@/lib/cabinetPdfGrid";
 import type { RawGrid } from "@/lib/cabinetCatalogImport";
+import type { ColorGroup, ColorMode } from "@/lib/cabinetColorLevels";
+import ReviewTable from "./ReviewTable";
+import {
+  COL_W,
+  type ChangedEntry,
+  type ExistingItem,
+  type InstallationItemOption,
+  type NormalizedItem,
+  type ParsePlan,
+  type Vendor,
+} from "./reviewShared";
 import {
   Upload,
   FileSpreadsheet,
@@ -22,221 +33,76 @@ import {
   Trash2,
 } from "lucide-react";
 
-type CabinetSummaryBucket = "STANDARD" | "DOUBLE" | "CUSTOM" | "MISC";
+// ---- History of the notes typed for the AI --------------------------------
+// Stored in the database so long notes don't have to be retyped.
+type NotesHistoryEntry = { id: string; text: string; vendorName: string; updatedAt: string };
 
-const BUCKETS: CabinetSummaryBucket[] = ["STANDARD", "DOUBLE", "CUSTOM", "MISC"];
-
-/** Fixed pixel widths for the New/Changed review tables' columns. Applied
- * via inline style (not just a Tailwind width class) so they can't be
- * squeezed by the table's own layout algorithm on resize/scroll - see the
- * comment above COL_W's first use. */
-const COL_W = {
-  code: 160,
-  description: 300,
-  category: 160,
-  bucket: 128,
-  installationItem: 220,
-  tier: 96,
-  changedFields: 192,
-};
-
-// overflow: hidden on every cell (fixed and sticky) is what actually stops
-// a neighbor's content from ever visually bleeding past its own column - a
-// native <select>/number-input can render a sliver outside its cell's
-// declared box, and a sticky cell's z-index only controls paint ORDER, not
-// whether that sliver is clipped in the first place.
-function fixedColStyle(width: number) {
-  return { width, minWidth: width, maxWidth: width, overflow: "hidden" as const };
-}
-
-function stickyColStyle(width: number, left: number, edge = false) {
-  return {
-    width,
-    minWidth: width,
-    maxWidth: width,
-    overflow: "hidden" as const,
-    position: "sticky" as const,
-    left,
-    zIndex: 10,
-    // Chrome can leave stale pixels ("ghosting") at the boundary of a
-    // sticky cell when a wide, many-column fixed-layout table scrolls
-    // underneath it - promoting the cell to its own compositing layer
-    // forces a clean repaint of that boundary instead of a partial one.
-    transform: "translateZ(0)" as const,
-    willChange: "transform",
-    // A soft shadow on the last sticky column's right edge makes the
-    // frozen/scrolling boundary visually obvious and doubles as cover for
-    // any stray sub-pixel seam at that edge.
-    ...(edge ? { boxShadow: "4px 0 6px -4px rgba(0,0,0,0.25)" } : {}),
-  };
-}
-
-type ParsePlan = {
-  sheetName: string;
-  dataStartRow: number;
-  codeCol: number;
-  descriptionCol: number;
-  sizeCol: number | null;
-  priceColumns: { col: number; tierName: string }[];
-  categoryMode: "column" | "sectionRow" | "none";
-  categoryColumn: number | null;
-  sectionDetectColumn: number | null;
-  categoryBucketHints: { categoryContains: string; bucket: CabinetSummaryBucket }[];
-  defaultBucket: CabinetSummaryBucket;
-};
-
-type NormalizedItem = {
-  key: string;
-  code: string;
-  description: string;
-  category: string | null;
-  summaryBucket: CabinetSummaryBucket;
-  // Round 11: which row of the Installers Price Table prices this item's
-  // installation - AI-assigned via installationItemHints, admin-correctable
-  // right here. Null (unassigned) is normal and expected, not an error -
-  // there is deliberately no forced default.
-  installationItemId: string | null;
-  // Round 12 follow-up #3: true when the AI assigned installationItemId
-  // but wasn't fully confident - shown as a "double-check this" highlight
-  // rather than trusted silently. Always false when unassigned (that gets
-  // its own, stronger "needs attention" highlight instead).
-  installationItemUncertain: boolean;
-  prices: { tierName: string; price: number }[];
-  sourceRow: number;
-};
-
-type ExistingItem = {
-  id: string;
-  code: string;
-  description: string;
-  category: string | null;
-  summaryBucket: CabinetSummaryBucket;
-  installationItemId: string | null;
-  isActive: boolean;
-  prices: { tierId: string; price: number; tier: { id: string; name: string } }[];
-};
-
-type InstallationItemOption = {
-  id: string;
-  code: string | null;
-  description: string;
-};
-
-type Diff = {
-  newItems: NormalizedItem[];
-  changedItems: { existing: ExistingItem; incoming: NormalizedItem; changes: string[] }[];
-  discontinuedItems: ExistingItem[];
-};
-
-type Vendor = {
-  id: string;
-  name: string;
-  displayName: string;
-  providerId: string | null;
-  discount: number | null;
-  factor: number | null;
-  // Round 13: optional reference catalog PDF attached to this vendor - see
-  // the schema comment on CabinetVendor.catalogPdfUrl. Used for better AI
-  // classification hints during import and for "Extract item images".
-  catalogPdfUrl: string | null;
-  catalogPdfFileName: string | null;
-  catalogUploadedAt: string | null;
-};
-
-function formatCurrency(value: number) {
-  return new Intl.NumberFormat("en-US", { style: "currency", currency: "USD" }).format(value);
-}
-
-/** Small inline-editable table cell shared by the New/Changed tabs. */
-function EditableText({
-  value,
-  onChange,
-  className,
+function NotesHistoryPicker({
+  history,
+  onUse,
+  onDelete,
+  onClear,
 }: {
-  value: string;
-  onChange: (value: string) => void;
-  className?: string;
+  history: NotesHistoryEntry[];
+  onUse: (text: string) => void;
+  onDelete: (id: string) => void;
+  onClear: () => void;
 }) {
+  const [open, setOpen] = useState(false);
+  if (history.length === 0) return null;
   return (
-    <input
-      value={value}
-      onChange={(e) => onChange(e.target.value)}
-      title={value}
-      className={`truncate rounded border border-gray-300 bg-white px-2 py-1 text-xs text-gray-900 outline-none dark:border-gray-600 dark:bg-gray-900 dark:text-gray-100 ${className || "w-full"}`}
-    />
-  );
-}
-
-function BucketSelect({
-  value,
-  onChange,
-}: {
-  value: CabinetSummaryBucket;
-  onChange: (value: CabinetSummaryBucket) => void;
-}) {
-  return (
-    <select
-      value={value}
-      onChange={(e) => onChange(e.target.value as CabinetSummaryBucket)}
-      className="rounded border border-gray-300 bg-white px-2 py-1 text-xs text-gray-900 outline-none dark:border-gray-600 dark:bg-gray-900 dark:text-gray-100"
-    >
-      {BUCKETS.map((b) => (
-        <option key={b} value={b}>
-          {b}
-        </option>
-      ))}
-    </select>
-  );
-}
-
-/** Which row of GMD's real Installers Price Table prices this item's
- * installation - unlike Bucket, "Unassigned" is a normal, expected value
- * (no forced default), so it's always offered as an explicit option.
- *
- * Round 12 follow-up #3: two distinct highlight states so a reviewer can
- * scan the table instead of reading every row. Unassigned gets a hard
- * (red) highlight - nothing is priced yet, this needs a decision. A row
- * that IS assigned but came from a hint the AI itself marked low
- * confidence gets a lighter "doubt" (amber) highlight - probably right,
- * worth a second look before trusting it on a real estimate. A confident
- * match (AI-certain hint, or the deterministic bucket default) gets no
- * highlight at all. */
-function InstallationItemSelect({
-  value,
-  uncertain,
-  options,
-  onChange,
-}: {
-  value: string | null;
-  uncertain?: boolean;
-  options: InstallationItemOption[];
-  onChange: (value: string | null) => void;
-}) {
-  const isUnassigned = !value;
-  const stateClass = isUnassigned
-    ? "border-red-400 bg-red-50 dark:border-red-500 dark:bg-red-950/40"
-    : uncertain
-      ? "border-amber-400 bg-amber-50 dark:border-amber-500 dark:bg-amber-950/30"
-      : "border-gray-300 bg-white dark:border-gray-600 dark:bg-gray-900";
-  const title = isUnassigned
-    ? "No installation item assigned - pick one"
-    : uncertain
-      ? "The AI wasn't fully sure about this match - double-check it"
-      : undefined;
-  return (
-    <select
-      value={value || ""}
-      onChange={(e) => onChange(e.target.value || null)}
-      title={title}
-      className={`w-full rounded border px-2 py-1 text-xs text-gray-900 outline-none dark:text-gray-100 ${stateClass}`}
-    >
-      <option value="">-- Unassigned --</option>
-      {options.map((opt) => (
-        <option key={opt.id} value={opt.id}>
-          {opt.description}
-        </option>
-      ))}
-    </select>
+    <div className="mb-2">
+      <button
+        type="button"
+        onClick={() => setOpen((v) => !v)}
+        className="text-xs font-medium text-blue-600 hover:underline dark:text-blue-400"
+      >
+        {open ? "Hide previous notes" : `Previous notes (${history.length})`}
+      </button>
+      {open && (
+        <ul className="mt-1 max-h-56 divide-y divide-gray-200 overflow-y-auto rounded-lg border border-gray-200 bg-white dark:divide-gray-700 dark:border-gray-700 dark:bg-gray-800">
+          {history.map((entry) => (
+            <li key={entry.id} className="flex items-start gap-2 p-2">
+              <button
+                type="button"
+                onClick={() => {
+                  onUse(entry.text);
+                  setOpen(false);
+                }}
+                className="min-w-0 flex-1 text-left hover:bg-gray-50 dark:hover:bg-gray-700"
+                title="Use these notes"
+              >
+                <span className="block text-[11px] text-gray-500 dark:text-gray-400">
+                  {entry.vendorName ? `${entry.vendorName} - ` : ""}
+                  {new Date(entry.updatedAt).toLocaleDateString()}
+                </span>
+                <span className="block whitespace-pre-wrap break-words text-xs text-gray-800 dark:text-gray-200">
+                  {entry.text.length > 220 ? `${entry.text.slice(0, 220)}...` : entry.text}
+                </span>
+              </button>
+              <button
+                type="button"
+                onClick={() => onDelete(entry.id)}
+                className="shrink-0 rounded p-1 text-gray-400 hover:bg-red-50 hover:text-red-600 dark:hover:bg-red-900/20"
+                title="Remove from history"
+                aria-label="Remove from history"
+              >
+                <Trash2 className="h-3.5 w-3.5" />
+              </button>
+            </li>
+          ))}
+        </ul>
+      )}
+      {open && (
+        <button
+          type="button"
+          onClick={onClear}
+          className="mt-1 text-xs font-medium text-red-600 hover:underline dark:text-red-400"
+        >
+          Clear all previous notes
+        </button>
+      )}
+    </div>
   );
 }
 
@@ -256,6 +122,50 @@ export default function ImportClient() {
   // Notes for the AI: free-text instructions/corrections used on the next read.
   const [notes, setNotes] = useState("");
   const [showNotes, setShowNotes] = useState(false);
+  const [notesHistory, setNotesHistory] = useState<NotesHistoryEntry[]>([]);
+  const loadNotesHistory = useCallback(async () => {
+    try {
+      const res = await fetch("/api/cabinet-catalog/admin/import-notes");
+      const data = await res.json();
+      if (res.ok) setNotesHistory(data.notes || []);
+    } catch {
+      // History is a convenience - the page works without it.
+    }
+  }, []);
+  useEffect(() => {
+    void loadNotesHistory();
+  }, [loadNotesHistory]);
+  async function removeNotesHistory(id: string) {
+    try {
+      const res = await fetch(`/api/cabinet-catalog/admin/import-notes/${id}`, { method: "DELETE" });
+      if (!res.ok) throw new Error("Failed to delete note");
+      setNotesHistory((prev) => prev.filter((e) => e.id !== id));
+    } catch (err: any) {
+      setError(err.message);
+    }
+  }
+  async function clearNotesHistory() {
+    if (!confirm("Delete all previous notes? This cannot be undone.")) return;
+    try {
+      const res = await fetch("/api/cabinet-catalog/admin/import-notes", { method: "DELETE" });
+      if (!res.ok) throw new Error("Failed to clear notes history");
+      setNotesHistory([]);
+    } catch (err: any) {
+      setError(err.message);
+    }
+  }
+  async function rememberNotes(text: string, vendorName: string) {
+    try {
+      await fetch("/api/cabinet-catalog/admin/import-notes", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ text, vendorName }),
+      });
+      await loadNotesHistory();
+    } catch {
+      // Not being able to remember the notes must never block the import.
+    }
+  }
   // How the AI read the file: its own notes plus (for PDFs) reading warnings.
   const [aiNotes, setAiNotes] = useState<string[]>([]);
   const [pdfReadNotes, setPdfReadNotes] = useState<string[]>([]);
@@ -275,13 +185,15 @@ export default function ImportClient() {
   const [error, setError] = useState<string | null>(null);
   const [warnings, setWarnings] = useState<string[]>([]);
   const [showAllWarnings, setShowAllWarnings] = useState(false);
+  // Vendors with many colors split into Levels: only the Levels are price
+  // columns, and this lists which Level each color belongs to.
+  const [colorGroups, setColorGroups] = useState<ColorGroup[] | null>(null);
+  const [colorNotes, setColorNotes] = useState<string[]>([]);
 
   const [resolvedVendorName, setResolvedVendorName] = useState("");
   const [parsePlan, setParsePlan] = useState<ParsePlan | null>(null);
   const [newItems, setNewItems] = useState<NormalizedItem[]>([]);
-  const [changedItems, setChangedItems] = useState<
-    { existing: ExistingItem; incoming: NormalizedItem; changes: string[] }[]
-  >([]);
+  const [changedItems, setChangedItems] = useState<ChangedEntry[]>([]);
   const [discontinuedItems, setDiscontinuedItems] = useState<ExistingItem[]>([]);
   const [discontinuedSelected, setDiscontinuedSelected] = useState<Set<string>>(new Set());
   const [installationItems, setInstallationItems] = useState<InstallationItemOption[]>([]);
@@ -558,6 +470,9 @@ export default function ImportClient() {
   function tierLabel(name: string) {
     return tierNameOverrides[name] ?? name;
   }
+  const renameTier = useCallback((tierName: string, value: string) => {
+    setTierNameOverrides((prev) => ({ ...prev, [tierName]: value }));
+  }, []);
 
   // Each tier column sizes itself to roughly fit its own label instead of
   // every column sharing one cramped width (COL_W.tier as a floor) - a
@@ -590,6 +505,8 @@ export default function ImportClient() {
     setDiscontinuedSelected(new Set());
     setWarnings([]);
     setShowAllWarnings(false);
+    setColorGroups(null);
+    setColorNotes([]);
   }
 
   const isPdfFile = (f: File | null) => Boolean(f && f.name.toLowerCase().endsWith(".pdf"));
@@ -716,7 +633,10 @@ export default function ImportClient() {
     return { grid: expanded.grid, notes: notesOut };
   }
 
-  async function runPreview(existingPlan?: ParsePlan, opts?: { reread?: boolean }) {
+  async function runPreview(
+    existingPlan?: ParsePlan,
+    opts?: { reread?: boolean; colorMode?: ColorMode },
+  ) {
     if (!file) return;
     if (!useNewVendor && !vendorId) {
       setError("Select a vendor or choose to create a new one");
@@ -762,9 +682,11 @@ export default function ImportClient() {
       }
       if (notes.trim()) {
         formData.append("notes", notes.trim());
+        void rememberNotes(notes.trim(), useNewVendor ? newVendorName.trim() : (selectedVendor?.displayName || ""));
       }
       formData.append("pricingMode", pricingMode);
       formData.append("discount", pricingMode === "retail" ? discountInput : "0");
+      formData.append("colorMode", opts?.colorMode || "auto");
 
       const res = await fetch("/api/cabinet-catalog/admin/import/preview", {
         method: "POST",
@@ -786,6 +708,9 @@ export default function ImportClient() {
       );
       setWarnings(data.warnings || []);
       setShowAllWarnings(false);
+      setColorGroups(data.colorGroups || null);
+      setColorNotes(data.colorNotes || []);
+      setTierNameOverrides({});
       setAiNotes(data.aiNotes || []);
       setShowAllReadNotes(false);
       setActiveTab("new");
@@ -834,6 +759,12 @@ export default function ImportClient() {
           newItems: remappedNewItems,
           changedItems: remappedChangedItems,
           discontinuedIds: Array.from(discontinuedSelected),
+          colorGroups: colorGroups
+            ? colorGroups.map((g) => ({
+                ...g,
+                levelName: tierNameOverrides[g.levelName] ?? g.levelName,
+              }))
+            : null,
         }),
       });
       const data = await res.json();
@@ -851,42 +782,6 @@ export default function ImportClient() {
     } finally {
       setIsApplying(false);
     }
-  }
-
-  function updateNewItem(index: number, patch: Partial<NormalizedItem>) {
-    setNewItems((prev) => prev.map((item, i) => (i === index ? { ...item, ...patch } : item)));
-  }
-
-  function updateNewItemPrice(index: number, tierName: string, price: number) {
-    setNewItems((prev) =>
-      prev.map((item, i) =>
-        i === index
-          ? { ...item, prices: item.prices.map((p) => (p.tierName === tierName ? { ...p, price } : p)) }
-          : item,
-      ),
-    );
-  }
-
-  function updateChangedItem(index: number, patch: Partial<NormalizedItem>) {
-    setChangedItems((prev) =>
-      prev.map((c, i) => (i === index ? { ...c, incoming: { ...c.incoming, ...patch } } : c)),
-    );
-  }
-
-  function updateChangedItemPrice(index: number, tierName: string, price: number) {
-    setChangedItems((prev) =>
-      prev.map((c, i) =>
-        i === index
-          ? {
-              ...c,
-              incoming: {
-                ...c.incoming,
-                prices: c.incoming.prices.map((p) => (p.tierName === tierName ? { ...p, price } : p)),
-              },
-            }
-          : c,
-      ),
-    );
   }
 
   function toggleDiscontinued(id: string) {
@@ -1311,6 +1206,7 @@ export default function ImportClient() {
               </button>
               {showNotes && (
                 <div className="mt-2">
+                  <NotesHistoryPicker history={notesHistory} onUse={setNotes} onDelete={removeNotesHistory} onClear={clearNotesHistory} />
                   <textarea
                     value={notes}
                     onChange={(e) => setNotes(e.target.value)}
@@ -1427,6 +1323,7 @@ export default function ImportClient() {
                 <label className="mb-1 block text-sm font-medium text-gray-700 dark:text-gray-300">
                   Notes for the AI - tell it what it got wrong, then re-read the file
                 </label>
+                <NotesHistoryPicker history={notesHistory} onUse={setNotes} onDelete={removeNotesHistory} onClear={clearNotesHistory} />
                 <textarea
                   value={notes}
                   onChange={(e) => setNotes(e.target.value)}
@@ -1473,6 +1370,62 @@ export default function ImportClient() {
                   >
                     {showAllReadNotes ? "Show less" : `Show all ${readNotesAll.length} notes`}
                   </button>
+                )}
+              </div>
+            )}
+
+            {(colorGroups || colorNotes.length > 0 || tierNames.length >= 8) && (
+              <div className="mt-3 rounded-lg border border-indigo-200 bg-indigo-50 p-3 text-xs text-indigo-900 dark:border-indigo-800 dark:bg-indigo-900/20 dark:text-indigo-100">
+                <div className="flex flex-wrap items-center justify-between gap-2">
+                  <p className="font-medium">
+                    {colorGroups
+                      ? `Colors grouped by level - ${colorGroups.reduce((n, g) => n + g.colors.length, 0)} colors in ${colorGroups.length} level${colorGroups.length === 1 ? "" : "s"}`
+                      : "Colors"}
+                  </p>
+                  <button
+                    onClick={() => {
+                      if (
+                        !confirm(
+                          "Read the file again with this change? Edits you made in the review tables are lost.",
+                        )
+                      ) {
+                        return;
+                      }
+                      void runPreview(parsePlan, { colorMode: colorGroups ? "columns" : "levels" });
+                    }}
+                    disabled={isUploading}
+                    className="rounded-lg border border-indigo-300 bg-white px-3 py-1 font-medium text-indigo-800 hover:bg-indigo-100 disabled:opacity-50 dark:border-indigo-700 dark:bg-indigo-950 dark:text-indigo-100"
+                  >
+                    {colorGroups ? "Use one column per color instead" : "Group colors into levels"}
+                  </button>
+                </div>
+                {colorNotes.length > 0 && (
+                  <ul className="mt-1 list-inside list-disc space-y-0.5">
+                    {colorNotes.map((n, i) => (
+                      <li key={i}>{n}</li>
+                    ))}
+                  </ul>
+                )}
+                {colorGroups && (
+                  <div className="mt-2 max-h-56 space-y-2 overflow-y-auto">
+                    {colorGroups.map((g) => (
+                      <div key={g.level}>
+                        <p className="font-medium">
+                          {tierLabel(g.levelName)} ({g.colors.length})
+                        </p>
+                        <div className="mt-1 flex flex-wrap gap-1">
+                          {g.colors.map((c) => (
+                            <span
+                              key={c.label}
+                              className="rounded-full bg-white px-2 py-0.5 text-[11px] text-indigo-900 dark:bg-indigo-950 dark:text-indigo-100"
+                            >
+                              {c.label}
+                            </span>
+                          ))}
+                        </div>
+                      </div>
+                    ))}
+                  </div>
                 )}
               </div>
             )}
@@ -1528,206 +1481,20 @@ export default function ImportClient() {
             </div>
 
             <div className="overflow-x-auto p-4">
-              {activeTab === "new" && (
-                <table className="text-left text-xs" style={{ tableLayout: "fixed", borderSpacing: 0 }}>
-                  <thead>
-                    <tr className="text-gray-500 dark:text-gray-400">
-                      <th className="bg-white p-2 dark:bg-gray-800" style={stickyColStyle(COL_W.code, 0)}>Code</th>
-                      <th
-                        className="border-r border-gray-200 bg-white p-2 dark:border-gray-700 dark:bg-gray-800"
-                        style={stickyColStyle(COL_W.description, COL_W.code, true)}
-                      >
-                        Description
-                      </th>
-                      <th className="p-2" style={fixedColStyle(COL_W.bucket)}>Bucket</th>
-                      <th className="p-2" style={fixedColStyle(COL_W.installationItem)}>Installation Item</th>
-                      {tierNames.map((tierName) => (
-                        <th key={tierName} className="p-2" style={fixedColStyle(tierColWidths[tierName])}>
-                          <EditableText
-                            value={tierLabel(tierName)}
-                            onChange={(v) =>
-                              setTierNameOverrides((prev) => ({ ...prev, [tierName]: v }))
-                            }
-                            className="w-full font-semibold"
-                          />
-                        </th>
-                      ))}
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {newItems.map((item, i) => (
-                      <tr key={item.key} className="border-t border-gray-100 dark:border-gray-700">
-                        <td className="bg-white p-2 dark:bg-gray-800" style={stickyColStyle(COL_W.code, 0)}>
-                          <EditableText
-                            value={item.code}
-                            onChange={(v) => updateNewItem(i, { code: v })}
-                          />
-                        </td>
-                        <td
-                          className="border-r border-gray-200 bg-white p-2 dark:border-gray-700 dark:bg-gray-800"
-                          style={stickyColStyle(COL_W.description, COL_W.code, true)}
-                        >
-                          <EditableText
-                            value={item.description}
-                            onChange={(v) => updateNewItem(i, { description: v })}
-                          />
-                        </td>
-                        <td className="p-2" style={fixedColStyle(COL_W.bucket)}>
-                          <BucketSelect
-                            value={item.summaryBucket}
-                            onChange={(v) => updateNewItem(i, { summaryBucket: v })}
-                          />
-                        </td>
-                        <td className="p-2" style={fixedColStyle(COL_W.installationItem)}>
-                          <InstallationItemSelect
-                            value={item.installationItemId}
-                            uncertain={item.installationItemUncertain}
-                            options={installationItems}
-                            onChange={(v) =>
-                              updateNewItem(i, { installationItemId: v, installationItemUncertain: false })
-                            }
-                          />
-                        </td>
-                        {tierNames.map((tierName) => {
-                          const price = item.prices.find((p) => p.tierName === tierName);
-                          return (
-                            <td key={tierName} className="p-2" style={fixedColStyle(tierColWidths[tierName])}>
-                              <input
-                                type="number"
-                                step="0.01"
-                                value={price ? price.price : ""}
-                                placeholder="N/A"
-                                title={price ? undefined : "Not offered in this color/tier"}
-                                onChange={(e) =>
-                                  updateNewItemPrice(i, tierName, Number(e.target.value) || 0)
-                                }
-                                className="w-full rounded border border-gray-300 bg-white px-2 py-1 text-center text-xs text-gray-900 outline-none placeholder:text-gray-400 placeholder:italic dark:border-gray-600 dark:bg-gray-900 dark:text-gray-100 dark:placeholder:text-gray-600"
-                              />
-                            </td>
-                          );
-                        })}
-                      </tr>
-                    ))}
-                    {newItems.length === 0 && (
-                      <tr>
-                        <td className="p-4 text-center text-gray-400" colSpan={4 + tierNames.length}>
-                          No new items
-                        </td>
-                      </tr>
-                    )}
-                  </tbody>
-                </table>
-              )}
-
-              {activeTab === "changed" && (
-                <table className="text-left text-xs" style={{ tableLayout: "fixed", borderSpacing: 0 }}>
-                  <thead>
-                    <tr className="text-gray-500 dark:text-gray-400">
-                      <th className="bg-white p-2 dark:bg-gray-800" style={stickyColStyle(COL_W.code, 0)}>Code</th>
-                      <th
-                        className="border-r border-gray-200 bg-white p-2 dark:border-gray-700 dark:bg-gray-800"
-                        style={stickyColStyle(COL_W.description, COL_W.code, true)}
-                      >
-                        Description
-                      </th>
-                      <th className="p-2" style={fixedColStyle(COL_W.bucket)}>Bucket</th>
-                      <th className="p-2" style={fixedColStyle(COL_W.installationItem)}>Installation Item</th>
-                      <th className="p-2" style={fixedColStyle(COL_W.changedFields)}>Changed fields</th>
-                      {tierNames.map((tierName) => (
-                        <th key={tierName} className="p-2" style={fixedColStyle(tierColWidths[tierName])}>
-                          <EditableText
-                            value={tierLabel(tierName)}
-                            onChange={(v) =>
-                              setTierNameOverrides((prev) => ({ ...prev, [tierName]: v }))
-                            }
-                            className="w-full font-semibold"
-                          />
-                        </th>
-                      ))}
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {changedItems.map((c, i) => (
-                      <tr key={c.existing.id} className="border-t border-gray-100 dark:border-gray-700">
-                        <td
-                          className="truncate bg-white p-2 text-gray-700 dark:bg-gray-800 dark:text-gray-300"
-                          style={stickyColStyle(COL_W.code, 0)}
-                          title={c.incoming.code}
-                        >
-                          {c.incoming.code}
-                        </td>
-                        <td
-                          className="border-r border-gray-200 bg-white p-2 dark:border-gray-700 dark:bg-gray-800"
-                          style={stickyColStyle(COL_W.description, COL_W.code, true)}
-                        >
-                          <EditableText
-                            value={c.incoming.description}
-                            onChange={(v) => updateChangedItem(i, { description: v })}
-                          />
-                        </td>
-                        <td className="p-2" style={fixedColStyle(COL_W.bucket)}>
-                          <BucketSelect
-                            value={c.incoming.summaryBucket}
-                            onChange={(v) => updateChangedItem(i, { summaryBucket: v })}
-                          />
-                        </td>
-                        <td className="p-2" style={fixedColStyle(COL_W.installationItem)}>
-                          <InstallationItemSelect
-                            value={c.incoming.installationItemId}
-                            uncertain={c.incoming.installationItemUncertain}
-                            options={installationItems}
-                            onChange={(v) =>
-                              updateChangedItem(i, { installationItemId: v, installationItemUncertain: false })
-                            }
-                          />
-                        </td>
-                        <td
-                          className="p-2 text-amber-700 dark:text-amber-400"
-                          style={fixedColStyle(COL_W.changedFields)}
-                        >
-                          {c.changes.join(", ")}
-                        </td>
-                        {tierNames.map((tierName) => {
-                          const price = c.incoming.prices.find((p) => p.tierName === tierName);
-                          const existingPrice = c.existing.prices.find(
-                            (p) => p.tier.name === tierName,
-                          );
-                          return (
-                            <td key={tierName} className="p-2" style={fixedColStyle(tierColWidths[tierName])}>
-                              <input
-                                type="number"
-                                step="0.01"
-                                value={price ? price.price : ""}
-                                placeholder="N/A"
-                                onChange={(e) =>
-                                  updateChangedItemPrice(i, tierName, Number(e.target.value) || 0)
-                                }
-                                title={
-                                  price
-                                    ? existingPrice
-                                      ? `was ${formatCurrency(Number(existingPrice.price))}`
-                                      : "new tier"
-                                    : "Not offered in this color/tier"
-                                }
-                                className="w-full rounded border border-gray-300 bg-white px-2 py-1 text-center text-xs text-gray-900 outline-none placeholder:text-gray-400 placeholder:italic dark:border-gray-600 dark:bg-gray-900 dark:text-gray-100 dark:placeholder:text-gray-600"
-                              />
-                            </td>
-                          );
-                        })}
-                      </tr>
-                    ))}
-                    {changedItems.length === 0 && (
-                      <tr>
-                        <td
-                          className="p-4 text-center text-gray-400"
-                          colSpan={5 + tierNames.length}
-                        >
-                          No changed items
-                        </td>
-                      </tr>
-                    )}
-                  </tbody>
-                </table>
+              {(activeTab === "new" || activeTab === "changed") && (
+                <ReviewTable
+                  key={activeTab}
+                  mode={activeTab}
+                  newItems={newItems}
+                  changedItems={changedItems}
+                  setNewItems={setNewItems}
+                  setChangedItems={setChangedItems}
+                  tierNames={tierNames}
+                  tierColWidths={tierColWidths}
+                  tierLabel={tierLabel}
+                  onRenameTier={renameTier}
+                  installationItems={installationItems}
+                />
               )}
 
               {activeTab === "discontinued" && (

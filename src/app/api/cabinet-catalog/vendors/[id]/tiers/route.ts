@@ -32,7 +32,15 @@ export async function GET(
       orderBy: [{ sortOrder: "asc" }, { name: "asc" }],
     });
 
-    return NextResponse.json({ tiers });
+    // Vendors whose many colors are priced in Levels also list the colors:
+    // each one points at its Level (a tier above).
+    const colors = await prismaAny.cabinetColorOption.findMany({
+      where: { vendorId: id, isActive: true },
+      select: { id: true, label: true, tierId: true },
+      orderBy: [{ sortOrder: "asc" }, { label: "asc" }],
+    });
+
+    return NextResponse.json({ tiers, colors });
   } catch (error: any) {
     console.error("Error fetching cabinet price tiers:", error);
     return NextResponse.json({ error: "Failed to fetch price tiers" }, { status: 500 });

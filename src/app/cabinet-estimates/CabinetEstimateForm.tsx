@@ -8,7 +8,15 @@ import InfoPopover from "@/components/forms/InfoPopover";
 import CopyQBooksButton from "./CopyQBooksButton";
 import { useRouter, useSearchParams } from "next/navigation";
 import { isPriceLockExpired, PRICE_LOCK_DAYS } from "@/lib/cabinetPriceLock";
-import { Plus, Trash2, Save, Printer, RotateCcw, ClipboardList, DollarSign } from "lucide-react";
+import {
+  Plus,
+  Trash2,
+  Save,
+  Printer,
+  RotateCcw,
+  ClipboardList,
+  DollarSign,
+} from "lucide-react";
 import {
   computeLineItemTotal,
   computeCabinetsTotal,
@@ -87,8 +95,15 @@ type LineItem = {
   catalogImageUrl: string | null;
 };
 
-type CatalogVendor = { id: string; name: string; displayName: string; factor?: number | null };
+type CatalogVendor = {
+  id: string;
+  name: string;
+  displayName: string;
+  factor?: number | null;
+};
 type CatalogPriceTier = { id: string; name: string };
+// A color priced under a Level, e.g. label "Level 1 - Ivory White Shaker IWS".
+type CatalogColorOption = { id: string; label: string; tierId: string };
 type CatalogItemSuggestion = {
   id: string;
   code: string;
@@ -207,6 +222,7 @@ export default function CabinetEstimateForm(props: Props) {
   priceTierIdRef.current = priceTierId;
   const [vendors, setVendors] = useState<CatalogVendor[]>([]);
   const [priceTiers, setPriceTiers] = useState<CatalogPriceTier[]>([]);
+  const [colorOptions, setColorOptions] = useState<CatalogColorOption[]>([]);
   // Round 12: Removal is no longer free text/a manual $ amount - the user
   // picks a Removal Type (GMD-Parameters-managed) and every dollar is
   // computed from its percent x the Cabinets total, same "users pick, the
@@ -246,13 +262,16 @@ export default function CabinetEstimateForm(props: Props) {
   } | null>(null);
   const [costInstallerId, setCostInstallerId] = useState("");
   // "Unsaved changes" prompt shown before Print / PK List.
-  const [printPrompt, setPrintPrompt] = useState<"normal" | "pk" | "cost" | null>(null);
+  const [printPrompt, setPrintPrompt] = useState<
+    "normal" | "pk" | "cost" | null
+  >(null);
   const [savedSnapshot, setSavedSnapshot] = useState<string | null>(null);
   // Set when a reopened estimate is past the price lock: its catalog prices get
   // refreshed once the form has finished loading (see the effect below).
-  const [repriceOnOpen, setRepriceOnOpen] = useState<{ vendorId: string; tierId: string } | null>(
-    null,
-  );
+  const [repriceOnOpen, setRepriceOnOpen] = useState<{
+    vendorId: string;
+    tierId: string;
+  } | null>(null);
   const remeasureBackup = useRef<LineItem[] | null>(null);
   const snapshotForId = useRef<string | null>(null);
 
@@ -262,7 +281,9 @@ export default function CabinetEstimateForm(props: Props) {
   // Refs to the Code/Note inputs, keyed by "rowIndex:field" - lets Enter in
   // one of those cells move focus straight down to the same cell in the
   // next row, spreadsheet-style (see handleAdvanceRowKeyDown).
-  const cellRefs = useRef<Map<string, HTMLInputElement | HTMLTextAreaElement>>(new Map());
+  const cellRefs = useRef<Map<string, HTMLInputElement | HTMLTextAreaElement>>(
+    new Map(),
+  );
   function registerCellRef(
     index: number,
     field: "code" | "note",
@@ -315,8 +336,14 @@ export default function CabinetEstimateForm(props: Props) {
       installationCalcMode: "flat" | "perItem" | "higher";
       customSurchargePercent: number;
       costTaxPercent?: number;
+      catalogLinkUrl?: string;
     };
-    installationServiceItems: { id: string; code: string | null; description: string; salePrice: number }[];
+    installationServiceItems: {
+      id: string;
+      code: string | null;
+      description: string;
+      salePrice: number;
+    }[];
     installationTypes: {
       id: string;
       name: string;
@@ -343,7 +370,11 @@ export default function CabinetEstimateForm(props: Props) {
       isActive: boolean;
     }[];
   }>({
-    settings: { installationBasePercent: 15, installationCalcMode: "higher", customSurchargePercent: 0 },
+    settings: {
+      installationBasePercent: 15,
+      installationCalcMode: "higher",
+      customSurchargePercent: 0,
+    },
     installationServiceItems: [],
     installationTypes: [],
     removalTypes: [],
@@ -353,9 +384,8 @@ export default function CabinetEstimateForm(props: Props) {
   // Special Customization - an admin-managed catalog of customization types
   // (see GMD Parameters > Cabinet Estimates). The user just picks a qty per type;
   // the $ amount is always derived from the catalog price, never typed in.
-  const [specialCustomizationQtyById, setSpecialCustomizationQtyById] = useState<
-    Record<string, number>
-  >({});
+  const [specialCustomizationQtyById, setSpecialCustomizationQtyById] =
+    useState<Record<string, number>>({});
   const [notes, setNotes] = useState("");
 
   const [loading, setLoading] = useState(Boolean(editEstimateId));
@@ -363,7 +393,8 @@ export default function CabinetEstimateForm(props: Props) {
   const [message, setMessage] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
 
-  const [specialCustomizationSearch, setSpecialCustomizationSearch] = useState("");
+  const [specialCustomizationSearch, setSpecialCustomizationSearch] =
+    useState("");
 
   function setSpecialCustomizationQty(itemId: string, qty: number) {
     setSpecialCustomizationQtyById((prev) => ({ ...prev, [itemId]: qty }));
@@ -372,7 +403,10 @@ export default function CabinetEstimateForm(props: Props) {
   // Close the customer search dropdown when clicking elsewhere.
   useEffect(() => {
     function onClickOutside(e: MouseEvent) {
-      if (clientBoxRef.current && !clientBoxRef.current.contains(e.target as Node)) {
+      if (
+        clientBoxRef.current &&
+        !clientBoxRef.current.contains(e.target as Node)
+      ) {
         setClientDropdownOpen(false);
       }
     }
@@ -529,16 +563,25 @@ export default function CabinetEstimateForm(props: Props) {
               ids: catalogItemIds.join(","),
             });
             if (json.priceTierId) imgParams.set("tierId", json.priceTierId);
-            const imgRes = await fetch(`/api/cabinet-catalog/items?${imgParams.toString()}`);
+            const imgRes = await fetch(
+              `/api/cabinet-catalog/items?${imgParams.toString()}`,
+            );
             const imgJson = await imgRes.json();
             if (imgRes.ok) {
               const imageByCatalogId = new Map<string, string | null>(
-                (imgJson.items || []).map((it: any) => [it.id, it.catalogImageUrl || null]),
+                (imgJson.items || []).map((it: any) => [
+                  it.id,
+                  it.catalogImageUrl || null,
+                ]),
               );
               setLineItems((prev) =>
                 prev.map((item) =>
                   item.catalogItemId && imageByCatalogId.has(item.catalogItemId)
-                    ? { ...item, catalogImageUrl: imageByCatalogId.get(item.catalogItemId) ?? null }
+                    ? {
+                        ...item,
+                        catalogImageUrl:
+                          imageByCatalogId.get(item.catalogItemId) ?? null,
+                      }
                     : item,
                 ),
               );
@@ -599,6 +642,7 @@ export default function CabinetEstimateForm(props: Props) {
   useEffect(() => {
     if (!vendorId) {
       setPriceTiers([]);
+      setColorOptions([]);
       return;
     }
     (async () => {
@@ -608,17 +652,26 @@ export default function CabinetEstimateForm(props: Props) {
           `/api/cabinet-catalog/vendors/${vendorId}/tiers${keep ? `?includeTierId=${encodeURIComponent(keep)}` : ""}`,
         );
         const json = await res.json();
-        if (res.ok) setPriceTiers(json.tiers || []);
+        if (res.ok) {
+          setPriceTiers(json.tiers || []);
+          setColorOptions(json.colors || []);
+        }
       } catch {
         setPriceTiers([]);
+        setColorOptions([]);
       }
     })();
   }, [vendorId]);
 
   // Item-code autocomplete for the table below: query the selected vendor's
   // (and, when picked, price tier's) catalog as the user types a code.
-  const [codeQuery, setCodeQuery] = useState<{ index: number; text: string } | null>(null);
-  const [codeSuggestions, setCodeSuggestions] = useState<CatalogItemSuggestion[]>([]);
+  const [codeQuery, setCodeQuery] = useState<{
+    index: number;
+    text: string;
+  } | null>(null);
+  const [codeSuggestions, setCodeSuggestions] = useState<
+    CatalogItemSuggestion[]
+  >([]);
   const [codeDropdownRect, setCodeDropdownRect] = useState<{
     top: number;
     left: number;
@@ -669,9 +722,14 @@ export default function CabinetEstimateForm(props: Props) {
     }
     const handle = setTimeout(async () => {
       try {
-        const params = new URLSearchParams({ vendorId, q: codeQuery.text.trim() });
+        const params = new URLSearchParams({
+          vendorId,
+          q: codeQuery.text.trim(),
+        });
         if (priceTierId) params.set("tierId", priceTierId);
-        const res = await fetch(`/api/cabinet-catalog/items?${params.toString()}`);
+        const res = await fetch(
+          `/api/cabinet-catalog/items?${params.toString()}`,
+        );
         const json = await res.json();
         if (res.ok) setCodeSuggestions(json.items || []);
       } catch {
@@ -711,7 +769,6 @@ export default function CabinetEstimateForm(props: Props) {
     };
   }, []);
 
-
   function selectCatalogItem(index: number, suggestion: CatalogItemSuggestion) {
     updateItem(index, {
       code: suggestion.code,
@@ -740,7 +797,10 @@ export default function CabinetEstimateForm(props: Props) {
   // vendor/tier - this is what makes swapping Group/Color (or re-picking
   // the same Brand) instantly re-price already-added rows instead of
   // leaving their old price stale until the user re-picks the code.
-  async function repriceCatalogItems(forVendorId: string, forTierId: string): Promise<number> {
+  async function repriceCatalogItems(
+    forVendorId: string,
+    forTierId: string,
+  ): Promise<number> {
     const ids = Array.from(
       new Set(
         lineItemsRef.current
@@ -750,9 +810,14 @@ export default function CabinetEstimateForm(props: Props) {
     );
     if (ids.length === 0 || !forVendorId) return 0;
     try {
-      const params = new URLSearchParams({ vendorId: forVendorId, ids: ids.join(",") });
+      const params = new URLSearchParams({
+        vendorId: forVendorId,
+        ids: ids.join(","),
+      });
       if (forTierId) params.set("tierId", forTierId);
-      const res = await fetch(`/api/cabinet-catalog/items?${params.toString()}`);
+      const res = await fetch(
+        `/api/cabinet-catalog/items?${params.toString()}`,
+      );
       const json = await res.json();
       if (!res.ok) return 0;
       const byId = new Map<string, CatalogItemSuggestion>(
@@ -760,7 +825,9 @@ export default function CabinetEstimateForm(props: Props) {
       );
       const changedCount = lineItemsRef.current.filter((item) => {
         const match = item.catalogItemId ? byId.get(item.catalogItemId) : null;
-        return match ? Number(match.unitPrice) !== Number(item.unitPrice ?? 0) : false;
+        return match
+          ? Number(match.unitPrice) !== Number(item.unitPrice ?? 0)
+          : false;
       }).length;
       setLineItems((prev) =>
         prev.map((item) => {
@@ -801,7 +868,10 @@ export default function CabinetEstimateForm(props: Props) {
       configured.length > 0
         ? configured
             .filter((d) => d.isActive || d.percent === discountPercent)
-            .map((d) => ({ value: String(d.percent), label: discountPercentLabel(d.percent, d.label) }))
+            .map((d) => ({
+              value: String(d.percent),
+              label: discountPercentLabel(d.percent, d.label),
+            }))
         : DISCOUNT_PERCENT_OPTIONS.map((pct) => ({
             value: String(pct),
             label: discountPercentLabel(pct),
@@ -872,15 +942,26 @@ export default function CabinetEstimateForm(props: Props) {
           unitPrice: item.unitPrice ?? 0,
           installationItemId: item.installationItemId,
         })),
-        installationServiceItemPrices: installationServiceItemPricesById(gmdParameters.installationServiceItems),
+        installationServiceItemPrices: installationServiceItemPricesById(
+          gmdParameters.installationServiceItems,
+        ),
         calcMode: gmdParameters.settings.installationCalcMode,
         basePercent: gmdParameters.settings.installationBasePercent,
       }),
-    [cabinetsTotal, lineItems, gmdParameters.installationServiceItems, gmdParameters.settings.installationCalcMode, gmdParameters.settings.installationBasePercent],
+    [
+      cabinetsTotal,
+      lineItems,
+      gmdParameters.installationServiceItems,
+      gmdParameters.settings.installationCalcMode,
+      gmdParameters.settings.installationBasePercent,
+    ],
   );
 
   const selectedInstallationType = useMemo(
-    () => gmdParameters.installationTypes.find((t) => t.id === installationTypeId) || null,
+    () =>
+      gmdParameters.installationTypes.find(
+        (t) => t.id === installationTypeId,
+      ) || null,
     [gmdParameters.installationTypes, installationTypeId],
   );
 
@@ -902,14 +983,19 @@ export default function CabinetEstimateForm(props: Props) {
           microwaveInstallationAmount) *
           100,
       ) / 100,
-    [baseInstallationAmount, selectedInstallationType, microwaveInstallationAmount],
+    [
+      baseInstallationAmount,
+      selectedInstallationType,
+      microwaveInstallationAmount,
+    ],
   );
 
   // Round 12: Removal - a live preview only, same caveat as Installation
   // above; the server always recomputes this itself from a fresh read of
   // GMD Parameters at save time (see computeRemovalAmount/resolveRemovalType).
   const selectedRemovalType = useMemo(
-    () => gmdParameters.removalTypes.find((t) => t.id === removalTypeId) || null,
+    () =>
+      gmdParameters.removalTypes.find((t) => t.id === removalTypeId) || null,
     [gmdParameters.removalTypes, removalTypeId],
   );
 
@@ -931,7 +1017,9 @@ export default function CabinetEstimateForm(props: Props) {
     for (const item of lineItems) {
       // A line with the Custom box checked counts as a Custom cabinet,
       // whatever bucket its catalog item normally falls in.
-      const bucket: CabinetSummaryBucket | null = item.isCustomization ? "CUSTOM" : item.summaryBucket;
+      const bucket: CabinetSummaryBucket | null = item.isCustomization
+        ? "CUSTOM"
+        : item.summaryBucket;
       if (bucket) counts[bucket] += item.qty || 0;
     }
     return counts;
@@ -1101,12 +1189,17 @@ export default function CabinetEstimateForm(props: Props) {
         installationItemId: item.installationItemId,
       })),
       specialCustomizationLines: props.specialCustomizationItems
-        .map((item) => ({ itemId: item.id, qty: specialCustomizationQtyById[item.id] || 0 }))
+        .map((item) => ({
+          itemId: item.id,
+          qty: specialCustomizationQtyById[item.id] || 0,
+        }))
         .filter((line) => line.qty > 0),
     };
   }
 
-  const currentSnapshot = JSON.stringify(buildPayload(isRemeasure && !loadedIsRemeasure));
+  const currentSnapshot = JSON.stringify(
+    buildPayload(isRemeasure && !loadedIsRemeasure),
+  );
   useEffect(() => {
     if (loading || !estimateId) return;
     if (snapshotForId.current === estimateId) return;
@@ -1114,7 +1207,9 @@ export default function CabinetEstimateForm(props: Props) {
     setSavedSnapshot(currentSnapshot);
   }, [loading, estimateId, currentSnapshot]);
   const isDirty =
-    Boolean(estimateId) && savedSnapshot !== null && currentSnapshot !== savedSnapshot;
+    Boolean(estimateId) &&
+    savedSnapshot !== null &&
+    currentSnapshot !== savedSnapshot;
 
   // Past the price lock (older than PRICE_LOCK_DAYS): show the current price
   // list's prices. Runs after the loaded estimate is snapshotted, so the
@@ -1125,7 +1220,10 @@ export default function CabinetEstimateForm(props: Props) {
     const target = repriceOnOpen;
     setRepriceOnOpen(null);
     (async () => {
-      const changedCount = await repriceCatalogItems(target.vendorId, target.tierId);
+      const changedCount = await repriceCatalogItems(
+        target.vendorId,
+        target.tierId,
+      );
       if (changedCount > 0) {
         setMessage(
           `This estimate is over ${PRICE_LOCK_DAYS} days old, so ${changedCount} line price${
@@ -1142,7 +1240,9 @@ export default function CabinetEstimateForm(props: Props) {
   function handleRemeasureToggle(checked: boolean) {
     setIsRemeasure(checked);
     if (checked) {
-      remeasureBackup.current = lineItemsRef.current.map((item) => ({ ...item }));
+      remeasureBackup.current = lineItemsRef.current.map((item) => ({
+        ...item,
+      }));
       repriceCatalogItems(vendorId, priceTierId).then((changedCount) => {
         if (changedCount > 0) {
           setMessage(
@@ -1183,7 +1283,9 @@ export default function CabinetEstimateForm(props: Props) {
   async function handleSave(): Promise<string | null> {
     if (showCost) {
       setMessage(null);
-      setError("Saving is disabled in the Preco de Custo view. Turn it off to save.");
+      setError(
+        "Saving is disabled in the Preco de Custo view. Turn it off to save.",
+      );
       return null;
     }
     setSaving(true);
@@ -1224,7 +1326,7 @@ export default function CabinetEstimateForm(props: Props) {
         setMessage(`Remeasure estimate #${json.estimateNumber} created.`);
       } else if (json.renumbered) {
         setMessage(
-          `Changes saved as new estimate #${json.estimateNumber}. The previous estimate #${json.previousEstimateNumber} was archived.`,
+          `Changes saved as new estimate #${json.estimateNumber} (edited from #${json.previousEstimateNumber}).`,
         );
       } else {
         setMessage(estimateId ? "Estimate updated." : "Estimate saved.");
@@ -1248,8 +1350,14 @@ export default function CabinetEstimateForm(props: Props) {
       params.set("cost", "1");
       if (costInstallerId) params.set("installer", costInstallerId);
     }
-    const win = window.open(`/cabinet-estimates/print/${id}?${params.toString()}`, "_blank");
-    if (!win) setError("The print page was blocked by the browser. Allow pop-ups and try again.");
+    const win = window.open(
+      `/cabinet-estimates/print/${id}?${params.toString()}`,
+      "_blank",
+    );
+    if (!win)
+      setError(
+        "The print page was blocked by the browser. Allow pop-ups and try again.",
+      );
   }
 
   function handlePrint(pkList = false) {
@@ -1257,7 +1365,11 @@ export default function CabinetEstimateForm(props: Props) {
       setError("Save the estimate before printing.");
       return;
     }
-    const kind = pkList ? "pk" : showCost && props.canViewCost ? "cost" : "normal";
+    const kind = pkList
+      ? "pk"
+      : showCost && props.canViewCost
+        ? "cost"
+        : "normal";
     // The print page shows the SAVED estimate, so ask what to do with edits.
     if (isDirty) {
       setPrintPrompt(kind);
@@ -1294,14 +1406,22 @@ export default function CabinetEstimateForm(props: Props) {
   const costInstallerResult = computeInstallerCost({
     lines: lineItems
       .filter((item) => !isEmptyLineItem(item))
-      .map((item) => ({ qty: item.qty, installationItemId: item.installationItemId })),
-    costsByItemId: costData ? costsByItemIdForInstaller(costData.costs, costInstallerId) : {},
+      .map((item) => ({
+        qty: item.qty,
+        installationItemId: item.installationItemId,
+      })),
+    costsByItemId: costData
+      ? costsByItemIdForInstaller(costData.costs, costInstallerId)
+      : {},
     microwave: microwaveInstallation,
-    microwaveItemId: findMicrowaveServiceItem(gmdParameters.installationServiceItems)?.id,
+    microwaveItemId: findMicrowaveServiceItem(
+      gmdParameters.installationServiceItems,
+    )?.id,
   });
   const costSummary = computeCostSummary({
     cabinetsCost: toCost(cabinetsTotal),
-    taxPercent: costData?.taxPercent ?? gmdParameters.settings.costTaxPercent ?? 0,
+    taxPercent:
+      costData?.taxPercent ?? gmdParameters.settings.costTaxPercent ?? 0,
     installationCost: costInstallerResult.amount,
   });
 
@@ -1311,19 +1431,73 @@ export default function CabinetEstimateForm(props: Props) {
     [],
   );
   const sortedVendors = useMemo(
-    () => [...vendors].sort((a, b) => collator.compare(a.displayName, b.displayName)),
+    () =>
+      [...vendors].sort((a, b) =>
+        collator.compare(a.displayName, b.displayName),
+      ),
     [vendors, collator],
   );
   const sortedPriceTiers = useMemo(
     () => [...priceTiers].sort((a, b) => collator.compare(a.name, b.name)),
     [priceTiers, collator],
   );
+  // Group / Color dropdown. A vendor whose many colors are priced in Levels
+  // lists the colors ("Level 1 - Ivory White Shaker IWS"); every other vendor
+  // lists its price tiers as before. Values: "c:<color id>", "t:<tier id>"
+  // (only when colors exist) or the plain tier id.
+  const hasColorOptions = colorOptions.length > 0;
+  const groupColorValue = useMemo(() => {
+    if (!priceTierId) return "";
+    if (!hasColorOptions) return priceTierId;
+    const match = colorOptions.find(
+      (o) => o.label === groupColor && o.tierId === priceTierId,
+    );
+    return match ? `c:${match.id}` : `t:${priceTierId}`;
+  }, [priceTierId, hasColorOptions, colorOptions, groupColor]);
+  const groupColorChoices = useMemo(() => {
+    if (!hasColorOptions)
+      return sortedPriceTiers.map((t) => ({ value: t.id, label: t.name }));
+    const choices = colorOptions.map((o) => ({
+      value: `c:${o.id}`,
+      label: o.label,
+    }));
+    const coloredTierIds = new Set(colorOptions.map((o) => o.tierId));
+    for (const t of sortedPriceTiers) {
+      if (!coloredTierIds.has(t.id))
+        choices.push({ value: `t:${t.id}`, label: t.name });
+    }
+    // A saved estimate whose color is no longer listed keeps showing it.
+    if (priceTierId && !choices.some((c) => c.value === groupColorValue)) {
+      const tier = priceTiers.find((t) => t.id === priceTierId);
+      choices.push({
+        value: groupColorValue,
+        label: groupColor || tier?.name || "",
+      });
+    }
+    // Alphabetical (numbers in natural order: Level 2 before Level 10).
+    return choices.sort((a, b) => collator.compare(a.label, b.label));
+  }, [
+    hasColorOptions,
+    colorOptions,
+    sortedPriceTiers,
+    priceTierId,
+    groupColorValue,
+    groupColor,
+    priceTiers,
+    collator,
+  ]);
   const sortedRemovalTypes = useMemo(
-    () => [...gmdParameters.removalTypes].sort((a, b) => collator.compare(a.name, b.name)),
+    () =>
+      [...gmdParameters.removalTypes].sort((a, b) =>
+        collator.compare(a.name, b.name),
+      ),
     [gmdParameters.removalTypes, collator],
   );
   const sortedProjectTypes = useMemo(
-    () => [...gmdParameters.projectTypes].sort((a, b) => collator.compare(a.name, b.name)),
+    () =>
+      [...gmdParameters.projectTypes].sort((a, b) =>
+        collator.compare(a.name, b.name),
+      ),
     [gmdParameters.projectTypes, collator],
   );
 
@@ -1339,9 +1513,12 @@ export default function CabinetEstimateForm(props: Props) {
               ? `${loadedIsRemeasure ? "Remeasure Estimate" : "Estimate"} #${estimateNumber}`
               : "New estimate - estimate # is assigned on save."}
           </p>
-          {((loadedIsRemeasure && originalEstimate) || remeasureEstimates.length > 0) && (
+          {((loadedIsRemeasure && originalEstimate) ||
+            remeasureEstimates.length > 0) && (
             <p className="mt-0.5 text-xs text-gray-600 dark:text-gray-400">
-              {loadedIsRemeasure ? "Original Estimate#:" : "Remeasure Estimate#:"}{" "}
+              {loadedIsRemeasure
+                ? "Original Estimate#:"
+                : "Remeasure Estimate#:"}{" "}
               {loadedIsRemeasure && originalEstimate ? (
                 <Link
                   href={`/cabinet-estimates?estimateId=${originalEstimate.id}`}
@@ -1391,19 +1568,19 @@ export default function CabinetEstimateForm(props: Props) {
             }}
           />
           {props.canViewCost && (
-          <button
-            type="button"
-            onClick={() => setShowCost((v) => !v)}
-            aria-pressed={showCost}
-            title="Show every price at the vendor's actual cost"
-            className={`inline-flex items-center gap-1.5 rounded-md border px-3 py-2 text-sm font-medium ${
-              showCost
-                ? "border-amber-500 bg-amber-100 text-amber-900 hover:bg-amber-200 dark:border-amber-500 dark:bg-amber-900/40 dark:text-amber-200"
-                : "border-gray-300 text-gray-700 hover:bg-gray-50 dark:border-gray-600 dark:text-gray-300 dark:hover:bg-gray-700"
-            }`}
-          >
-            <DollarSign className="h-4 w-4" /> Preco de Custo
-          </button>
+            <button
+              type="button"
+              onClick={() => setShowCost((v) => !v)}
+              aria-pressed={showCost}
+              title="Show every price at the vendor's actual cost"
+              className={`inline-flex items-center gap-1.5 rounded-md border px-3 py-2 text-sm font-medium ${
+                showCost
+                  ? "border-amber-500 bg-amber-100 text-amber-900 hover:bg-amber-200 dark:border-amber-500 dark:bg-amber-900/40 dark:text-amber-200"
+                  : "border-gray-300 text-gray-700 hover:bg-gray-50 dark:border-gray-600 dark:text-gray-300 dark:hover:bg-gray-700"
+              }`}
+            >
+              <DollarSign className="h-4 w-4" /> Preco de Custo
+            </button>
           )}
           <button
             type="button"
@@ -1426,10 +1603,15 @@ export default function CabinetEstimateForm(props: Props) {
             type="button"
             onClick={handleSave}
             disabled={saving || loading || showCost}
-            title={showCost ? "Saving is disabled in the Preco de Custo view" : undefined}
+            title={
+              showCost
+                ? "Saving is disabled in the Preco de Custo view"
+                : undefined
+            }
             className="inline-flex items-center gap-1.5 rounded-md bg-blue-600 px-4 py-2 text-sm font-medium text-white hover:bg-blue-700 disabled:cursor-not-allowed disabled:opacity-60"
           >
-            <Save className="h-4 w-4" /> {saving ? "Saving..." : "Save Estimate"}
+            <Save className="h-4 w-4" />{" "}
+            {saving ? "Saving..." : "Save Estimate"}
           </button>
         </div>
       </div>
@@ -1554,801 +1736,947 @@ export default function CabinetEstimateForm(props: Props) {
               document.body,
             )}
           <div className="flex flex-col gap-3 lg:flex-row lg:items-start">
-          <div ref={leftColumnRef} className="flex min-w-0 flex-1 flex-col gap-3">
-          {/* Header - mimics the printed sheet's letterhead + info block */}
-          <div className="overflow-hidden rounded-xl border border-gray-300 bg-white dark:border-gray-600 dark:bg-gray-800">
-            <div className="grid grid-cols-1 lg:grid-cols-[240px_1fr_170px]">
-              <div className="flex flex-col items-center justify-center gap-1 border-b border-gray-300 p-3 text-center dark:border-gray-600 lg:border-b-0 lg:border-r">
-                {/* eslint-disable-next-line @next/next/no-img-element */}
-                <img
-                  src={props.companyLogoUrl}
-                  alt={props.companyName}
-                  className="h-24 w-auto max-w-[220px] object-contain"
-                />
-                {props.companyAddress && (
-                  <div className="text-[9px] leading-tight text-gray-500 dark:text-gray-400">
-                    {props.companyAddress}
+            <div
+              ref={leftColumnRef}
+              className="flex min-w-0 flex-1 flex-col gap-3"
+            >
+              {/* Header - mimics the printed sheet's letterhead + info block */}
+              <div className="overflow-hidden rounded-xl border border-gray-300 bg-white dark:border-gray-600 dark:bg-gray-800">
+                <div className="grid grid-cols-1 lg:grid-cols-[240px_1fr_170px]">
+                  <div className="flex flex-col items-center justify-center gap-1 border-b border-gray-300 p-3 text-center dark:border-gray-600 lg:border-b-0 lg:border-r">
+                    {/* eslint-disable-next-line @next/next/no-img-element */}
+                    <img
+                      src={props.companyLogoUrl}
+                      alt={props.companyName}
+                      className="h-24 w-auto max-w-[220px] object-contain"
+                    />
+                    {props.companyAddress && (
+                      <div className="text-[9px] leading-tight text-gray-500 dark:text-gray-400">
+                        {props.companyAddress}
+                      </div>
+                    )}
+                    {props.companyPhone && (
+                      <div className="text-[9px] leading-tight text-gray-500 dark:text-gray-400">
+                        Phone: {props.companyPhone}
+                      </div>
+                    )}
+                    <div className="font-mono text-[15px] font-bold tracking-wide text-gray-800 dark:text-gray-200">
+                      {formatEstimateReferenceNumber(
+                        computeCabinetsCost(
+                          cabinetsTotal,
+                          vendors.find((v) => v.id === vendorId)?.factor,
+                        ),
+                        referenceRandomDigits,
+                      )}
+                    </div>
+                    {/^https?:\/\//i.test(
+                      gmdParameters.settings.catalogLinkUrl || "",
+                    ) && (
+                      <a
+                        href={gmdParameters.settings.catalogLinkUrl}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="text-[11px] font-medium text-blue-600 underline hover:text-blue-800 dark:text-blue-400 dark:hover:text-blue-300"
+                      >
+                        Catalogs
+                      </a>
+                    )}
                   </div>
-                )}
-                {props.companyPhone && (
-                  <div className="text-[9px] leading-tight text-gray-500 dark:text-gray-400">
-                    Phone: {props.companyPhone}
+
+                  <div className="divide-y divide-gray-300 border-b border-gray-300 dark:divide-gray-600 dark:border-gray-600 lg:border-b-0 lg:border-r">
+                    <div
+                      ref={clientBoxRef}
+                      className="relative grid grid-cols-[130px_1fr] divide-x divide-gray-300 dark:divide-gray-600"
+                    >
+                      <div className="flex items-center bg-blue-600 px-2 py-0.5 text-[11px] font-semibold text-white">
+                        Customer Name
+                      </div>
+                      <div className="relative">
+                        <input
+                          value={customerName}
+                          onChange={(e) => {
+                            setCustomerName(e.target.value);
+                            setClientDropdownOpen(true);
+                          }}
+                          onFocus={() => setClientDropdownOpen(true)}
+                          placeholder="Search customers..."
+                          className="w-full bg-transparent px-2 py-0.5 text-[11px] text-gray-900 outline-none dark:text-gray-100"
+                          autoComplete="off"
+                        />
+                        {clientDropdownOpen &&
+                          customerName.trim().length >= 2 && (
+                            <div className="absolute left-0 top-full z-50 max-h-80 w-[26rem] max-w-[90vw] overflow-y-auto rounded-md border border-gray-200 bg-white py-1 text-sm shadow-lg dark:border-gray-600 dark:bg-gray-800">
+                              {clientSearching ? (
+                                <div className="px-3 py-2 text-xs text-gray-500 dark:text-gray-400">
+                                  Searching...
+                                </div>
+                              ) : clientResults.length === 0 ? (
+                                <div className="px-3 py-2 text-xs text-gray-500 dark:text-gray-400">
+                                  No matching customers.
+                                </div>
+                              ) : (
+                                clientResults.map((result) => (
+                                  <button
+                                    key={result.id}
+                                    type="button"
+                                    onMouseDown={(e) => {
+                                      e.preventDefault();
+                                      selectClient(result);
+                                    }}
+                                    className="block w-full px-3 py-1.5 text-left hover:bg-blue-50 dark:hover:bg-gray-700"
+                                  >
+                                    <div className="truncate font-medium text-gray-900 dark:text-gray-100">
+                                      {result.displayName}
+                                    </div>
+                                    {result.customerAddress && (
+                                      <div className="truncate text-xs text-gray-500 dark:text-gray-400">
+                                        {result.customerAddress}
+                                      </div>
+                                    )}
+                                  </button>
+                                ))
+                              )}
+                            </div>
+                          )}
+                      </div>
+                    </div>
+
+                    <div className="grid grid-cols-[130px_1fr] divide-x divide-gray-300 dark:divide-gray-600">
+                      <div className="flex items-center bg-blue-600 px-2 py-0.5 text-[11px] font-semibold text-white">
+                        Job Name
+                      </div>
+                      {clientJobs.length > 0 ? (
+                        <RoundedSelect
+                          value={selectedJobId}
+                          onChange={selectJob}
+                          placeholder="Select a job/deal..."
+                          options={[
+                            { value: "", label: "Select a job/deal..." },
+                            ...clientJobs.map((job) => ({
+                              value: job.id,
+                              label: job.dealName || job.id,
+                            })),
+                          ]}
+                          menuMinWidth={260}
+                        />
+                      ) : (
+                        <input
+                          value={jobName}
+                          onChange={(e) => setJobName(e.target.value)}
+                          placeholder="Job / deal name"
+                          className="w-full bg-transparent px-2 py-0.5 text-[11px] text-gray-900 outline-none dark:text-gray-100"
+                        />
+                      )}
+                    </div>
+
+                    <HeaderRow label="Job Address">
+                      <input
+                        value={jobAddress}
+                        onChange={(e) => setJobAddress(e.target.value)}
+                        placeholder="Job address"
+                        className="w-full bg-transparent px-2 py-0.5 text-[11px] text-gray-900 outline-none dark:text-gray-100"
+                      />
+                    </HeaderRow>
+
+                    <HeaderRow label="Email Address">
+                      <input
+                        value={email}
+                        onChange={(e) => setEmail(e.target.value)}
+                        placeholder="client@email.com"
+                        className="w-full bg-transparent px-2 py-0.5 text-[11px] text-gray-900 outline-none dark:text-gray-100"
+                      />
+                    </HeaderRow>
+
+                    <HeaderRow label="Salesperson">
+                      <input
+                        value={salesRep}
+                        onChange={(e) => setSalesRep(e.target.value)}
+                        className="w-full bg-transparent px-2 py-0.5 text-[11px] text-gray-900 outline-none dark:text-gray-100"
+                      />
+                    </HeaderRow>
+
+                    <HeaderRow label="Brand" highlight={!vendorId}>
+                      <RoundedSelect
+                        value={vendorId}
+                        onChange={(nextVendorId) => {
+                          const vendor = vendors.find(
+                            (v) => v.id === nextVendorId,
+                          );
+                          setVendorId(nextVendorId);
+                          setBrand(vendor?.displayName || "");
+                          setPriceTierId("");
+                          setGroupColor("");
+                          // Switching brands means switching catalogs entirely -
+                          // a code from the old vendor almost never means the
+                          // same cabinet (or exists at all) under the new one,
+                          // so clear every catalog-linked row rather than risk
+                          // showing a price/description that doesn't match.
+                          setLineItems((prev) =>
+                            prev.map((item) =>
+                              item.catalogItemId
+                                ? {
+                                    ...item,
+                                    catalogItemId: null,
+                                    summaryBucket: null,
+                                    installationItemId: null,
+                                    description: "",
+                                    unitPrice: 0,
+                                  }
+                                : item,
+                            ),
+                          );
+                        }}
+                        placeholder={brand || "-- Select brand --"}
+                        options={[
+                          { value: "", label: brand || "-- Select brand --" },
+                          ...sortedVendors.map((v) => ({
+                            value: v.id,
+                            label: v.displayName,
+                          })),
+                        ]}
+                      />
+                    </HeaderRow>
+
+                    <HeaderRow
+                      label="Group / Color"
+                      highlight={Boolean(vendorId) && !priceTierId}
+                    >
+                      <RoundedSelect
+                        value={groupColorValue}
+                        onChange={(choice) => {
+                          let nextTierId = choice;
+                          let nextName = "";
+                          if (choice.startsWith("c:")) {
+                            const option = colorOptions.find(
+                              (o) => `c:${o.id}` === choice,
+                            );
+                            nextTierId = option?.tierId || "";
+                            nextName = option?.label || "";
+                          } else {
+                            if (choice.startsWith("t:"))
+                              nextTierId = choice.slice(2);
+                            nextName =
+                              priceTiers.find((t) => t.id === nextTierId)
+                                ?.name || "";
+                          }
+                          setPriceTierId(nextTierId);
+                          setGroupColor(nextName);
+                          // Swapping the color/tier keeps the same catalog items
+                          // but their price (and possibly description) can be
+                          // different for the new tier - refresh every already
+                          // catalog-linked row instantly rather than leaving it
+                          // showing the old tier's price.
+                          repriceCatalogItems(vendorId, nextTierId);
+                        }}
+                        disabled={!vendorId}
+                        searchable
+                        placeholder={
+                          groupColor ||
+                          (vendorId
+                            ? "-- Select group/color --"
+                            : "Select a brand first")
+                        }
+                        options={[
+                          {
+                            value: "",
+                            label:
+                              groupColor ||
+                              (vendorId
+                                ? "-- Select group/color --"
+                                : "Select a brand first"),
+                          },
+                          ...groupColorChoices,
+                        ]}
+                      />
+                    </HeaderRow>
+
+                    <HeaderRow label="Removal">
+                      <RoundedSelect
+                        value={removalTypeId}
+                        onChange={setRemovalTypeId}
+                        options={[
+                          { value: "", label: "-- None --" },
+                          ...sortedRemovalTypes
+                            .filter((t) => t.isActive || t.id === removalTypeId)
+                            .map((t) => ({ value: t.id, label: t.name })),
+                        ]}
+                      />
+                    </HeaderRow>
+
+                    <HeaderRow label="Project Type">
+                      <RoundedSelect
+                        value={projectType}
+                        onChange={setProjectType}
+                        options={[
+                          { value: "", label: "-- None --" },
+                          ...sortedProjectTypes
+                            .filter((t) => t.isActive || t.name === projectType)
+                            .map((t) => ({ value: t.name, label: t.name })),
+                          // A saved estimate's projectType may hold a value from
+                          // before this dropdown existed (free text) or one that
+                          // no longer matches any configured option - keep it
+                          // selectable so it isn't silently blanked out on load.
+                          ...(projectType &&
+                          !gmdParameters.projectTypes.some(
+                            (t) => t.name === projectType,
+                          )
+                            ? [{ value: projectType, label: projectType }]
+                            : []),
+                        ]}
+                      />
+                    </HeaderRow>
                   </div>
-                )}
-                <div className="font-mono text-[15px] font-bold tracking-wide text-gray-800 dark:text-gray-200">
-                  {formatEstimateReferenceNumber(
-                    computeCabinetsCost(
-                      cabinetsTotal,
-                      vendors.find((v) => v.id === vendorId)?.factor,
-                    ),
-                    referenceRandomDigits,
-                  )}
+
+                  <div className="flex flex-col gap-1 p-1.5">
+                    <MetaBox label="Estimate #">
+                      <div className="mt-0.5 text-[11px] font-semibold text-gray-900 dark:text-gray-100">
+                        {estimateNumber || "assigned on save"}
+                      </div>
+                    </MetaBox>
+                    <MetaBox label="Date">
+                      <input
+                        type="date"
+                        value={date}
+                        onChange={(e) => setDate(e.target.value)}
+                        className="mt-0.5 w-full rounded border border-gray-300 bg-white px-1.5 py-px text-[10px] text-gray-900 dark:border-gray-600 dark:bg-gray-900 dark:text-gray-100"
+                      />
+                    </MetaBox>
+                    <MetaBox label="Version">
+                      <div
+                        className="mt-0.5 text-[11px] font-semibold text-gray-900 dark:text-gray-100"
+                        title={
+                          viewerIsAdmin &&
+                          version &&
+                          versionActual &&
+                          version !== versionActual
+                            ? `Public version: ${version}`
+                            : "Set automatically from GMD Parameters > Version Updates"
+                        }
+                      >
+                        {displayedVersion || "-"}
+                      </div>
+                    </MetaBox>
+                    <div className="flex flex-col gap-0.5">
+                      <label
+                        className={`flex items-center gap-1.5 rounded-md border border-gray-300 px-1.5 py-1 text-[11px] font-semibold text-gray-900 dark:border-gray-600 dark:text-gray-100 ${
+                          !estimateId || loadedIsRemeasure
+                            ? "opacity-60"
+                            : "cursor-pointer"
+                        }`}
+                        title={
+                          loadedIsRemeasure
+                            ? "This estimate is a remeasure"
+                            : estimateId
+                              ? "Saving with this checked creates a new estimate numbered <original>R"
+                              : "Open a saved estimate to create its remeasure"
+                        }
+                      >
+                        <input
+                          type="checkbox"
+                          checked={isRemeasure}
+                          disabled={!estimateId || loadedIsRemeasure}
+                          onChange={(e) =>
+                            handleRemeasureToggle(e.target.checked)
+                          }
+                        />
+                        Remeasure PK List
+                      </label>
+                      {isRemeasure && (
+                        <div className="px-1 text-[10px] text-gray-600 dark:text-gray-400">
+                          By:{" "}
+                          {loadedIsRemeasure
+                            ? remeasureByName || "-"
+                            : props.currentUserName}
+                        </div>
+                      )}
+                    </div>
+                  </div>
                 </div>
               </div>
 
-              <div className="divide-y divide-gray-300 border-b border-gray-300 dark:divide-gray-600 dark:border-gray-600 lg:border-b-0 lg:border-r">
-                <div
-                  ref={clientBoxRef}
-                  className="relative grid grid-cols-[130px_1fr] divide-x divide-gray-300 dark:divide-gray-600"
-                >
-                  <div className="flex items-center bg-blue-600 px-2 py-0.5 text-[11px] font-semibold text-white">
-                    Customer Name
-                  </div>
-                  <div className="relative">
-                    <input
-                      value={customerName}
-                      onChange={(e) => {
-                        setCustomerName(e.target.value);
-                        setClientDropdownOpen(true);
-                      }}
-                      onFocus={() => setClientDropdownOpen(true)}
-                      placeholder="Search customers..."
-                      className="w-full bg-transparent px-2 py-0.5 text-[11px] text-gray-900 outline-none dark:text-gray-100"
-                      autoComplete="off"
-                    />
-                    {clientDropdownOpen && customerName.trim().length >= 2 && (
-                      <div className="absolute left-0 top-full z-50 max-h-80 w-[26rem] max-w-[90vw] overflow-y-auto rounded-md border border-gray-200 bg-white py-1 text-sm shadow-lg dark:border-gray-600 dark:bg-gray-800">
-                        {clientSearching ? (
-                          <div className="px-3 py-2 text-xs text-gray-500 dark:text-gray-400">
-                            Searching...
-                          </div>
-                        ) : clientResults.length === 0 ? (
-                          <div className="px-3 py-2 text-xs text-gray-500 dark:text-gray-400">
-                            No matching customers.
-                          </div>
-                        ) : (
-                          clientResults.map((result) => (
-                            <button
-                              key={result.id}
-                              type="button"
-                              onMouseDown={(e) => {
-                                e.preventDefault();
-                                selectClient(result);
-                              }}
-                              className="block w-full px-3 py-1.5 text-left hover:bg-blue-50 dark:hover:bg-gray-700"
+              {showCost && (
+                <div className="rounded-md border border-amber-300 bg-amber-50 px-3 py-1.5 text-xs font-medium text-amber-900 dark:border-amber-700 dark:bg-amber-900/30 dark:text-amber-200">
+                  Preco de Custo (view only): prices show the vendor&apos;s
+                  actual cost and the summary shows cost-side totals with the
+                  selected installer&apos;s cost. Saving is turned off in this
+                  view; you can still print it.
+                </div>
+              )}
+
+              {/* Body - item table */}
+              <div className="overflow-hidden rounded-xl border border-gray-300 bg-white dark:border-gray-600 dark:bg-gray-800">
+                <div className="overflow-x-auto">
+                  <table className="w-full border-collapse text-xs">
+                    <thead>
+                      <tr className="bg-gray-100 text-xs uppercase text-gray-600 dark:bg-gray-700 dark:text-gray-300">
+                        <th className="w-14 border border-gray-300 px-2 py-1.5 text-center dark:border-gray-600">
+                          Qty
+                        </th>
+                        <th className="w-24 border border-gray-300 px-2 py-1.5 text-center dark:border-gray-600">
+                          Code
+                        </th>
+                        <th className="w-72 border border-gray-300 px-2 py-1.5 text-left dark:border-gray-600">
+                          Description
+                        </th>
+                        <th className="w-20 border border-gray-300 px-2 py-1.5 text-center dark:border-gray-600">
+                          Custom
+                        </th>
+                        <th className="border border-gray-300 px-2 py-1.5 text-left dark:border-gray-600">
+                          Note
+                        </th>
+                        <th className="w-28 border border-gray-300 px-2 py-1.5 text-center dark:border-gray-600">
+                          P.Unit
+                        </th>
+                        <th className="w-28 border border-gray-300 px-2 py-1.5 text-center dark:border-gray-600">
+                          P.Total
+                        </th>
+                        <th className="w-10 border border-gray-300 px-1 py-2 dark:border-gray-600" />
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {lineItems.map((item, index) => {
+                        // Catalog-linked, but no price exists for the current
+                        // Brand/Group-Color - render N/A instead of a $0.00
+                        // that would look like a genuine free item.
+                        const hasMissingPrice =
+                          Boolean(item.catalogItemId) && item.unitPrice == null;
+                        return (
+                          <tr
+                            key={item.key}
+                            className="border-b border-gray-200 dark:border-gray-700"
+                          >
+                            <td
+                              className={`border border-gray-200 p-1 text-center align-middle dark:border-gray-700 ${
+                                item.code && item.qty === 0
+                                  ? "bg-red-50 dark:bg-red-950/30"
+                                  : ""
+                              }`}
                             >
-                              <div className="truncate font-medium text-gray-900 dark:text-gray-100">
-                                {result.displayName}
-                              </div>
-                              {result.customerAddress && (
-                                <div className="truncate text-xs text-gray-500 dark:text-gray-400">
-                                  {result.customerAddress}
+                              <input
+                                type="number"
+                                min={0}
+                                step="1"
+                                value={item.qty === 0 ? "" : item.qty}
+                                onChange={(e) =>
+                                  updateItem(index, {
+                                    qty:
+                                      e.target.value === ""
+                                        ? 0
+                                        : Number(e.target.value) || 0,
+                                  })
+                                }
+                                onKeyDown={handleItemKeyDown}
+                                title={
+                                  item.code && item.qty === 0
+                                    ? "Quantity is missing for this item"
+                                    : undefined
+                                }
+                                className="w-full bg-transparent px-1.5 py-0.5 text-center text-xs text-gray-900 outline-none dark:text-gray-100 [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
+                              />
+                            </td>
+                            <td className="relative border border-gray-200 p-1 text-center align-middle dark:border-gray-700">
+                              <input
+                                ref={(el) => registerCellRef(index, "code", el)}
+                                value={item.code}
+                                onChange={(e) => {
+                                  updateItem(index, {
+                                    code: e.target.value,
+                                    catalogItemId: null,
+                                    summaryBucket: null,
+                                    installationItemId: null,
+                                    description: "",
+                                    unitPrice: 0,
+                                  });
+                                  setCodeQuery({ index, text: e.target.value });
+                                  const rect = e.target.getBoundingClientRect();
+                                  setCodeDropdownRect({
+                                    top: rect.bottom,
+                                    left: rect.left,
+                                    width: rect.width,
+                                  });
+                                }}
+                                onFocus={(e) => {
+                                  setCodeQuery({ index, text: item.code });
+                                  const rect = e.target.getBoundingClientRect();
+                                  setCodeDropdownRect({
+                                    top: rect.bottom,
+                                    left: rect.left,
+                                    width: rect.width,
+                                  });
+                                }}
+                                onBlur={() =>
+                                  setTimeout(
+                                    () =>
+                                      setCodeQuery((q) =>
+                                        q?.index === index ? null : q,
+                                      ),
+                                    150,
+                                  )
+                                }
+                                onKeyDown={(e) =>
+                                  handleAdvanceRowKeyDown(e, index, "code")
+                                }
+                                autoComplete="off"
+                                title={
+                                  !vendorId
+                                    ? "Select a Brand above to search the catalog"
+                                    : !priceTierId
+                                      ? "Select a Group/Color above to see prices"
+                                      : undefined
+                                }
+                                className="w-full bg-transparent px-1.5 py-0.5 text-center text-xs text-gray-900 outline-none dark:text-gray-100"
+                              />
+                              {codeQuery?.index === index &&
+                                codeSuggestions.length > 0 &&
+                                codeDropdownRect &&
+                                typeof document !== "undefined" &&
+                                createPortal(
+                                  <div
+                                    ref={codeDropdownRef}
+                                    style={{
+                                      position: "fixed",
+                                      top: codeDropdownRect.top,
+                                      left: Math.min(
+                                        codeDropdownRect.left,
+                                        window.innerWidth - 328,
+                                      ),
+                                      width: Math.max(
+                                        codeDropdownRect.width,
+                                        320,
+                                      ),
+                                    }}
+                                    className="z-50 max-h-64 overflow-y-auto rounded border border-gray-300 bg-white text-xs shadow-lg dark:border-gray-600 dark:bg-gray-800"
+                                  >
+                                    {codeSuggestions.map((s) => (
+                                      <button
+                                        type="button"
+                                        key={s.id}
+                                        onMouseDown={(e) => e.preventDefault()}
+                                        onClick={() =>
+                                          selectCatalogItem(index, s)
+                                        }
+                                        className="flex w-full items-center gap-2 px-2 py-1 text-left hover:bg-blue-50 dark:hover:bg-gray-700"
+                                      >
+                                        {s.catalogImageUrl ? (
+                                          // eslint-disable-next-line @next/next/no-img-element
+                                          <img
+                                            src={s.catalogImageUrl}
+                                            alt=""
+                                            className="h-8 w-8 shrink-0 rounded border border-gray-200 object-contain dark:border-gray-600"
+                                          />
+                                        ) : null}
+                                        <span className="min-w-0">
+                                          <span className="font-semibold text-gray-900 dark:text-gray-100">
+                                            {s.code}
+                                          </span>{" "}
+                                          <span className="text-gray-500 dark:text-gray-400">
+                                            {s.description}
+                                          </span>
+                                        </span>
+                                      </button>
+                                    ))}
+                                  </div>,
+                                  document.body,
+                                )}
+                            </td>
+                            <td className="border border-gray-200 p-1 align-top dark:border-gray-700">
+                              <div className="flex items-start gap-1.5">
+                                {item.catalogImageUrl ? (
+                                  <button
+                                    type="button"
+                                    onClick={() =>
+                                      setImagePreview({
+                                        url: item.catalogImageUrl as string,
+                                        code: item.code,
+                                        description: item.description,
+                                      })
+                                    }
+                                    title="View catalog image"
+                                    className="mt-0.5 shrink-0"
+                                  >
+                                    {/* eslint-disable-next-line @next/next/no-img-element */}
+                                    <img
+                                      src={item.catalogImageUrl}
+                                      alt=""
+                                      className="h-8 w-8 rounded border border-gray-200 object-contain hover:border-blue-400 dark:border-gray-600"
+                                    />
+                                  </button>
+                                ) : null}
+                                <div
+                                  className="min-h-[1.5rem] min-w-0 whitespace-pre-wrap break-words px-1.5 py-0.5 text-xs text-gray-900 dark:text-gray-100"
+                                  title={item.description || undefined}
+                                >
+                                  {item.description || (
+                                    <span className="text-gray-400 dark:text-gray-500">
+                                      {item.code
+                                        ? "No catalog match"
+                                        : "Pick a code"}
+                                    </span>
+                                  )}
                                 </div>
+                              </div>
+                            </td>
+                            <td className="border border-gray-200 p-1 text-center align-middle dark:border-gray-700">
+                              <label
+                                className="flex w-full cursor-pointer items-center justify-center py-0.5"
+                                title="Adds the GMD Parameters Custom surcharge % to Installation"
+                              >
+                                <input
+                                  type="checkbox"
+                                  checked={item.isCustomization}
+                                  onChange={(e) =>
+                                    updateItem(index, {
+                                      isCustomization: e.target.checked,
+                                    })
+                                  }
+                                  className="h-4 w-4 rounded border-gray-300 text-blue-600 focus:ring-blue-500 dark:border-gray-600"
+                                />
+                              </label>
+                            </td>
+                            <td className="border border-gray-200 p-1 align-top dark:border-gray-700">
+                              <textarea
+                                ref={(el) => {
+                                  registerCellRef(index, "note", el);
+                                  autoResizeTextarea(el);
+                                }}
+                                value={item.note}
+                                onChange={(e) => {
+                                  updateItem(index, { note: e.target.value });
+                                  autoResizeTextarea(e.target);
+                                }}
+                                onKeyDown={(e) =>
+                                  handleAdvanceRowKeyDown(e, index, "note")
+                                }
+                                rows={1}
+                                className="block w-full resize-none overflow-hidden bg-transparent px-1.5 py-0.5 text-xs text-gray-900 outline-none dark:text-gray-100"
+                              />
+                            </td>
+                            <td
+                              className={`border border-gray-200 p-1 text-center align-middle dark:border-gray-700 ${
+                                (item.code && item.qty === 0) || hasMissingPrice
+                                  ? "bg-red-50 dark:bg-red-950/30"
+                                  : ""
+                              }`}
+                            >
+                              <div
+                                className={`px-1.5 py-0.5 text-xs ${hasMissingPrice ? "font-medium text-red-600 dark:text-red-400" : "text-gray-900 dark:text-gray-100"}`}
+                                title={
+                                  hasMissingPrice
+                                    ? "No price found for this item at the selected Brand/Group-Color - pick a different Group/Color, or ask an admin to add one via Import Price List"
+                                    : item.code && item.qty === 0
+                                      ? "Quantity is missing for this item"
+                                      : "Set automatically from the selected catalog code, brand and group/color - not editable"
+                                }
+                              >
+                                {hasMissingPrice
+                                  ? "N/A"
+                                  : formatCurrency(
+                                      showCost
+                                        ? toCost(item.unitPrice ?? 0)
+                                        : item.unitPrice,
+                                    )}
+                              </div>
+                            </td>
+                            <td className="border border-gray-200 p-1 text-center align-middle text-xs font-medium text-gray-900 dark:border-gray-700 dark:text-gray-100">
+                              {hasMissingPrice ? (
+                                <span className="text-red-600 dark:text-red-400">
+                                  N/A
+                                </span>
+                              ) : (
+                                formatCurrency(
+                                  showCost
+                                    ? toCost(
+                                        computeLineItemTotal(
+                                          item.qty,
+                                          item.unitPrice ?? 0,
+                                        ),
+                                      )
+                                    : computeLineItemTotal(
+                                        item.qty,
+                                        item.unitPrice ?? 0,
+                                      ),
+                                )
                               )}
-                            </button>
-                          ))
-                        )}
-                      </div>
+                            </td>
+                            <td className="border border-gray-200 p-1 align-top text-center dark:border-gray-700">
+                              <button
+                                type="button"
+                                onClick={() => removeItem(index)}
+                                disabled={lineItems.length <= 1}
+                                className="inline-flex items-center justify-center rounded p-1 text-gray-400 hover:bg-red-50 hover:text-red-600 disabled:cursor-not-allowed disabled:opacity-40 dark:hover:bg-red-950/40"
+                                title="Remove row"
+                              >
+                                <Trash2 className="h-4 w-4" />
+                              </button>
+                            </td>
+                          </tr>
+                        );
+                      })}
+                    </tbody>
+                  </table>
+                </div>
+                <div className="border-t border-gray-200 p-2 dark:border-gray-700">
+                  <button
+                    type="button"
+                    onClick={addItem}
+                    className="inline-flex items-center gap-1.5 rounded-md border border-gray-300 px-3 py-1.5 text-sm font-medium text-gray-700 hover:bg-gray-50 dark:border-gray-600 dark:text-gray-300 dark:hover:bg-gray-700"
+                  >
+                    <Plus className="h-4 w-4" /> Add Item
+                  </button>
+                </div>
+              </div>
+
+              {/* Footer - notes, cabinets summary, and price distribution side by side */}
+              <div className="grid grid-cols-1 gap-3 lg:grid-cols-[1fr_260px_300px]">
+                <div className="flex flex-col rounded-xl border border-gray-300 bg-white p-2.5 dark:border-gray-600 dark:bg-gray-800">
+                  <div className="mb-1 text-[11px] font-semibold uppercase tracking-wide text-gray-500 dark:text-gray-400">
+                    Notes
+                  </div>
+                  <textarea
+                    value={notes}
+                    onChange={(e) => setNotes(e.target.value)}
+                    className="w-full min-h-[120px] flex-1 resize-none rounded-md border border-gray-300 bg-white p-1.5 text-xs text-gray-900 outline-none focus:border-blue-400 dark:border-gray-600 dark:bg-gray-900 dark:text-gray-100"
+                    placeholder="Notes for this estimate..."
+                  />
+                </div>
+
+                <div className="flex flex-col overflow-hidden rounded-xl border border-gray-300 bg-white dark:border-gray-600 dark:bg-gray-800">
+                  <div className="bg-gray-100 px-2.5 py-1 text-[11px] font-semibold uppercase tracking-wide text-gray-600 dark:bg-gray-700 dark:text-gray-300">
+                    Cabinets Summary
+                  </div>
+                  <div className="divide-y divide-gray-200 text-xs dark:divide-gray-700">
+                    <CategoryRow label="Standard Cabinets">
+                      <span
+                        className="text-[11px] font-semibold text-gray-900 dark:text-gray-100"
+                        title="Auto-computed from catalog-linked item rows"
+                      >
+                        {cabinetsSummaryCounts.STANDARD}
+                      </span>
+                    </CategoryRow>
+                    <CategoryRow label="Double Cabinets">
+                      <span
+                        className="text-[11px] font-semibold text-gray-900 dark:text-gray-100"
+                        title="Auto-computed from catalog-linked item rows"
+                      >
+                        {cabinetsSummaryCounts.DOUBLE}
+                      </span>
+                    </CategoryRow>
+                    <CategoryRow label="Custom Cabinets">
+                      <span
+                        className="text-[11px] font-semibold text-gray-900 dark:text-gray-100"
+                        title="Auto-computed from catalog-linked item rows"
+                      >
+                        {cabinetsSummaryCounts.CUSTOM}
+                      </span>
+                    </CategoryRow>
+                    <CategoryRow label="Miscellaneous">
+                      <span
+                        className="text-[11px] font-semibold text-gray-900 dark:text-gray-100"
+                        title="Auto-computed from catalog-linked item rows"
+                      >
+                        {cabinetsSummaryCounts.MISC}
+                      </span>
+                    </CategoryRow>
+                    <CategoryRow label="Quantity of Items">
+                      <span
+                        className="text-[11px] font-semibold text-gray-900 dark:text-gray-100"
+                        title="Auto-computed: sum of every row's quantity"
+                      >
+                        {totalItemsQuantity}
+                      </span>
+                    </CategoryRow>
+                    <CategoryRow label="Microwave Installation">
+                      <RoundedSelect
+                        variant="boxed"
+                        className="w-20"
+                        menuMinWidth={80}
+                        value={microwaveInstallation ? "yes" : "no"}
+                        onChange={(v) => setMicrowaveInstallation(v === "yes")}
+                        options={[
+                          { value: "no", label: "No" },
+                          { value: "yes", label: "Yes" },
+                        ]}
+                      />
+                    </CategoryRow>
+                  </div>
+                </div>
+
+                <div className="flex flex-col overflow-hidden rounded-xl border border-gray-300 bg-white dark:border-gray-600 dark:bg-gray-800">
+                  <div className="bg-gray-100 px-2.5 py-1 text-[11px] font-semibold uppercase tracking-wide text-gray-600 dark:bg-gray-700 dark:text-gray-300">
+                    Total Summary
+                  </div>
+                  <div className="flex flex-1 flex-col divide-y divide-gray-200 text-xs dark:divide-gray-700">
+                    {showCost && props.canViewCost ? (
+                      <>
+                        <TotalsRow label="Cabinets (cost)">
+                          <span className="font-medium text-gray-900 dark:text-gray-100">
+                            {formatCurrency(costSummary.cabinetsCost)}
+                          </span>
+                        </TotalsRow>
+                        <TotalsRow
+                          label={`Tax${
+                            (costData?.taxPercent ?? 0) > 0
+                              ? ` (${costData?.taxPercent}%)`
+                              : ""
+                          }`}
+                          className="bg-red-50 dark:bg-red-950/30"
+                        >
+                          <span className="font-medium text-gray-900 dark:text-gray-100">
+                            {formatCurrency(costSummary.tax)}
+                          </span>
+                        </TotalsRow>
+                        <TotalsRow
+                          label="Cabinets Subtotal"
+                          className="bg-amber-50 dark:bg-amber-950/30"
+                        >
+                          <span className="font-semibold text-gray-900 dark:text-gray-100">
+                            {formatCurrency(costSummary.cabinetsSubtotal)}
+                          </span>
+                        </TotalsRow>
+                        <TotalsRow
+                          label="Installation (cost)"
+                          className="bg-green-50 dark:bg-green-950/30"
+                        >
+                          <div className="flex items-center gap-1.5">
+                            <RoundedSelect
+                              variant="boxed"
+                              className="w-28"
+                              menuMinWidth={140}
+                              value={costInstallerId}
+                              onChange={setCostInstallerId}
+                              placeholder={
+                                costData ? "No installers" : "Loading..."
+                              }
+                              ariaLabel="Installer"
+                              options={(costData?.installers ?? []).map(
+                                (i) => ({
+                                  value: i.id,
+                                  label: i.name,
+                                }),
+                              )}
+                            />
+                            <span
+                              className="text-[11px] font-semibold text-gray-900 dark:text-gray-100"
+                              title={
+                                costInstallerResult.missingCount > 0
+                                  ? `${costInstallerResult.missingCount} line(s) have no cost for this installer and add $0`
+                                  : "Selected installer's cost from the Installers Price Table"
+                              }
+                            >
+                              {formatCurrency(costSummary.installationCost)}
+                              {costInstallerResult.missingCount > 0 ? "*" : ""}
+                            </span>
+                          </div>
+                        </TotalsRow>
+                        <div className="mt-auto flex items-center justify-between bg-blue-600 px-2.5 py-1.5 text-white">
+                          <span className="text-xs font-semibold uppercase tracking-wide">
+                            Total
+                          </span>
+                          <span className="text-sm font-bold">
+                            {formatCurrency(costSummary.total)}
+                          </span>
+                        </div>
+                      </>
+                    ) : (
+                      <>
+                        <TotalsRow label="Cabinets">
+                          <span className="font-medium text-gray-900 dark:text-gray-100">
+                            {formatCurrency(cabinetsTotal)}
+                          </span>
+                        </TotalsRow>
+                        <TotalsRow
+                          label="Discount"
+                          className="bg-red-50 dark:bg-red-950/30"
+                        >
+                          <div className="flex items-center gap-1.5">
+                            <RoundedSelect
+                              variant="boxed"
+                              className="w-24"
+                              menuMinWidth={110}
+                              value={String(discountPercent)}
+                              onChange={(v) =>
+                                setDiscountPercent(Number(v) || 0)
+                              }
+                              options={discountSelectOptions}
+                            />
+                            <span className="text-[11px] font-medium text-red-700 dark:text-red-300">
+                              {formatCurrency(discountAmount)}
+                            </span>
+                          </div>
+                        </TotalsRow>
+                        <TotalsRow
+                          label="Cabinets Subtotal"
+                          className="bg-amber-50 dark:bg-amber-950/30"
+                        >
+                          <span className="font-semibold text-gray-900 dark:text-gray-100">
+                            {formatCurrency(cabinetsSubtotal)}
+                          </span>
+                        </TotalsRow>
+                        <TotalsRow
+                          label="Removal"
+                          className="bg-red-50 dark:bg-red-950/30"
+                        >
+                          <span
+                            className="text-[11px] font-semibold text-gray-900 dark:text-gray-100"
+                            title="Computed from the selected Removal Type's percent x the Cabinets total (before discounts) - not editable. Pick a Removal Type in the header."
+                          >
+                            {formatCurrency(removalAmount)}
+                          </span>
+                        </TotalsRow>
+                        <TotalsRow
+                          label="Installation"
+                          className="bg-green-50 dark:bg-green-950/30"
+                        >
+                          <div className="flex items-center gap-1.5">
+                            <InfoPopover
+                              heading="Installation types"
+                              ariaLabel="Explain the installation types"
+                              emptyText="No installation types yet."
+                              items={gmdParameters.installationTypes
+                                .filter((t) => t.isActive)
+                                .map((t) => ({
+                                  title: t.name,
+                                  text: t.description || "",
+                                }))}
+                            />
+                            <RoundedSelect
+                              variant="boxed"
+                              className="w-24"
+                              menuMinWidth={110}
+                              value={installationTypeId}
+                              onChange={setInstallationTypeId}
+                              placeholder="Loading..."
+                              options={gmdParameters.installationTypes
+                                .filter(
+                                  (t) =>
+                                    t.isActive || t.id === installationTypeId,
+                                )
+                                .map((t) => ({ value: t.id, label: t.name }))}
+                            />
+                            <span
+                              className="text-[11px] font-semibold text-gray-900 dark:text-gray-100"
+                              title="Computed from GMD Parameters, plus Special Customization and per-item Custom surcharges - not editable"
+                            >
+                              {formatCurrency(installationTotal)}
+                            </span>
+                          </div>
+                        </TotalsRow>
+                        <div className="mt-auto flex items-center justify-between bg-blue-600 px-2.5 py-1.5 text-white">
+                          <span className="text-xs font-semibold uppercase tracking-wide">
+                            Total
+                          </span>
+                          <span className="text-sm font-bold">
+                            {formatCurrency(total)}
+                          </span>
+                        </div>
+                      </>
                     )}
                   </div>
                 </div>
-
-                <div className="grid grid-cols-[130px_1fr] divide-x divide-gray-300 dark:divide-gray-600">
-                  <div className="flex items-center bg-blue-600 px-2 py-0.5 text-[11px] font-semibold text-white">
-                    Job Name
-                  </div>
-                  {clientJobs.length > 0 ? (
-                    <RoundedSelect
-                      value={selectedJobId}
-                      onChange={selectJob}
-                      placeholder="Select a job/deal..."
-                      options={[
-                        { value: "", label: "Select a job/deal..." },
-                        ...clientJobs.map((job) => ({
-                          value: job.id,
-                          label: job.dealName || job.id,
-                        })),
-                      ]}
-                      menuMinWidth={260}
-                    />
-                  ) : (
-                    <input
-                      value={jobName}
-                      onChange={(e) => setJobName(e.target.value)}
-                      placeholder="Job / deal name"
-                      className="w-full bg-transparent px-2 py-0.5 text-[11px] text-gray-900 outline-none dark:text-gray-100"
-                    />
-                  )}
-                </div>
-
-                <HeaderRow label="Job Address">
-                  <input
-                    value={jobAddress}
-                    onChange={(e) => setJobAddress(e.target.value)}
-                    placeholder="Job address"
-                    className="w-full bg-transparent px-2 py-0.5 text-[11px] text-gray-900 outline-none dark:text-gray-100"
-                  />
-                </HeaderRow>
-
-                <HeaderRow label="Email Address">
-                  <input
-                    value={email}
-                    onChange={(e) => setEmail(e.target.value)}
-                    placeholder="client@email.com"
-                    className="w-full bg-transparent px-2 py-0.5 text-[11px] text-gray-900 outline-none dark:text-gray-100"
-                  />
-                </HeaderRow>
-
-                <HeaderRow label="Salesperson">
-                  <input
-                    value={salesRep}
-                    onChange={(e) => setSalesRep(e.target.value)}
-                    className="w-full bg-transparent px-2 py-0.5 text-[11px] text-gray-900 outline-none dark:text-gray-100"
-                  />
-                </HeaderRow>
-
-                <HeaderRow label="Brand" highlight={!vendorId}>
-                  <RoundedSelect
-                    value={vendorId}
-                    onChange={(nextVendorId) => {
-                                            const vendor = vendors.find((v) => v.id === nextVendorId);
-                      setVendorId(nextVendorId);
-                      setBrand(vendor?.displayName || "");
-                      setPriceTierId("");
-                      setGroupColor("");
-                      // Switching brands means switching catalogs entirely -
-                      // a code from the old vendor almost never means the
-                      // same cabinet (or exists at all) under the new one,
-                      // so clear every catalog-linked row rather than risk
-                      // showing a price/description that doesn't match.
-                      setLineItems((prev) =>
-                        prev.map((item) =>
-                          item.catalogItemId
-                            ? {
-                                ...item,
-                                catalogItemId: null,
-                                summaryBucket: null,
-                                installationItemId: null,
-                                description: "",
-                                unitPrice: 0,
-                              }
-                            : item,
-                        ),
-                      );
-                    }}
-                    placeholder={brand || "-- Select brand --"}
-                    options={[
-                      { value: "", label: brand || "-- Select brand --" },
-                      ...sortedVendors.map((v) => ({ value: v.id, label: v.displayName })),
-                    ]}
-                  />
-                </HeaderRow>
-
-                <HeaderRow label="Group / Color" highlight={Boolean(vendorId) && !priceTierId}>
-                  <RoundedSelect
-                    value={priceTierId}
-                    onChange={(nextTierId) => {
-                                            const tier = priceTiers.find((t) => t.id === nextTierId);
-                      setPriceTierId(nextTierId);
-                      setGroupColor(tier?.name || "");
-                      // Swapping the color/tier keeps the same catalog items
-                      // but their price (and possibly description) can be
-                      // different for the new tier - refresh every already
-                      // catalog-linked row instantly rather than leaving it
-                      // showing the old tier's price.
-                      repriceCatalogItems(vendorId, nextTierId);
-                    }}
-                    disabled={!vendorId}
-                    placeholder={groupColor || (vendorId ? "-- Select group/color --" : "Select a brand first")}
-                    options={[
-                      {
-                        value: "",
-                        label: groupColor || (vendorId ? "-- Select group/color --" : "Select a brand first"),
-                      },
-                      ...sortedPriceTiers.map((t) => ({ value: t.id, label: t.name })),
-                    ]}
-                  />
-                </HeaderRow>
-
-                <HeaderRow label="Removal">
-                  <RoundedSelect
-                    value={removalTypeId}
-                    onChange={setRemovalTypeId}
-                    options={[
-                      { value: "", label: "-- None --" },
-                      ...sortedRemovalTypes
-                        .filter((t) => t.isActive || t.id === removalTypeId)
-                        .map((t) => ({ value: t.id, label: t.name })),
-                    ]}
-                  />
-                </HeaderRow>
-
-                <HeaderRow label="Project Type">
-                  <RoundedSelect
-                    value={projectType}
-                    onChange={setProjectType}
-                    options={[
-                      { value: "", label: "-- None --" },
-                      ...sortedProjectTypes
-                        .filter((t) => t.isActive || t.name === projectType)
-                        .map((t) => ({ value: t.name, label: t.name })),
-                      // A saved estimate's projectType may hold a value from
-                      // before this dropdown existed (free text) or one that
-                      // no longer matches any configured option - keep it
-                      // selectable so it isn't silently blanked out on load.
-                      ...(projectType &&
-                      !gmdParameters.projectTypes.some((t) => t.name === projectType)
-                        ? [{ value: projectType, label: projectType }]
-                        : []),
-                    ]}
-                  />
-                </HeaderRow>
-              </div>
-
-              <div className="flex flex-col gap-1 p-1.5">
-                <MetaBox label="Estimate #">
-                  <div className="mt-0.5 text-[11px] font-semibold text-gray-900 dark:text-gray-100">
-                    {estimateNumber || "assigned on save"}
-                  </div>
-                </MetaBox>
-                <MetaBox label="Date">
-                  <input
-                    type="date"
-                    value={date}
-                    onChange={(e) => setDate(e.target.value)}
-                    className="mt-0.5 w-full rounded border border-gray-300 bg-white px-1.5 py-px text-[10px] text-gray-900 dark:border-gray-600 dark:bg-gray-900 dark:text-gray-100"
-                  />
-                </MetaBox>
-                <MetaBox label="Version">
-                  <div
-                    className="mt-0.5 text-[11px] font-semibold text-gray-900 dark:text-gray-100"
-                    title={
-                      viewerIsAdmin && version && versionActual && version !== versionActual
-                        ? `Public version: ${version}`
-                        : "Set automatically from GMD Parameters > Version Updates"
-                    }
-                  >
-                    {displayedVersion || "-"}
-                  </div>
-                </MetaBox>
-                <div className="flex flex-col gap-0.5">
-                <label
-                  className={`flex items-center gap-1.5 rounded-md border border-gray-300 px-1.5 py-1 text-[11px] font-semibold text-gray-900 dark:border-gray-600 dark:text-gray-100 ${
-                    !estimateId || loadedIsRemeasure ? "opacity-60" : "cursor-pointer"
-                  }`}
-                  title={
-                    loadedIsRemeasure
-                      ? "This estimate is a remeasure"
-                      : estimateId
-                      ? "Saving with this checked creates a new estimate numbered <original>R"
-                      : "Open a saved estimate to create its remeasure"
-                  }
-                >
-                  <input
-                    type="checkbox"
-                    checked={isRemeasure}
-                    disabled={!estimateId || loadedIsRemeasure}
-                    onChange={(e) => handleRemeasureToggle(e.target.checked)}
-                  />
-                  Remeasure PK List
-                </label>
-                {isRemeasure && (
-                  <div className="px-1 text-[10px] text-gray-600 dark:text-gray-400">
-                    By: {loadedIsRemeasure ? remeasureByName || "-" : props.currentUserName}
-                  </div>
-                )}
-                </div>
-              </div>
-            </div>
-          </div>
-
-          {showCost && (
-            <div className="rounded-md border border-amber-300 bg-amber-50 px-3 py-1.5 text-xs font-medium text-amber-900 dark:border-amber-700 dark:bg-amber-900/30 dark:text-amber-200">
-              Preco de Custo (view only): prices show the vendor&apos;s actual cost and the summary
-              shows cost-side totals with the selected installer&apos;s cost. Saving is turned off
-              in this view; you can still print it.
-            </div>
-          )}
-
-          {/* Body - item table */}
-          <div className="overflow-hidden rounded-xl border border-gray-300 bg-white dark:border-gray-600 dark:bg-gray-800">
-            <div className="overflow-x-auto">
-              <table className="w-full border-collapse text-xs">
-                <thead>
-                  <tr className="bg-gray-100 text-xs uppercase text-gray-600 dark:bg-gray-700 dark:text-gray-300">
-                    <th className="w-14 border border-gray-300 px-2 py-1.5 text-center dark:border-gray-600">
-                      Qty
-                    </th>
-                    <th className="w-24 border border-gray-300 px-2 py-1.5 text-center dark:border-gray-600">
-                      Code
-                    </th>
-                    <th className="w-72 border border-gray-300 px-2 py-1.5 text-left dark:border-gray-600">
-                      Description
-                    </th>
-                    <th className="w-20 border border-gray-300 px-2 py-1.5 text-center dark:border-gray-600">
-                      Custom
-                    </th>
-                    <th className="border border-gray-300 px-2 py-1.5 text-left dark:border-gray-600">
-                      Note
-                    </th>
-                    <th className="w-28 border border-gray-300 px-2 py-1.5 text-center dark:border-gray-600">
-                      P.Unit
-                    </th>
-                    <th className="w-28 border border-gray-300 px-2 py-1.5 text-center dark:border-gray-600">
-                      P.Total
-                    </th>
-                    <th className="w-10 border border-gray-300 px-1 py-2 dark:border-gray-600" />
-                  </tr>
-                </thead>
-                <tbody>
-                  {lineItems.map((item, index) => {
-                    // Catalog-linked, but no price exists for the current
-                    // Brand/Group-Color - render N/A instead of a $0.00
-                    // that would look like a genuine free item.
-                    const hasMissingPrice = Boolean(item.catalogItemId) && item.unitPrice == null;
-                    return (
-                    <tr key={item.key} className="border-b border-gray-200 dark:border-gray-700">
-                      <td
-                        className={`border border-gray-200 p-1 text-center align-middle dark:border-gray-700 ${
-                          item.code && item.qty === 0 ? "bg-red-50 dark:bg-red-950/30" : ""
-                        }`}
-                      >
-                        <input
-                          type="number"
-                          min={0}
-                          step="1"
-                          value={item.qty === 0 ? "" : item.qty}
-                          onChange={(e) =>
-                            updateItem(index, {
-                              qty: e.target.value === "" ? 0 : Number(e.target.value) || 0,
-                            })
-                          }
-                          onKeyDown={handleItemKeyDown}
-                          title={item.code && item.qty === 0 ? "Quantity is missing for this item" : undefined}
-                          className="w-full bg-transparent px-1.5 py-0.5 text-center text-xs text-gray-900 outline-none dark:text-gray-100 [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
-                        />
-                      </td>
-                      <td className="relative border border-gray-200 p-1 text-center align-middle dark:border-gray-700">
-                        <input
-                          ref={(el) => registerCellRef(index, "code", el)}
-                          value={item.code}
-                          onChange={(e) => {
-                            updateItem(index, {
-                              code: e.target.value,
-                              catalogItemId: null,
-                              summaryBucket: null,
-                              installationItemId: null,
-                              description: "",
-                              unitPrice: 0,
-                            });
-                            setCodeQuery({ index, text: e.target.value });
-                            const rect = e.target.getBoundingClientRect();
-                            setCodeDropdownRect({
-                              top: rect.bottom,
-                              left: rect.left,
-                              width: rect.width,
-                            });
-                          }}
-                          onFocus={(e) => {
-                            setCodeQuery({ index, text: item.code });
-                            const rect = e.target.getBoundingClientRect();
-                            setCodeDropdownRect({
-                              top: rect.bottom,
-                              left: rect.left,
-                              width: rect.width,
-                            });
-                          }}
-                          onBlur={() =>
-                            setTimeout(
-                              () => setCodeQuery((q) => (q?.index === index ? null : q)),
-                              150,
-                            )
-                          }
-                          onKeyDown={(e) => handleAdvanceRowKeyDown(e, index, "code")}
-                          autoComplete="off"
-                          title={
-                            !vendorId
-                              ? "Select a Brand above to search the catalog"
-                              : !priceTierId
-                                ? "Select a Group/Color above to see prices"
-                                : undefined
-                          }
-                          className="w-full bg-transparent px-1.5 py-0.5 text-center text-xs text-gray-900 outline-none dark:text-gray-100"
-                        />
-                        {codeQuery?.index === index &&
-                          codeSuggestions.length > 0 &&
-                          codeDropdownRect &&
-                          typeof document !== "undefined" &&
-                          createPortal(
-                            <div
-                              ref={codeDropdownRef}
-                              style={{
-                                position: "fixed",
-                                top: codeDropdownRect.top,
-                                left: Math.min(
-                                  codeDropdownRect.left,
-                                  window.innerWidth - 328,
-                                ),
-                                width: Math.max(codeDropdownRect.width, 320),
-                              }}
-                              className="z-50 max-h-64 overflow-y-auto rounded border border-gray-300 bg-white text-xs shadow-lg dark:border-gray-600 dark:bg-gray-800"
-                            >
-                              {codeSuggestions.map((s) => (
-                                <button
-                                  type="button"
-                                  key={s.id}
-                                  onMouseDown={(e) => e.preventDefault()}
-                                  onClick={() => selectCatalogItem(index, s)}
-                                  className="flex w-full items-center gap-2 px-2 py-1 text-left hover:bg-blue-50 dark:hover:bg-gray-700"
-                                >
-                                  {s.catalogImageUrl ? (
-                                    // eslint-disable-next-line @next/next/no-img-element
-                                    <img
-                                      src={s.catalogImageUrl}
-                                      alt=""
-                                      className="h-8 w-8 shrink-0 rounded border border-gray-200 object-contain dark:border-gray-600"
-                                    />
-                                  ) : null}
-                                  <span className="min-w-0">
-                                    <span className="font-semibold text-gray-900 dark:text-gray-100">
-                                      {s.code}
-                                    </span>{" "}
-                                    <span className="text-gray-500 dark:text-gray-400">
-                                      {s.description}
-                                    </span>
-                                  </span>
-                                </button>
-                              ))}
-                            </div>,
-                            document.body,
-                          )}
-                      </td>
-                      <td className="border border-gray-200 p-1 align-top dark:border-gray-700">
-                        <div className="flex items-start gap-1.5">
-                          {item.catalogImageUrl ? (
-                            <button
-                              type="button"
-                              onClick={() =>
-                                setImagePreview({
-                                  url: item.catalogImageUrl as string,
-                                  code: item.code,
-                                  description: item.description,
-                                })
-                              }
-                              title="View catalog image"
-                              className="mt-0.5 shrink-0"
-                            >
-                              {/* eslint-disable-next-line @next/next/no-img-element */}
-                              <img
-                                src={item.catalogImageUrl}
-                                alt=""
-                                className="h-8 w-8 rounded border border-gray-200 object-contain hover:border-blue-400 dark:border-gray-600"
-                              />
-                            </button>
-                          ) : null}
-                          <div
-                            className="min-h-[1.5rem] min-w-0 whitespace-pre-wrap break-words px-1.5 py-0.5 text-xs text-gray-900 dark:text-gray-100"
-                            title={item.description || undefined}
-                          >
-                            {item.description || (
-                              <span className="text-gray-400 dark:text-gray-500">
-                                {item.code ? "No catalog match" : "Pick a code"}
-                              </span>
-                            )}
-                          </div>
-                        </div>
-                      </td>
-                      <td className="border border-gray-200 p-1 text-center align-middle dark:border-gray-700">
-                        <label
-                          className="flex w-full cursor-pointer items-center justify-center py-0.5"
-                          title="Adds the GMD Parameters Custom surcharge % to Installation"
-                        >
-                          <input
-                            type="checkbox"
-                            checked={item.isCustomization}
-                            onChange={(e) =>
-                              updateItem(index, { isCustomization: e.target.checked })
-                            }
-                            className="h-4 w-4 rounded border-gray-300 text-blue-600 focus:ring-blue-500 dark:border-gray-600"
-                          />
-                        </label>
-                      </td>
-                      <td className="border border-gray-200 p-1 align-top dark:border-gray-700">
-                        <textarea
-                          ref={(el) => {
-                            registerCellRef(index, "note", el);
-                            autoResizeTextarea(el);
-                          }}
-                          value={item.note}
-                          onChange={(e) => {
-                            updateItem(index, { note: e.target.value });
-                            autoResizeTextarea(e.target);
-                          }}
-                          onKeyDown={(e) => handleAdvanceRowKeyDown(e, index, "note")}
-                          rows={1}
-                          className="block w-full resize-none overflow-hidden bg-transparent px-1.5 py-0.5 text-xs text-gray-900 outline-none dark:text-gray-100"
-                        />
-                      </td>
-                      <td
-                        className={`border border-gray-200 p-1 text-center align-middle dark:border-gray-700 ${
-                          (item.code && item.qty === 0) || hasMissingPrice ? "bg-red-50 dark:bg-red-950/30" : ""
-                        }`}
-                      >
-                        <div
-                          className={`px-1.5 py-0.5 text-xs ${hasMissingPrice ? "font-medium text-red-600 dark:text-red-400" : "text-gray-900 dark:text-gray-100"}`}
-                          title={
-                            hasMissingPrice
-                              ? "No price found for this item at the selected Brand/Group-Color - pick a different Group/Color, or ask an admin to add one via Import Price List"
-                              : item.code && item.qty === 0
-                              ? "Quantity is missing for this item"
-                              : "Set automatically from the selected catalog code, brand and group/color - not editable"
-                          }
-                        >
-                          {hasMissingPrice
-                            ? "N/A"
-                            : formatCurrency(showCost ? toCost(item.unitPrice ?? 0) : item.unitPrice)}
-                        </div>
-                      </td>
-                      <td className="border border-gray-200 p-1 text-center align-middle text-xs font-medium text-gray-900 dark:border-gray-700 dark:text-gray-100">
-                        {hasMissingPrice ? (
-                          <span className="text-red-600 dark:text-red-400">N/A</span>
-                        ) : (
-                          formatCurrency(
-                            showCost
-                              ? toCost(computeLineItemTotal(item.qty, item.unitPrice ?? 0))
-                              : computeLineItemTotal(item.qty, item.unitPrice ?? 0),
-                          )
-                        )}
-                      </td>
-                      <td className="border border-gray-200 p-1 align-top text-center dark:border-gray-700">
-                        <button
-                          type="button"
-                          onClick={() => removeItem(index)}
-                          disabled={lineItems.length <= 1}
-                          className="inline-flex items-center justify-center rounded p-1 text-gray-400 hover:bg-red-50 hover:text-red-600 disabled:cursor-not-allowed disabled:opacity-40 dark:hover:bg-red-950/40"
-                          title="Remove row"
-                        >
-                          <Trash2 className="h-4 w-4" />
-                        </button>
-                      </td>
-                    </tr>
-                    );
-                  })}
-                </tbody>
-              </table>
-            </div>
-            <div className="border-t border-gray-200 p-2 dark:border-gray-700">
-              <button
-                type="button"
-                onClick={addItem}
-                className="inline-flex items-center gap-1.5 rounded-md border border-gray-300 px-3 py-1.5 text-sm font-medium text-gray-700 hover:bg-gray-50 dark:border-gray-600 dark:text-gray-300 dark:hover:bg-gray-700"
-              >
-                <Plus className="h-4 w-4" /> Add Item
-              </button>
-            </div>
-          </div>
-
-          {/* Footer - notes, cabinets summary, and price distribution side by side */}
-          <div className="grid grid-cols-1 gap-3 lg:grid-cols-[1fr_260px_300px]">
-            <div className="flex flex-col rounded-xl border border-gray-300 bg-white p-2.5 dark:border-gray-600 dark:bg-gray-800">
-              <div className="mb-1 text-[11px] font-semibold uppercase tracking-wide text-gray-500 dark:text-gray-400">
-                Notes
-              </div>
-              <textarea
-                value={notes}
-                onChange={(e) => setNotes(e.target.value)}
-                className="w-full min-h-[120px] flex-1 resize-none rounded-md border border-gray-300 bg-white p-1.5 text-xs text-gray-900 outline-none focus:border-blue-400 dark:border-gray-600 dark:bg-gray-900 dark:text-gray-100"
-                placeholder="Notes for this estimate..."
-              />
-            </div>
-
-            <div className="flex flex-col overflow-hidden rounded-xl border border-gray-300 bg-white dark:border-gray-600 dark:bg-gray-800">
-              <div className="bg-gray-100 px-2.5 py-1 text-[11px] font-semibold uppercase tracking-wide text-gray-600 dark:bg-gray-700 dark:text-gray-300">
-                Cabinets Summary
-              </div>
-              <div className="divide-y divide-gray-200 text-xs dark:divide-gray-700">
-                <CategoryRow label="Standard Cabinets">
-                  <span
-                    className="text-[11px] font-semibold text-gray-900 dark:text-gray-100"
-                    title="Auto-computed from catalog-linked item rows"
-                  >
-                    {cabinetsSummaryCounts.STANDARD}
-                  </span>
-                </CategoryRow>
-                <CategoryRow label="Double Cabinets">
-                  <span
-                    className="text-[11px] font-semibold text-gray-900 dark:text-gray-100"
-                    title="Auto-computed from catalog-linked item rows"
-                  >
-                    {cabinetsSummaryCounts.DOUBLE}
-                  </span>
-                </CategoryRow>
-                <CategoryRow label="Custom Cabinets">
-                  <span
-                    className="text-[11px] font-semibold text-gray-900 dark:text-gray-100"
-                    title="Auto-computed from catalog-linked item rows"
-                  >
-                    {cabinetsSummaryCounts.CUSTOM}
-                  </span>
-                </CategoryRow>
-                <CategoryRow label="Miscellaneous">
-                  <span
-                    className="text-[11px] font-semibold text-gray-900 dark:text-gray-100"
-                    title="Auto-computed from catalog-linked item rows"
-                  >
-                    {cabinetsSummaryCounts.MISC}
-                  </span>
-                </CategoryRow>
-                <CategoryRow label="Quantity of Items">
-                  <span
-                    className="text-[11px] font-semibold text-gray-900 dark:text-gray-100"
-                    title="Auto-computed: sum of every row's quantity"
-                  >
-                    {totalItemsQuantity}
-                  </span>
-                </CategoryRow>
-                <CategoryRow label="Microwave Installation">
-                  <RoundedSelect
-                    variant="boxed"
-                    className="w-20"
-                    menuMinWidth={80}
-                    value={microwaveInstallation ? "yes" : "no"}
-                    onChange={(v) => setMicrowaveInstallation(v === "yes")}
-                    options={[
-                      { value: "no", label: "No" },
-                      { value: "yes", label: "Yes" },
-                    ]}
-                  />
-                </CategoryRow>
               </div>
             </div>
 
-            <div className="flex flex-col overflow-hidden rounded-xl border border-gray-300 bg-white dark:border-gray-600 dark:bg-gray-800">
-              <div className="bg-gray-100 px-2.5 py-1 text-[11px] font-semibold uppercase tracking-wide text-gray-600 dark:bg-gray-700 dark:text-gray-300">
-                Total Summary
-              </div>
-              <div className="flex flex-1 flex-col divide-y divide-gray-200 text-xs dark:divide-gray-700">
-                {showCost && props.canViewCost ? (
-                  <>
-                    <TotalsRow label="Cabinets (cost)">
-                      <span className="font-medium text-gray-900 dark:text-gray-100">
-                        {formatCurrency(costSummary.cabinetsCost)}
-                      </span>
-                    </TotalsRow>
-                    <TotalsRow
-                      label={`Tax${
-                        (costData?.taxPercent ?? 0) > 0 ? ` (${costData?.taxPercent}%)` : ""
-                      }`}
-                      className="bg-red-50 dark:bg-red-950/30"
-                    >
-                      <span className="font-medium text-gray-900 dark:text-gray-100">
-                        {formatCurrency(costSummary.tax)}
-                      </span>
-                    </TotalsRow>
-                    <TotalsRow label="Cabinets Subtotal" className="bg-amber-50 dark:bg-amber-950/30">
-                      <span className="font-semibold text-gray-900 dark:text-gray-100">
-                        {formatCurrency(costSummary.cabinetsSubtotal)}
-                      </span>
-                    </TotalsRow>
-                    <TotalsRow label="Installation (cost)" className="bg-green-50 dark:bg-green-950/30">
-                      <div className="flex items-center gap-1.5">
-                        <RoundedSelect
-                          variant="boxed"
-                          className="w-28"
-                          menuMinWidth={140}
-                          value={costInstallerId}
-                          onChange={setCostInstallerId}
-                          placeholder={costData ? "No installers" : "Loading..."}
-                          ariaLabel="Installer"
-                          options={(costData?.installers ?? []).map((i) => ({
-                            value: i.id,
-                            label: i.name,
-                          }))}
-                        />
-                        <span
-                          className="text-[11px] font-semibold text-gray-900 dark:text-gray-100"
-                          title={
-                            costInstallerResult.missingCount > 0
-                              ? `${costInstallerResult.missingCount} line(s) have no cost for this installer and add $0`
-                              : "Selected installer's cost from the Installers Price Table"
-                          }
-                        >
-                          {formatCurrency(costSummary.installationCost)}
-                          {costInstallerResult.missingCount > 0 ? "*" : ""}
-                        </span>
-                      </div>
-                    </TotalsRow>
-                    <div className="mt-auto flex items-center justify-between bg-blue-600 px-2.5 py-1.5 text-white">
-                      <span className="text-xs font-semibold uppercase tracking-wide">Total</span>
-                      <span className="text-sm font-bold">{formatCurrency(costSummary.total)}</span>
-                    </div>
-                  </>
-                ) : (
-                  <>
-                <TotalsRow label="Cabinets">
-                  <span className="font-medium text-gray-900 dark:text-gray-100">
-                    {formatCurrency(cabinetsTotal)}
-                  </span>
-                </TotalsRow>
-                <TotalsRow label="Discount" className="bg-red-50 dark:bg-red-950/30">
-                  <div className="flex items-center gap-1.5">
-                    <RoundedSelect
-                      variant="boxed"
-                      className="w-24"
-                      menuMinWidth={110}
-                      value={String(discountPercent)}
-                      onChange={(v) => setDiscountPercent(Number(v) || 0)}
-                      options={discountSelectOptions}
-                    />
-                    <span className="text-[11px] font-medium text-red-700 dark:text-red-300">
-                      {formatCurrency(discountAmount)}
-                    </span>
-                  </div>
-                </TotalsRow>
-                <TotalsRow label="Cabinets Subtotal" className="bg-amber-50 dark:bg-amber-950/30">
-                  <span className="font-semibold text-gray-900 dark:text-gray-100">
-                    {formatCurrency(cabinetsSubtotal)}
-                  </span>
-                </TotalsRow>
-                <TotalsRow label="Removal" className="bg-red-50 dark:bg-red-950/30">
-                  <span
-                    className="text-[11px] font-semibold text-gray-900 dark:text-gray-100"
-                    title="Computed from the selected Removal Type's percent x the Cabinets total (before discounts) - not editable. Pick a Removal Type in the header."
-                  >
-                    {formatCurrency(removalAmount)}
-                  </span>
-                </TotalsRow>
-                <TotalsRow label="Installation" className="bg-green-50 dark:bg-green-950/30">
-                  <div className="flex items-center gap-1.5">
-                    <InfoPopover
-                      heading="Installation types"
-                      ariaLabel="Explain the installation types"
-                      emptyText="No installation types yet."
-                      items={gmdParameters.installationTypes
-                        .filter((t) => t.isActive)
-                        .map((t) => ({ title: t.name, text: t.description || "" }))}
-                    />
-                    <RoundedSelect
-                      variant="boxed"
-                      className="w-24"
-                      menuMinWidth={110}
-                      value={installationTypeId}
-                      onChange={setInstallationTypeId}
-                      placeholder="Loading..."
-                      options={gmdParameters.installationTypes
-                        .filter((t) => t.isActive || t.id === installationTypeId)
-                        .map((t) => ({ value: t.id, label: t.name }))}
-                    />
-                    <span
-                      className="text-[11px] font-semibold text-gray-900 dark:text-gray-100"
-                      title="Computed from GMD Parameters, plus Special Customization and per-item Custom surcharges - not editable"
-                    >
-                      {formatCurrency(installationTotal)}
-                    </span>
-                  </div>
-                </TotalsRow>
-                <div className="mt-auto flex items-center justify-between bg-blue-600 px-2.5 py-1.5 text-white">
-                  <span className="text-xs font-semibold uppercase tracking-wide">Total</span>
-                  <span className="text-sm font-bold">{formatCurrency(total)}</span>
-                </div>
-                  </>
-                )}
-              </div>
-            </div>
-          </div>
-          </div>
-
-          {/* Special Customization - admin-managed catalog of customization
+            {/* Special Customization - admin-managed catalog of customization
               types (see GMD Parameters > Cabinet Estimates). Runs alongside
               the header/table/footer, starting at the top of the form, per
               Diego's request; the user enters a qty per type and the $
@@ -2360,58 +2688,66 @@ export default function CabinetEstimateForm(props: Props) {
               added - rather than either leaving empty space below a short
               item list or running on past the footer when the item list is
               long, which is what a plain height:auto sidebar did before. */}
-          <div
-            className="flex w-full flex-col overflow-hidden rounded-xl border border-gray-300 bg-white lg:w-56 dark:border-gray-600 dark:bg-gray-800"
-            style={isDesktopLayout && leftColumnHeight ? { height: leftColumnHeight } : undefined}
-          >
-            <div className="flex-shrink-0 bg-gray-100 px-2.5 py-1 text-[11px] font-semibold uppercase tracking-wide text-gray-600 dark:bg-gray-700 dark:text-gray-300">
-              Special Customization
-            </div>
-            {props.specialCustomizationItems.length === 0 ? (
-              <div className="p-3 text-xs text-gray-500 dark:text-gray-400">
-                No customization types configured yet - add them under
-                GMD Parameters &gt; Cabinet Estimates.
+            <div
+              className="flex w-full flex-col overflow-hidden rounded-xl border border-gray-300 bg-white lg:w-56 dark:border-gray-600 dark:bg-gray-800"
+              style={
+                isDesktopLayout && leftColumnHeight
+                  ? { height: leftColumnHeight }
+                  : undefined
+              }
+            >
+              <div className="flex-shrink-0 bg-gray-100 px-2.5 py-1 text-[11px] font-semibold uppercase tracking-wide text-gray-600 dark:bg-gray-700 dark:text-gray-300">
+                Special Customization
               </div>
-            ) : (
-              <>
-              <div className="flex-shrink-0 border-b border-gray-200 p-1.5 dark:border-gray-700">
-                <input
-                  type="search"
-                  value={specialCustomizationSearch}
-                  onChange={(e) => setSpecialCustomizationSearch(e.target.value)}
-                  placeholder="Search customizations..."
-                  aria-label="Search special customizations"
-                  className="w-full rounded-md border border-gray-300 bg-white px-2 py-1 text-xs text-gray-900 outline-none placeholder:text-gray-400 focus:border-blue-500 dark:border-gray-600 dark:bg-gray-900 dark:text-gray-100"
-                />
-              </div>
-              <div className="min-h-0 flex-1 divide-y divide-gray-200 overflow-y-auto text-xs dark:divide-gray-700">
-                {filteredSpecialCustomizationItems.length === 0 && (
-                  <div className="p-3 text-gray-500 dark:text-gray-400">
-                    No customizations match your search.
-                  </div>
-                )}
-                {filteredSpecialCustomizationItems.map((item) => (
-                  <div
-                    key={item.id}
-                    className="flex items-center justify-between gap-2 px-2.5 py-1"
-                  >
-                    <span className="break-words pr-1 text-gray-700 dark:text-gray-300">
-                      {item.name}
-                    </span>
-                    <NumberField
-                      value={specialCustomizationQtyById[item.id] || 0}
-                      onChange={(value) => setSpecialCustomizationQty(item.id, value)}
-                      step="1"
-                      widthClassName="w-14"
-                      blankWhenZero
-                      centered
+              {props.specialCustomizationItems.length === 0 ? (
+                <div className="p-3 text-xs text-gray-500 dark:text-gray-400">
+                  No customization types configured yet - add them under GMD
+                  Parameters &gt; Cabinet Estimates.
+                </div>
+              ) : (
+                <>
+                  <div className="flex-shrink-0 border-b border-gray-200 p-1.5 dark:border-gray-700">
+                    <input
+                      type="search"
+                      value={specialCustomizationSearch}
+                      onChange={(e) =>
+                        setSpecialCustomizationSearch(e.target.value)
+                      }
+                      placeholder="Search customizations..."
+                      aria-label="Search special customizations"
+                      className="w-full rounded-md border border-gray-300 bg-white px-2 py-1 text-xs text-gray-900 outline-none placeholder:text-gray-400 focus:border-blue-500 dark:border-gray-600 dark:bg-gray-900 dark:text-gray-100"
                     />
                   </div>
-                ))}
-              </div>
-              </>
-            )}
-          </div>
+                  <div className="min-h-0 flex-1 divide-y divide-gray-200 overflow-y-auto text-xs dark:divide-gray-700">
+                    {filteredSpecialCustomizationItems.length === 0 && (
+                      <div className="p-3 text-gray-500 dark:text-gray-400">
+                        No customizations match your search.
+                      </div>
+                    )}
+                    {filteredSpecialCustomizationItems.map((item) => (
+                      <div
+                        key={item.id}
+                        className="flex items-center justify-between gap-2 px-2.5 py-1"
+                      >
+                        <span className="break-words pr-1 text-gray-700 dark:text-gray-300">
+                          {item.name}
+                        </span>
+                        <NumberField
+                          value={specialCustomizationQtyById[item.id] || 0}
+                          onChange={(value) =>
+                            setSpecialCustomizationQty(item.id, value)
+                          }
+                          step="1"
+                          widthClassName="w-14"
+                          blankWhenZero
+                          centered
+                        />
+                      </div>
+                    ))}
+                  </div>
+                </>
+              )}
+            </div>
           </div>
         </>
       )}
@@ -2438,7 +2774,11 @@ function HeaderRow({
         className={`flex items-center px-2 py-0.5 text-[11px] font-semibold text-white ${
           highlight ? "bg-red-600" : "bg-blue-600"
         }`}
-        title={highlight ? "Select this to search the catalog and pull real prices" : undefined}
+        title={
+          highlight
+            ? "Select this to search the catalog and pull real prices"
+            : undefined
+        }
       >
         {label}
         {highlight ? " *" : ""}
@@ -2448,7 +2788,13 @@ function HeaderRow({
   );
 }
 
-function MetaBox({ label, children }: { label: string; children: React.ReactNode }) {
+function MetaBox({
+  label,
+  children,
+}: {
+  label: string;
+  children: React.ReactNode;
+}) {
   return (
     <div className="rounded-md border border-gray-300 p-1 text-[9px] dark:border-gray-600">
       <div className="font-semibold uppercase tracking-wide text-gray-500 dark:text-gray-400">
@@ -2459,7 +2805,13 @@ function MetaBox({ label, children }: { label: string; children: React.ReactNode
   );
 }
 
-function CategoryRow({ label, children }: { label: string; children: React.ReactNode }) {
+function CategoryRow({
+  label,
+  children,
+}: {
+  label: string;
+  children: React.ReactNode;
+}) {
   return (
     <div className="flex items-center justify-between gap-2 px-2.5 py-1">
       <span className="text-gray-700 dark:text-gray-300">{label}</span>
@@ -2478,8 +2830,12 @@ function TotalsRow({
   className?: string;
 }) {
   return (
-    <div className={`flex items-center justify-between gap-2 px-2.5 py-1 ${className || ""}`}>
-      <span className="font-medium text-gray-700 dark:text-gray-300">{label}</span>
+    <div
+      className={`flex items-center justify-between gap-2 px-2.5 py-1 ${className || ""}`}
+    >
+      <span className="font-medium text-gray-700 dark:text-gray-300">
+        {label}
+      </span>
       {children}
     </div>
   );

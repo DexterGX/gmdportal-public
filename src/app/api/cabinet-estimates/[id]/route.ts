@@ -25,6 +25,7 @@ import {
   isEstimateNumberUniqueConstraintError,
 } from "@/lib/cabinetEstimateNumber";
 import { estimateSignature } from "@/lib/cabinetEstimateSignature";
+import { computeEstimateChanges } from "@/lib/cabinetEstimateChanges";
 import { isPriceLockExpired } from "@/lib/cabinetPriceLock";
 
 const prismaAny = prisma as any;
@@ -359,6 +360,23 @@ export async function PATCH(
       });
     }
 
+    // What the user changed since the last save (shown in Estimate History).
+    const changeRows = computeEstimateChanges(existing, {
+      customerName,
+      jobName: body.jobName || null,
+      brand: body.brand || null,
+      groupColor: body.groupColor || null,
+      projectType: body.projectType || null,
+      installationTypeName: resolvedInstallationType?.name || null,
+      removal: resolvedRemovalType?.name || null,
+      discountPercent,
+      microwaveInstallation: Boolean(body.microwaveInstallation),
+      notes: body.notes || null,
+      total,
+      lineItems: lineItemsData,
+      specialCustomizationLines: specialCustomizationLinesData,
+    });
+
     const commonData = {
       date: nextDate,
       customerName,
@@ -417,9 +435,10 @@ export async function PATCH(
       pricedAt: lockExpired ? new Date() : existing.pricedAt || existing.createdAt,
     };
 
-    // A changed estimate gets a NEW Estimate # (the previous one is kept,
-    // archived, so the earlier version can still be found). Remeasure
-    // estimates keep their <original>R number and are updated in place.
+    // A changed estimate gets a NEW Estimate # (the previous one is kept as
+    // it is - it is no longer archived automatically - so the earlier version
+    // can still be found). Remeasure estimates keep their <original>R number
+    // and are updated in place.
     if (!existing.isRemeasure) {
       const maxAttempts = 3;
       let created: any = null;
@@ -457,10 +476,6 @@ export async function PATCH(
         where: { originalEstimateId: id },
         data: { originalEstimateId: created.id },
       });
-      await prismaAny.cabinetEstimate.update({
-        where: { id },
-        data: { isActive: false },
-      });
       await prismaAny.cabinetEstimateHistory.create({
         data: {
           estimateId: created.id,
@@ -471,10 +486,22 @@ export async function PATCH(
           changedById: auth.user.id,
         },
       });
+      if (changeRows.length > 0) {
+        await prismaAny.cabinetEstimateHistory.createMany({
+          data: changeRows.map((row) => ({
+            estimateId: created.id,
+            action: "CHANGED",
+            fieldName: row.fieldName,
+            oldValue: row.oldValue,
+            newValue: row.newValue,
+            changedById: auth.user.id,
+          })),
+        });
+      }
       await prismaAny.cabinetEstimateHistory.create({
         data: {
           estimateId: id,
-          action: "ARCHIVED",
+          action: "REVISED",
           fieldName: "replacedBy",
           oldValue: existing.estimateNumber,
           newValue: created.estimateNumber,
@@ -512,13 +539,26 @@ export async function PATCH(
       include: { lineItems: { orderBy: { sortOrder: "asc" } } },
     });
 
-    await prismaAny.cabinetEstimateHistory.create({
-      data: {
-        estimateId: id,
-        action: "UPDATED",
-        changedById: auth.user.id,
-      },
-    });
+    if (changeRows.length > 0) {
+      await prismaAny.cabinetEstimateHistory.createMany({
+        data: changeRows.map((row) => ({
+          estimateId: id,
+          action: "CHANGED",
+          fieldName: row.fieldName,
+          oldValue: row.oldValue,
+          newValue: row.newValue,
+          changedById: auth.user.id,
+        })),
+      });
+    } else {
+      await prismaAny.cabinetEstimateHistory.create({
+        data: {
+          estimateId: id,
+          action: "UPDATED",
+          changedById: auth.user.id,
+        },
+      });
+    }
 
     return NextResponse.json({
       id: updated.id,

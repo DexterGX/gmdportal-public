@@ -2,7 +2,8 @@
 
 import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
-import { Printer, Search } from "lucide-react";
+import { Pencil, Printer, Search } from "lucide-react";
+import PriceListEditor from "./PriceListEditor";
 
 type Vendor = { id: string; name: string; displayName: string };
 
@@ -12,14 +13,23 @@ type PriceListItem = {
   description: string;
   category: string | null;
   summaryBucket: "STANDARD" | "DOUBLE" | "CUSTOM" | "MISC";
+  installationItemId: string | null;
   isActive: boolean;
   updatedAt: string;
   prices: Record<string, number>;
 };
 
 type PriceListResponse = {
-  vendor: { id: string; name: string; displayName: string; discount: number | null; factor: number | null };
+  vendor: {
+    id: string;
+    name: string;
+    displayName: string;
+    discount: number | null;
+    factor: number | null;
+    trueDiscount: number | null;
+  };
   tiers: { id: string; name: string }[];
+  installationItems: { id: string; code: string | null; description: string }[];
   lastUpdated: string | null;
   items: PriceListItem[];
 };
@@ -28,7 +38,7 @@ type PriceListResponse = {
  * tables (ImportClient.tsx) - a Tailwind width class alone was flaky under
  * `position: sticky` + horizontal scroll (see that file's history), so
  * Code/Description are pinned the same explicit way here. */
-const COL_W = { code: 140, description: 320, category: 140, bucket: 110, tier: 100 };
+const COL_W = { code: 140, description: 320, category: 140, bucket: 110, installation: 200, tier: 100 };
 
 function fixedColStyle(width: number) {
   return { width, minWidth: width, maxWidth: width };
@@ -58,6 +68,10 @@ export default function PriceListClient() {
   const [error, setError] = useState<string | null>(null);
   const [search, setSearch] = useState("");
   const [includeInactive, setIncludeInactive] = useState(false);
+  const [loadedInactive, setLoadedInactive] = useState(false);
+  const [reloadKey, setReloadKey] = useState(0);
+  const [editing, setEditing] = useState(false);
+  const [message, setMessage] = useState<string | null>(null);
 
   useEffect(() => {
     (async () => {
@@ -94,6 +108,7 @@ export default function PriceListClient() {
           return;
         }
         setData(json);
+        setLoadedInactive(includeInactive);
       } catch {
         setError("Failed to load the price list.");
         setData(null);
@@ -101,7 +116,21 @@ export default function PriceListClient() {
         setLoading(false);
       }
     })();
-  }, [vendorId, includeInactive]);
+  }, [vendorId, includeInactive, reloadKey]);
+
+  const installationLabel = useMemo(() => {
+    const map = new Map<string, string>();
+    for (const opt of data?.installationItems || []) map.set(opt.id, opt.description);
+    return map;
+  }, [data]);
+
+  function startEditing() {
+    setMessage(null);
+    setError(null);
+    // Discontinued items are loaded too, so they can be fixed or brought back.
+    if (!includeInactive) setIncludeInactive(true);
+    setEditing(true);
+  }
 
   const filteredItems = useMemo(() => {
     if (!data) return [];
@@ -121,9 +150,10 @@ export default function PriceListClient() {
         <div>
           <h1 className="text-3xl font-bold text-gray-900 dark:text-white">Price List</h1>
           <p className="mt-2 text-sm text-gray-600 dark:text-gray-400">
-            Read-only view of the prices on file for each cabinet company,
-            and when that company&apos;s price list was last updated. To
-            change a price, use Import Price List instead.
+            The prices on file for each cabinet company, and when that
+            company&apos;s price list was last updated. Use Edit Price List to
+            fix items, add or remove rows and price columns; Import Price List
+            loads a whole new file.
           </p>
         </div>
         <div className="flex flex-wrap items-center gap-2 shrink-0">
@@ -139,6 +169,15 @@ export default function PriceListClient() {
           >
             Cabinet Companies
           </Link>
+          <button
+            type="button"
+            onClick={startEditing}
+            disabled={!data || loading || editing}
+            className="inline-flex items-center gap-2 rounded-lg border border-blue-300 bg-white px-3 py-2 text-sm font-medium text-blue-700 hover:bg-blue-50 disabled:cursor-not-allowed disabled:opacity-50 dark:border-blue-800 dark:bg-gray-700 dark:text-blue-300 dark:hover:bg-gray-600"
+          >
+            <Pencil className="h-4 w-4" />
+            Edit Price List
+          </button>
           <button
             type="button"
             onClick={() => window.print()}
@@ -158,6 +197,7 @@ export default function PriceListClient() {
             <select
               value={vendorId}
               onChange={(e) => setVendorId(e.target.value)}
+              disabled={editing}
               className="rounded-lg border border-gray-300 bg-white px-3 py-1.5 text-sm text-gray-900 dark:border-gray-600 dark:bg-gray-900 dark:text-gray-100"
             >
               {vendors.length === 0 && <option value="">No companies yet</option>}
@@ -181,6 +221,7 @@ export default function PriceListClient() {
             <input
               type="checkbox"
               checked={includeInactive}
+              disabled={editing}
               onChange={(e) => setIncludeInactive(e.target.checked)}
               className="h-4 w-4 rounded border-gray-300 text-blue-600 focus:ring-blue-500 dark:border-gray-600"
             />
@@ -195,7 +236,12 @@ export default function PriceListClient() {
             </span>
             {data.vendor.discount !== null && data.vendor.factor !== null && (
               <span className="ml-3">
-                Discount: <span className="font-medium">{(data.vendor.discount * 100).toFixed(0)}%</span>
+                True Discount:{" "}
+                <span className="font-medium">
+                  {(((data.vendor.trueDiscount ?? data.vendor.discount) as number) * 100).toFixed(0)}%
+                </span>
+                {" · "}
+                Applied Discount: <span className="font-medium">{(data.vendor.discount * 100).toFixed(0)}%</span>
                 {" · "}
                 Sales Multiplier: <span className="font-medium">{data.vendor.factor.toFixed(2)}x</span>
               </span>
@@ -209,6 +255,38 @@ export default function PriceListClient() {
           {error}
         </div>
       )}
+      {message && (
+        <div className="rounded-lg border border-green-200 bg-green-50 p-3 text-sm text-green-700 dark:border-green-900 dark:bg-green-950/40 dark:text-green-300">
+          {message}
+        </div>
+      )}
+
+      {editing && data && loadedInactive && (
+        <PriceListEditor
+          key={`${data.vendor.id}-${reloadKey}`}
+          vendorId={data.vendor.id}
+          vendorName={data.vendor.displayName}
+          tiers={data.tiers}
+          items={data.items}
+          installationItems={data.installationItems || []}
+          onSaved={(text) => {
+            setEditing(false);
+            setError(null);
+            setMessage(text);
+            setReloadKey((k) => k + 1);
+          }}
+          onCancel={() => setEditing(false)}
+          onError={(text) => {
+            setMessage(null);
+            setError(text);
+          }}
+        />
+      )}
+      {editing && (!data || !loadedInactive) && (
+        <div className="rounded-xl border border-gray-200 bg-white p-4 text-sm text-gray-500 dark:border-gray-700 dark:bg-gray-800">
+          Loading the full price list...
+        </div>
+      )}
 
       <div className="hidden print:block">
         {data && (
@@ -219,7 +297,11 @@ export default function PriceListClient() {
         )}
       </div>
 
-      <div className="overflow-hidden rounded-xl border border-gray-300 bg-white dark:border-gray-600 dark:bg-gray-800 print:overflow-visible print:rounded-none print:border-0">
+      <div
+        className={`overflow-hidden rounded-xl border border-gray-300 bg-white dark:border-gray-600 dark:bg-gray-800 print:overflow-visible print:rounded-none print:border-0 ${
+          editing ? "hidden" : ""
+        }`}
+      >
         <div className="overflow-x-auto print:overflow-visible">
           <table className="w-full border-collapse text-xs">
             <thead>
@@ -242,6 +324,9 @@ export default function PriceListClient() {
                 <th className="border border-gray-200 p-2 dark:border-gray-700" style={fixedColStyle(COL_W.bucket)}>
                   Bucket
                 </th>
+                <th className="border border-gray-200 p-2 dark:border-gray-700" style={fixedColStyle(COL_W.installation)}>
+                  Installation
+                </th>
                 {(data?.tiers || []).map((tier) => (
                   <th
                     key={tier.id}
@@ -256,14 +341,14 @@ export default function PriceListClient() {
             <tbody>
               {loading && (
                 <tr>
-                  <td colSpan={4 + (data?.tiers.length || 0)} className="p-4 text-center text-gray-500">
+                  <td colSpan={5 + (data?.tiers.length || 0)} className="p-4 text-center text-gray-500">
                     Loading...
                   </td>
                 </tr>
               )}
               {!loading && filteredItems.length === 0 && (
                 <tr>
-                  <td colSpan={4 + (data?.tiers.length || 0)} className="p-4 text-center text-gray-500">
+                  <td colSpan={5 + (data?.tiers.length || 0)} className="p-4 text-center text-gray-500">
                     {data
                       ? "No items match this vendor yet - import a price list to get started."
                       : "Pick a company above to browse its price list."}
@@ -294,6 +379,11 @@ export default function PriceListClient() {
                     </td>
                     <td className="border border-gray-200 p-2 text-gray-600 dark:border-gray-700 dark:text-gray-400" style={fixedColStyle(COL_W.bucket)}>
                       {item.summaryBucket}
+                    </td>
+                    <td className="border border-gray-200 p-2 text-gray-600 dark:border-gray-700 dark:text-gray-400" style={fixedColStyle(COL_W.installation)}>
+                      {(item.installationItemId && installationLabel.get(item.installationItemId)) || (
+                        <span className="italic text-gray-400 dark:text-gray-500">Unassigned</span>
+                      )}
                     </td>
                     {(data?.tiers || []).map((tier) => (
                       <td

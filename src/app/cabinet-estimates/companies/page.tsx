@@ -33,6 +33,7 @@ export default async function CabinetCompaniesPage() {
     ...p,
     discount: Number(p.discount),
     factor: Number(p.factor),
+    trueDiscount: p.trueDiscount === null || p.trueDiscount === undefined ? null : Number(p.trueDiscount),
     createdAt: p.createdAt.toISOString(),
     updatedAt: p.updatedAt.toISOString(),
   }));
