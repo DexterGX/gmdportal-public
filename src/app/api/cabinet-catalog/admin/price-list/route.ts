@@ -7,11 +7,11 @@ const prismaAny = prisma as any;
 /**
  * GET /api/cabinet-catalog/admin/price-list?vendorId=&includeInactive=0|1
  *
- * Admin-only, read-only browse for the new "Price List" page (round 8):
+ * Admin-only browse for the "Price List" page (round 8); edits are saved
+ * through PUT below (round 14):
  * every catalog item for one vendor, with its price at every one of that
  * vendor's price tiers side by side, plus when this vendor's catalog was
- * last touched by an import. Nothing here is editable - actual price
- * changes still go through Import Price List, same as before.
+ * last touched by an import or an edit.
  *
  * "Last updated" is derived, not stored: CabinetCatalogItem.updatedAt is
  * bumped by Prisma's @updatedAt on every create *and* on every apply-time
@@ -41,7 +41,7 @@ export async function GET(request: Request) {
       select: {
         id: true,
         name: true,
-        provider: { select: { displayName: true, discount: true, factor: true } },
+        provider: { select: { displayName: true, discount: true, factor: true, trueDiscount: true } },
       },
     });
     if (!vendor) {
@@ -62,11 +62,18 @@ export async function GET(request: Request) {
         description: true,
         category: true,
         summaryBucket: true,
+        installationItemId: true,
         isActive: true,
         updatedAt: true,
         prices: { select: { tierId: true, price: true } },
       },
       orderBy: [{ code: "asc" }],
+    });
+
+    const installationItems = await prismaAny.cabinetInstallationServiceItem.findMany({
+      where: { isActive: true },
+      select: { id: true, code: true, description: true },
+      orderBy: [{ sortOrder: "asc" }, { description: "asc" }],
     });
 
     let lastUpdated: string | null = null;
@@ -82,8 +89,13 @@ export async function GET(request: Request) {
         displayName: vendor.provider ? vendor.provider.displayName : vendor.name,
         discount: vendor.provider ? Number(vendor.provider.discount) : null,
         factor: vendor.provider ? Number(vendor.provider.factor) : null,
+        trueDiscount:
+          vendor.provider && vendor.provider.trueDiscount !== null && vendor.provider.trueDiscount !== undefined
+            ? Number(vendor.provider.trueDiscount)
+            : null,
       },
       tiers,
+      installationItems,
       lastUpdated,
       items: items.map((item: any) => ({
         id: item.id,
@@ -91,6 +103,7 @@ export async function GET(request: Request) {
         description: item.description,
         category: item.category,
         summaryBucket: item.summaryBucket,
+        installationItemId: item.installationItemId,
         isActive: item.isActive,
         updatedAt: item.updatedAt.toISOString(),
         prices: Object.fromEntries(
@@ -101,5 +114,204 @@ export async function GET(request: Request) {
   } catch (error: any) {
     console.error("Error fetching cabinet price list:", error);
     return NextResponse.json({ error: "Failed to fetch price list" }, { status: 500 });
+  }
+}
+
+type SaveTier = { key: string; id: string | null; name: string };
+type SaveItem = {
+  id: string | null;
+  code: string;
+  description: string;
+  category: string | null;
+  summaryBucket: string;
+  installationItemId: string | null;
+  isActive: boolean;
+  /** price by tier key; null / missing = not offered in that tier */
+  prices: Record<string, number | null>;
+};
+
+const BUCKETS = ["STANDARD", "DOUBLE", "CUSTOM", "MISC"];
+
+/**
+ * PUT /api/cabinet-catalog/admin/price-list
+ *
+ * Saves the edits made on the Price List page in one transaction:
+ *  - tiers (price columns): renamed / added / reordered; a column that is no
+ *    longer in the list is deactivated (soft remove - its prices are kept,
+ *    and it can come back by adding a column with the same name);
+ *  - items: only the rows the page sent (changed or new) are written;
+ *  - deleteItemIds: permanent delete, refused for items used in saved
+ *    estimates (those are skipped and reported - discontinue them instead).
+ */
+export async function PUT(request: Request) {
+  try {
+    const { appRole } = await getProgramUserContext("cabinetEstimates");
+    if (appRole !== "admin") {
+      return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+    }
+
+    const body = await request.json();
+    const vendorId = String(body.vendorId || "");
+    const tiersIn: SaveTier[] = Array.isArray(body.tiers) ? body.tiers : [];
+    const itemsIn: SaveItem[] = Array.isArray(body.items) ? body.items : [];
+    const deleteItemIds: string[] = Array.isArray(body.deleteItemIds) ? body.deleteItemIds : [];
+
+    if (!vendorId) {
+      return NextResponse.json({ error: "vendorId is required" }, { status: 400 });
+    }
+    const vendor = await prismaAny.cabinetVendor.findUnique({ where: { id: vendorId }, select: { id: true } });
+    if (!vendor) {
+      return NextResponse.json({ error: "Vendor not found" }, { status: 404 });
+    }
+
+    // ---- validate ----
+    const tierNames = tiersIn.map((t) => String(t.name || "").trim());
+    if (tierNames.some((n) => !n)) {
+      return NextResponse.json({ error: "Every price column needs a name." }, { status: 400 });
+    }
+    const lowerTierNames = tierNames.map((n) => n.toLowerCase());
+    if (new Set(lowerTierNames).size !== lowerTierNames.length) {
+      return NextResponse.json({ error: "Two price columns have the same name." }, { status: 400 });
+    }
+    for (const item of itemsIn) {
+      const code = String(item.code || "").trim();
+      if (!code) {
+        return NextResponse.json({ error: "Every item needs a code." }, { status: 400 });
+      }
+      if (!String(item.description || "").trim()) {
+        return NextResponse.json({ error: `Item ${code} needs a description.` }, { status: 400 });
+      }
+      if (!BUCKETS.includes(item.summaryBucket)) {
+        return NextResponse.json({ error: `Item ${code} has an invalid bucket.` }, { status: 400 });
+      }
+    }
+
+    const result = await prisma.$transaction(
+      async (tx: any) => {
+        // ---- tiers ----
+        const existingTiers = await tx.cabinetPriceTier.findMany({ where: { vendorId } });
+        const tierIdByKey = new Map<string, string>();
+        const keptTierIds = new Set<string>();
+        for (let index = 0; index < tiersIn.length; index++) {
+          const t = tiersIn[index];
+          const name = tierNames[index];
+          const byId = t.id ? existingTiers.find((e: any) => e.id === t.id) : null;
+          const byName = existingTiers.find(
+            (e: any) => e.name.toLowerCase() === name.toLowerCase() && (!byId || e.id !== byId.id),
+          );
+          if (byName && !byId) {
+            // a new column named like an old (maybe deactivated) one brings it back
+            const updated = await tx.cabinetPriceTier.update({
+              where: { id: byName.id },
+              data: { isActive: true, sortOrder: index },
+            });
+            tierIdByKey.set(t.key, updated.id);
+            keptTierIds.add(updated.id);
+          } else if (byName && byId) {
+            throw new Error(`There is already a price column called "${name}".`);
+          } else if (byId) {
+            await tx.cabinetPriceTier.update({
+              where: { id: byId.id },
+              data: { name, isActive: true, sortOrder: index },
+            });
+            tierIdByKey.set(t.key, byId.id);
+            keptTierIds.add(byId.id);
+          } else {
+            const created = await tx.cabinetPriceTier.create({
+              data: { vendorId, name, sortOrder: index, isActive: true },
+            });
+            tierIdByKey.set(t.key, created.id);
+            keptTierIds.add(created.id);
+          }
+        }
+        const removedTierIds = existingTiers
+          .filter((e: any) => e.isActive && !keptTierIds.has(e.id))
+          .map((e: any) => e.id);
+        if (removedTierIds.length > 0) {
+          await tx.cabinetPriceTier.updateMany({
+            where: { id: { in: removedTierIds } },
+            data: { isActive: false },
+          });
+          await tx.cabinetColorOption.updateMany({
+            where: { vendorId, tierId: { in: removedTierIds } },
+            data: { isActive: false },
+          });
+        }
+
+        // ---- items ----
+        let created = 0;
+        let updated = 0;
+        for (const item of itemsIn) {
+          const code = String(item.code).trim();
+          const data = {
+            code,
+            description: String(item.description).trim(),
+            category: item.category && String(item.category).trim() ? String(item.category).trim() : null,
+            summaryBucket: item.summaryBucket,
+            installationItemId: item.installationItemId || null,
+            isActive: Boolean(item.isActive),
+          };
+          const clash = await tx.cabinetCatalogItem.findFirst({
+            where: { vendorId, code, ...(item.id ? { NOT: { id: item.id } } : {}) },
+            select: { id: true },
+          });
+          if (clash) throw new Error(`Another item already uses the code "${code}".`);
+
+          let itemId: string;
+          if (item.id) {
+            await tx.cabinetCatalogItem.update({ where: { id: item.id }, data });
+            itemId = item.id;
+            updated++;
+          } else {
+            const row = await tx.cabinetCatalogItem.create({ data: { ...data, vendorId } });
+            itemId = row.id;
+            created++;
+          }
+
+          for (const [key, tierId] of Array.from(tierIdByKey.entries())) {
+            if (!(key in item.prices)) continue;
+            const value = item.prices[key];
+            if (value === null || value === undefined || !Number.isFinite(Number(value))) {
+              await tx.cabinetCatalogItemPrice.deleteMany({ where: { itemId, tierId } });
+            } else {
+              await tx.cabinetCatalogItemPrice.upsert({
+                where: { itemId_tierId: { itemId, tierId } },
+                create: { itemId, tierId, price: Number(value) },
+                update: { price: Number(value) },
+              });
+            }
+          }
+        }
+
+        // ---- permanent deletes ----
+        let deleted = 0;
+        const skipped: string[] = [];
+        if (deleteItemIds.length > 0) {
+          const candidates = await tx.cabinetCatalogItem.findMany({
+            where: { vendorId, id: { in: deleteItemIds } },
+            select: { id: true, code: true, _count: { select: { lineItems: true } } },
+          });
+          const deletable = candidates.filter((c: any) => c._count.lineItems === 0).map((c: any) => c.id);
+          for (const c of candidates) {
+            if (c._count.lineItems > 0) skipped.push(c.code);
+          }
+          if (deletable.length > 0) {
+            const res = await tx.cabinetCatalogItem.deleteMany({ where: { id: { in: deletable } } });
+            deleted = res.count;
+          }
+        }
+
+        return { created, updated, deleted, skipped, removedColumns: removedTierIds.length };
+      },
+      { maxWait: 10000, timeout: 60000 },
+    );
+
+    return NextResponse.json({ ok: true, ...result });
+  } catch (error: any) {
+    console.error("Error saving cabinet price list:", error);
+    const message = error?.message && !String(error.message).includes("prisma")
+      ? String(error.message)
+      : "Failed to save the price list";
+    return NextResponse.json({ error: message }, { status: 400 });
   }
 }

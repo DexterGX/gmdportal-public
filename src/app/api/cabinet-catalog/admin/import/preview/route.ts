@@ -11,6 +11,7 @@ import {
 } from "@/lib/cabinetCatalogImport";
 import { inferCabinetImportParsePlan } from "@/lib/cabinetCatalogImportAi";
 import { fetchAndPrepareCatalogPdf } from "@/lib/cabinetCatalogPdf";
+import { collapseColorLevels, type ColorMode } from "@/lib/cabinetColorLevels";
 
 const prismaAny = prisma as any;
 
@@ -53,6 +54,9 @@ export async function POST(request: Request) {
     const parsePlanRaw = formData.get("parsePlan") as string | null;
     const pricingModeRaw = (formData.get("pricingMode") as string | null) || "net";
     const pricingMode: "retail" | "net" = pricingModeRaw === "retail" ? "retail" : "net";
+    const colorModeRaw = (formData.get("colorMode") as string | null) || "auto";
+    const colorMode: ColorMode =
+      colorModeRaw === "levels" || colorModeRaw === "columns" ? colorModeRaw : "auto";
     const discountRaw = formData.get("discount") as string | null;
     const discount = discountRaw ? Number(discountRaw) || 0 : 0;
 
@@ -150,13 +154,19 @@ export async function POST(request: Request) {
       );
     }
 
-    const { items, warnings } = applyParsePlan(
+    const parsed = applyParsePlan(
       sheet.grid,
       parsePlan,
       vendorName,
       { mode: pricingMode, discount },
       installationItems,
     );
+    const warnings = parsed.warnings;
+    // Many colors split into Levels -> only the Levels stay as price columns.
+    const collapsed = collapseColorLevels(parsed.items, colorMode);
+    const items = collapsed.items;
+    const colorGroups = collapsed.colorGroups;
+    const colorNotes = collapsed.notes;
     if (items.length === 0) {
       return NextResponse.json(
         { error: "No item rows could be extracted with this parse plan", warnings },
@@ -192,6 +202,9 @@ export async function POST(request: Request) {
       vendorName,
       parsePlan,
       aiNotes,
+      colorGroups,
+      colorNotes,
+      colorMode,
       sheetNames: sheets.map((s) => s.sheetName),
       installationItems,
       diff,

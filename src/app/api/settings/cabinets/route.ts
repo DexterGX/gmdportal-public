@@ -90,6 +90,7 @@ export async function POST(request: NextRequest) {
       isActive,
       discount,
       factor,
+      trueDiscount,
     }: {
       actualName?: string;
       displayName?: string;
@@ -105,6 +106,9 @@ export async function POST(request: NextRequest) {
       // and still works unmodified.
       discount?: number;
       factor?: number;
+      // Optional "true" discount (informational, see the schema comment);
+      // null clears it, omitted leaves it untouched.
+      trueDiscount?: number | null;
     } = body;
 
     if (!actualName?.trim() || !displayName?.trim()) {
@@ -126,6 +130,7 @@ export async function POST(request: NextRequest) {
         isActive: isActive ?? true,
         ...(discount !== undefined ? { discount } : {}),
         ...(factor !== undefined ? { factor } : {}),
+        ...(trueDiscount !== undefined ? { trueDiscount } : {}),
       },
     });
 
@@ -163,6 +168,7 @@ export async function PATCH(request: NextRequest) {
       isActive,
       discount,
       factor,
+      trueDiscount,
     }: {
       id?: string;
       actualName?: string;
@@ -178,6 +184,9 @@ export async function PATCH(request: NextRequest) {
       // resetting it to a default on every save.
       discount?: number;
       factor?: number;
+      // Optional "true" discount (informational, see the schema comment);
+      // null clears it, omitted leaves it untouched.
+      trueDiscount?: number | null;
     } = body;
 
     if (!id) {
@@ -204,6 +213,7 @@ export async function PATCH(request: NextRequest) {
         isActive: isActive ?? true,
         ...(discount !== undefined ? { discount } : {}),
         ...(factor !== undefined ? { factor } : {}),
+        ...(trueDiscount !== undefined ? { trueDiscount } : {}),
       },
     });
 

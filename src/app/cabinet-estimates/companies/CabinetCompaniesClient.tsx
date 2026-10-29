@@ -32,6 +32,7 @@ type CabinetProvider = {
   updatedAt: string;
   discount: number | string;
   factor: number | string;
+  trueDiscount?: number | string | null;
   cabinetVendor: { id: string; name: string } | null;
 };
 
@@ -48,6 +49,8 @@ type FormState = {
   notes: string;
   isActive: boolean;
   discount: string;
+  /** Empty = not set (same as the applied discount). */
+  trueDiscount: string;
   factor: string;
   linkedVendorId: string;
 };
@@ -62,6 +65,7 @@ const emptyForm: FormState = {
   notes: "",
   isActive: true,
   discount: "0",
+  trueDiscount: "",
   factor: "1",
   linkedVendorId: "",
 };
@@ -168,6 +172,10 @@ export default function CabinetCompaniesClient({
       notes: provider.notes || "",
       isActive: provider.isActive,
       discount: String(toNumber(provider.discount)),
+      trueDiscount:
+        provider.trueDiscount === null || provider.trueDiscount === undefined
+          ? ""
+          : String(toNumber(provider.trueDiscount)),
       factor: String(toNumber(provider.factor)),
       linkedVendorId: provider.cabinetVendor?.id || "",
     });
@@ -215,6 +223,7 @@ export default function CabinetCompaniesClient({
           notes: form.notes || null,
           isActive: form.isActive,
           discount: Number(form.discount) || 0,
+          trueDiscount: form.trueDiscount.trim() === "" ? null : Number(form.trueDiscount) || 0,
           factor: Number(form.factor) || 1,
         }),
       });
@@ -303,7 +312,8 @@ export default function CabinetCompaniesClient({
         "Phone",
         "Email",
         "Address",
-        "Discount",
+        "True Discount",
+        "Applied Discount",
         "Sales Multiplier",
         "Linked Catalog Vendor",
         "Status",
@@ -315,6 +325,7 @@ export default function CabinetCompaniesClient({
         p.contactPhone || "",
         p.contactEmail || "",
         p.address || "",
+        p.trueDiscount === null || p.trueDiscount === undefined ? "" : String(toNumber(p.trueDiscount)),
         String(toNumber(p.discount)),
         String(toNumber(p.factor)),
         p.cabinetVendor?.name || "",
@@ -519,7 +530,30 @@ export default function CabinetCompaniesClient({
 
                 <div>
                   <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
-                    Discount
+                    True Discount
+                  </label>
+                  <input
+                    type="number"
+                    step="0.0001"
+                    min="0"
+                    max="1"
+                    value={form.trueDiscount}
+                    onChange={(e) =>
+                      setForm((prev) => ({ ...prev, trueDiscount: e.target.value }))
+                    }
+                    className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-900"
+                    placeholder="0.5500"
+                  />
+                  <p className="mt-1 text-xs text-gray-500 dark:text-gray-400">
+                    The discount this company really gives us, e.g. 0.5500 =
+                    55% off. For reference only - prices are computed with the
+                    Applied Discount below. Leave empty if it is the same.
+                  </p>
+                </div>
+
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
+                    Applied Discount
                   </label>
                   <input
                     type="number"
@@ -531,11 +565,13 @@ export default function CabinetCompaniesClient({
                       setForm((prev) => ({ ...prev, discount: e.target.value }))
                     }
                     className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-900"
-                    placeholder="0.3000"
+                    placeholder="0.5000"
                   />
                   <p className="mt-1 text-xs text-gray-500 dark:text-gray-400">
-                    Fraction off retail, e.g. 0.3000 = 30% off. Used when an
-                    import is marked &quot;prices are retail&quot;.
+                    Fraction off retail used to compute prices, e.g. 0.5000 =
+                    50% off (can be lower than the true discount as a margin
+                    for late price updates). Used when an import is marked
+                    &quot;prices are retail&quot;.
                   </p>
                 </div>
 
@@ -740,13 +776,23 @@ export default function CabinetCompaniesClient({
                   </span>
                 </div>
 
-                <div className="grid grid-cols-2 gap-2 text-sm">
+                <div className="grid grid-cols-3 gap-2 text-sm">
                   <div>
                     <p className="text-xs font-semibold text-gray-400 dark:text-gray-500 uppercase tracking-wider">
-                      Discount
+                      True Discount
                     </p>
                     <p className="text-gray-700 dark:text-gray-300">
-                      {toNumber(provider.discount).toFixed(4)}
+                      {provider.trueDiscount === null || provider.trueDiscount === undefined
+                        ? "-"
+                        : `${(toNumber(provider.trueDiscount) * 100).toFixed(1)}%`}
+                    </p>
+                  </div>
+                  <div>
+                    <p className="text-xs font-semibold text-gray-400 dark:text-gray-500 uppercase tracking-wider">
+                      Applied Discount
+                    </p>
+                    <p className="text-gray-700 dark:text-gray-300">
+                      {(toNumber(provider.discount) * 100).toFixed(1)}%
                     </p>
                   </div>
                   <div>
@@ -869,7 +915,8 @@ export default function CabinetCompaniesClient({
                   Display Name
                 </th>
                 <th className="px-4 py-3 text-left font-medium">Contact</th>
-                <th className="px-4 py-3 text-left font-medium">Discount</th>
+                <th className="px-4 py-3 text-left font-medium">True Discount</th>
+                <th className="px-4 py-3 text-left font-medium">Applied Discount</th>
                 <th className="px-4 py-3 text-left font-medium">Sales x</th>
                 <th className="px-4 py-3 text-left font-medium">
                   Linked Vendor
@@ -882,7 +929,7 @@ export default function CabinetCompaniesClient({
               {isLoading ? (
                 <tr>
                   <td
-                    colSpan={8}
+                    colSpan={9}
                     className="px-4 py-8 text-center text-gray-500 dark:text-gray-400"
                   >
                     Loading cabinet companies...
@@ -891,7 +938,7 @@ export default function CabinetCompaniesClient({
               ) : providers.length === 0 ? (
                 <tr>
                   <td
-                    colSpan={8}
+                    colSpan={9}
                     className="px-4 py-8 text-center text-gray-500 dark:text-gray-400"
                   >
                     No companies found for the current filters.
@@ -919,7 +966,12 @@ export default function CabinetCompaniesClient({
                       </div>
                     </td>
                     <td className="px-4 py-3 text-gray-700 dark:text-gray-300">
-                      {toNumber(provider.discount).toFixed(4)}
+                      {provider.trueDiscount === null || provider.trueDiscount === undefined
+                        ? "-"
+                        : `${(toNumber(provider.trueDiscount) * 100).toFixed(1)}%`}
+                    </td>
+                    <td className="px-4 py-3 text-gray-700 dark:text-gray-300">
+                      {(toNumber(provider.discount) * 100).toFixed(1)}%
                     </td>
                     <td className="px-4 py-3 text-gray-700 dark:text-gray-300">
                       {toNumber(provider.factor).toFixed(4)}

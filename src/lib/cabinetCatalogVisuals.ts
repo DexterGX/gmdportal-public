@@ -27,7 +27,8 @@
 
 import Anthropic from "@anthropic-ai/sdk";
 import { prisma } from "./prisma";
-import { prepareCatalogPdfPageChunks, type PdfPageChunk } from "./cabinetCatalogPdf";
+import { fetchCatalogPdfBytes, prepareCatalogPdfPageChunks, type PdfPageChunk } from "./cabinetCatalogPdf";
+import { extractLayoutImages } from "./cabinetCatalogLayoutImages";
 import { uploadCabinetCatalogItemImage } from "./cabinetCatalogStorage";
 import { renderAndCropGroups, type VisualGroup } from "./cabinetCatalogPdfRender";
 
@@ -133,7 +134,7 @@ async function runVisualsPassForChunk(
   try {
     message = await client.messages.create({
       model: MODEL,
-      max_tokens: 4096,
+      max_tokens: 8192,
       tools: [tool],
       tool_choice: { type: "tool", name: tool.name },
       messages: [
@@ -156,6 +157,11 @@ async function runVisualsPassForChunk(
     return [];
   }
 
+  if (message.stop_reason === "max_tokens") {
+    warnings.push(
+      `The AI's answer for pages ${chunk.startPage}-${chunk.startPage + chunk.pageCount - 1} was cut off, so some pictures there may be missing.`,
+    );
+  }
   const toolUse = message.content.find(
     (block): block is Anthropic.ToolUseBlock => block.type === "tool_use",
   );
@@ -226,11 +232,6 @@ export async function extractCatalogItemVisuals(vendorId: string): Promise<Extra
     throw new Error("This vendor has no catalog PDF attached yet.");
   }
 
-  const prepared = await prepareCatalogPdfPageChunks(vendor.catalogPdfUrl);
-  if (!prepared || prepared.chunks.length === 0) {
-    throw new Error("Could not read the attached catalog PDF - try re-uploading it.");
-  }
-
   const items = await prismaAny.cabinetCatalogItem.findMany({
     where: { vendorId, isActive: true },
     select: { id: true, code: true },
@@ -240,13 +241,6 @@ export async function extractCatalogItemVisuals(vendorId: string): Promise<Extra
   }
 
   const warnings: string[] = [];
-  if (prepared.truncated) {
-    warnings.push(
-      `Catalog has ${prepared.totalPageCount} pages - only the first ${prepared.pagesCovered} could be ` +
-        `scanned this run (file is very image-heavy). Re-run "Extract item images" again if some items ` +
-        `are still missing a picture after this.`,
-    );
-  }
 
   const allCodes: string[] = items.map((it: any) => it.code);
   const itemIdByCode = new Map<string, string>(
@@ -254,11 +248,64 @@ export async function extractCatalogItemVisuals(vendorId: string): Promise<Extra
   );
   const remainingCodes = new Set(allCodes);
 
-  const client = new Anthropic({ apiKey });
-
   let groupsFound = 0;
   let imagesCreated = 0;
   let itemsUpdated = 0;
+
+  // Pass 1 - by page layout (no AI): find each SKU in the PDF's text and take
+  // the drawing printed beside its table. Exact and fast for catalogs laid
+  // out like a price list (a drawing next to each table of SKUs).
+  const pdfBytes = await fetchCatalogPdfBytes(vendor.catalogPdfUrl);
+  if (!pdfBytes) {
+    throw new Error("Could not read the attached catalog PDF - try re-uploading it.");
+  }
+  try {
+    const layout = await extractLayoutImages(pdfBytes.slice(), allCodes);
+    for (const group of layout.groups) {
+      const codesStillNeeded = group.codes.filter((c) => remainingCodes.has(c));
+      if (codesStillNeeded.length === 0) continue;
+      groupsFound++;
+      try {
+        const url = await uploadCabinetCatalogItemImage(vendorId, codesStillNeeded[0], group.png);
+        imagesCreated++;
+        const idsToUpdate = codesStillNeeded
+          .map((c) => itemIdByCode.get(c.toLowerCase()))
+          .filter((id): id is string => Boolean(id));
+        if (idsToUpdate.length > 0) {
+          await prismaAny.cabinetCatalogItem.updateMany({
+            where: { id: { in: idsToUpdate } },
+            data: { catalogImageUrl: url },
+          });
+          itemsUpdated += idsToUpdate.length;
+        }
+        for (const c of codesStillNeeded) remainingCodes.delete(c);
+      } catch (err: any) {
+        warnings.push(`Failed to save image for ${codesStillNeeded.join(", ")}: ${err.message || err}`);
+      }
+    }
+  } catch (err: any) {
+    console.error("Cabinet catalog layout image pass failed:", err);
+    warnings.push(`Reading the page layout failed (${err.message || err}); trying the AI instead.`);
+  }
+
+  // Pass 2 - ask the AI about whatever the layout pass could not place
+  // (catalogs whose pictures aren't next to a table of SKUs).
+  if (remainingCodes.size === 0) {
+    return { totalCodes: allCodes.length, groupsFound, imagesCreated, itemsUpdated, warnings };
+  }
+  const prepared = await prepareCatalogPdfPageChunks(vendor.catalogPdfUrl);
+  if (!prepared || prepared.chunks.length === 0) {
+    warnings.push("Could not prepare the catalog PDF for the AI pass; some items have no picture.");
+    return { totalCodes: allCodes.length, groupsFound, imagesCreated, itemsUpdated, warnings };
+  }
+  if (prepared.truncated) {
+    warnings.push(
+      `Catalog has ${prepared.totalPageCount} pages - only the first ${prepared.pagesCovered} could be ` +
+        `scanned by the AI this run (file is very image-heavy). Re-run "Extract item images" again if some items ` +
+        `are still missing a picture after this.`,
+    );
+  }
+  const client = new Anthropic({ apiKey });
 
   for (const chunk of prepared.chunks) {
     if (remainingCodes.size === 0) break; // every item already has a match - skip the rest

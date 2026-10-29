@@ -28,6 +28,7 @@ type Draft = {
   installationBasePercent: string;
   customSurchargePercent: string;
   costTaxPercent: string;
+  catalogLinkUrl: string;
 };
 
 const toDraft = (s: Settings): Draft => ({
@@ -35,6 +36,7 @@ const toDraft = (s: Settings): Draft => ({
   installationBasePercent: String(s.installationBasePercent),
   customSurchargePercent: String(s.customSurchargePercent),
   costTaxPercent: String(s.costTaxPercent),
+  catalogLinkUrl: s.catalogLinkUrl,
 });
 
 function PercentField({
@@ -80,7 +82,8 @@ export default function CalculationSettings({
     draft.installationCalcMode !== saved.installationCalcMode ||
     !sameNumber(draft.installationBasePercent, saved.installationBasePercent) ||
     !sameNumber(draft.customSurchargePercent, saved.customSurchargePercent) ||
-    !sameNumber(draft.costTaxPercent, saved.costTaxPercent);
+    !sameNumber(draft.costTaxPercent, saved.costTaxPercent) ||
+    draft.catalogLinkUrl.trim() !== saved.catalogLinkUrl;
 
   async function save() {
     const next: Settings = {
@@ -88,6 +91,7 @@ export default function CalculationSettings({
       installationBasePercent: parseNumber(draft.installationBasePercent),
       customSurchargePercent: parseNumber(draft.customSurchargePercent),
       costTaxPercent: parseNumber(draft.costTaxPercent),
+      catalogLinkUrl: draft.catalogLinkUrl.trim(),
     };
     if (
       next.installationBasePercent < 0 ||
@@ -95,6 +99,10 @@ export default function CalculationSettings({
       next.costTaxPercent < 0
     ) {
       notify("error", "Percentages can't be negative.");
+      return;
+    }
+    if (next.catalogLinkUrl && !/^https?:\/\/\S+$/i.test(next.catalogLinkUrl)) {
+      notify("error", "The catalog link must start with http:// or https://");
       return;
     }
     setSaving(true);
@@ -185,6 +193,21 @@ export default function CalculationSettings({
             value={draft.costTaxPercent}
             onChange={(v) => setDraft((d) => ({ ...d, costTaxPercent: v }))}
           />
+          <div>
+            <label className="mb-1 block text-sm font-medium text-gray-800 dark:text-gray-200">
+              Catalog link
+            </label>
+            <input
+              value={draft.catalogLinkUrl}
+              onChange={(e) => setDraft((d) => ({ ...d, catalogLinkUrl: e.target.value }))}
+              placeholder="https://drive.google.com/..."
+              className={fieldClass}
+            />
+            <p className="mt-1 text-xs text-gray-500 dark:text-gray-400">
+              Shown as a &quot;Catalogs&quot; link under the logo numbers on the estimate form (for example a Google
+              Drive folder with every catalog). Leave empty to hide it.
+            </p>
+          </div>
         </div>
       </div>
     </SectionCard>

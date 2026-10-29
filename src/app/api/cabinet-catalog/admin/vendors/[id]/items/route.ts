@@ -89,6 +89,10 @@ export async function DELETE(
     // it is switched off instead: hidden from the Group / Color dropdown of
     // new estimates, still resolvable on the estimate that used it, and
     // switched back on if the same color is imported again.
+    await prismaAny.cabinetColorOption.updateMany({
+      where: { vendorId, isActive: true },
+      data: { isActive: false },
+    });
     const tiersDeleted = await prismaAny.cabinetPriceTier.deleteMany({
       where: { vendorId, estimates: { none: {} } },
     });

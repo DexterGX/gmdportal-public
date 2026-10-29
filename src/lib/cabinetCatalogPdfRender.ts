@@ -56,7 +56,7 @@ const CROP_MIN_PADDING_PAGE_FRACTION = 0.015;
 // require.resolve()/createRequire() involved, which is also what keeps
 // this working under Next's bundler.
 let pdfjsLibPromise: Promise<any> | null = null;
-async function getPdfjsLib(): Promise<any> {
+export async function getPdfjsLib(): Promise<any> {
   if (!pdfjsLibPromise) {
     pdfjsLibPromise = (async () => {
       const pdfjsLib: any = await import("pdfjs-dist/legacy/build/pdf.mjs");
@@ -71,7 +71,7 @@ async function getPdfjsLib(): Promise<any> {
   return pdfjsLibPromise;
 }
 
-class NodeCanvasFactory {
+export class NodeCanvasFactory {
   create(width: number, height: number) {
     const canvas = createCanvas(Math.max(1, Math.ceil(width)), Math.max(1, Math.ceil(height)));
     const context = canvas.getContext("2d");

@@ -57,6 +57,22 @@ export type PreparedCatalogPdfChunks = {
   truncated: boolean; // pagesCovered < totalPageCount (hit MAX_PAGES or MAX_CHUNKS)
 };
 
+/** The raw bytes of a vendor's catalog PDF (null if it can't be fetched). */
+export async function fetchCatalogPdfBytes(url: string): Promise<Uint8Array | null> {
+  try {
+    const res = await fetch(url);
+    if (!res.ok) {
+      console.error(`fetchCatalogPdfBytes: fetch failed, status ${res.status} for ${url}`);
+      return null;
+    }
+    const bytes = new Uint8Array(await res.arrayBuffer());
+    return bytes.byteLength > 0 ? bytes : null;
+  } catch (err) {
+    console.error(`fetchCatalogPdfBytes: unexpected error for ${url}:`, err);
+    return null;
+  }
+}
+
 async function fetchAndLoadPdf(
   url: string,
   label: string,
