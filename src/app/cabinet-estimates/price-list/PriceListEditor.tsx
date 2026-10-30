@@ -3,6 +3,7 @@
 import { memo, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Plus, Save, Trash2, X } from "lucide-react";
 import FilterMultiSelect from "@/components/filters/FilterMultiSelect";
+import { withCategoryIfSizeOnly } from "@/lib/cabinetItemDescription";
 import {
   BUCKETS,
   BucketSelect,
@@ -197,6 +198,20 @@ export default function PriceListEditor({
   const [tiersChanged, setTiersChanged] = useState(false);
   const [saving, setSaving] = useState(false);
   const [newColumnName, setNewColumnName] = useState("");
+
+  // Items named only by their size ("- 36"W X 34 1/2"H X 24"D") can get their category in front.
+  const sizeOnlyCount = useMemo(
+    () => rows.filter((r) => withCategoryIfSizeOnly(r.category, r.description) !== r.description).length,
+    [rows],
+  );
+  function fixSizeOnlyDescriptions() {
+    setRows((prev) =>
+      prev.map((r) => {
+        const next = withCategoryIfSizeOnly(r.category, r.description);
+        return next === r.description ? r : { ...r, description: next, dirty: true };
+      }),
+    );
+  }
 
   const dirtyCount = useMemo(() => rows.filter((r) => r.dirty || r.id === null).length, [rows]);
   const hasChanges = dirtyCount > 0 || deleteIds.length > 0 || tiersChanged;
@@ -509,6 +524,15 @@ export default function PriceListEditor({
             className="inline-flex items-center gap-1.5 rounded-lg border border-green-300 bg-green-50 px-3 py-2 text-sm font-medium text-green-700 hover:bg-green-100 dark:border-green-800 dark:bg-green-900/20 dark:text-green-300"
           >
             <Plus className="h-4 w-4" /> Add row
+          </button>
+          <button
+            type="button"
+            onClick={fixSizeOnlyDescriptions}
+            disabled={sizeOnlyCount === 0}
+            title="Puts the category in front of descriptions that only show a size, so the item can be told apart"
+            className="rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm font-medium text-gray-700 hover:bg-gray-50 disabled:cursor-not-allowed disabled:opacity-50 dark:border-gray-600 dark:bg-gray-700 dark:text-gray-300 dark:hover:bg-gray-600"
+          >
+            Add category to size-only names ({sizeOnlyCount})
           </button>
         </div>
         <div className="grid grid-cols-1 gap-2 sm:grid-cols-4">

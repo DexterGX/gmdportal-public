@@ -99,6 +99,7 @@ export function gridToPromptText(grid: RawGrid, maxRows = 70): string {
 }
 
 import { computeCabinetNetCost } from "./cabinetCatalogPricing";
+import { withCategoryIfSizeOnly } from "./cabinetItemDescription";
 
 function parsePriceCell(value: string | number | null): number | null {
   if (value === null) return null;
@@ -442,14 +443,14 @@ export function applyParsePlan(
     const baseDescription = descCell === null ? "" : String(descCell).trim();
     const sizeCell = plan.sizeCol !== null && plan.sizeCol !== undefined ? row[plan.sizeCol] : null;
     const sizeText = sizeCell === null ? "" : String(sizeCell).trim();
-    const description =
+    const combinedDescription =
       sizeText && !baseDescription.toLowerCase().includes(sizeText.toLowerCase())
         ? `${baseDescription} - ${sizeText}`
         : baseDescription;
 
-    if (!code && !description) continue; // blank separator row
+    if (!code && !combinedDescription) continue; // blank separator row
     if (!code) {
-      warnings.push(`Row ${r + 1}: skipped, no code found ("${description}")`);
+      warnings.push(`Row ${r + 1}: skipped, no code found ("${combinedDescription}")`);
       continue;
     }
 
@@ -461,6 +462,9 @@ export function applyParsePlan(
         : plan.categoryMode === "sectionRow"
           ? currentCategory
           : null;
+
+    // A description that is only a size gets the category in front of it.
+    const description = withCategoryIfSizeOnly(category, combinedDescription);
 
     const prices: NormalizedImportItemPrice[] = [];
     for (const pc of plan.priceColumns) {

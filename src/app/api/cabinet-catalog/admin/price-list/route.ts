@@ -1,8 +1,14 @@
 import { NextResponse } from "next/server";
+import { Prisma } from "@prisma/client";
 import { prisma } from "@/lib/prisma";
 import { getProgramUserContext } from "@/lib/programPermissions";
 
 const prismaAny = prisma as any;
+
+// Rows per bulk statement (7 bind parameters per UPDATE row - far below Postgres's limit).
+const UPDATE_BATCH_SIZE = 500;
+const PRICE_DELETE_BATCH = 1000;
+const PRICE_INSERT_BATCH = 2000;
 
 /**
  * GET /api/cabinet-catalog/admin/price-list?vendorId=&includeInactive=0|1
@@ -143,6 +149,8 @@ const BUCKETS = ["STANDARD", "DOUBLE", "CUSTOM", "MISC"];
  *  - deleteItemIds: permanent delete, refused for items used in saved
  *    estimates (those are skipped and reported - discontinue them instead).
  */
+export const maxDuration = 60;
+
 export async function PUT(request: Request) {
   try {
     const { appRole } = await getProgramUserContext("cabinetEstimates");
@@ -238,68 +246,130 @@ export async function PUT(request: Request) {
           });
         }
 
-        // ---- items ----
-        let created = 0;
-        let updated = 0;
-        for (const item of itemsIn) {
-          const code = String(item.code).trim();
-          const data = {
-            code,
-            description: String(item.description).trim(),
-            category: item.category && String(item.category).trim() ? String(item.category).trim() : null,
-            summaryBucket: item.summaryBucket,
-            installationItemId: item.installationItemId || null,
-            isActive: Boolean(item.isActive),
-          };
-          const clash = await tx.cabinetCatalogItem.findFirst({
-            where: { vendorId, code, ...(item.id ? { NOT: { id: item.id } } : {}) },
-            select: { id: true },
-          });
-          if (clash) throw new Error(`Another item already uses the code "${code}".`);
-
-          let itemId: string;
-          if (item.id) {
-            await tx.cabinetCatalogItem.update({ where: { id: item.id }, data });
-            itemId = item.id;
-            updated++;
-          } else {
-            const row = await tx.cabinetCatalogItem.create({ data: { ...data, vendorId } });
-            itemId = row.id;
-            created++;
-          }
-
-          for (const [key, tierId] of Array.from(tierIdByKey.entries())) {
-            if (!(key in item.prices)) continue;
-            const value = item.prices[key];
-            if (value === null || value === undefined || !Number.isFinite(Number(value))) {
-              await tx.cabinetCatalogItemPrice.deleteMany({ where: { itemId, tierId } });
-            } else {
-              await tx.cabinetCatalogItemPrice.upsert({
-                where: { itemId_tierId: { itemId, tierId } },
-                create: { itemId, tierId, price: Number(value) },
-                update: { price: Number(value) },
-              });
-            }
-          }
-        }
-
-        // ---- permanent deletes ----
+        // ---- permanent deletes (first, so their codes are free again) ----
         let deleted = 0;
         const skipped: string[] = [];
+        const deletedIds = new Set<string>();
         if (deleteItemIds.length > 0) {
           const candidates = await tx.cabinetCatalogItem.findMany({
             where: { vendorId, id: { in: deleteItemIds } },
             select: { id: true, code: true, _count: { select: { lineItems: true } } },
           });
-          const deletable = candidates.filter((c: any) => c._count.lineItems === 0).map((c: any) => c.id);
+          const deletable: string[] = [];
           for (const c of candidates) {
-            if (c._count.lineItems > 0) skipped.push(c.code);
+            if (c._count.lineItems === 0) deletable.push(c.id);
+            else skipped.push(c.code);
           }
           if (deletable.length > 0) {
             const res = await tx.cabinetCatalogItem.deleteMany({ where: { id: { in: deletable } } });
             deleted = res.count;
+            deletable.forEach((id) => deletedIds.add(id));
           }
         }
+
+        // ---- items ----
+        // Everything below is a handful of set-based queries (not one or more
+        // per item), so a big edit stays well inside the transaction time.
+        const allItems: { id: string; code: string }[] = await tx.cabinetCatalogItem.findMany({
+          where: { vendorId },
+          select: { id: true, code: true },
+        });
+        const codeById = new Map<string, string>();
+        for (const row of allItems) if (!deletedIds.has(row.id)) codeById.set(row.id, row.code);
+
+        const cleaned = itemsIn.map((item) => ({
+          id: item.id,
+          code: String(item.code).trim(),
+          description: String(item.description).trim(),
+          category: item.category && String(item.category).trim() ? String(item.category).trim() : null,
+          summaryBucket: item.summaryBucket,
+          installationItemId: item.installationItemId || null,
+          isActive: Boolean(item.isActive),
+          prices: item.prices || {},
+        }));
+        const toUpdate = cleaned.filter((item) => item.id && codeById.has(item.id));
+        const toCreate = cleaned.filter((item) => !item.id);
+
+        // Codes must stay unique in the vendor's list once all edits are applied.
+        for (const item of toUpdate) codeById.set(item.id as string, item.code);
+        const seenCodes = new Set<string>(codeById.values());
+        if (seenCodes.size !== codeById.size) {
+          const counts = new Map<string, number>();
+          for (const code of Array.from(codeById.values())) counts.set(code, (counts.get(code) || 0) + 1);
+          const dup = Array.from(counts.entries()).find(([, n]) => n > 1);
+          throw new Error(`Another item already uses the code "${dup ? dup[0] : ""}".`);
+        }
+        for (const item of toCreate) {
+          if (seenCodes.has(item.code)) throw new Error(`Another item already uses the code "${item.code}".`);
+          seenCodes.add(item.code);
+        }
+
+        for (let i = 0; i < toUpdate.length; i += UPDATE_BATCH_SIZE) {
+          const batch = toUpdate.slice(i, i + UPDATE_BATCH_SIZE);
+          const values = batch.map(
+            (item) =>
+              Prisma.sql`(${item.id}::text, ${item.code}::text, ${item.description}::text, ${item.category}::text, ${item.summaryBucket}::text, ${item.installationItemId}::text, ${item.isActive}::boolean)`,
+          );
+          await tx.$executeRaw`
+            UPDATE "CabinetCatalogItem" AS t SET
+              "code" = v.code,
+              "description" = v.description,
+              "category" = v.category,
+              "summaryBucket" = v.bucket::"CabinetSummaryBucket",
+              "installationItemId" = v.inst,
+              "isActive" = v.active,
+              "updatedAt" = NOW()
+            FROM (VALUES ${Prisma.join(values)})
+              AS v(id, code, description, category, bucket, inst, active)
+            WHERE t."id" = v.id AND t."vendorId" = ${vendorId}`;
+        }
+
+        const createdIdByCode = new Map<string, string>();
+        if (toCreate.length > 0) {
+          const createdRows: { id: string; code: string }[] = await tx.cabinetCatalogItem.createManyAndReturn({
+            data: toCreate.map((item) => ({
+              vendorId,
+              code: item.code,
+              description: item.description,
+              category: item.category,
+              summaryBucket: item.summaryBucket,
+              installationItemId: item.installationItemId,
+              isActive: item.isActive,
+            })),
+            select: { id: true, code: true },
+          });
+          for (const row of createdRows) createdIdByCode.set(row.code, row.id);
+        }
+
+        // Prices of every edited/new item in the page's price columns: replaced as a set.
+        const tierIds = Array.from(tierIdByKey.values());
+        const priceItems: { itemId: string; prices: Record<string, number | null> }[] = [
+          ...toUpdate.map((item) => ({ itemId: item.id as string, prices: item.prices })),
+          ...toCreate
+            .filter((item) => createdIdByCode.has(item.code))
+            .map((item) => ({ itemId: createdIdByCode.get(item.code) as string, prices: item.prices })),
+        ];
+        if (priceItems.length > 0 && tierIds.length > 0) {
+          const editedIds = priceItems.map((p) => p.itemId);
+          const priceRows: { itemId: string; tierId: string; price: number }[] = [];
+          for (const entry of priceItems) {
+            for (const [key, tierId] of Array.from(tierIdByKey.entries())) {
+              const value = entry.prices[key];
+              if (value === null || value === undefined || !Number.isFinite(Number(value))) continue;
+              priceRows.push({ itemId: entry.itemId, tierId, price: Number(value) });
+            }
+          }
+          for (let i = 0; i < editedIds.length; i += PRICE_DELETE_BATCH) {
+            await tx.cabinetCatalogItemPrice.deleteMany({
+              where: { itemId: { in: editedIds.slice(i, i + PRICE_DELETE_BATCH) }, tierId: { in: tierIds } },
+            });
+          }
+          for (let i = 0; i < priceRows.length; i += PRICE_INSERT_BATCH) {
+            await tx.cabinetCatalogItemPrice.createMany({ data: priceRows.slice(i, i + PRICE_INSERT_BATCH) });
+          }
+        }
+        const created = toCreate.length;
+        const updated = toUpdate.length;
 
         return { created, updated, deleted, skipped, removedColumns: removedTierIds.length };
       },

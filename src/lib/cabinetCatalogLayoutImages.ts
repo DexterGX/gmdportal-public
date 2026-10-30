@@ -27,6 +27,8 @@ const MIN_DRAWING = 20; // points: smaller blobs are labels/ticks, not drawings
 const MIN_DRAWING_INK = 600; // ink cells: a few depth/dimension lines are not a drawing
 const MAX_DENSITY = 0.4; // solid blobs (photos, title bars) are not line drawings
 const MIN_PART = 40; // points: shortest picture a shared drawing is split into
+const RULE_MIN_H = 40; // points: a table rule is at least this long where it enters the strip
+const RULE_MIN_V = 60; // points: shortest vertical cell border
 const MAX_PAGE_RENDERS = 120;
 
 export type LayoutImageGroup = {
@@ -153,6 +155,74 @@ function findComponents(
 }
 
 /**
+ * Table catalogs draw every picture inside a bordered cell. Those borders (and
+ * the colored header / note bars) would join all the drawings of the page into
+ * one huge blob, so they are found and taken out of the ink mask first.
+ *
+ * A table rule is a horizontal run of ink that enters the picture strip from
+ * the table on its right (it touches the strip's right edge), and a cell
+ * border is a long vertical run that meets one of those rules. Drawings never
+ * touch the table, so they are left alone. Returns null when the page has no
+ * table rules (the usual case) and nothing was changed.
+ */
+function removeTableRules(ink: Uint8Array, w: number, h: number): Uint8Array | null {
+  const rule = new Uint8Array(w * h);
+  let lines = 0;
+  let prevRow = -2;
+  for (let y = 0; y < h; y++) {
+    const row = y * w;
+    if (!ink[row + w - 1] && !ink[row + w - 2]) continue;
+    let x = ink[row + w - 1] ? w - 1 : w - 2;
+    while (x > 0 && (ink[row + x] || ink[row + x - 1])) x--;
+    if (w - x < RULE_MIN_H) continue;
+    for (let i = x; i < w; i++) rule[row + i] = 1;
+    if (y - prevRow > 1) lines++;
+    prevRow = y;
+  }
+  if (lines < 2) return null;
+
+  // Cell borders: long vertical runs that meet one of the rules above.
+  for (let x = 0; x < w; x++) {
+    let y = 0;
+    while (y < h) {
+      if (!ink[y * w + x]) {
+        y++;
+        continue;
+      }
+      const start = y;
+      let meets = false;
+      while (y < h && ink[y * w + x]) {
+        if (rule[y * w + x]) meets = true;
+        y++;
+      }
+      if (meets && y - start >= RULE_MIN_V) {
+        for (let r = start; r < y; r++) rule[r * w + x] = 1;
+      }
+    }
+  }
+
+  // Anti-aliased edges of those lines.
+  const grown = new Uint8Array(rule);
+  for (let y = 0; y < h; y++) {
+    for (let x = 0; x < w; x++) {
+      if (rule[y * w + x] || !ink[y * w + x]) continue;
+      for (let dy = -1; dy <= 1 && !grown[y * w + x]; dy++) {
+        for (let dx = -1; dx <= 1; dx++) {
+          const nx = x + dx;
+          const ny = y + dy;
+          if (nx >= 0 && nx < w && ny >= 0 && ny < h && rule[ny * w + nx]) {
+            grown[y * w + x] = 1;
+            break;
+          }
+        }
+      }
+    }
+  }
+  for (let i = 0; i < ink.length; i++) if (grown[i]) ink[i] = 0;
+  return grown;
+}
+
+/**
  * @param pdfBytes the whole catalog PDF
  * @param codes the vendor's item codes still needing a picture
  */
@@ -270,10 +340,14 @@ export async function extractLayoutImages(
         }
       }
 
+      const tableRules = removeTableRules(ink, stripW, pageH);
       const { comps, labels } = findComponents(ink, stripW, pageH);
       const drawings: Comp[] = [];
       const small: Comp[] = [];
       for (const c of comps) {
+        // Pieces of the table itself (note bars, cell corners) that run on
+        // into the strip are not pictures.
+        if (tableRules && c.x1 >= stripW - 2) continue;
         const w = c.x1 - c.x0 + 1;
         const h = c.y1 - c.y0 + 1;
         const density = c.count / (w * h);
@@ -345,7 +419,7 @@ export async function extractLayoutImages(
         for (let y = cy0; y < cy1; y++) {
           for (let x = cx0; x < cx1; x++) {
             const label = labels[y * stripW + x];
-            if (label !== 0 && !included.has(label - 1)) {
+            if ((label !== 0 && !included.has(label - 1)) || (tableRules && tableRules[y * stripW + x])) {
               cctx.fillRect((x - cx0) * SCALE, (y - cy0) * SCALE, SCALE, SCALE);
             }
           }
