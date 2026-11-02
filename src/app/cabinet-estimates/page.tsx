@@ -30,6 +30,7 @@ export default async function NewCabinetEstimatePage() {
     <CabinetEstimateForm
       currentUserName={user.name || user.email || ""}
       canViewCost={canViewCabinetCost({ appRole, appRoles })}
+      isSalesRep={appRole === "sales"}
       companyName={companySettings?.companyName || "GM Design"}
       companyLogoUrl={companySettings?.logoUrl || "/logo.svg"}
       companyPhone={companySettings?.phoneNumber || null}

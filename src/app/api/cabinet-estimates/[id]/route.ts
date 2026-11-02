@@ -318,7 +318,6 @@ export async function PATCH(
       jobId: body.jobId || null,
       jobName: body.jobName || null,
       jobAddress: body.jobAddress || null,
-      email: body.email || null,
       dealId: body.dealId || null,
       dealName: body.dealName || null,
       salesRep,
@@ -384,7 +383,7 @@ export async function PATCH(
       jobId: body.jobId || null,
       jobName: body.jobName || null,
       jobAddress: body.jobAddress || null,
-      email: body.email || null,
+      email: existing.email || null, // no longer edited on the form - keep what was stored
       dealId: body.dealId || null,
       dealName: body.dealName || null,
       salesRep,

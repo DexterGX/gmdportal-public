@@ -4,6 +4,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import Link from "next/link";
 import RoundedSelect from "@/components/forms/RoundedSelect";
+import RoundedMultiSelect from "@/components/forms/RoundedMultiSelect";
 import InfoPopover from "@/components/forms/InfoPopover";
 import CopyQBooksButton from "./CopyQBooksButton";
 import { useRouter, useSearchParams } from "next/navigation";
@@ -100,6 +101,8 @@ type CatalogVendor = {
   name: string;
   displayName: string;
   factor?: number | null;
+  // When this brand's price list was last imported/edited (ISO) - the form's "Last Updated".
+  priceListUpdatedAt?: string | null;
 };
 type CatalogPriceTier = { id: string; name: string };
 // A color priced under a Level, e.g. label "Level 1 - Ivory White Shaker IWS".
@@ -164,6 +167,25 @@ function isEmptyLineItem(item: LineItem): boolean {
   );
 }
 
+// Project Type can hold several choices; they are stored as one ", "-joined string.
+function splitProjectTypes(value: unknown): string[] {
+  return Array.from(
+    new Set(
+      String(value || "")
+        .split(",")
+        .map((part) => part.trim())
+        .filter(Boolean),
+    ),
+  );
+}
+
+function formatShortDate(iso: string | null | undefined): string {
+  if (!iso) return "";
+  const d = new Date(iso);
+  if (Number.isNaN(d.getTime())) return "";
+  return d.toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" });
+}
+
 function todayIso() {
   return new Date().toISOString().slice(0, 10);
 }
@@ -181,6 +203,8 @@ type Props = {
   currentUserName: string;
   // Admins, finance and Program Admins only - may open the Preco de Custo view.
   canViewCost: boolean;
+  // Sales Reps are never asked "is this a Remeasure PK List?" when saving.
+  isSalesRep?: boolean;
   companyName: string;
   companyLogoUrl: string;
   companyPhone: string | null;
@@ -210,7 +234,6 @@ export default function CabinetEstimateForm(props: Props) {
   const [jobAddress, setJobAddress] = useState("");
   const [dealId, setDealId] = useState("");
   const [dealName, setDealName] = useState("");
-  const [email, setEmail] = useState("");
   const [salesRep, setSalesRep] = useState(props.currentUserName);
   const [brand, setBrand] = useState("");
   const [groupColor, setGroupColor] = useState("");
@@ -220,6 +243,12 @@ export default function CabinetEstimateForm(props: Props) {
   // color stays in the dropdown without refetching on every selection.
   const priceTierIdRef = useRef("");
   priceTierIdRef.current = priceTierId;
+  // Lets the async re-match below notice the Brand changed again while its
+  // request was still in flight.
+  const vendorIdRef = useRef("");
+  vendorIdRef.current = vendorId;
+  // Row keys whose code wasn't found in the Brand that was just switched to.
+  const [unmatchedKeys, setUnmatchedKeys] = useState<string[]>([]);
   const [vendors, setVendors] = useState<CatalogVendor[]>([]);
   const [priceTiers, setPriceTiers] = useState<CatalogPriceTier[]>([]);
   const [colorOptions, setColorOptions] = useState<CatalogColorOption[]>([]);
@@ -233,7 +262,7 @@ export default function CabinetEstimateForm(props: Props) {
   // Round 12: Project Type is still a plain string (no calc tied to it
   // yet, per Diego's explicit "for now" scoping) but is now chosen from a
   // GMD-Parameters-managed list instead of typed freely.
-  const [projectType, setProjectType] = useState("");
+  const [projectTypes, setProjectTypes] = useState<string[]>([]);
   // Version is stamped by the server (program/table version at save time) -
   // never typed. `versionActual` only differs from `version` when an admin
   // logged an update as "don't show publicly".
@@ -487,7 +516,6 @@ export default function CabinetEstimateForm(props: Props) {
         setCustomerId(json.customerId || "");
         setJobName(json.jobName || "");
         setJobAddress(json.jobAddress || "");
-        setEmail(json.email || "");
         setDealId(json.dealId || "");
         setDealName(json.dealName || "");
         // Keep the linked job on re-save (it used to be dropped to null).
@@ -498,7 +526,7 @@ export default function CabinetEstimateForm(props: Props) {
         setVendorId(json.vendorId || "");
         setPriceTierId(json.priceTierId || "");
         setRemovalTypeId(json.removalTypeId || "");
-        setProjectType(json.projectType || "");
+        setProjectTypes(splitProjectTypes(json.projectType));
         setVersion(json.version || "");
         setVersionActual(json.versionActual || "");
         setIsRemeasure(Boolean(json.isRemeasure));
@@ -851,6 +879,91 @@ export default function CabinetEstimateForm(props: Props) {
     }
   }
 
+  // Brand changed: look every code already on the estimate up in the new
+  // brand's catalog so rows keep their code/qty/note and get the new brand's
+  // description and (once a Group/Color is chosen) price, instead of the user
+  // having to retype every code. Codes match leniently (B9 finds B09).
+  async function rematchRowsToVendor(nextVendorId: string, brandLabel: string) {
+    if (!nextVendorId) return;
+    const rows = lineItemsRef.current.filter((item) => item.code.trim());
+    const codes = Array.from(new Set(rows.map((item) => item.code.trim())));
+    if (codes.length === 0) return;
+    try {
+      const fetchByCodes = async (tierId: string) => {
+        const params = new URLSearchParams({
+          vendorId: nextVendorId,
+          codes: codes.join(","),
+        });
+        if (tierId) params.set("tierId", tierId);
+        const res = await fetch(
+          `/api/cabinet-catalog/items?${params.toString()}`,
+        );
+        const json = await res.json();
+        if (!res.ok) throw new Error(json?.error || "Failed to match codes");
+        return (json.items || []) as (CatalogItemSuggestion & {
+          requestedCode: string;
+        })[];
+      };
+      let found = await fetchByCodes("");
+      if (vendorIdRef.current !== nextVendorId) return;
+      // A Group/Color picked while that request was running.
+      const tierNow = priceTierIdRef.current;
+      if (tierNow && found.length > 0) {
+        found = await fetchByCodes(tierNow);
+        if (vendorIdRef.current !== nextVendorId) return;
+      }
+      const byCode = new Map(found.map((it) => [it.requestedCode, it]));
+      const unmatched: string[] = [];
+      const missingCodes: string[] = [];
+      let matchedCount = 0;
+      for (const item of lineItemsRef.current) {
+        const code = item.code.trim();
+        if (!code || item.catalogItemId) continue;
+        if (byCode.has(code)) {
+          matchedCount += 1;
+        } else {
+          unmatched.push(item.key);
+          if (!missingCodes.includes(code)) missingCodes.push(code);
+        }
+      }
+      setLineItems((prev) =>
+        prev.map((item) => {
+          const code = item.code.trim();
+          if (!code || item.catalogItemId) return item;
+          const match = byCode.get(code);
+          if (!match) return item;
+          return {
+            ...item,
+            code: match.code,
+            description: match.description,
+            unitPrice: match.unitPrice,
+            catalogItemId: match.id,
+            summaryBucket: match.summaryBucket,
+            installationItemId: match.installationItemId,
+            catalogImageUrl: match.catalogImageUrl,
+          };
+        }),
+      );
+      setUnmatchedKeys(unmatched);
+      const parts: string[] = [];
+      if (matchedCount > 0) {
+        parts.push(
+          `${matchedCount} item${matchedCount === 1 ? "" : "s"} matched by code in ${brandLabel}.${
+            priceTierIdRef.current ? "" : " Pick a Group / Color to see prices."
+          }`,
+        );
+      }
+      if (missingCodes.length > 0) {
+        parts.push(
+          `Not found in ${brandLabel}: ${missingCodes.join(", ")} (highlighted in red).`,
+        );
+      }
+      if (parts.length > 0) setMessage(parts.join(" "));
+    } catch {
+      // non-fatal - rows just keep their codes; the user can pick them again
+    }
+  }
+
   const cabinetsTotal = useMemo(
     () =>
       computeCabinetsTotal(
@@ -1113,14 +1226,13 @@ export default function CabinetEstimateForm(props: Props) {
     setJobAddress("");
     setDealId("");
     setDealName("");
-    setEmail("");
     setSalesRep(props.currentUserName);
     setBrand("");
     setGroupColor("");
     setVendorId("");
     setPriceTierId("");
     setRemovalTypeId("");
-    setProjectType("");
+    setProjectTypes([]);
     setVersion("");
     setVersionActual("");
     setIsRemeasure(false);
@@ -1156,7 +1268,6 @@ export default function CabinetEstimateForm(props: Props) {
       jobId: selectedJobId || null,
       jobName,
       jobAddress,
-      email,
       dealId,
       dealName,
       salesRep,
@@ -1165,7 +1276,7 @@ export default function CabinetEstimateForm(props: Props) {
       vendorId: vendorId || null,
       priceTierId: priceTierId || null,
       removalTypeId: removalTypeId || null,
-      projectType,
+      projectType: projectTypes.join(", "),
       isRemeasure,
       originalEstimateId: creatingRemeasure ? estimateId : null,
       standardCabinetsCount: cabinetsSummaryCounts.STANDARD,
@@ -1237,26 +1348,71 @@ export default function CabinetEstimateForm(props: Props) {
 
   // Remeasure always starts from the current price list; unticking restores
   // the prices the estimate had.
-  function handleRemeasureToggle(checked: boolean) {
+  async function handleRemeasureToggle(checked: boolean): Promise<void> {
     setIsRemeasure(checked);
     if (checked) {
       remeasureBackup.current = lineItemsRef.current.map((item) => ({
         ...item,
       }));
-      repriceCatalogItems(vendorId, priceTierId).then((changedCount) => {
-        if (changedCount > 0) {
-          setMessage(
-            `Remeasure uses the current price list: ${changedCount} line price${
-              changedCount === 1 ? "" : "s"
-            } updated.`,
-          );
-        }
-      });
+      const changedCount = await repriceCatalogItems(vendorId, priceTierId);
+      if (changedCount > 0) {
+        setMessage(
+          `Remeasure uses the current price list: ${changedCount} line price${
+            changedCount === 1 ? "" : "s"
+          } updated.`,
+        );
+      }
     } else if (remeasureBackup.current) {
       setLineItems(remeasureBackup.current);
       remeasureBackup.current = null;
     }
   }
+
+  // Clicking Save on an already-saved estimate that has edits asks whether it
+  // is a Remeasure PK List, so nobody has to remember the checkbox. Never asked
+  // when: the user is a Sales Rep, the checkbox is already ticked, this estimate
+  // is itself a remeasure, nothing changed, the Preco de Custo view is on, or
+  // the question was already answered "No" for this estimate in this visit.
+  const [remeasurePrompt, setRemeasurePrompt] = useState(false);
+  const [autoSavePending, setAutoSavePending] = useState(false);
+  const remeasureDeclinedFor = useRef<Set<string>>(new Set());
+  const handleSaveRef = useRef<() => Promise<string | null>>(async () => null);
+
+  function handleSaveClick() {
+    const shouldAskRemeasure =
+      !props.isSalesRep &&
+      Boolean(estimateId) &&
+      !isRemeasure &&
+      !loadedIsRemeasure &&
+      !showCost &&
+      isDirty &&
+      !remeasureDeclinedFor.current.has(estimateId || "");
+    if (shouldAskRemeasure) {
+      setRemeasurePrompt(true);
+      return;
+    }
+    void handleSave();
+  }
+
+  async function answerRemeasurePrompt(isRemeasureAnswer: boolean) {
+    setRemeasurePrompt(false);
+    if (!isRemeasureAnswer) {
+      if (estimateId) remeasureDeclinedFor.current.add(estimateId);
+      void handleSave();
+      return;
+    }
+    // Yes: tick the box, re-price from the current price list (what a
+    // remeasure uses), then save once that has landed in the form.
+    setSaving(true);
+    await handleRemeasureToggle(true);
+    setAutoSavePending(true);
+  }
+
+  useEffect(() => {
+    if (!autoSavePending) return;
+    setAutoSavePending(false);
+    void handleSaveRef.current();
+  }, [autoSavePending]);
 
   useEffect(() => {
     if (!showCost || costData || !props.canViewCost) return;
@@ -1342,6 +1498,8 @@ export default function CabinetEstimateForm(props: Props) {
       setSaving(false);
     }
   }
+
+  handleSaveRef.current = handleSave;
 
   function openPrintWindow(kind: "normal" | "pk" | "cost", id: string) {
     const params = new URLSearchParams({ autoprint: "1" });
@@ -1501,6 +1659,23 @@ export default function CabinetEstimateForm(props: Props) {
     [gmdParameters.projectTypes, collator],
   );
 
+  // Job counts as chosen once a job/deal is picked, or - when the customer has
+  // no jobs to pick from - a name is typed.
+  const jobMissing = clientJobs.length > 0 ? !selectedJobId : !jobName.trim();
+
+  // "Last Updated" under the header inputs: when the selected Brand's price
+  // list was last imported/edited, or (no Brand yet) the newest of all brands.
+  const priceListUpdatedLabel = useMemo(() => {
+    if (vendorId) {
+      return formatShortDate(vendors.find((v) => v.id === vendorId)?.priceListUpdatedAt);
+    }
+    let newest = "";
+    for (const v of vendors) {
+      if (v.priceListUpdatedAt && v.priceListUpdatedAt > newest) newest = v.priceListUpdatedAt;
+    }
+    return newest ? `${formatShortDate(newest)} (latest of all brands)` : "";
+  }, [vendorId, vendors]);
+
   return (
     <div className="mx-auto max-w-[100rem] space-y-4">
       <div className="flex flex-wrap items-center justify-between gap-3">
@@ -1601,7 +1776,7 @@ export default function CabinetEstimateForm(props: Props) {
           </button>
           <button
             type="button"
-            onClick={handleSave}
+            onClick={handleSaveClick}
             disabled={saving || loading || showCost}
             title={
               showCost
@@ -1627,6 +1802,57 @@ export default function CabinetEstimateForm(props: Props) {
           {error || message}
         </div>
       )}
+
+      {remeasurePrompt &&
+        typeof document !== "undefined" &&
+        createPortal(
+          <div
+            className="fixed inset-0 z-[60] flex items-center justify-center bg-black/60 p-4"
+            onClick={() => setRemeasurePrompt(false)}
+            role="dialog"
+            aria-modal="true"
+            aria-label="Remeasure PK List"
+          >
+            <div
+              className="w-full max-w-md rounded-xl bg-white p-5 shadow-2xl dark:bg-gray-800"
+              onClick={(e) => e.stopPropagation()}
+            >
+              <h2 className="text-base font-semibold text-gray-900 dark:text-gray-100">
+                Is this a Remeasure PK List?
+              </h2>
+              <p className="mt-1.5 text-sm text-gray-600 dark:text-gray-400">
+                Choose <strong>Yes</strong> if you are re-creating estimate #{estimateNumber || "-"} with
+                what will actually be ordered. It is saved as a new estimate numbered{" "}
+                {estimateNumber ? `${estimateNumber}R` : "<original>R"} using the current price list, and
+                the original stays as it is. Choose <strong>No</strong> for a regular edit.
+              </p>
+              <div className="mt-4 flex flex-wrap justify-end gap-2">
+                <button
+                  type="button"
+                  onClick={() => setRemeasurePrompt(false)}
+                  className="rounded-md border border-gray-300 px-3 py-1.5 text-sm font-medium text-gray-700 hover:bg-gray-50 dark:border-gray-600 dark:text-gray-300 dark:hover:bg-gray-700"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="button"
+                  onClick={() => void answerRemeasurePrompt(false)}
+                  className="rounded-md border border-gray-300 px-3 py-1.5 text-sm font-medium text-gray-700 hover:bg-gray-50 dark:border-gray-600 dark:text-gray-300 dark:hover:bg-gray-700"
+                >
+                  No, save normally
+                </button>
+                <button
+                  type="button"
+                  onClick={() => void answerRemeasurePrompt(true)}
+                  className="rounded-md bg-blue-600 px-3 py-1.5 text-sm font-medium text-white hover:bg-blue-700"
+                >
+                  Yes, Remeasure PK List
+                </button>
+              </div>
+            </div>
+          </div>,
+          document.body,
+        )}
 
       {printPrompt &&
         typeof document !== "undefined" &&
@@ -1786,10 +2012,21 @@ export default function CabinetEstimateForm(props: Props) {
                   <div className="divide-y divide-gray-300 border-b border-gray-300 dark:divide-gray-600 dark:border-gray-600 lg:border-b-0 lg:border-r">
                     <div
                       ref={clientBoxRef}
-                      className="relative grid grid-cols-[130px_1fr] divide-x divide-gray-300 dark:divide-gray-600"
+                      className={`relative grid grid-cols-[130px_1fr] divide-x divide-gray-300 dark:divide-gray-600 ${
+                        !customerId ? "bg-red-50 dark:bg-red-950/30" : ""
+                      }`}
                     >
-                      <div className="flex items-center bg-blue-600 px-2 py-0.5 text-[11px] font-semibold text-white">
-                        Customer Name
+                      <div
+                        className={`flex items-center px-2 py-0.5 text-[11px] font-semibold text-white ${
+                          !customerId ? "bg-red-600" : "bg-blue-600"
+                        }`}
+                        title={
+                          !customerId
+                            ? "Search and pick the customer from the list so the job can be selected"
+                            : undefined
+                        }
+                      >
+                        Customer Name{!customerId ? " *" : ""}
                       </div>
                       <div className="relative">
                         <input
@@ -1841,9 +2078,24 @@ export default function CabinetEstimateForm(props: Props) {
                       </div>
                     </div>
 
-                    <div className="grid grid-cols-[130px_1fr] divide-x divide-gray-300 dark:divide-gray-600">
-                      <div className="flex items-center bg-blue-600 px-2 py-0.5 text-[11px] font-semibold text-white">
-                        Job Name
+                    <div
+                      className={`grid grid-cols-[130px_1fr] divide-x divide-gray-300 dark:divide-gray-600 ${
+                        jobMissing ? "bg-red-50 dark:bg-red-950/30" : ""
+                      }`}
+                    >
+                      <div
+                        className={`flex items-center px-2 py-0.5 text-[11px] font-semibold text-white ${
+                          jobMissing ? "bg-red-600" : "bg-blue-600"
+                        }`}
+                        title={
+                          jobMissing
+                            ? clientJobs.length > 0
+                              ? "Select the job/deal for this customer"
+                              : "Enter the job name (or pick a customer to choose one of their jobs)"
+                            : undefined
+                        }
+                      >
+                        Job Name{jobMissing ? " *" : ""}
                       </div>
                       {clientJobs.length > 0 ? (
                         <RoundedSelect
@@ -1878,15 +2130,6 @@ export default function CabinetEstimateForm(props: Props) {
                       />
                     </HeaderRow>
 
-                    <HeaderRow label="Email Address">
-                      <input
-                        value={email}
-                        onChange={(e) => setEmail(e.target.value)}
-                        placeholder="client@email.com"
-                        className="w-full bg-transparent px-2 py-0.5 text-[11px] text-gray-900 outline-none dark:text-gray-100"
-                      />
-                    </HeaderRow>
-
                     <HeaderRow label="Salesperson">
                       <input
                         value={salesRep}
@@ -1906,11 +2149,12 @@ export default function CabinetEstimateForm(props: Props) {
                           setBrand(vendor?.displayName || "");
                           setPriceTierId("");
                           setGroupColor("");
-                          // Switching brands means switching catalogs entirely -
-                          // a code from the old vendor almost never means the
-                          // same cabinet (or exists at all) under the new one,
-                          // so clear every catalog-linked row rather than risk
-                          // showing a price/description that doesn't match.
+                          setUnmatchedKeys([]);
+                          // Switching brands switches catalogs, so the old
+                          // brand's links/prices/descriptions can't be kept.
+                          // The codes (and qty/notes) ARE kept: they're looked
+                          // up in the new brand just below, so the user only
+                          // has to pick a Group/Color to see the new prices.
                           setLineItems((prev) =>
                             prev.map((item) =>
                               item.catalogItemId
@@ -1921,9 +2165,14 @@ export default function CabinetEstimateForm(props: Props) {
                                     installationItemId: null,
                                     description: "",
                                     unitPrice: 0,
+                                    catalogImageUrl: null,
                                   }
                                 : item,
                             ),
+                          );
+                          rematchRowsToVendor(
+                            nextVendorId,
+                            vendor?.displayName || "the new brand",
                           );
                         }}
                         placeholder={brand || "-- Select brand --"}
@@ -2004,26 +2253,40 @@ export default function CabinetEstimateForm(props: Props) {
                     </HeaderRow>
 
                     <HeaderRow label="Project Type">
-                      <RoundedSelect
-                        value={projectType}
-                        onChange={setProjectType}
+                      <RoundedMultiSelect
+                        values={projectTypes}
+                        onChange={setProjectTypes}
+                        ariaLabel="Project Type"
+                        placeholder="-- None --"
                         options={[
-                          { value: "", label: "-- None --" },
                           ...sortedProjectTypes
-                            .filter((t) => t.isActive || t.name === projectType)
+                            .filter((t) => t.isActive || projectTypes.includes(t.name))
                             .map((t) => ({ value: t.name, label: t.name })),
-                          // A saved estimate's projectType may hold a value from
-                          // before this dropdown existed (free text) or one that
-                          // no longer matches any configured option - keep it
-                          // selectable so it isn't silently blanked out on load.
-                          ...(projectType &&
-                          !gmdParameters.projectTypes.some(
-                            (t) => t.name === projectType,
-                          )
-                            ? [{ value: projectType, label: projectType }]
-                            : []),
+                          // A saved estimate may hold a value from before this
+                          // list existed (free text) or one no longer in it -
+                          // keep it listed so it isn't silently dropped on load.
+                          ...projectTypes
+                            .filter((name) => !gmdParameters.projectTypes.some((t) => t.name === name))
+                            .map((name) => ({ value: name, label: name })),
                         ]}
                       />
+                    </HeaderRow>
+
+                    <HeaderRow label="Last Updated">
+                      <div
+                        className="px-2 py-0.5 text-[11px] text-gray-900 dark:text-gray-100"
+                        title={
+                          vendorId
+                            ? `When the ${brand || "selected brand"} price list was last imported or edited`
+                            : "Select a Brand to see when its price list was last updated"
+                        }
+                      >
+                        {priceListUpdatedLabel || (
+                          <span className="text-gray-500 dark:text-gray-400">
+                            {vendorId ? "-" : "Select a Brand"}
+                          </span>
+                        )}
+                      </div>
                     </HeaderRow>
                   </div>
 
@@ -2076,7 +2339,7 @@ export default function CabinetEstimateForm(props: Props) {
                           checked={isRemeasure}
                           disabled={!estimateId || loadedIsRemeasure}
                           onChange={(e) =>
-                            handleRemeasureToggle(e.target.checked)
+                            void handleRemeasureToggle(e.target.checked)
                           }
                         />
                         Remeasure PK List
@@ -2139,7 +2402,16 @@ export default function CabinetEstimateForm(props: Props) {
                         // Brand/Group-Color - render N/A instead of a $0.00
                         // that would look like a genuine free item.
                         const hasMissingPrice =
-                          Boolean(item.catalogItemId) && item.unitPrice == null;
+                          Boolean(item.catalogItemId) &&
+                          item.unitPrice == null &&
+                          Boolean(priceTierId);
+                        // Matched in the new Brand, but no Group/Color picked
+                        // yet - show a dash instead of an alarming N/A.
+                        const awaitingColor =
+                          Boolean(item.catalogItemId) &&
+                          item.unitPrice == null &&
+                          !priceTierId;
+                        const codeNotInBrand = unmatchedKeys.includes(item.key);
                         return (
                           <tr
                             key={item.key}
@@ -2174,11 +2446,22 @@ export default function CabinetEstimateForm(props: Props) {
                                 className="w-full bg-transparent px-1.5 py-0.5 text-center text-xs text-gray-900 outline-none dark:text-gray-100 [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
                               />
                             </td>
-                            <td className="relative border border-gray-200 p-1 text-center align-middle dark:border-gray-700">
+                            <td
+                              className={`relative border border-gray-200 p-1 text-center align-middle dark:border-gray-700 ${
+                                codeNotInBrand
+                                  ? "bg-red-50 dark:bg-red-950/30"
+                                  : ""
+                              }`}
+                            >
                               <input
                                 ref={(el) => registerCellRef(index, "code", el)}
                                 value={item.code}
                                 onChange={(e) => {
+                                  setUnmatchedKeys((keys) =>
+                                    keys.includes(item.key)
+                                      ? keys.filter((k) => k !== item.key)
+                                      : keys,
+                                  );
                                   updateItem(index, {
                                     code: e.target.value,
                                     catalogItemId: null,
@@ -2218,7 +2501,9 @@ export default function CabinetEstimateForm(props: Props) {
                                 }
                                 autoComplete="off"
                                 title={
-                                  !vendorId
+                                  codeNotInBrand
+                                    ? `${item.code} was not found in ${brand || "this brand"} - pick a different code`
+                                    : !vendorId
                                     ? "Select a Brand above to search the catalog"
                                     : !priceTierId
                                       ? "Select a Group/Color above to see prices"
@@ -2370,7 +2655,9 @@ export default function CabinetEstimateForm(props: Props) {
                               >
                                 {hasMissingPrice
                                   ? "N/A"
-                                  : formatCurrency(
+                                  : awaitingColor
+                                    ? "-"
+                                    : formatCurrency(
                                       showCost
                                         ? toCost(item.unitPrice ?? 0)
                                         : item.unitPrice,
@@ -2382,6 +2669,8 @@ export default function CabinetEstimateForm(props: Props) {
                                 <span className="text-red-600 dark:text-red-400">
                                   N/A
                                 </span>
+                              ) : awaitingColor ? (
+                                "-"
                               ) : (
                                 formatCurrency(
                                   showCost

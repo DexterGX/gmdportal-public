@@ -2155,6 +2155,12 @@ model CabinetVendor {
   catalogPdfFileName String?
   catalogUploadedAt  DateTime?
 
+  // When this vendor's price list was last imported or edited (stamped by the
+  // import "Apply" and the Price List editor's save). Shown on the estimate
+  // form as "Last Updated". Null on vendors not touched since this was added;
+  // the vendors API then falls back to the newest item update time.
+  priceListUpdatedAt DateTime?
+
   priceTiers   CabinetPriceTier[]
   colorOptions CabinetColorOption[]
   items        CabinetCatalogItem[]

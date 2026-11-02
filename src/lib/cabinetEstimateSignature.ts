@@ -25,7 +25,6 @@ export type EstimateSignatureInput = {
   jobId?: unknown; // not compared - the form doesn't reload it, jobName/dealId cover it
   jobName: unknown;
   jobAddress: unknown;
-  email: unknown;
   dealId: unknown;
   dealName: unknown;
   salesRep: unknown;
@@ -59,7 +58,6 @@ export function estimateSignature(input: EstimateSignatureInput): string {
     customerId: str(input.customerId),
     jobName: str(input.jobName),
     jobAddress: str(input.jobAddress),
-    email: str(input.email),
     dealId: str(input.dealId),
     dealName: str(input.dealName),
     salesRep: str(input.salesRep),

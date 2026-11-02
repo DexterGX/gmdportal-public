@@ -250,6 +250,23 @@ export function generateItemKey(vendorName: string, code: string): string {
   return `${vendorName.trim().toLowerCase()}|${code.trim().toLowerCase()}`;
 }
 
+// Words that mark a row as an accessory/trim piece rather than a cabinet box.
+const ACCESSORY_WORDS =
+  /molding|moulding|trim|panel|filler|toe\s*kick|kick\s*plate|skin|hardware|knob|handle|\bpull\b(?!\s*out)|accessor|organizer|insert|rod\b|sample|\bdoor only|\bdrawer front|crown|light rail|scribe|\bleg\b|\bfeet\b/i;
+
+/**
+ * A safety net for the AI's reading of the file: a row that is plainly a
+ * cabinet ("BASE CABINET 15", "3 DRAWERS BASE 12", "SINK BASE 30" under
+ * "BASE CABINETS") must not end up as an accessory because the AI took "BASE"
+ * for base molding / toe kick. Used only to correct MISC and accessory-type
+ * installation matches, never to override a deliberate STANDARD/DOUBLE/CUSTOM.
+ */
+function looksLikeCabinet(category: string | null, description: string): boolean {
+  const text = `${category || ""} ${description}`;
+  if (ACCESSORY_WORDS.test(description)) return false;
+  return /\bcabinets?\b|\bdrawers?\b|\bsink base\b|\bbase (?:blind|corner|end)\b|\bblind corner\b|\bspice rack\b/i.test(text);
+}
+
 function resolveBucket(
   category: string | null,
   hints: CabinetImportParsePlan["categoryBucketHints"],
@@ -484,19 +501,28 @@ export function applyParsePlan(
       continue;
     }
 
-    const summaryBucket = resolveBucket(category, plan.categoryBucketHints, plan.defaultBucket);
+    const resolvedBucket = resolveBucket(category, plan.categoryBucketHints, plan.defaultBucket);
+    const cabinetLike = looksLikeCabinet(category, description);
+    const summaryBucket: CabinetSummaryBucket =
+      resolvedBucket === "MISC" && cabinetLike ? "STANDARD" : resolvedBucket;
     // Round 12 follow-up #2: check the specific item-level hint FIRST - it
     // beats the bucket default whenever it matches. Only fall back to the
     // bucket default when no hint matched, and only if this row isn't
     // flagged as a non-cabinet accessory (installationItemExclusions) -
     // otherwise leave it unassigned rather than wrongly inheriting
     // "Standard Cabinet"/"Double Cabinet".
-    const hintMatch = resolveInstallationItem(
+    let hintMatch = resolveInstallationItem(
       category,
       description,
       plan.installationItemHints,
       installationItemIdByKey,
     );
+    // A cabinet matched to a trim/accessory installation row (e.g. "base" taken
+    // for toe kick) is a misreading - fall back to the bucket's default item.
+    if (hintMatch && cabinetLike) {
+      const matched = (installationItems || []).find((it) => it.id === hintMatch!.id);
+      if (matched && ACCESSORY_WORDS.test(matched.description)) hintMatch = null;
+    }
     const excludedFromBucketDefault = matchesExclusionPattern(
       category,
       description,

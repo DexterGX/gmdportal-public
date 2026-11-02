@@ -364,6 +364,11 @@ function buildPrompt(
     `explicitly marked custom or special-order -> CUSTOM, hardware/accessories/panels/fillers -> ` +
     `MISC. Try to give every distinct category you see a real hint rather than leaving most of ` +
     `them to fall through to defaultBucket.\n\n` +
+    `IMPORTANT about the word "base": in categories and descriptions like "BASE CABINETS", ` +
+    `"BASE DRAWERS", "SINK BASE" or "BASE BLIND CORNER" it means a floor-standing BASE CABINET ` +
+    `(bucket STANDARD, installation = the standard cabinet item). It is NOT base molding or a ` +
+    `toe kick - never map those categories to MISC or to a toe-kick/molding installation item. ` +
+    `Wall, base, drawer and sink cabinets are all STANDARD.\n\n` +
     `IMPORTANT about hint text matching: categoryContains is a plain case-insensitive substring ` +
     `match against the real category text, with NO plural/singular normalization - a hint of ` +
     `"pantry" will NOT match category text that reads "PANTRIES" (plural), so that item would ` +
@@ -382,6 +387,17 @@ function isCabinetSummaryBucket(value: unknown): value is CabinetSummaryBucket {
     typeof value === "string" &&
     (CABINET_SUMMARY_BUCKETS as string[]).includes(value)
   );
+}
+
+/** "standard", " Double ", "STANDARD CABINET" -> the matching bucket; null when it is none of them. */
+function coerceBucket(value: unknown): CabinetSummaryBucket | null {
+  if (typeof value !== "string") return null;
+  const upper = value.trim().toUpperCase();
+  if (isCabinetSummaryBucket(upper)) return upper;
+  for (const bucket of CABINET_SUMMARY_BUCKETS) {
+    if (upper.includes(bucket)) return bucket as CabinetSummaryBucket;
+  }
+  return null;
 }
 
 function validatePlan(
@@ -415,15 +431,23 @@ function validatePlan(
   if (!["column", "sectionRow", "none"].includes(raw.categoryMode)) {
     throw new Error("AI returned an invalid categoryMode.");
   }
-  if (!isCabinetSummaryBucket(raw.defaultBucket)) {
-    throw new Error("AI returned an invalid defaultBucket.");
+  // A missing/odd bucket from the AI must not fail the whole import: fall back to
+  // STANDARD (the common case, fixable per row or in bulk on the review screen)
+  // and drop any hint whose bucket cannot be read.
+  let defaultBucket = coerceBucket(raw.defaultBucket);
+  if (!defaultBucket) {
+    console.warn("validatePlan: AI returned an unusable defaultBucket, using STANDARD:", raw.defaultBucket);
+    defaultBucket = "STANDARD";
   }
-  const hints = Array.isArray(raw.categoryBucketHints) ? raw.categoryBucketHints : [];
-  for (const hint of hints) {
-    if (typeof hint?.categoryContains !== "string" || !isCabinetSummaryBucket(hint?.bucket)) {
-      throw new Error("AI returned an invalid categoryBucketHints entry.");
-    }
-  }
+  const hints = (Array.isArray(raw.categoryBucketHints) ? raw.categoryBucketHints : [])
+    .map((hint: any) => ({
+      categoryContains: hint?.categoryContains ?? hint?.category ?? hint?.contains ?? hint?.text,
+      bucket: coerceBucket(hint?.bucket),
+    }))
+    .filter(
+      (hint: any): hint is { categoryContains: string; bucket: CabinetSummaryBucket } =>
+        typeof hint.categoryContains === "string" && hint.categoryContains.trim() !== "" && hint.bucket !== null,
+    );
 
   // installationItemHints is only requested when installationItemKeys is
   // non-empty (see buildParsePlanTool) - default to [] otherwise. Any entry
@@ -448,6 +472,17 @@ function validatePlan(
     (p: any) => typeof p?.textContains === "string" && p.textContains.trim(),
   );
 
+  if (process.env.NODE_ENV !== "production") {
+    console.log(
+      "validatePlan: defaultBucket",
+      defaultBucket,
+      "| bucket hints",
+      JSON.stringify(hints),
+      "| installation hints",
+      JSON.stringify(installationItemHints),
+    );
+  }
+
   return {
     sheetName: raw.sheetName,
     dataStartRow: raw.dataStartRow,
@@ -460,9 +495,9 @@ function validatePlan(
     sectionDetectColumn: Number.isInteger(raw.sectionDetectColumn) ? raw.sectionDetectColumn : null,
     categoryBucketHints: hints.map((h: any) => ({
       categoryContains: String(h.categoryContains).trim(),
-      bucket: h.bucket as CabinetSummaryBucket,
+      bucket: h.bucket,
     })),
-    defaultBucket: raw.defaultBucket,
+    defaultBucket,
     installationItemHints: installationItemHints.map((h: any) => ({
       categoryContains: String(h.categoryContains).trim(),
       installationItemKey: String(h.installationItemKey),

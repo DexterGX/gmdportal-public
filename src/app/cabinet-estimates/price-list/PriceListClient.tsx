@@ -4,6 +4,7 @@ import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { Pencil, Printer, Search } from "lucide-react";
 import PriceListEditor from "./PriceListEditor";
+import LogVersionUpdateModal from "../LogVersionUpdateModal";
 
 type Vendor = { id: string; name: string; displayName: string };
 
@@ -72,6 +73,7 @@ export default function PriceListClient() {
   const [reloadKey, setReloadKey] = useState(0);
   const [editing, setEditing] = useState(false);
   const [message, setMessage] = useState<string | null>(null);
+  const [versionPrompt, setVersionPrompt] = useState<{ vendorName: string } | null>(null);
 
   useEffect(() => {
     (async () => {
@@ -274,6 +276,8 @@ export default function PriceListClient() {
             setError(null);
             setMessage(text);
             setReloadKey((k) => k + 1);
+            // Something actually changed - remind the admin to log a version.
+            if (text !== "Price list saved.") setVersionPrompt({ vendorName: data.vendor.displayName });
           }}
           onCancel={() => setEditing(false)}
           onError={(text) => {
@@ -404,6 +408,17 @@ export default function PriceListClient() {
           </table>
         </div>
       </div>
+
+      {versionPrompt && (
+        <LogVersionUpdateModal
+          title="Price list saved - log a version update?"
+          defaultNote={`Updated ${versionPrompt.vendorName} price list`}
+          onClose={(logged) => {
+            setVersionPrompt(null);
+            if (logged) setMessage((prev) => `${prev ? `${prev} ` : ""}Version updated to ${logged}.`);
+          }}
+        />
+      )}
     </div>
   );
 }

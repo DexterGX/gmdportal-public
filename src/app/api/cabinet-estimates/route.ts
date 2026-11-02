@@ -24,6 +24,7 @@ import {
   resolveDiscountPercent,
 } from "@/lib/cabinetEstimateParameters";
 import { getProgramVersion } from "@/lib/cabinetProgramVersion";
+import { computeEstimateChanges } from "@/lib/cabinetEstimateChanges";
 
 const prismaAny = prisma as any;
 
@@ -224,7 +225,7 @@ export async function POST(request: NextRequest) {
       }
       remeasureOriginal = await prismaAny.cabinetEstimate.findUnique({
         where: { id: String(body.originalEstimateId) },
-        select: { id: true, estimateNumber: true, isRemeasure: true },
+        include: { lineItems: true, specialCustomizationLines: true },
       });
       if (!remeasureOriginal || !remeasureOriginal.estimateNumber) {
         return NextResponse.json(
@@ -342,7 +343,6 @@ export async function POST(request: NextRequest) {
             jobId: body.jobId || null,
             jobName: body.jobName || null,
             jobAddress: body.jobAddress || null,
-            email: body.email || null,
             dealId: body.dealId || null,
             dealName: body.dealName || null,
             salesRep,
@@ -428,6 +428,44 @@ export async function POST(request: NextRequest) {
         changedById: auth.user.id,
       },
     });
+
+    // A remeasure usually changes the packing list (items added/removed, other
+    // quantities, a new total) - record those differences against the original
+    // estimate so the history shows what the remeasure changed.
+    if (remeasureOriginal) {
+      try {
+        const remeasureChanges = computeEstimateChanges(remeasureOriginal, {
+          customerName,
+          jobName: body.jobName || null,
+          brand: body.brand || null,
+          groupColor: body.groupColor || null,
+          projectType: body.projectType || null,
+          installationTypeName: resolvedInstallationType?.name || null,
+          removal: resolvedRemovalType?.name || null,
+          discountPercent,
+          microwaveInstallation: Boolean(body.microwaveInstallation),
+          notes: body.notes || null,
+          total,
+          lineItems: lineItemsData,
+          specialCustomizationLines: specialCustomizationLinesData,
+        });
+        if (remeasureChanges.length > 0) {
+          await prismaAny.cabinetEstimateHistory.createMany({
+            data: remeasureChanges.map((row) => ({
+              estimateId: estimate.id,
+              action: "CHANGED",
+              fieldName: row.fieldName,
+              oldValue: row.oldValue,
+              newValue: row.newValue,
+              changedById: auth.user.id,
+            })),
+          });
+        }
+      } catch (historyError) {
+        // History is best-effort - never fail a save because of it.
+        console.error("Failed to record remeasure changes", historyError);
+      }
+    }
 
     return NextResponse.json(
       { id: estimate.id, estimateNumber: estimate.estimateNumber },
