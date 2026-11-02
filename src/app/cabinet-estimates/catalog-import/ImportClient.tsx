@@ -10,8 +10,9 @@ import {
   type PdfTableChunk,
 } from "@/lib/cabinetPdfGrid";
 import type { RawGrid } from "@/lib/cabinetCatalogImport";
-import type { ColorGroup, ColorMode } from "@/lib/cabinetColorLevels";
+import { colorLabel, parseLevelColumn, type ColorGroup, type ColorMode } from "@/lib/cabinetColorLevels";
 import ReviewTable from "./ReviewTable";
+import LogVersionUpdateModal from "../LogVersionUpdateModal";
 import {
   COL_W,
   type ChangedEntry,
@@ -189,6 +190,8 @@ export default function ImportClient() {
   // columns, and this lists which Level each color belongs to.
   const [colorGroups, setColorGroups] = useState<ColorGroup[] | null>(null);
   const [colorNotes, setColorNotes] = useState<string[]>([]);
+  const [colorNameMap, setColorNameMap] = useState("");
+  const [colorNameMessage, setColorNameMessage] = useState<string | null>(null);
 
   const [resolvedVendorName, setResolvedVendorName] = useState("");
   const [parsePlan, setParsePlan] = useState<ParsePlan | null>(null);
@@ -223,6 +226,8 @@ export default function ImportClient() {
 
   // Clear price list (permanent) + remove catalog (PDF and its item images).
   const [notice, setNotice] = useState<string | null>(null);
+  // After a price list is applied: asks the admin to log a version update.
+  const [versionPrompt, setVersionPrompt] = useState<{ vendorName: string } | null>(null);
   const [isRemovingCatalog, setIsRemovingCatalog] = useState(false);
   const [clearDialog, setClearDialog] = useState<{
     loading: boolean;
@@ -772,9 +777,10 @@ export default function ImportClient() {
         throw new Error(data.error || "Failed to apply changes");
       }
 
-      alert(
+      setNotice(
         `Import complete! Created: ${data.summary.created}, Updated: ${data.summary.updated}, Discontinued: ${data.summary.discontinued}`,
       );
+      setVersionPrompt({ vendorName: resolvedVendorName });
       setFile(null);
       resetPreview();
     } catch (err: any) {
@@ -782,6 +788,58 @@ export default function ImportClient() {
     } finally {
       setIsApplying(false);
     }
+  }
+
+  /** Edit one color's text (e.g. "Level 1 - CS" -> "Level 1 - Cream White Shaker CS"). */
+  function renameColor(level: number, index: number, label: string) {
+    setColorGroups((prev) =>
+      prev
+        ? prev.map((g) =>
+            g.level !== level
+              ? g
+              : {
+                  ...g,
+                  colors: g.colors.map((c, i) => {
+                    if (i !== index) return c;
+                    const parsed = parseLevelColumn(label.trim());
+                    return parsed
+                      ? { label, name: parsed.name, code: parsed.code }
+                      : { label, name: label.trim(), code: "" };
+                  }),
+                },
+          )
+        : prev,
+    );
+  }
+
+  /** "CS=Cream White Shaker, WS=Weston Shaker" -> every color with that code gets the full name. */
+  function applyColorNames() {
+    const map = new Map<string, string>();
+    for (const part of colorNameMap.split(/[\n,;]+/)) {
+      const m = /^\s*([A-Za-z0-9]{1,8})\s*[=:\-–]\s*(.+?)\s*$/.exec(part);
+      if (m) map.set(m[1].toUpperCase(), m[2]);
+    }
+    if (map.size === 0) {
+      setColorNameMessage("Nothing to apply - write the names as CODE=Name, separated by commas (for example WS=Weston Shaker).");
+      return;
+    }
+    if (!colorGroups) return;
+    let changed = 0;
+    setColorGroups(
+      colorGroups.map((g) => ({
+        ...g,
+        colors: g.colors.map((c) => {
+          const key = (c.code || c.name).trim().toUpperCase();
+          const full = map.get(key);
+          if (!full) return c;
+          changed++;
+          return { label: colorLabel(g.level, `${full} ${key}`), name: full, code: key };
+        }),
+      })),
+    );
+    setColorNameMessage(
+      changed > 0 ? `Renamed ${changed} color${changed === 1 ? "" : "s"}.` : "No color matched those codes.",
+    );
   }
 
   function toggleDiscontinued(id: string) {
@@ -1414,17 +1472,45 @@ export default function ImportClient() {
                           {tierLabel(g.levelName)} ({g.colors.length})
                         </p>
                         <div className="mt-1 flex flex-wrap gap-1">
-                          {g.colors.map((c) => (
-                            <span
-                              key={c.label}
-                              className="rounded-full bg-white px-2 py-0.5 text-[11px] text-indigo-900 dark:bg-indigo-950 dark:text-indigo-100"
-                            >
-                              {c.label}
-                            </span>
+                          {g.colors.map((c, ci) => (
+                            <input
+                              key={ci}
+                              value={c.label}
+                              size={Math.max(10, c.label.length + 1)}
+                              onChange={(e) => renameColor(g.level, ci, e.target.value)}
+                              title="Click to rename this color"
+                              className="rounded-full border border-transparent bg-white px-2 py-0.5 text-[11px] text-indigo-900 outline-none hover:border-indigo-300 focus:border-indigo-500 dark:bg-indigo-950 dark:text-indigo-100"
+                            />
                           ))}
                         </div>
                       </div>
                     ))}
+                  </div>
+                )}
+                {colorGroups && (
+                  <div className="mt-3 border-t border-indigo-200 pt-2 dark:border-indigo-800">
+                    <p className="font-medium">Rename colors by code</p>
+                    <p className="mt-0.5 text-indigo-800 dark:text-indigo-200">
+                      Click any color above to rename it, or paste the names here as CODE=Name (or CODE-Name),
+                      separated by commas, to rename every color with that code at once.
+                    </p>
+                    <div className="mt-1 flex flex-wrap items-start gap-2">
+                      <textarea
+                        value={colorNameMap}
+                        onChange={(e) => setColorNameMap(e.target.value)}
+                        rows={2}
+                        placeholder="WS=Weston Shaker, CS=Cream White Shaker, US=Unfinished Birch Shaker"
+                        className="min-w-[18rem] flex-1 rounded-lg border border-indigo-300 bg-white px-2 py-1 text-xs text-gray-900 dark:border-indigo-700 dark:bg-indigo-950 dark:text-white"
+                      />
+                      <button
+                        type="button"
+                        onClick={applyColorNames}
+                        className="rounded-lg bg-indigo-600 px-3 py-1.5 font-medium text-white hover:bg-indigo-700"
+                      >
+                        Apply names
+                      </button>
+                    </div>
+                    {colorNameMessage && <p className="mt-1 text-indigo-800 dark:text-indigo-200">{colorNameMessage}</p>}
                   </div>
                 )}
               </div>
@@ -1541,6 +1627,17 @@ export default function ImportClient() {
             AI&quot; to have Claude read the file again from scratch.
           </p>
         </div>
+      )}
+
+      {versionPrompt && (
+        <LogVersionUpdateModal
+          title="Price list imported - log a version update?"
+          defaultNote={`Updated ${versionPrompt.vendorName} price list`}
+          onClose={(logged) => {
+            setVersionPrompt(null);
+            if (logged) setNotice((prev) => `${prev ? `${prev}. ` : ""}Version updated to ${logged}.`);
+          }}
+        />
       )}
     </div>
   );

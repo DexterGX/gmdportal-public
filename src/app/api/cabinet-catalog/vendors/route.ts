@@ -65,10 +65,30 @@ export async function GET() {
       orderBy: [{ sortOrder: "asc" }, { name: "asc" }],
     });
 
+    // "Last Updated" for the estimate form: the stamped import/edit time, else
+    // the newest item change. Read separately so a database that has not had
+    // the new column pushed yet still lists its brands.
+    const priceListUpdatedById = new Map<string, Date>();
+    try {
+      const [stamped, newest] = await Promise.all([
+        prismaAny.cabinetVendor.findMany({ select: { id: true, priceListUpdatedAt: true } }),
+        prismaAny.cabinetCatalogItem.groupBy({ by: ["vendorId"], _max: { updatedAt: true } }),
+      ]);
+      for (const row of newest) {
+        if (row._max?.updatedAt) priceListUpdatedById.set(row.vendorId, row._max.updatedAt);
+      }
+      for (const row of stamped) {
+        if (row.priceListUpdatedAt) priceListUpdatedById.set(row.id, row.priceListUpdatedAt);
+      }
+    } catch (err) {
+      console.warn("Could not read price list update times:", err);
+    }
+
     return NextResponse.json({
       vendors: vendors.map((v: any) => ({
         id: v.id,
         name: v.name,
+        priceListUpdatedAt: priceListUpdatedById.get(v.id)?.toISOString() ?? null,
         // Round 6 follow-up: vendors ARE the cabinet companies from Diego's
         // point of view - when a vendor is linked to a CabinetProviderSettings
         // record, prefer that company's displayName for anything shown to an

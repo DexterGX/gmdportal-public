@@ -281,7 +281,6 @@ export default async function CabinetEstimatePrintPage({
               value={estimate.jobName || estimate.dealName}
             />
             <InfoRow label="Job Address" value={estimate.jobAddress} />
-            <InfoRow label="Email Address" value={estimate.email} />
             <InfoRow label="Salesperson" value={estimate.salesRep} />
             <InfoRow label="Brand" value={estimate.brand} />
             <InfoRow label="Group / Color" value={estimate.groupColor} />

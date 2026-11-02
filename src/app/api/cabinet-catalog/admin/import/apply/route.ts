@@ -57,6 +57,7 @@ export async function POST(request: Request) {
     let updatedCount = 0;
     let discontinuedCount = 0;
 
+    let appliedVendorId: string | null = vendorId || null;
     await prisma.$transaction(
       async (tx: any) => {
         // 1. Resolve or create the vendor.
@@ -67,6 +68,7 @@ export async function POST(request: Request) {
           });
           resolvedVendorId = vendor.id;
         }
+        appliedVendorId = resolvedVendorId;
 
         // 2. Upsert every price tier referenced by the incoming items.
         const tierNames = new Set<string>();
@@ -236,8 +238,22 @@ export async function POST(request: Request) {
       { maxWait: 10000, timeout: 30000 },
     );
 
+    // Stamp "price list last updated" (shown on the estimate form). Outside the
+    // transaction and best-effort: a failure here must never undo an import.
+    if (appliedVendorId) {
+      try {
+        await (prisma as any).cabinetVendor.update({
+          where: { id: appliedVendorId },
+          data: { priceListUpdatedAt: new Date() },
+        });
+      } catch (err) {
+        console.warn("Could not stamp price list update time:", err);
+      }
+    }
+
     return NextResponse.json({
       success: true,
+      vendorId: appliedVendorId,
       summary: { created: createdCount, updated: updatedCount, discontinued: discontinuedCount },
     });
   } catch (error: any) {

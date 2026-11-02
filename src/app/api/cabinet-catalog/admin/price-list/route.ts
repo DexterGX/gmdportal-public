@@ -376,7 +376,17 @@ export async function PUT(request: Request) {
       { maxWait: 10000, timeout: 60000 },
     );
 
-    return NextResponse.json({ ok: true, ...result });
+    // Stamp "price list last updated" (best-effort, outside the transaction).
+    try {
+      await prismaAny.cabinetVendor.update({
+        where: { id: vendorId },
+        data: { priceListUpdatedAt: new Date() },
+      });
+    } catch (err) {
+      console.warn("Could not stamp price list update time:", err);
+    }
+
+    return NextResponse.json({ ok: true, vendorId, ...result });
   } catch (error: any) {
     console.error("Error saving cabinet price list:", error);
     const message = error?.message && !String(error.message).includes("prisma")

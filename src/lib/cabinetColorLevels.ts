@@ -168,6 +168,76 @@ function mismatchRate(items: NormalizedImportItem[], grouping: Grouping): number
   return cells === 0 ? 0 : bad / cells;
 }
 
+type Renumbered = {
+  items: NormalizedImportItem[];
+  colorGroups: ColorGroup[];
+  changed: boolean;
+  moves: string;
+};
+
+/** Gives the levels numbers 1..n in order of their average price (cheapest = Level 1). */
+function renumberLevelsByPrice(items: NormalizedImportItem[], groups: ColorGroup[]): Renumbered {
+  const unchanged: Renumbered = { items, colorGroups: groups, changed: false, moves: "" };
+  if (groups.length < 2) return unchanged;
+
+  const names = groups.map((g) => g.levelName);
+  // Compare on the items that have a price in every level, so a level that is
+  // missing from many rows is not judged cheaper just because of that.
+  const complete = items.filter((it) => names.every((n) => priceOf(it, n) !== null));
+  const sample = complete.length >= 5 ? complete : items;
+  const average = (name: string): number => {
+    let sum = 0;
+    let count = 0;
+    for (const it of sample) {
+      const v = priceOf(it, name);
+      if (v !== null && v > 0) {
+        sum += v;
+        count++;
+      }
+    }
+    return count === 0 ? Number.POSITIVE_INFINITY : sum / count;
+  };
+  const ranked = groups
+    .map((g, index) => ({ g, index, avg: average(g.levelName) }))
+    .sort((a, b) => a.avg - b.avg || a.index - b.index);
+  if (ranked.every((r, i) => r.index === i)) return unchanged;
+
+  const newLevelByOld = new Map<number, number>();
+  ranked.forEach((r, i) => newLevelByOld.set(r.g.level, i + 1));
+  const newNameByOld = new Map<string, string>();
+  for (const g of groups) newNameByOld.set(g.levelName, levelTierName(newLevelByOld.get(g.level) as number));
+
+  const colorGroups: ColorGroup[] = ranked.map((r, i) => {
+    const level = i + 1;
+    return {
+      level,
+      levelName: levelTierName(level),
+      colors: r.g.colors.map((c) => {
+        const parsed = parseLevelColumn(c.label);
+        return { ...c, label: colorLabel(level, parsed ? parsed.rest : c.name) };
+      }),
+    };
+  });
+  const columnRank = (tierName: string): number => {
+    const m = /^Level (\d+)$/.exec(tierName);
+    return m ? Number(m[1]) : 1000;
+  };
+  const remapped = items.map((it) => ({
+    ...it,
+    prices: it.prices
+      .map((p) => {
+        const renamed = newNameByOld.get(p.tierName);
+        return renamed ? { ...p, tierName: renamed } : p;
+      })
+      .sort((a, b) => columnRank(a.tierName) - columnRank(b.tierName)),
+  }));
+  const moves = groups
+    .filter((g) => newLevelByOld.get(g.level) !== g.level)
+    .map((g) => `Level ${g.level} is now Level ${newLevelByOld.get(g.level)}`)
+    .join(", ");
+  return { items: remapped, colorGroups, changed: true, moves };
+}
+
 export function collapseColorLevels(items: NormalizedImportItem[], mode: ColorMode): CollapseResult {
   const none = (notes: string[] = []): CollapseResult => ({ items, colorGroups: null, notes });
   if (mode === "columns" || items.length === 0) return none();
@@ -244,10 +314,19 @@ export function collapseColorLevels(items: NormalizedImportItem[], mode: ColorMo
     return { ...item, prices };
   });
 
+  // Levels read lowest -> highest price. A file that does not print its level
+  // numbers can end up with Level 2 cheaper than Level 1, so renumber them by price.
+  const renumbered = renumberLevelsByPrice(collapsed, colorGroups);
+  if (renumbered.changed) {
+    notes.push(
+      `Levels were renumbered from the lowest to the highest price (${renumbered.moves}).`,
+    );
+  }
+
   notes.push(
-    `${colorCount} colors were grouped into ${levelCount} level${levelCount === 1 ? "" : "s"} (${colorGroups
+    `${colorCount} colors were grouped into ${levelCount} level${levelCount === 1 ? "" : "s"} (${renumbered.colorGroups
       .map((g) => `${g.levelName}: ${g.colors.length}`)
       .join(", ")}). Only the levels are price columns; each color keeps its level.`,
   );
-  return { items: collapsed, colorGroups, notes };
+  return { items: renumbered.items, colorGroups: renumbered.colorGroups, notes };
 }

@@ -12,7 +12,7 @@ const MAX_CHAIN = 25;
  * the older one gets an "edited in" row), so the history walks the whole chain
  * of versions - older and newer - and every entry is tagged with the
  * Estimate # it belongs to. Opening the history of any version shows the same
- * list.
+ * list. A remeasure (<number>R) is part of the same history as its original.
  */
 export async function GET(
   request: NextRequest,
@@ -33,11 +33,20 @@ export async function GET(
     if (seen.has(currentId)) continue;
     seen.add(currentId);
 
-    const estimate: { estimateNumber: string } | null = await prismaAny.cabinetEstimate.findUnique({
-      where: { id: currentId },
-      select: { estimateNumber: true },
-    });
+    const estimate: { estimateNumber: string; originalEstimateId: string | null } | null =
+      await prismaAny.cabinetEstimate.findUnique({
+        where: { id: currentId },
+        select: { estimateNumber: true, originalEstimateId: true },
+      });
     if (!estimate) continue;
+
+    // A remeasure and the estimate it was measured from share one history.
+    if (estimate.originalEstimateId) queue.push(estimate.originalEstimateId);
+    const remeasures: { id: string }[] = await prismaAny.cabinetEstimate.findMany({
+      where: { originalEstimateId: currentId },
+      select: { id: true },
+    });
+    for (const remeasure of remeasures) queue.push(remeasure.id);
 
     const entries: any[] = await prismaAny.cabinetEstimateHistory.findMany({
       where: { estimateId: currentId },

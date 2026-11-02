@@ -18,6 +18,7 @@
 
 import { createCanvas } from "@napi-rs/canvas";
 import { getPdfjsLib, NodeCanvasFactory } from "./cabinetCatalogPdfRender";
+import { normalizeCabinetCode } from "./cabinetCodeMatch";
 
 const SCALE = 2; // render scale (pixels per PDF point)
 const DILATE = 3; // points: pixels this close belong to the same drawing
@@ -25,10 +26,12 @@ const LUMA_INK = 225; // darker than this counts as ink
 const CROP_PAD = 6; // points of white space kept around a crop
 const MIN_DRAWING = 20; // points: smaller blobs are labels/ticks, not drawings
 const MIN_DRAWING_INK = 600; // ink cells: a few depth/dimension lines are not a drawing
-const MAX_DENSITY = 0.4; // solid blobs (photos, title bars) are not line drawings
+const MAX_DENSITY = 0.85; // solid black blobs (title/note bars) are not drawings; heavy line art and photos are
 const MIN_PART = 40; // points: shortest picture a shared drawing is split into
+const SIDE_BY_SIDE_GAP = 30; // points: drawings this close and level with each other are one picture
 const RULE_MIN_H = 40; // points: a table rule is at least this long where it enters the strip
 const RULE_MIN_V = 60; // points: shortest vertical cell border
+const FRAME_MIN_V = 200; // points: a vertical line this tall is the table's frame, never a drawing
 const MAX_PAGE_RENDERS = 120;
 
 export type LayoutImageGroup = {
@@ -44,7 +47,7 @@ export type LayoutImageResult = {
 
 type TextBit = { str: string; x: number; y: number; w: number; h: number; rotated: boolean };
 type Block = { y0: number; y1: number; codes: string[] };
-type Comp = { id: number; x0: number; y0: number; x1: number; y1: number; count: number };
+type Comp = { id: number; x0: number; y0: number; x1: number; y1: number; count: number; ids?: number[] };
 
 function median(values: number[]): number {
   const sorted = [...values].sort((a, b) => a - b);
@@ -58,8 +61,20 @@ function overlap(a0: number, a1: number, b0: number, b1: number): number {
 /** Rows of codes that sit in one column close together = one printed table. */
 function buildBlocks(skus: (TextBit & { code: string })[]): { x: number; blocks: Block[] } | null {
   if (skus.length === 0) return null;
-  // The left-most column of codes is the one with a picture beside it.
-  const minX = Math.min(...skus.map((s) => s.x));
+  // The left-most COLUMN of codes is the one with a picture beside it. A
+  // caption under a photo that happens to be a code ("CORBF", "CORK30") is not
+  // a column: group the codes by x and only count columns with several rows.
+  const byX = [...skus].sort((a, b) => a.x - b.x);
+  const clusters: (typeof skus)[] = [];
+  for (const s of byX) {
+    const last = clusters[clusters.length - 1];
+    if (last && s.x - last[last.length - 1].x <= 40) last.push(s);
+    else clusters.push([s]);
+  }
+  const rowCount = (c: typeof skus) => new Set(c.map((s) => Math.round(s.y / 4))).size;
+  const bestRows = Math.max(...clusters.map(rowCount));
+  const chosen = clusters.find((c) => rowCount(c) >= Math.max(1, Math.ceil(bestRows / 2))) || clusters[0];
+  const minX = Math.min(...chosen.map((s) => s.x));
   const column = skus.filter((s) => Math.abs(s.x - minX) < 30).sort((a, b) => a.y - b.y);
   const diffs: number[] = [];
   for (let i = 1; i < column.length; i++) diffs.push(column[i].y - column[i - 1].y);
@@ -179,7 +194,73 @@ function removeTableRules(ink: Uint8Array, w: number, h: number): Uint8Array | n
     if (y - prevRow > 1) lines++;
     prevRow = y;
   }
-  if (lines < 2) return null;
+  // Light-grey catalogs have no dark rules crossing the strip; the border and
+  // frame clean-up below still applies to them.
+  if (lines < 2) rule.fill(0);
+
+  // The strip can run a little way into the table's first column, leaving that
+  // column's left border (a long vertical line) and the stubs of its row lines
+  // in the strip. Anything right of such a border is table, not picture.
+  const edgeStart = Math.max(0, w - 30);
+  for (let x = edgeStart; x < w; x++) {
+    let y = 0;
+    while (y < h) {
+      if (!ink[y * w + x]) {
+        y++;
+        continue;
+      }
+      const start = y;
+      while (y < h && ink[y * w + x]) y++;
+      if (y - start < RULE_MIN_V) continue;
+      let stubRows = 0;
+      let inStub = false;
+      for (let r = start; r < y; r++) {
+        const reaches = Boolean(ink[r * w + w - 1] || ink[r * w + w - 2]);
+        if (reaches && !inStub) stubRows++;
+        inStub = reaches;
+      }
+      if (stubRows < 2) continue;
+      for (let r = start; r < y; r++) {
+        for (let xx = x; xx < w; xx++) rule[r * w + xx] = 1;
+      }
+    }
+  }
+
+  // The picture cell's own outline: a vertical line taller than any drawing,
+  // and the horizontal lines that start at it.
+  const frameCols: number[] = [];
+  for (let x = 0; x < w; x++) {
+    let y = 0;
+    while (y < h) {
+      if (!ink[y * w + x]) {
+        y++;
+        continue;
+      }
+      const start = y;
+      while (y < h && ink[y * w + x]) y++;
+      if (y - start >= FRAME_MIN_V) {
+        frameCols.push(x);
+        for (let r = start; r < y; r++) rule[r * w + x] = 1;
+      }
+    }
+  }
+  if (frameCols.length > 0) {
+    for (let y = 0; y < h; y++) {
+      let x = 0;
+      while (x < w) {
+        if (!ink[y * w + x]) {
+          x++;
+          continue;
+        }
+        const start = x;
+        while (x < w && ink[y * w + x]) x++;
+        const touchesFrame = frameCols.some((fx) => fx >= start - 2 && fx <= x + 1);
+        if (touchesFrame && x - start >= w * 0.6) {
+          for (let c = start; c < x; c++) rule[y * w + c] = 1;
+        }
+      }
+    }
+  }
 
   // Cell borders: long vertical runs that meet one of the rules above.
   for (let x = 0; x < w; x++) {
@@ -200,6 +281,8 @@ function removeTableRules(ink: Uint8Array, w: number, h: number): Uint8Array | n
       }
     }
   }
+
+  if (!rule.some((v) => v === 1)) return null;
 
   // Anti-aliased edges of those lines.
   const grown = new Uint8Array(rule);
@@ -231,12 +314,20 @@ export async function extractLayoutImages(
   codes: string[],
 ): Promise<LayoutImageResult> {
   const codeByLower = new Map<string, string>();
+  // Same code, different spelling between the price list and the catalog
+  // (B9 / B09, W30-30 / W3030): matched on the normalized form when there is
+  // no exact match.
+  const codeByNormalized = new Map<string, string>();
   for (const c of codes) {
     const key = c.trim().toLowerCase();
     // Prices/sizes are numbers; a real SKU has a letter and some length.
     if (key.length >= 3 && /[a-z]/.test(key)) codeByLower.set(key, c);
+    const norm = normalizeCabinetCode(c);
+    if (norm.length >= 2 && /[A-Z]/.test(norm) && /\d/.test(norm) && !codeByNormalized.has(norm)) {
+      codeByNormalized.set(norm, c);
+    }
   }
-  if (codeByLower.size === 0) return { groups: [], pagesWithCodes: 0 };
+  if (codeByLower.size === 0 && codeByNormalized.size === 0) return { groups: [], pagesWithCodes: 0 };
 
   const pdfjsLib = await getPdfjsLib();
   const doc = await pdfjsLib.getDocument({
@@ -274,7 +365,9 @@ export async function extractLayoutImages(
 
       const skus: (TextBit & { code: string })[] = [];
       for (const b of bits) {
-        const code = codeByLower.get(b.str.toLowerCase());
+        const code =
+          codeByLower.get(b.str.toLowerCase()) ||
+          (b.str.length <= 14 ? codeByNormalized.get(normalizeCabinetCode(b.str)) : undefined);
         if (code && !claimed.has(code.toLowerCase())) skus.push({ ...b, code });
       }
       const built = buildBlocks(skus);
@@ -284,14 +377,26 @@ export async function extractLayoutImages(
       // Left edge of the printed table = where the size/description text
       // that shares a row with the codes starts.
       const rows = skus.filter((s) => Math.abs(s.x - built.x) < 30).map((s) => s.y);
-      const tableTextXs = bits
-        .filter(
-          (b) =>
-            !b.rotated &&
-            b.x < built.x - 1 &&
-            b.x > built.x - 200 &&
-            rows.some((ry) => Math.abs(ry - b.y) < 3),
-        )
+      // Text left of the codes on the same rows = the table's own columns. A
+      // real column has text on most rows; a note or label that happens to sit
+      // level with one or two codes (inside the picture area) is not a column.
+      const leftBits = bits.filter(
+        (b) =>
+          !b.rotated &&
+          b.x < built.x - 1 &&
+          b.x > built.x - 200 &&
+          rows.some((ry) => Math.abs(ry - b.y) < 3),
+      );
+      const needRows = rows.length <= 2 ? 1 : Math.max(2, Math.ceil(rows.length * 0.4));
+      const tableTextXs = leftBits
+        .filter((b) => {
+          const coveredRows = new Set(
+            leftBits
+              .filter((o) => Math.abs(o.x - b.x) < 8)
+              .map((o) => rows.findIndex((ry) => Math.abs(ry - o.y) < 3)),
+          );
+          return coveredRows.size >= needRows;
+        })
         .map((b) => b.x);
       const stripRight = Math.floor(Math.min(built.x, ...(tableTextXs.length ? tableTextXs : [built.x])) - 6);
       if (stripRight < 40) continue;
@@ -341,6 +446,12 @@ export async function extractLayoutImages(
       }
 
       const tableRules = removeTableRules(ink, stripW, pageH);
+      // Take the table's own rules out of the mask before looking for
+      // pictures: a drawing whose dimension line or cell corner touches a rule
+      // would otherwise fuse with the whole table grid and be thrown away.
+      if (tableRules) {
+        for (let i = 0; i < tableRules.length; i++) if (tableRules[i]) ink[i] = 0;
+      }
       const { comps, labels } = findComponents(ink, stripW, pageH);
       const drawings: Comp[] = [];
       const small: Comp[] = [];
@@ -351,7 +462,13 @@ export async function extractLayoutImages(
         const w = c.x1 - c.x0 + 1;
         const h = c.y1 - c.y0 + 1;
         const density = c.count / (w * h);
-        const isTitleBar = w >= stripW * 0.5 && h <= 90 && density > 0.3;
+        // Title bars are solid bands: a wide, short drawing (a drawer, a
+        // molding, a wine rack) sitting beside a table is NOT one.
+        const isTitleBar =
+          w >= stripW * 0.5 &&
+          h <= 90 &&
+          density > 0.3 &&
+          (density > 0.85 || c.y1 < firstBlockTop - 5);
         if (isTitleBar) continue;
         if (w >= MIN_DRAWING && h >= MIN_DRAWING && c.count >= MIN_DRAWING_INK) {
           // Big solid blobs (photos) are not line drawings.
@@ -364,6 +481,41 @@ export async function extractLayoutImages(
       if (drawings.length === 0) {
         canvasFactory.destroy(cc);
         continue;
+      }
+
+      // One picture is sometimes several separate drawings side by side (a
+      // 30"/36" cabinet next to the 42" one, a pair of doors). Drawings level
+      // with each other and close together are one picture.
+      {
+        const parent = drawings.map((_, i) => i);
+        const find = (i: number): number => (parent[i] === i ? i : (parent[i] = find(parent[i])));
+        for (let i = 0; i < drawings.length; i++) {
+          for (let j = i + 1; j < drawings.length; j++) {
+            const a = drawings[i];
+            const b = drawings[j];
+            const level = overlap(a.y0, a.y1, b.y0, b.y1);
+            const shorter = Math.min(a.y1 - a.y0, b.y1 - b.y0) + 1;
+            const gap = Math.max(0, Math.max(a.x0, b.x0) - Math.min(a.x1, b.x1));
+            if (level >= shorter * 0.6 && gap <= SIDE_BY_SIDE_GAP) parent[find(j)] = find(i);
+          }
+        }
+        const merged = new Map<number, Comp>();
+        drawings.forEach((d, i) => {
+          const root = find(i);
+          const m = merged.get(root);
+          if (!m) {
+            merged.set(root, { ...d, ids: [d.id] });
+          } else {
+            m.x0 = Math.min(m.x0, d.x0);
+            m.x1 = Math.max(m.x1, d.x1);
+            m.y0 = Math.min(m.y0, d.y0);
+            m.y1 = Math.max(m.y1, d.y1);
+            m.count += d.count;
+            m.ids!.push(d.id);
+          }
+        });
+        drawings.length = 0;
+        merged.forEach((m) => drawings.push(m));
       }
 
       // Each table block takes the drawing beside it.
@@ -430,7 +582,7 @@ export async function extractLayoutImages(
       for (const [drawing, drawingBlocks] of blocksByDrawing) {
         // Pull in the drawing's own labels (dimension text, ticks) - beside
         // the drawing and level with it, not above/below it.
-        const included = new Set<number>([drawing.id]);
+        const included = new Set<number>(drawing.ids || [drawing.id]);
         let { x0, x1, y0, y1 } = drawing;
         for (const sm of small) {
           const near = (m: number) =>
@@ -440,6 +592,11 @@ export async function extractLayoutImages(
           const isLabel = labelBoxes.some(
             (l) => sm.x1 >= l.x0 - 2 && sm.x0 <= l.x1 + 2 && sm.y1 >= l.y0 - 2 && sm.y0 <= l.y1 + 2,
           );
+          if (sm.x1 >= stripW - 3) continue; // a stub of the table's grid
+          // A small SOLID block is a leftover bit of a table bar, not text.
+          const smW = sm.x1 - sm.x0 + 1;
+          const smH = sm.y1 - sm.y0 + 1;
+          if (smW >= 4 && smH >= 12 && sm.count / (smW * smH) > 0.7) continue;
           if ((sm.count >= 8 && near(22)) || (isLabel && near(40))) {
             included.add(sm.id);
             x0 = Math.min(x0, sm.x0);
